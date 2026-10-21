@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Install zstd
+        run: command -v zstd || (sudo apt-get update && sudo apt-get install -y zstd)
       - name: Check fixtures with the reference implementation
         run: python3 spec/tools/reference.py --check-fixtures
       - name: Lint installer
