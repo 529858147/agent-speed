@@ -276,8 +276,10 @@ struct HistoryChartView: View {
         .chartYScale(domain: 0...chart.outputTicks.max)
         .chartLegend(.hidden)
         .chartXAxis {
-            AxisMarks(values: marks.days.map { dayCenter($0, calendar) }) { value in
-                AxisValueLabel(anchor: .top, collisionResolution: .disabled) { axisLabel(value, calendar) }
+            // The day labels are drawn by the backdrop, centred under their bars (label anchors behave differently
+            // across SDKs); this only keeps their row free.
+            AxisMarks(values: [domainStart]) { _ in
+                AxisValueLabel { Text(verbatim: "0").font(HistoryFont.axis).hidden() }
             }
         }
         .chartYAxis {
@@ -321,17 +323,6 @@ struct HistoryChartView: View {
                 }
             }
         }
-    }
-
-    private func dayCenter(_ index: Int, _ calendar: Calendar) -> Date {
-        chart.range.day(at: index).date(in: calendar).addingTimeInterval(12 * 3600)
-    }
-
-    private func axisLabel(_ value: AxisValue, _ calendar: Calendar) -> some View {
-        Text(value.as(Date.self).map { HistoryText.axisDay(DayKey($0, calendar: calendar), l10n) } ?? "")
-            .font(HistoryFont.axis)
-            .foregroundStyle(.historySecondary)
-            .fixedSize()
     }
 
     private func barStyle(_ source: SourceKind, dark: Bool) -> AnyShapeStyle {

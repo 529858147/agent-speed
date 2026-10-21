@@ -29,8 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             MotionHarness.start(into: directory)
             return
         }
-        if let directory = options.historyScreenshotsDirectory {
-            HistoryPreviews.captureOnScreen(into: directory)
+        if let directory = options.screenshotsDirectory {
+            ScreenshotHarness.run(into: directory, onlyHistory: options.screenshotsOnlyHistory)
             return
         }
         #endif

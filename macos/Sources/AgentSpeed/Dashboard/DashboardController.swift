@@ -12,6 +12,7 @@ final class DashboardController: NSObject, NSPopoverDelegate {
     private let model: AppModel
     private var popover: NSPopover?
     private var closedAt: TimeInterval = 0
+    private var appearanceObservation: NSKeyValueObservation?
     var onVisibilityChange: ((Bool) -> Void)?
 
     init(model: AppModel) {
@@ -48,6 +49,10 @@ final class DashboardController: NSObject, NSPopoverDelegate {
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
         self.popover = popover
+        applyAppearance()
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.applyAppearance() }
+        }
         NSApp.activate()
         popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
@@ -59,10 +64,27 @@ final class DashboardController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        appearanceObservation = nil
         closedAt = Clock.now
         popover?.contentViewController = nil
         popover = nil
         onVisibilityChange?(false)
+    }
+
+    /// A popover takes its appearance from the menu bar it hangs from, which on macOS 26 follows the desktop picture
+    /// rather than the app. The dashboard follows the app's Appearance setting (and the system under Auto) instead.
+    private func applyAppearance() {
+        guard let popover else { return }
+        let wanted: NSAppearance?
+        if let chosen = NSApp.appearance {
+            wanted = chosen
+        } else if #available(macOS 26, *) {
+            let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            wanted = NSAppearance(named: dark ? .darkAqua : .aqua)
+        } else {
+            wanted = nil
+        }
+        if popover.appearance?.name != wanted?.name { popover.appearance = wanted }
     }
 
     /// Height available under the anchor on its screen, so the popover never runs off the bottom edge.

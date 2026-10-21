@@ -45,15 +45,7 @@ struct HistoryTooltip: View {
             }
         }
         .padding(12)
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(dark ? Color(white: 0.19) : Color.white)
-                .shadow(color: .black.opacity(dark ? 0.45 : 0.16), radius: 12, y: 4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(HistoryPalette.cardStroke(dark: dark, increasedContrast: contrast == .increased), lineWidth: 1)
-                )
-        }
+        .modifier(TooltipSurface(dark: dark, increasedContrast: contrast == .increased))
     }
 
     @ViewBuilder
@@ -143,6 +135,29 @@ private struct SourceShareBar: View {
                 }
             }
             .clipShape(Capsule())
+        }
+    }
+}
+
+/// The card's surface: Liquid Glass floating over the chart on macOS 26 (the system makes it frosted under Reduce
+/// Transparency and outlines it under Increase Contrast), a solid card with a soft shadow before.
+private struct TooltipSurface: ViewModifier {
+    let dark: Bool
+    let increasedContrast: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else {
+            content.background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(dark ? Color(white: 0.19) : Color.white)
+                    .shadow(color: .black.opacity(dark ? 0.45 : 0.16), radius: 12, y: 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(HistoryPalette.cardStroke(dark: dark, increasedContrast: increasedContrast), lineWidth: 1)
+                    )
+            }
         }
     }
 }

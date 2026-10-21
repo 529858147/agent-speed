@@ -198,6 +198,14 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
 
     // MARK: Custom range
 
+    #if DEBUG
+    /// Opens the custom range popover as a click on its segment would (screenshots).
+    func debugShowCustomRange() -> NSPopover? {
+        showCustomRange()
+        return popover
+    }
+    #endif
+
     private func showCustomRange() {
         // The control shows the custom segment only once a custom range is applied.
         if let index = Self.ranges.firstIndex(of: model.rangeKind) { rangeControl.selectedSegment = index }
@@ -221,7 +229,8 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
         self.popover = popover
-        popover.show(relativeTo: customSegmentRect(), of: rangeControl, preferredEdge: .minY)
+        // Below the control: its bottom edge is maxY when the view is flipped.
+        popover.show(relativeTo: customSegmentRect(), of: rangeControl, preferredEdge: rangeControl.isFlipped ? .maxY : .minY)
     }
 
     /// The custom segment is the last one; its width follows its label.

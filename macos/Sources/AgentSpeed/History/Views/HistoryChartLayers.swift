@@ -37,11 +37,35 @@ struct ChartBackdrop: View {
                     .fixedSize()
                     .offset(x: frame.minX + x + (label.index == 0 ? 0 : 5), y: top)
             }
+            ForEach(marks.days, id: \.self) { index in
+                let day = chart.range.day(at: index)
+                if let center = ChartPointerLayer.centerX(day, proxy: proxy) {
+                    let width: CGFloat = 64
+                    // Centred under the bar, kept inside the plot at both ends.
+                    let left = (frame.minX + center - width / 2).clamped(to: frame.minX - 6...max(frame.minX - 6, frame.maxX + 6 - width))
+                    Text(HistoryText.axisDay(day, l10n))
+                        .font(HistoryFont.axis)
+                        .foregroundStyle(.historySecondary)
+                        .fixedSize()
+                        .frame(width: width, alignment: alignment(labelLeft: left, center: frame.minX + center, width: width))
+                        .offset(x: left, y: frame.maxY + 6)
+                }
+            }
             HoverBand(chart: chart, interaction: interaction, proxy: proxy, frame: frame, geometry: geometry, dark: dark)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+extension ChartBackdrop {
+    /// Centre, unless the label had to move inwards at an edge.
+    fileprivate func alignment(labelLeft: CGFloat, center: CGFloat, width: CGFloat) -> Alignment {
+        let centred = center - width / 2
+        if labelLeft > centred + 0.5 { return .leading }
+        if labelLeft < centred - 0.5 { return .trailing }
+        return .center
     }
 }
 

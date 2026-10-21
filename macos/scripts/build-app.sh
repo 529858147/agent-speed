@@ -84,7 +84,7 @@ BUILD_NUMBER="${BUILD_NUMBER:-$VERSION}"
     || die "Invalid build number \"$BUILD_NUMBER\"." "Expected up to three numbers separated by dots, e.g. 42 or 1.2.3."
 
 [[ "$(uname -s)" == "Darwin" ]] || die "This script must run on macOS."
-for tool in swift lipo codesign plutil ditto xattr; do
+for tool in swift lipo vtool xcrun codesign plutil ditto xattr; do
     command -v "$tool" >/dev/null 2>&1 || die "Required tool \"$tool\" was not found." "Install Xcode or the Xcode Command Line Tools."
 done
 [[ -f "$PLIST_TEMPLATE" ]] || die "Info.plist template not found at $PLIST_TEMPLATE."
@@ -121,6 +121,19 @@ ARCHS=" $(lipo -archs "$BINARY" 2>/dev/null || true) "
 for arch in arm64 x86_64; do
     [[ "$ARCHS" == *" $arch "* ]] \
         || die "The executable is not universal; it must contain both arm64 and x86_64." "Found:${ARCHS% }"
+done
+
+# macOS 26+ shows the current system design (Liquid Glass) only to apps stamped with a recent SDK; an executable stamped
+# with its deployment target as SDK runs in the compatibility appearance (see Package.swift).
+step "Checking the SDK stamp"
+EXPECTED_SDK="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)"
+[[ -n "$EXPECTED_SDK" ]] || die "Could not determine the macOS SDK version." "Check the selected Xcode with: xcode-select -p"
+for arch in arm64 x86_64; do
+    STAMP="$(vtool -arch "$arch" -show-build "$BINARY" 2>/dev/null | awk '$1 == "minos" { minos = $2 } $1 == "sdk" { sdk = $2 } END { print minos " " sdk }')"
+    read -r MINOS SDK <<< "$STAMP"
+    [[ "${SDK%.0}" == "${EXPECTED_SDK%.0}" ]] \
+        || die "The $arch slice is stamped with SDK ${SDK:-unknown}, expected $EXPECTED_SDK." "It would run in the macOS compatibility appearance."
+    info "$arch: SDK $SDK, minimum macOS $MINOS"
 done
 
 step "Assembling $APP_NAME.app"

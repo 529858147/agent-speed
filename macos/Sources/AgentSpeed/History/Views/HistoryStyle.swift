@@ -9,7 +9,10 @@ enum HistoryPalette {
     }
 
     static func cardFill(dark: Bool) -> Color {
-        dark ? Color.white.opacity(0.05) : Color.black.opacity(0.028)
+        if #available(macOS 26, *) {
+            return dark ? Color.white.opacity(0.06) : Color.black.opacity(0.036)
+        }
+        return dark ? Color.white.opacity(0.05) : Color.black.opacity(0.028)
     }
 
     static func cardStroke(dark: Bool, increasedContrast: Bool) -> Color {
@@ -87,10 +90,22 @@ struct HistoryCardBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         let dark = colorScheme == .dark
+        let increasedContrast = contrast == .increased
         let shape = RoundedRectangle(cornerRadius: HistoryLayout.cardRadius, style: .continuous)
+        // macOS 26 draws content panels as quiet fills without outlines; the outline returns with Increase Contrast.
+        let outlined = Self.usesOutline || increasedContrast
         content
             .background(shape.fill(HistoryPalette.cardFill(dark: dark)))
-            .overlay(shape.strokeBorder(HistoryPalette.cardStroke(dark: dark, increasedContrast: contrast == .increased), lineWidth: 1))
+            .overlay {
+                if outlined {
+                    shape.strokeBorder(HistoryPalette.cardStroke(dark: dark, increasedContrast: increasedContrast), lineWidth: 1)
+                }
+            }
+    }
+
+    private static var usesOutline: Bool {
+        if #available(macOS 26, *) { return false }
+        return true
     }
 }
 

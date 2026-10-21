@@ -11,8 +11,10 @@ struct LaunchOptions: Sendable {
     #if DEBUG
     /// `--motion-harness DIR`: records the agents list expanding and collapsing, see `MotionHarness`.
     var motionHarnessDirectory: URL?
-    /// `--history-screenshots DIR`: shows the history window with sample data on screen and captures it.
-    var historyScreenshotsDirectory: URL?
+    /// `--screenshots DIR`: shows every surface with sample data on screen and captures it, see `ScreenshotHarness`.
+    /// `--history-screenshots DIR` captures only the history window.
+    var screenshotsDirectory: URL?
+    var screenshotsOnlyHistory = false
     #endif
 
     static func parse(_ arguments: [String] = CommandLine.arguments) -> LaunchOptions {
@@ -35,9 +37,10 @@ struct LaunchOptions: Sendable {
                 if let path = iterator.next() {
                     options.motionHarnessDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
-            case "--history-screenshots":
+            case "--screenshots", "--history-screenshots":
                 if let path = iterator.next() {
-                    options.historyScreenshotsDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                    options.screenshotsDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                    options.screenshotsOnlyHistory = argument == "--history-screenshots"
                 }
             #endif
             default:
