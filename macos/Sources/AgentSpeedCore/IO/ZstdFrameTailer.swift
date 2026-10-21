@@ -8,17 +8,21 @@ struct ZstdFrameTailer: Sendable {
     static let maxFrameOutputBytes = 64 << 20
     /// Compressed bytes one frame may span; a larger frame cannot decode within `maxFrameOutputBytes`.
     static let maxFrameInputBytes = maxFrameOutputBytes + (1 << 20)
+    private static let frameMagic: UInt32 = 0xFD2F_B528
     private static let skippableMagicMask: UInt32 = 0xFFFF_FFF0
     private static let skippableMagic: UInt32 = 0x184D_2A50
     private static let skippableHeaderBytes = 8
+    /// No frame is shorter; fewer bytes at the offset always wait for more.
+    private static let minimumFrameBytes = 8
 
     let path: String
     let maxFrameOutputBytes: Int
     /// Bytes taken from the file: decoded or skipped frames plus the buffered incomplete frame.
     private(set) var offset: Int64 = 0
     private(set) var identity: FileIdentity?
-    /// The next bytes are not a zstd frame, so the stream cannot continue until the file is reset.
-    private(set) var isStalled = false
+    /// The bytes at the offset were not a frame; reading skips ahead to the next frame magic (already counted as one
+    /// malformed line).
+    private(set) var isResynchronizing = false
     private var start: FileTailer.Start?
     /// Compressed bytes of the incomplete frame at the end of the file.
     private var pending: [UInt8] = []
@@ -41,8 +45,9 @@ struct ZstdFrameTailer: Sendable {
         lines = LineSplitter(maxLineBytes: maxLineBytes)
     }
 
-    /// Decodes every complete frame appended since the last call. A frame that fails to decode is skipped and reported
-    /// through `onMalformed`; an incomplete trailing frame waits for its remaining bytes.
+    /// Decodes every complete frame appended since the last call. A frame that fails to decode, or bytes that are not a
+    /// frame at all, are skipped and reported once through `onMalformed`; an incomplete trailing frame waits for its
+    /// remaining bytes.
     mutating func read(
         onReset: () -> Void = {},
         onMalformed: () -> Void = {},
@@ -77,7 +82,7 @@ struct ZstdFrameTailer: Sendable {
         }
 
         var decoder: ZstdFrameDecoder?
-        while offset < stat.size, !isStalled {
+        while offset < stat.size {
             if skipping > 0 {
                 let skipped = min(skipping, stat.size - offset)
                 offset += skipped
@@ -105,7 +110,7 @@ struct ZstdFrameTailer: Sendable {
         offset = 0
         pending = []
         skipping = 0
-        isStalled = false
+        isResynchronizing = false
         lines.reset()
         start = nil
     }
@@ -132,10 +137,18 @@ struct ZstdFrameTailer: Sendable {
         var cursor = 0
         bytes.withUnsafeBytes { buffer in
             while cursor < buffer.count {
+                if isResynchronizing {
+                    guard let next = Self.nextMagic(in: buffer, from: cursor) else {
+                        // A magic may straddle the end of what has been written so far.
+                        cursor = max(cursor, buffer.count - 3)
+                        return
+                    }
+                    cursor = next
+                    isResynchronizing = false
+                }
                 let frame = UnsafeRawBufferPointer(rebasing: buffer[cursor...])
-                if frame.count >= 4,
-                   UInt32(littleEndian: frame.loadUnaligned(as: UInt32.self)) & Self.skippableMagicMask == Self.skippableMagic {
-                    guard frame.count >= Self.skippableHeaderBytes else { return }
+                guard frame.count >= Self.minimumFrameBytes else { return }
+                if UInt32(littleEndian: frame.loadUnaligned(as: UInt32.self)) & Self.skippableMagicMask == Self.skippableMagic {
                     let total = Int64(Self.skippableHeaderBytes)
                         + Int64(UInt32(littleEndian: frame.loadUnaligned(fromByteOffset: 4, as: UInt32.self)))
                     if Int64(frame.count) >= total {
@@ -147,12 +160,14 @@ struct ZstdFrameTailer: Sendable {
                     continue
                 }
                 let size = ZSTD_findFrameCompressedSize(frame.baseAddress, frame.count)
-                if ZSTD_isError(size) != 0 || size == 0 {
-                    let incomplete = ZSTD_isError(size) != 0 && ZSTD_getErrorCode(size) == ZSTD_error_srcSize_wrong
-                    if incomplete, frame.count <= Self.maxFrameInputBytes { return }
-                    isStalled = true
+                let incomplete = ZSTD_isError(size) != 0 && ZSTD_getErrorCode(size) == ZSTD_error_srcSize_wrong
+                if incomplete, frame.count <= Self.maxFrameInputBytes { return }
+                guard ZSTD_isError(size) == 0, size > 0 else {
+                    // Not a frame (unknown magic, invalid block header) or one too large to ever decode.
                     onMalformed()
-                    return
+                    isResynchronizing = true
+                    cursor += 1
+                    continue
                 }
                 if decoder == nil { decoder = ZstdFrameDecoder() }
                 let decoded = decoder?.decode(UnsafeRawBufferPointer(rebasing: frame[0..<size]), limit: maxFrameOutputBytes) {
@@ -162,11 +177,22 @@ struct ZstdFrameTailer: Sendable {
                 cursor += size
             }
         }
-        if isStalled || cursor >= bytes.count {
+        if cursor >= bytes.count {
             bytes.removeAll(keepingCapacity: bytes.capacity <= 1 << 20)
         } else if cursor > 0 {
             bytes.removeFirst(cursor)
         }
         swap(&bytes, &pending)
+    }
+
+    /// Position of the next zstd frame magic or skippable-frame magic at or after `start`.
+    private static func nextMagic(in buffer: UnsafeRawBufferPointer, from start: Int) -> Int? {
+        var index = start
+        while index + 4 <= buffer.count {
+            let word = UInt32(littleEndian: buffer.loadUnaligned(fromByteOffset: index, as: UInt32.self))
+            if word == frameMagic || word & skippableMagicMask == skippableMagic { return index }
+            index += 1
+        }
+        return nil
     }
 }

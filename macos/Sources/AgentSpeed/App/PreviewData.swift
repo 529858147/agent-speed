@@ -123,6 +123,28 @@ enum PreviewData {
         )
     }
 
+    /// DeepSeek not installed and Claude Desktop turned off: the dashboard hides the first and dims the second.
+    static func withPartialSources(_ snapshot: SpeedSnapshot) -> SpeedSnapshot {
+        var snapshot = snapshot
+        snapshot.sources = snapshot.sources.map { source in
+            var source = source
+            switch source.kind {
+            case .deepseek: source.available = false
+            case .claudeDesktop: source.enabled = false
+            case .codex, .claudeCode: return source
+            }
+            source.sessionCount = 0
+            source.live = .zero
+            source.today = TokenTotals()
+            source.activeAgents = 0
+            return source
+        }
+        snapshot.agents = snapshot.agents.filter { $0.source != .deepseek && $0.source != .claudeDesktop }
+        snapshot.generatingCount = snapshot.agents.filter { $0.phase == .generating }.count
+        snapshot.toolsCount = snapshot.agents.filter { $0.phase == .tools }.count
+        return snapshot
+    }
+
     private static func source(_ kind: SourceKind, _ live: Double, _ today: TokenTotals, _ active: Int) -> SourceStatus {
         SourceStatus(
             kind: kind,

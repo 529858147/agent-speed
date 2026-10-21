@@ -104,7 +104,7 @@ struct ZstdFrameTailerTests {
         _ = Self.read(&tailer, into: collector)
         #expect(collector.lines == ["first", "second"])
         #expect(collector.malformed == 0)
-        #expect(!tailer.isStalled)
+        #expect(!tailer.isResynchronizing)
     }
 
     @Test func skipsACorruptFrameAsOneMalformedLine() throws {
@@ -117,7 +117,7 @@ struct ZstdFrameTailerTests {
         _ = Self.read(&tailer, into: collector)
         #expect(collector.lines == ["a", "b"])
         #expect(collector.malformed == 2)
-        #expect(!tailer.isStalled)
+        #expect(!tailer.isResynchronizing)
     }
 
     @Test func skipsSkippableFramesEvenWhenTheyArriveInPieces() throws {
@@ -181,21 +181,51 @@ struct ZstdFrameTailerTests {
         #expect(collector.resets == 2)
     }
 
-    @Test func bytesThatAreNotAFrameStallTheStreamUntilAReset() throws {
+    @Test func resynchronizesAtTheNextFrameAfterBytesThatAreNotAFrame() throws {
         let directory = try TempDirectory()
-        try directory.write(Self.name, bytes: ZstdFrames.raw("a\n") + Array("not zstd at all".utf8))
+        let garbage = Array("not zstd at all".utf8)
+        try directory.write(Self.name, bytes: ZstdFrames.raw("a\n") + garbage + ZstdFrames.raw("b\n")
+            + ZstdFrames.skippable([0x28, 0xB5, 0x2F, 0xFD]) + ZstdFrames.raw("c\n"))
         var tailer = ZstdFrameTailer(path: directory.file(Self.name).path)
         let collector = Collector()
         _ = Self.read(&tailer, into: collector)
-        try directory.append(Self.name, bytes: ZstdFrames.raw("b\n"))
+        #expect(collector.lines == ["a", "b", "c"])
+        #expect(collector.malformed == 1)
+        #expect(!tailer.isResynchronizing)
+    }
+
+    @Test func garbageAtTheEndWaitsForTheNextFrame() throws {
+        let directory = try TempDirectory()
+        let frame = ZstdFrames.raw("later\n")
+        try directory.write(Self.name, bytes: ZstdFrames.raw("a\n") + Array("garbage written last".utf8))
+        var tailer = ZstdFrameTailer(path: directory.file(Self.name).path)
+        let collector = Collector()
         _ = Self.read(&tailer, into: collector)
         #expect(collector.lines == ["a"])
         #expect(collector.malformed == 1)
-        #expect(tailer.isStalled)
-        try Data(ZstdFrames.raw("fresh\n")).write(to: directory.file(Self.name))
+        #expect(tailer.isResynchronizing)
+        // More garbage, then a frame whose magic arrives split across two appends.
+        try directory.append(Self.name, bytes: Array(" and more".utf8) + frame.prefix(2))
         _ = Self.read(&tailer, into: collector)
-        #expect(collector.lines == ["a", "fresh"])
-        #expect(!tailer.isStalled)
+        #expect(collector.malformed == 1)
+        try directory.append(Self.name, bytes: Array(frame[2...]) + ZstdFrames.raw("next\n"))
+        _ = Self.read(&tailer, into: collector)
+        #expect(collector.lines == ["a", "later", "next"])
+        #expect(collector.malformed == 1)
+        #expect(!tailer.isResynchronizing)
+    }
+
+    @Test func aFewTrailingBytesWaitWithoutCountingAsMalformed() throws {
+        let directory = try TempDirectory()
+        try directory.write(Self.name, bytes: ZstdFrames.raw("a\n") + Array("xyz".utf8))
+        var tailer = ZstdFrameTailer(path: directory.file(Self.name).path)
+        let collector = Collector()
+        _ = Self.read(&tailer, into: collector)
+        #expect(collector.malformed == 0)
+        try directory.append(Self.name, bytes: ZstdFrames.raw("b\n"))
+        _ = Self.read(&tailer, into: collector)
+        #expect(collector.lines == ["a", "b"])
+        #expect(collector.malformed == 1)
     }
 
     @Test func refusesSymlinks() throws {

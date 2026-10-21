@@ -1,14 +1,15 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// One row per data source with its live speed and today's output (DESIGN section 4.3).
+/// One row per detected data source with its live speed and today's output (DESIGN section 4.3). Sources that are not
+/// on this Mac are left to Settings → Data Sources.
 struct SourcesSection: View {
     let model: AppModel
 
     var body: some View {
         let l10n = model.l10n
         let sources = SourceKind.allCases.compactMap { kind in
-            model.snapshot.sources.first { $0.kind == kind }
+            model.snapshot.sources.first { $0.kind == kind && $0.isDetected }
         }
 
         VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
@@ -21,9 +22,16 @@ struct SourcesSection: View {
             .padding(.bottom, 2)
             ForEach(sources) { source in
                 SourceRow(model: model, source: source)
+                    .transition(.opacity)
             }
         }
+        .animation(model.dashboardMotion, value: sources.map(\.kind))
     }
+}
+
+extension SourceStatus {
+    /// The source's folder exists or it has data today.
+    var isDetected: Bool { available || today.requests > 0 }
 }
 
 private struct SourceRow: View {
@@ -32,12 +40,9 @@ private struct SourceRow: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private enum Status { case live, notFound, disabled }
+    private enum Status { case live, disabled }
 
-    private var status: Status {
-        if !source.enabled { return .disabled }
-        return source.available ? .live : .notFound
-    }
+    private var status: Status { source.enabled ? .live : .disabled }
 
     var body: some View {
         let l10n = model.l10n
@@ -68,18 +73,6 @@ private struct SourceRow: View {
                     .foregroundStyle(speed > 0 ? AnyShapeStyle(.primary) : AnyShapeStyle(.dashboardSecondary))
                     .frame(width: DashboardLayout.speedColumn, alignment: .trailing)
                     .accessibilityLabel(l10n("mac.settings.speedValue", SpeedFormat.speed(speed)))
-            case .notFound:
-                Text(l10n("source.notFound"))
-                    .font(DashboardFont.detail)
-                    .foregroundStyle(.dashboardSecondary)
-                    .lineLimit(1)
-                Button(l10n("mac.dashboard.openSettings")) {
-                    model.commands?.showSettings(.sources)
-                }
-                .buttonStyle(.link)
-                .font(DashboardFont.detail)
-                .fixedSize()
-                .help(l10n("mac.dashboard.openSettings"))
             case .disabled:
                 Text(l10n("source.disabled"))
                     .font(DashboardFont.detail)
@@ -88,6 +81,6 @@ private struct SourceRow: View {
             }
         }
         .frame(minHeight: DashboardLayout.rowHeight)
-        .accessibilityElement(children: status == .notFound ? .contain : .combine)
+        .accessibilityElement(children: .combine)
     }
 }

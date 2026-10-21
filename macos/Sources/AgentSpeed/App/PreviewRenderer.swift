@@ -47,6 +47,16 @@ enum PreviewRenderer {
                 }
             }
             model.settings.agentsExpanded = false
+            publish(model, snapshot: PreviewData.withPartialSources(
+                PreviewData.snapshot(speed: redline * 0.3, redline: model.settings.redline)
+            ))
+            for dark in [false, true] {
+                PreviewSnapshot.writeHosted(
+                    DashboardView(model: model).appEnvironment(model).environment(\.orbStillTime, Clock.now),
+                    dark: dark,
+                    to: directory.appendingPathComponent("dashboard-sources-\(dark ? "dark" : "light").png")
+                )
+            }
         }
         if wants("update") {
             UpdatePreviews.render(model: model, into: directory)
@@ -66,7 +76,10 @@ enum PreviewRenderer {
     }
 
     static func publish(_ model: AppModel, speed: Double, agents: PreviewData.AgentSet = .standard) {
-        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline, agents: agents)
+        publish(model, snapshot: PreviewData.snapshot(speed: speed, redline: model.settings.redline, agents: agents))
+    }
+
+    static func publish(_ model: AppModel, snapshot: SpeedSnapshot) {
         model.store.publishLive(snapshot)
         model.gauge.snap(to: model.value(of: snapshot.live), now: Clock.now)
     }
