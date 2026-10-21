@@ -54,4 +54,14 @@ public final class LiveMonitor {
     public nonisolated static var defaultDshRoot: URL {
         TranscriptLocations.defaultDshRoot
     }
+
+    /// Gemini CLI's default `tmp` folders (a configured root replaces both).
+    public nonisolated static var defaultGeminiRoots: [URL] {
+        TranscriptLocations.defaultGeminiRoots
+    }
+
+    /// The folder that contains OpenCode's `opencode.db`.
+    public nonisolated static var defaultOpencodeRoot: URL {
+        TranscriptLocations.defaultOpencodeRoot
+    }
 }

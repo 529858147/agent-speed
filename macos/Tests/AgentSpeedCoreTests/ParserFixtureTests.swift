@@ -11,6 +11,7 @@ struct ParserFixtureTests {
 
     static func family(of relative: String) -> TranscriptFamily {
         if relative.hasPrefix("codex/") { return .codex }
+        if relative.hasPrefix("gemini/") { return .gemini }
         return relative.hasPrefix("dsh/") ? .dsh : .claude
     }
 
@@ -30,7 +31,7 @@ struct ParserFixtureTests {
                     latest[upsert.record.key] = upsert.record
                 }
             }
-            if TranscriptReader.isFrameStream(url.path) {
+            if TranscriptReader.isFrameStream(url.path) || TranscriptReader.isDocument(url.path) {
                 var reader = TranscriptReader(path: url.path)
                 let read = reader.read(onMalformed: { parser.noteMalformedLine() }, onLine: consume)
                 #expect(!read.failed, "\(relative) readable")

@@ -47,12 +47,16 @@ struct DirectoryIndex: Sendable {
                 listing = Self.list(directory, info: info, names: names)
                 listings[directory] = listing
             }
-            for path in listing.transcripts {
-                found.append(path)
-                if found.count >= Self.maxCandidates { return found }
+            if names.acceptsFiles(inDirectoryAtDepth: depth) {
+                for path in listing.transcripts {
+                    found.append(path)
+                    if found.count >= Self.maxCandidates { return found }
+                }
             }
             if depth < maxDepth {
-                for path in listing.directories { pending.append((path, depth + 1)) }
+                for path in listing.directories where names.descends(into: (path as NSString).lastPathComponent, fromDepth: depth) {
+                    pending.append((path, depth + 1))
+                }
             }
         }
         if listings.count > visited.count {

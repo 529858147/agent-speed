@@ -16,21 +16,21 @@ struct SnapshotContext: Sendable {
         let counts = session.sessionCounts(todayStartMs: todayStartMs)
         var sources: [SourceKind: SourceInfo] = [:]
         for kind in SourceKind.allCases {
-            guard let family = TranscriptFamily(kind) else {
-                sources[kind] = SourceInfo(enabled: session.enabledSources.contains(kind), rootPath: "", available: false, sessionCount: 0)
-                continue
+            let enabled = session.enabledSources.contains(kind)
+            if let family = TranscriptFamily(kind) {
+                let root = session.root(for: family)
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: root.path, available: root.available, sessionCount: counts[kind] ?? 0)
+            } else if kind == .opencode {
+                let location = session.opencodeLocation
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
+            } else {
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: "", available: false, sessionCount: 0)
             }
-            let root = session.root(for: family)
-            sources[kind] = SourceInfo(
-                enabled: session.enabledSources.contains(kind),
-                rootPath: root.path,
-                available: root.available,
-                sessionCount: counts[kind] ?? 0
-            )
         }
         self.sources = sources
         var warnings: [MonitorWarning] = []
         if session.partialHistory { warnings.append(.partialHistory) }
+        if session.opencodeLocation.status == .unsupported { warnings.append(.unsupportedFormat(.opencode)) }
         if session.unreadableFileCount > 0 { warnings.append(.unreadableFiles(session.unreadableFileCount)) }
         let malformed = session.malformedLines
         if malformed > 0 { warnings.append(.malformedLines(malformed)) }

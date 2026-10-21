@@ -20,7 +20,9 @@ struct LiveMonitorTests {
         let monitor = LiveMonitor(store: store, configuration: MonitorConfiguration(
             codexRoot: directory.file("missing-codex"),
             claudeRoot: directory.file("missing-claude"),
-            dshRoot: directory.file("missing-dsh")
+            dshRoot: directory.file("missing-dsh"),
+            opencodeRoot: directory.file("missing-opencode"),
+            geminiRoot: directory.file("missing-gemini")
         ))
         monitor.start()
         defer { monitor.stop() }
@@ -63,6 +65,32 @@ struct LiveMonitorTests {
         #expect(completions.first?.outputTokens == 200)
         #expect(await Self.waitUntil { store.snapshot.live.output > 0 })
         #expect(store.snapshot.agents.contains { $0.id.hasSuffix("s-desk.jsonl") })
+    }
+
+    @Test func streamsOpencodeCompletionsFromTheDatabase() async throws {
+        let db = try OpencodeTests.LiveDatabase()
+        let now = Clock.milliseconds(Date())
+        try db.addSession("ses_live", at: now - 60_000)
+        let store = SpeedStore()
+        var completions: [ResponseSummary] = []
+        store.addEventListener { event in
+            if case .responseCompleted(let summary) = event { completions.append(summary) }
+        }
+        let monitor = LiveMonitor(store: store, configuration: MonitorConfiguration(
+            enabledSources: [.opencode], opencodeRoot: db.directory.url))
+        monitor.start()
+        defer { monitor.stop() }
+        #expect(await Self.waitUntil { store.snapshot.state == .running })
+        #expect(store.snapshot.sources.first { $0.kind == .opencode }?.available == true)
+
+        try db.upsertRow("a_live", session: "ses_live", seq: 1, type: "assistant", created: now - 2000, updated: now,
+                         data: OpencodeTests.LiveDatabase.assistant(created: now - 2000, streamed: now - 10, output: 300))
+        #expect(await Self.waitUntil { !completions.isEmpty })
+        #expect(completions.map(\.source) == [.opencode])
+        #expect(completions.first?.outputTokens == 300)
+        #expect(completions.first?.project == "atlas")
+        #expect(await Self.waitUntil { store.snapshot.agents.contains { $0.id == "opencode:ses_live" } })
+        #expect(store.snapshot.sources.first { $0.kind == .opencode }?.sessionCount == 1)
     }
 
     @Test func restartsOnlyWhenRootsOrSourcesChange() throws {

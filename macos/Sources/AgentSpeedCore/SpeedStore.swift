@@ -13,6 +13,9 @@ public final class SpeedStore {
 
     public init() {}
 
+    /// The latest snapshot from `LiveMonitor`, also while a preview is displayed.
+    public var liveSnapshot: SpeedSnapshot { latestLive }
+
     /// Called by `LiveMonitor`. Ignored for display while a preview runs, but always remembered.
     public func publishLive(_ snapshot: SpeedSnapshot, events: [SpeedEvent] = []) {
         latestLive = snapshot

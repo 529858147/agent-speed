@@ -23,6 +23,8 @@ struct FileTailer: Sendable {
         var didReset = false
         var failed = false
         var stat: FileStat?
+        /// A whole-document file over its size limit was not read (`partialHistory`).
+        var oversized = false
     }
 
     let path: String

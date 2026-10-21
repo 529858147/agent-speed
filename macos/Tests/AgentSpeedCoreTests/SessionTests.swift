@@ -16,7 +16,9 @@ struct SessionTests {
         let configuration = MonitorConfiguration(
             codexRoot: directory.file("codex/sessions"),
             claudeRoot: directory.file("claude/projects"),
-            dshRoot: directory.file("dsh/sessions")
+            dshRoot: directory.file("dsh/sessions"),
+            opencodeRoot: directory.file("opencode"),
+            geminiRoot: directory.file("gemini")
         )
         return (directory, configuration)
     }

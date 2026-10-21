@@ -12,11 +12,15 @@ enum TranscriptNames: Sendable {
     case jsonl
     /// `session.v<N>.jsonl` or `session.v<N>.jsonl.zstd` (DeepSeek Harness).
     case dshSession
+    /// `*.jsonl` or legacy `*.json`, only at `<project>/chats/<file>` and `<project>/chats/<dir>/<file>` (Gemini CLI).
+    case geminiSession
 
     func matches(_ name: String) -> Bool {
         switch self {
         case .jsonl:
             return name.hasSuffix(".jsonl")
+        case .geminiSession:
+            return name.hasSuffix(".jsonl") || name.hasSuffix(".json")
         case .dshSession:
             let prefix = "session.v"
             guard name.hasPrefix(prefix) else { return false }
@@ -26,6 +30,28 @@ enum TranscriptNames: Sendable {
             let suffix = rest.dropFirst(digits.count)
             return suffix.elementsEqual(".jsonl".utf8) || suffix.elementsEqual(".jsonl.zstd".utf8)
         }
+    }
+
+    /// Whether a directory listed at `depth` (the root is 0) may hold transcripts.
+    func acceptsFiles(inDirectoryAtDepth depth: Int) -> Bool {
+        self == .geminiSession ? depth == 2 || depth == 3 : true
+    }
+
+    /// Whether the walk descends into the directory `name` found at `depth`.
+    func descends(into name: String, fromDepth depth: Int) -> Bool {
+        guard self == .geminiSession else { return true }
+        switch depth {
+        case 0, 2: return true
+        case 1: return name == "chats"
+        default: return false
+        }
+    }
+
+    /// Whether a path relative to the root (its components) can name a transcript.
+    func accepts(relativeComponents components: [Substring]) -> Bool {
+        guard let name = components.last, matches(String(name)) else { return false }
+        guard self == .geminiSession else { return components.count <= TranscriptDiscovery.maxDepth + 1 }
+        return (components.count == 3 || components.count == 4) && components[1] == "chats"
     }
 }
 

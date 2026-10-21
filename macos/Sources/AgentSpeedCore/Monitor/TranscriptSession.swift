@@ -12,7 +12,8 @@ public struct SeedSummary: Equatable, Sendable {
     public init() {}
 }
 
-/// Every transcript file of the enabled roots, their parsers, the shared dedupe set and the engine.
+/// Every transcript file of the enabled roots, the OpenCode database, their parsers, the shared dedupe set and the
+/// engine.
 ///
 /// Not thread-safe: one owner (a serial queue) drives it. Only seeding fans out, and it joins before returning.
 final class TranscriptSession {
@@ -36,12 +37,15 @@ final class TranscriptSession {
     static let startupLookbackMs: Int64 = 15 * 60_000
     static let hotWindowMs: Int64 = 120_000
     static let maxDecodeWorkers = 8
+    /// Deduplication owner of every OpenCode row; transcript files count up from 0.
+    static let opencodeFileID: FileID = -1
 
     let enabledSources: Set<SourceKind>
     let limits: ReadingLimits
     private(set) var roots: [Root]
     private var files: [String: TrackedFile] = [:]
-    private var indexes: [TranscriptFamily: DirectoryIndex] = [:]
+    /// Incremental directory walks, by root path.
+    private var indexes: [String: DirectoryIndex] = [:]
     private var deduper = Deduper()
     private var engine = SpeedEngine()
     private var parentMembers: [String: AgentParents.Member] = [:]
@@ -52,31 +56,50 @@ final class TranscriptSession {
     private var unreadablePaths: Set<String> = []
     private var removedMalformedLines = 0
     private(set) var partialHistory = false
+    /// The OpenCode database, when that source is enabled (METRICS 4.5, 5.2).
+    let opencode: OpencodeSource?
+    private let opencodeRoot: String
+    private var opencodeNeedsSeed = false
+    private var opencodeLinks: [String: String] = [:]
 
     init(configuration: MonitorConfiguration, limits: ReadingLimits = .standard) {
         enabledSources = configuration.enabledSources
         self.limits = limits
-        roots = [
-            Root(family: .codex, path: configuration.resolvedCodexRoot, canonicalPath: configuration.resolvedCodexRoot,
-                 enabled: configuration.readsCodex, available: false),
-            Root(family: .claude, path: configuration.resolvedClaudeRoot, canonicalPath: configuration.resolvedClaudeRoot,
-                 enabled: configuration.readsClaude, available: false),
-            Root(family: .dsh, path: configuration.resolvedDshRoot, canonicalPath: configuration.resolvedDshRoot,
-                 enabled: configuration.readsDsh, available: false),
-        ]
+        roots = TranscriptFamily.allCases.flatMap { family in
+            configuration.resolvedRoots(for: family).map { path in
+                Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false)
+            }
+        }
+        opencodeRoot = configuration.resolvedOpencodeRoot
+        opencode = configuration.readsOpencode ? OpencodeSource(root: opencodeRoot, fileID: Self.opencodeFileID) : nil
         refreshAvailability()
     }
 
     // MARK: - Roots
 
-    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.available } }
+    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.available } || opencode?.isReady == true }
 
-    var watchedPaths: [String] { roots.filter { $0.enabled && $0.available }.map(\.canonicalPath) }
+    var watchedPaths: [String] {
+        var paths = roots.filter { $0.enabled && $0.available }.map(\.canonicalPath)
+        if let directory = opencode?.watchedDirectory, opencode?.isReady == true, !paths.contains(directory) {
+            paths.append(directory)
+        }
+        return paths
+    }
+
+    /// Root path and availability of the OpenCode source (the folder that contains `opencode.db`).
+    var opencodeLocation: (path: String, available: Bool, status: OpencodeSource.Status?) {
+        (opencodeRoot, opencode?.exists ?? false, opencode?.status)
+    }
 
     /// Re-checks which roots exist. Returns true when availability changed.
     @discardableResult
     func refreshAvailability() -> Bool {
         var changed = false
+        if let opencode, opencode.refreshAvailability() {
+            changed = true
+            opencodeNeedsSeed = true
+        }
         for index in roots.indices {
             let available = TranscriptDiscovery.isAvailable(root: roots[index].path)
             if available != roots[index].available { changed = true }
@@ -89,8 +112,9 @@ final class TranscriptSession {
         return changed
     }
 
+    /// The family's first available root, else its first root (Gemini CLI has two).
     func root(for family: TranscriptFamily) -> Root {
-        roots.first { $0.family == family }!
+        roots.first { $0.family == family && $0.available } ?? roots.first { $0.family == family }!
     }
 
     // MARK: - Seeding
@@ -114,6 +138,11 @@ final class TranscriptSession {
                 let start: FileTailer.Start
                 if !readsBacklog {
                     start = .end(file.stat.size)
+                } else if TranscriptReader.isDocument(file.path), file.stat.size > DocumentReader.defaultMaxBytes {
+                    // Whole-document sessions this large are not read at all (METRICS 4.6).
+                    partialHistory = true
+                    start = .end(file.stat.size)
+                    readsBacklog = false
                 } else if file.stat.size > limits.largeFileBytes {
                     partialHistory = true
                     if TranscriptReader.isFrameStream(file.path) {
@@ -145,6 +174,14 @@ final class TranscriptSession {
             let project = projectName(of: file)
             for upsert in upserts { deliver(upsert, project: project, live: false) }
             finishRead(of: file, result: result.read)
+        }
+        if let opencode, opencode.exists {
+            summary.filesDiscovered += 1
+            if opencode.isReady {
+                summary.filesRead += 1
+                summary.bytesRead += opencode.databaseSize
+            }
+            seedOpencode(todayStartMs: todayStartMs)
         }
         summary.partialHistory = partialHistory
         summary.durationMs = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
@@ -204,32 +241,8 @@ final class TranscriptSession {
     }
 
     private static func decode(_ job: inout DecodeJob) -> DecodedFile {
-        switch job.family {
-        case .codex:
-            var lines: [LineExtraction<CodexLine>] = []
-            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
-                let extraction = CodexLineExtractor.extract(bytes)
-                if case .blank = extraction { return }
-                lines.append(extraction)
-            }
-            return DecodedFile(reader: job.reader, lines: .codex(lines), read: read)
-        case .claude:
-            var lines: [LineExtraction<ClaudeLine>] = []
-            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
-                let extraction = ClaudeLineExtractor.extract(bytes)
-                if case .blank = extraction { return }
-                lines.append(extraction)
-            }
-            return DecodedFile(reader: job.reader, lines: .claude(lines), read: read)
-        case .dsh:
-            var lines: [LineExtraction<DshLine>] = []
-            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
-                let extraction = DshLineExtractor.extract(bytes)
-                if case .blank = extraction { return }
-                lines.append(extraction)
-            }
-            return DecodedFile(reader: job.reader, lines: .dsh(lines), read: read)
-        }
+        let (lines, read) = TranscriptDecoder.decode(job.family, reader: &job.reader)
+        return DecodedFile(reader: job.reader, lines: lines, read: read)
     }
 
     // MARK: - Live reading
@@ -238,6 +251,9 @@ final class TranscriptSession {
     @discardableResult
     func handleChanges(atCanonicalPaths paths: Set<String>) -> Bool {
         var changed = false
+        if let opencode, paths.contains(where: opencode.matches(canonicalPath:)) {
+            changed = apply(opencode.refresh(deduper: &deduper), live: true)
+        }
         for path in paths.sorted() {
             guard let (localPath, family) = localPath(forCanonical: path) else { continue }
             if let file = files[localPath] {
@@ -254,6 +270,9 @@ final class TranscriptSession {
     @discardableResult
     func pollRecentFiles(nowMs: Int64) -> Bool {
         var changed = false
+        if let update = opencode?.refreshIfChanged(deduper: &deduper) {
+            changed = apply(update, live: true)
+        }
         let hot = files.values.filter { nowMs - $0.lastStat.modifiedMs <= Self.hotWindowMs }
         for file in hot.sorted(by: { $0.path < $1.path }) {
             guard let stat = FileStat.lstat(file.path), stat.isRegularFile else {
@@ -294,6 +313,14 @@ final class TranscriptSession {
             let file = track(discovered, family: family, start: .beginning)
             changed = read(file, live: true) || changed
         }
+        if let opencode {
+            if opencodeNeedsSeed {
+                seedOpencode(todayStartMs: todayStartMs)
+                changed = true
+            } else {
+                changed = apply(opencode.rediscover(nowMs: Clock.milliseconds(Date()), deduper: &deduper), live: true) || changed
+            }
+        }
         return changed
     }
 
@@ -310,9 +337,9 @@ final class TranscriptSession {
     }
 
     private func scan(_ root: Root) -> [String] {
-        var index = indexes[root.family] ?? DirectoryIndex(root: root.path, names: root.family.names)
+        var index = indexes[root.path] ?? DirectoryIndex(root: root.path, names: root.family.names)
         let paths = index.scan()
-        indexes[root.family] = index
+        indexes[root.path] = index
         return paths
     }
 
@@ -335,6 +362,7 @@ final class TranscriptSession {
     }
 
     private func finishRead(of file: TrackedFile, result: FileTailer.ReadResult) {
+        if result.oversized { partialHistory = true }
         if result.failed {
             unreadablePaths.insert(file.path)
         } else {
@@ -348,7 +376,7 @@ final class TranscriptSession {
 
     func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool) -> (output: EngineOutput, events: [SpeedEvent]) {
         if parentLinksAreStale {
-            parentLinks = AgentParents.resolve(Array(parentMembers.values))
+            parentLinks = AgentParents.resolve(Array(parentMembers.values), direct: opencodeLinks)
             engine.setParents(parentLinks)
             parentLinksAreStale = false
         }
@@ -362,10 +390,10 @@ final class TranscriptSession {
     var responses: [ResponseRecord] { engine.storedResponses }
 
     var malformedLines: Int {
-        files.values.reduce(removedMalformedLines) { $0 + $1.parser.state.malformedLines }
+        files.values.reduce(removedMalformedLines) { $0 + $1.parser.state.malformedLines } + (opencode?.malformedRows ?? 0)
     }
 
-    var unreadableFileCount: Int { unreadablePaths.count }
+    var unreadableFileCount: Int { unreadablePaths.count + (opencode?.status == .unreadable ? 1 : 0) }
 
     /// Agents of each source with at least one line today.
     func sessionCounts(todayStartMs: Int64) -> [SourceKind: Int] {
@@ -374,6 +402,9 @@ final class TranscriptSession {
             let state = file.parser.state
             guard let last = state.lastLineMs, last >= todayStartMs, enabledSources.contains(state.source) else { continue }
             counts[state.source, default: 0] += 1
+        }
+        if let opencode, enabledSources.contains(.opencode) {
+            counts[.opencode] = opencode.activeSessionCount(todayStartMs: todayStartMs)
         }
         return counts
     }
@@ -405,6 +436,34 @@ final class TranscriptSession {
         file.parser.state.project ?? EngineAgent.fallbackProject(for: file.path)
     }
 
+    // MARK: - OpenCode
+
+    private func seedOpencode(todayStartMs: Int64) {
+        guard let opencode else { return }
+        opencodeNeedsSeed = false
+        apply(opencode.seed(todayStartMs: todayStartMs, deduper: &deduper), live: false)
+    }
+
+    @discardableResult
+    private func apply(_ update: OpencodeSource.Update, live: Bool) -> Bool {
+        guard !update.isEmpty else { return false }
+        for (upsert, project) in update.upserts { deliver(upsert, project: project, live: live) }
+        for id in update.removedAgents { engine.removeAgent(id: id) }
+        for (id, state) in update.agents {
+            if state.lastLineMs != nil {
+                engine.setAgent(EngineAgent(id: id, state: state, parentId: parentLinks[id]))
+            } else {
+                engine.removeAgent(id: id)
+            }
+        }
+        let links = opencode?.parentLinks ?? [:]
+        if links != opencodeLinks {
+            opencodeLinks = links
+            parentLinksAreStale = true
+        }
+        return true
+    }
+
     // MARK: - Tracking
 
     private func track(_ file: DiscoveredFile, family: TranscriptFamily, start: FileTailer.Start) -> TrackedFile {
@@ -431,8 +490,9 @@ final class TranscriptSession {
             let prefix = root.canonicalPath == "/" ? "/" : root.canonicalPath + "/"
             guard path.hasPrefix(prefix) else { continue }
             let relative = path.dropFirst(prefix.count)
-            let depth = relative.split(separator: "/", omittingEmptySubsequences: true).count
-            guard depth >= 1, depth <= TranscriptDiscovery.maxDepth + 1, !relative.contains("/../") else { return nil }
+            let components = relative.split(separator: "/", omittingEmptySubsequences: true)
+            guard !components.isEmpty, root.family.names.accepts(relativeComponents: components),
+                  !relative.contains("/../") else { return nil }
             let localPrefix = root.path == "/" ? "/" : root.path + "/"
             return (localPrefix + relative, root.family)
         }

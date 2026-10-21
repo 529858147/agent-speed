@@ -212,7 +212,7 @@ struct WarningsFootnote: View {
     private func symbol(for warning: MonitorWarning) -> String {
         switch warning {
         case .partialHistory, .unfinalizedUsage: "info.circle"
-        case .unreadableFiles, .malformedLines: "exclamationmark.triangle"
+        case .unreadableFiles, .malformedLines, .unsupportedFormat: "exclamationmark.triangle"
         }
     }
 
@@ -222,6 +222,7 @@ struct WarningsFootnote: View {
         case .unreadableFiles(let count): l10n("warning.unreadable", count)
         case .malformedLines(let count): l10n("warning.malformed", count)
         case .unfinalizedUsage(let count): l10n("warning.unfinalized", count)
+        case .unsupportedFormat(let source): l10n("warning.unsupportedFormat", l10n(source.titleKey))
         }
     }
 }

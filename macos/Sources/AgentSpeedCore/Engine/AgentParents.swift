@@ -15,14 +15,25 @@ enum AgentParents {
         }
     }
 
+    /// Like `resolve(_:)`, plus links that are known directly (OpenCode sessions name their parent session).
+    static func resolve(_ members: [Member], direct: [String: String]) -> [String: String] {
+        guard !direct.isEmpty else { return resolve(members) }
+        var parents = resolve(members)
+        for (id, parent) in direct where parent != id { parents[id] = parent }
+        breakCycles(&parents)
+        return parents
+    }
+
     /// Parent id of every member that has one. Self references and cycles resolve to no parent.
     static func resolve(_ members: [Member]) -> [String: String] {
         var ids = Set<String>()
         // Codex threads and DeepSeek sessions, each by family: the earliest created file names a thread.
         var threads: [TranscriptFamily: [String: (createdMs: Int64, id: String)]] = [:]
+        let geminiMains = geminiMainSessions(members)
         for member in members {
             ids.insert(member.id)
-            guard member.family != .claude, let thread = member.thread, let threadId = thread.id else { continue }
+            guard member.family == .codex || member.family == .dsh,
+                  let thread = member.thread, let threadId = thread.id else { continue }
             if let earliest = threads[member.family]?[threadId],
                earliest.createdMs < thread.createdMs
                 || (earliest.createdMs == thread.createdMs && ordinal(earliest.id, precedes: member.id)) {
@@ -38,11 +49,54 @@ enum AgentParents {
                 parent = member.thread?.parentId.flatMap { threads[member.family]?[$0]?.id }
             case .claude:
                 parent = claudeParentPath(of: member.id).flatMap { ids.contains($0) ? $0 : nil }
+            case .gemini:
+                parent = geminiSessionKey(ofSubagent: member).flatMap { geminiMains[$0] }
             }
             if let parent, parent != member.id { parents[member.id] = parent }
         }
         breakCycles(&parents)
         return parents
+    }
+
+    /// Gemini CLI main sessions (files directly in `chats`) by `<chats path>` + sanitized session id; with several
+    /// candidates `.jsonl` wins over `.json`, then the earliest `startTime`, then ordinal path.
+    private static func geminiMainSessions(_ members: [Member]) -> [String: String] {
+        var best: [String: Member] = [:]
+        for member in members where member.family == .gemini {
+            guard let id = member.thread?.id, !id.isEmpty else { continue }
+            let folder = (member.id as NSString).deletingLastPathComponent
+            guard (folder as NSString).lastPathComponent == "chats" else { continue }
+            let key = folder + "\u{0}" + sanitizedGeminiId(id)
+            if let current = best[key], !geminiPrecedes(member, current) { continue }
+            best[key] = member
+        }
+        return best.mapValues(\.id)
+    }
+
+    private static func geminiPrecedes(_ lhs: Member, _ rhs: Member) -> Bool {
+        let lhsRank = lhs.id.hasSuffix(".jsonl") ? 0 : 1, rhsRank = rhs.id.hasSuffix(".jsonl") ? 0 : 1
+        if lhsRank != rhsRank { return lhsRank < rhsRank }
+        let lhsCreated = lhs.thread?.createdMs ?? 0, rhsCreated = rhs.thread?.createdMs ?? 0
+        if lhsCreated != rhsCreated { return lhsCreated < rhsCreated }
+        return ordinal(lhs.id, precedes: rhs.id)
+    }
+
+    /// `<chats>/<dir>/<file>` → the key of the main session named `<dir>`.
+    private static func geminiSessionKey(ofSubagent member: Member) -> String? {
+        guard let folder = member.thread?.parentId, !folder.isEmpty else { return nil }
+        let chats = ((member.id as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+        return chats + "\u{0}" + folder
+    }
+
+    /// Every character outside `[A-Za-z0-9_-]` becomes `_`, as Gemini CLI names sub-agent folders.
+    static func sanitizedGeminiId(_ id: String) -> String {
+        var result = ""
+        result.unicodeScalars.reserveCapacity(id.unicodeScalars.count)
+        for scalar in id.unicodeScalars {
+            let allowed = scalar.isASCII && (scalar.properties.isAlphabetic || ("0"..."9").contains(scalar) || scalar == "_" || scalar == "-")
+            result.unicodeScalars.append(allowed ? scalar : "_")
+        }
+        return result
     }
 
     /// `<dir>/<session>/subagents/<name>.jsonl` → `<dir>/<session>.jsonl`.

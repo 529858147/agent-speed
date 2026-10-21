@@ -49,8 +49,13 @@ struct EngineAgent: Equatable, Sendable {
         )
     }
 
-    /// Project name from the transcript location when the transcript never named a working directory.
+    /// Project name from the transcript location when the transcript never named a working directory. Gemini CLI
+    /// sessions (`<project>/chats/[<dir>/]<file>`) use the project folder.
     static func fallbackProject(for path: String) -> String {
+        if let project = GeminiProjects.projectDirectory(ofSessionAt: path) {
+            let name = (project as NSString).lastPathComponent
+            if !name.isEmpty { return name }
+        }
         let parent = (path as NSString).deletingLastPathComponent
         let name = (parent as NSString).lastPathComponent
         return name.isEmpty ? (path as NSString).lastPathComponent : name

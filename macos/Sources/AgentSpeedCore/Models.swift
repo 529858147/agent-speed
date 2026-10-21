@@ -198,6 +198,8 @@ public enum MonitorWarning: Equatable, Sendable {
     case malformedLines(Int)
     /// Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.
     case unfinalizedUsage(Int)
+    /// The source's data uses a format this version cannot read (METRICS 4.5); it contributes nothing.
+    case unsupportedFormat(SourceKind)
 }
 
 public struct SpeedSnapshot: Equatable, Sendable {

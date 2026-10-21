@@ -137,6 +137,15 @@ struct JSONScanner {
         return decoded.elementsEqual(UnsafeBufferPointer(start: name.utf8Start, count: name.utf8CodeUnitCount))
     }
 
+    /// The text of a member key.
+    func string(of key: JSONKey) -> String? {
+        guard key.count <= Self.maxCapturedStringBytes else { return nil }
+        if !key.isEscaped {
+            return String(decoding: UnsafeBufferPointer(start: base + key.start, count: key.count), as: UTF8.self)
+        }
+        return decodeString(start: key.start, count: key.count).map { String(decoding: $0, as: UTF8.self) }
+    }
+
     // MARK: - Values
 
     /// Reads a string value of at most `maxCapturedStringBytes`. Other values (and longer strings) are skipped.
@@ -175,6 +184,60 @@ struct JSONScanner {
             return index
         }
         return -1
+    }
+
+    /// Whether a string value is non-empty, without materializing it. Returns nil when the value is not a string.
+    mutating func readStringIsNonEmpty() throws(JSONScanError) -> Bool? {
+        guard let (_, count, _) = try readStringSpan() else { return nil }
+        return count > 0
+    }
+
+    /// Whether a string value has a character that is not whitespace (Python `str.strip()` semantics), without
+    /// materializing it. Returns nil when the value is not a string.
+    mutating func readStringHasVisibleText() throws(JSONScanError) -> Bool? {
+        guard let (start, count, escaped) = try readStringSpan() else { return nil }
+        var index = start
+        let stop = start + count
+        while index < stop {
+            let byte = base[index]
+            let scalar: UInt32
+            if byte == UInt8(ascii: "\\"), escaped {
+                let escape = base[index + 1]
+                index += 2
+                switch escape {
+                case UInt8(ascii: "b"): scalar = 0x08
+                case UInt8(ascii: "f"): scalar = 0x0C
+                case UInt8(ascii: "n"): scalar = 0x0A
+                case UInt8(ascii: "r"): scalar = 0x0D
+                case UInt8(ascii: "t"): scalar = 0x09
+                case UInt8(ascii: "u"):
+                    guard let unit = hex4(at: index, limit: stop) else { return true }
+                    index += 4
+                    scalar = UInt32(unit)
+                default: scalar = UInt32(escape)
+                }
+            } else if byte < 0x80 {
+                scalar = UInt32(byte)
+                index += 1
+            } else {
+                let length = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : 2
+                var value = UInt32(byte) & (length == 2 ? 0x1F : length == 3 ? 0x0F : 0x07)
+                for offset in 1..<length where index + offset < stop {
+                    value = value << 6 | (UInt32(base[index + offset]) & 0x3F)
+                }
+                scalar = value
+                index += length
+            }
+            if !Self.isPythonWhitespace(scalar) { return true }
+        }
+        return false
+    }
+
+    /// `str.isspace()` of Python: Unicode White_Space plus the separators U+001C–U+001F. Surrogates count as text.
+    private static func isPythonWhitespace(_ value: UInt32) -> Bool {
+        if (0x09...0x0D).contains(value) || (0x1C...0x20).contains(value) { return true }
+        guard value >= 0x80, let scalar = Unicode.Scalar(value) else { return false }
+        return scalar.properties.isWhitespace
     }
 
     /// Checks whether a string value starts with `prefix` without materializing it.
