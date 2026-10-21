@@ -51,6 +51,11 @@ Missing numeric fields are 0. Negative values are clamped to 0. `total = input +
 - `startMs` = when the request was sent, tracked per file as `pendingStartMs` (rules per source below). May be null.
 - Valid interval: `startMs != null`, `endMs >= startMs`, `endMs - startMs <= 15 min`. Otherwise the response counts in
   totals but never in speed.
+- `final`: whether the usage is the final usage. Codex responses are always final. A Claude response is final once any
+  of its lines has a non-null `stop_reason`. Recent Claude Desktop versions often write only the streaming snapshot of
+  sub-agent messages (output ≈ 8 tokens) and never the final usage; such responses are *unfinalized*.
+- A response is *measured* when it is final and has a valid interval, and *unmeasured* when it is unfinalized and has a
+  valid interval. Unmeasured responses never contribute measured speed; their time is estimated instead (6.3).
 - Minimum duration: if `endMs - startMs < 500 ms`, use `startMs' = endMs - 500`.
 - `speed = output / ((endMs - startMs') / 1000)` — this is end-to-end output speed and includes time to first token.
 
@@ -98,8 +103,10 @@ Assistant line:
 3. If `key` is new: create the response with `startMs = pendingStartMs` (may be null), then
    `pendingStartMs = null`, `preciseStart = false`.
 4. Merge: `endMs = max(endMs, ts)`, every token field = `max(previous, new)`, `model = message.model`.
-5. Phase from `message.stop_reason`: `"tool_use"` → `tools`; `null`/missing or `"pause_turn"` → `generating`
-   (`inFlightStartMs` stays the response start, or `ts` if unknown); any other value → `idle`.
+5. `final = final || stop_reason != null`.
+6. Phase from `message.stop_reason`: `"tool_use"` → `tools`; `null`/missing → `tools` when the line's
+   `message.content` contains a block of type `tool_use`, otherwise `generating`; `"pause_turn"` → `generating`
+   (`inFlightStartMs` = the response start, or `ts` if unknown); any other value → `idle`.
 
 ### 4.2 Codex
 
@@ -164,7 +171,8 @@ emissions with the same key in the same file are *updates*: the engine replaces 
   `FileSystemWatcher` on Windows) plus a 1-second fallback that stats files modified in the last 2 minutes, plus a full
   rediscovery every 10 seconds. Newly discovered files are read from offset 0.
 - Incomplete trailing lines are buffered until their newline arrives. A file that starts being read at its end
-  (older files, or the tail rule) skips the fragment before the first newline it reads.
+  skips the bytes before the first newline it reads only when the byte just before its start offset is not a newline
+  (so a complete line appended later is never dropped). The 256 MiB tail rule always skips to the next newline.
 - If a file shrinks or its identity changes, reset its offset and its parser state (keep the global dedupe set).
 - Reading never blocks the UI thread. Steady-state CPU target: < 1% on an idle machine.
 
@@ -181,15 +189,18 @@ Keep responses with `endMs >= nowMs - 30 min` for speed computation (the fallbac
 Today totals are aggregated incrementally.
 
 ### 6.2 Agent recent speed
-For agent `a`: the up to 3 most recent valid responses ending within the last 10 minutes.
+For agent `a`: the up to 3 most recent measured responses ending within the last 10 minutes.
 `recentSpeed(a) = Σ output / Σ duration_seconds` (and `recentTotalSpeed(a)` with `input + output`).
-Fallbacks for in-flight estimation when the agent has none: the same formula over the up to 10 most recent valid
+Fallbacks for estimation when the agent has none: the same formula over the up to 10 most recent measured
 responses with the same model within 30 minutes (any agent), else with the same source within 30 minutes, else none.
+Only measured responses are ever used as a speed reference.
 
 ### 6.3 Live rate
 Window `W = 3000 ms`, interval `[nowMs - W, nowMs]`.
 
-- Measured: for every valid response, `output * overlap(interval, [start', end]) / (end - start')`.
+- Measured: for every measured response, `output * overlap(interval, [start', end]) / (end - start')`.
+- Unmeasured: for every unmeasured response, `estimatedSpeed * overlap(interval, [start', end]) / 1000`, counted as
+  estimated (`estimatedSpeed` as below, for that response's agent).
 - Estimated (in-flight): for every agent in phase `generating` with `inFlightStartMs != null` and
   `nowMs - lastLineMs <= 300 000`, add `estimatedSpeed * overlap(interval, [estimateStart, nowMs]) / 1000`,
   where `estimateStart = max(inFlightStartMs, latest endMs of any response of that agent)` (so a response that is
@@ -211,13 +222,17 @@ Per-source and per-agent live rates use the same formula restricted to that sour
 
 ### 6.5 History
 One-second buckets for the last 300 seconds, oldest first. Bucket `k` covers `[k*1000, (k+1)*1000)`.
-`measured` = tokens of valid responses distributed uniformly over their intervals (the bucket value is tok/s for that
-second). `estimated` = in-flight estimates for the same buckets (up to `nowMs`). Both for output and total.
+`measured` = tokens of measured responses distributed uniformly over their intervals (the bucket value is tok/s for
+that second). `estimated` = unmeasured-response and in-flight estimates for the same buckets (up to `nowMs`). Both for
+output and total.
 
 ### 6.6 Today
 `todayStartMs` = local midnight, supplied by the caller. A response belongs to today when `endMs >= todayStartMs`.
-- `today`: sums of `requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning`; per source as well.
-- `averageToday = Σ output / Σ duration` over today's valid responses (null when none).
+- `today`: sums of `requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning` of all responses as
+  recorded (unfinalized ones included, so output is a lower bound when any exist); per source as well.
+- `unfinalizedToday`: number of today's unfinalized responses; when > 0 the snapshot carries the warning
+  `unfinalizedUsage(count)`.
+- `averageToday = Σ output / Σ duration` over today's measured responses (null when none).
 - `peakToday`: maximum over today of the 3-bucket trailing average of *measured* one-second buckets, combined with the
   maximum live value observed while running. Keep a per-second measured array for the current day.
 - On day change everything for "today" restarts at zero.

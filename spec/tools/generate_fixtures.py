@@ -40,9 +40,9 @@ def cx(i, c, o, r, cw=None):
     return u
 
 
-def resp(key, start, end, inp, cached, cw, out, reasoning, model):
+def resp(key, start, end, inp, cached, cw, out, reasoning, model, final=True):
     return {"key": key, "startMs": start, "endMs": end, "input": inp, "cachedInput": cached,
-            "cacheWriteInput": cw, "output": out, "reasoning": reasoning, "model": model}
+            "cacheWriteInput": cw, "output": out, "reasoning": reasoning, "model": model, "final": final}
 
 
 files = {}
@@ -222,10 +222,15 @@ write_jsonl(rel, [
     assistant(at(2, 10), "msg_D", ["tool_use"], cl_usage(4, 500, 0, 90), "tool_use", sidechain=True, agentId="abc"),
     user(at(2, 11), [{"type": "tool_result", "tool_use_id": "t2", "content": "found"}], sidechain=True,
          agentId="abc"),
+    assistant(at(2, 14), "msg_E", ["thinking"], cl_usage(2, 0, 600, 8), None, sidechain=True, agentId="abc"),
+    assistant(at(2, 15), "msg_E", ["tool_use"], cl_usage(2, 0, 600, 8), None, sidechain=True, agentId="abc"),
+    user(at(2, 16), [{"type": "tool_result", "tool_use_id": "t3", "content": "done"}], sidechain=True,
+         agentId="abc"),
 ])
 expect(rel, source="claudeCode", project="nova", model="claude-opus-5-5", isSubagent=True,
-       phase="generating", inFlightStartMs=at(2, 11), lastLineMs=at(2, 11), malformedLines=0,
-       responses=[resp("msg_D", at(2, 7), at(2, 10), 504, 0, 500, 90, 0, "claude-opus-5-5")])
+       phase="generating", inFlightStartMs=at(2, 16), lastLineMs=at(2, 16), malformedLines=0,
+       responses=[resp("msg_D", at(2, 7), at(2, 10), 504, 0, 500, 90, 0, "claude-opus-5-5"),
+                  resp("msg_E", at(2, 11), at(2, 15), 602, 600, 0, 8, 0, "claude-opus-5-5", final=False)])
 
 # --- Claude Desktop, resumed session that copies msg_B ------------------------
 rel = "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl"
@@ -251,9 +256,9 @@ B = 1_000_000_000_000
 DAY = B - 3_600_000
 
 
-def er(key, agent, source, model, start, end, out, inp=0):
+def er(key, agent, source, model, start, end, out, inp=0, final=True):
     return {"key": key, "agentId": agent, "source": source, "model": model, "startMs": start, "endMs": end,
-            "input": inp, "output": out}
+            "input": inp, "output": out, "final": final}
 
 
 def agent(aid, source, model, phase="idle", in_flight=None, last=None):
@@ -316,14 +321,21 @@ cases = [
      "agents": [agent("a1", "claudeCode", "m1", "generating", B, B + 2000)],
      "responses": [er("r1", "a1", "claudeCode", "m1", B, B + 2000, 100)],
      "queries": [{"nowMs": B + 3000, "liveOutput": 50.0, "liveTotal": 50.0, "estimatedShare": 1 / 3}]},
+    {"name": "unmeasured responses are estimated from a measured reference",
+     "agents": [agent("a1", "claudeCode", "m1", last=B + 4000), agent("a2", "claudeCode", "m1", "tools", None, B + 3000)],
+     "responses": [er("r1", "a1", "claudeCode", "m1", B, B + 4000, 200),
+                   er("r2", "a2", "claudeCode", "m1", B + 1000, B + 3000, 8, final=False)],
+     "queries": [{"nowMs": B + 3000, "liveOutput": 250 / 3, "liveTotal": 250 / 3, "estimatedShare": 0.4}]},
     {"name": "today totals, average, peak and history",
      "todayStartMs": DAY,
      "agents": [agent("a1", "codex", "m1", last=B + 4000)],
      "responses": [er("r0", "a1", "codex", "m1", DAY - 5000, DAY - 1, 999, 999),
                    er("r1", "a1", "codex", "m1", B, B + 4000, 200, 10000),
-                   er("r2", "a1", "codex", "m1", B + 2000, B + 3000, 300, 0)],
+                   er("r2", "a1", "codex", "m1", B + 2000, B + 3000, 300, 0),
+                   er("r3", "a1", "codex", "m1", B + 5000, B + 6000, 8, 0, final=False)],
      "queries": [{"nowMs": B + 10_000, "liveOutput": 0.0, "liveTotal": 0.0, "estimatedShare": 0.0,
-                  "todayRequests": 2, "todayOutput": 500, "todayInput": 10000, "averageToday": 100.0,
+                  "todayRequests": 3, "todayOutput": 508, "todayInput": 10000, "averageToday": 100.0,
+                  "todayUnfinalized": 1,
                   "peakTodayOutput": 150.0,
                   "historyMeasuredOutput": {str(B): 50.0, str(B + 1000): 50.0, str(B + 2000): 350.0,
                                             str(B + 3000): 50.0, str(B + 4000): 0.0}}]},

@@ -11,7 +11,7 @@ import json
 import sys
 
 FIELDS = ("source", "agentId", "model", "startMs", "endMs", "input", "cachedInput", "cacheWriteInput", "output",
-          "reasoning")
+          "reasoning", "final")
 
 
 def load(path):

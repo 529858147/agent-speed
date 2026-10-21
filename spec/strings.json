@@ -653,5 +653,11 @@
     "zh-Hans": "日本語",
     "en": "日本語",
     "ja": "日本語"
+  },
+  "warning.unfinalized": {
+    "zh-Hant": "%d 個 Claude 子 agent 回應沒有寫入最終用量：輸出量為下限，速度以同模型實測值估算",
+    "zh-Hans": "%d 个 Claude 子 agent 回应没有写入最终用量：输出量为下限，速度按同模型实测值估算",
+    "en": "%d Claude sub-agent responses have no final usage: output is a lower bound and speed is estimated from the same model",
+    "ja": "%d 件の Claude サブ agent の応答に最終使用量がありません：出力は下限値で、速度は同じモデルの実測値から推定しています"
   }
 }

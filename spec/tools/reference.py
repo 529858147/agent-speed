@@ -95,8 +95,8 @@ class FileState:
         self.precise = False
 
 
-def emit(state, key, start, end, tokens, model):
-    state.responses[key] = dict(key=key, startMs=start, endMs=end, model=model, **tokens)
+def emit(state, key, start, end, tokens, model, final=True):
+    state.responses[key] = dict(key=key, startMs=start, endMs=end, model=model, final=final, **tokens)
 
 
 def codex_tokens(usage):
@@ -258,10 +258,11 @@ def claude_line(state, obj, dedupe):
         if owner is not None and owner != state.path:
             return
         tokens = claude_tokens(message.get("usage"))
+        stop = message.get("stop_reason")
         resp = state.responses.get(key)
         if resp is None:
             dedupe.claim(key, state.path)
-            emit(state, key, state.pending, ts, tokens, message.get("model"))
+            emit(state, key, state.pending, ts, tokens, message.get("model"), stop is not None)
             state.pending, state.precise = None, False
             resp = state.responses[key]
         else:
@@ -269,9 +270,11 @@ def claude_line(state, obj, dedupe):
             for f in TOKEN_FIELDS:
                 resp[f] = max(resp[f], tokens[f])
             resp["model"] = message.get("model") or resp["model"]
+            resp["final"] = resp["final"] or stop is not None
         state.model = resp["model"] or state.model
-        stop = message.get("stop_reason")
-        if stop == "tool_use":
+        content = message.get("content") if isinstance(message.get("content"), list) else []
+        has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+        if stop == "tool_use" or (stop is None and has_tool_use):
             state.phase, state.in_flight = "tools", None
         elif stop is None or stop == "pause_turn":
             state.phase, state.in_flight = "generating", resp["startMs"] if resp["startMs"] is not None else ts
@@ -338,9 +341,21 @@ def recent(valid, now, predicate, limit, horizon):
     return speed_of(picked[:limit]) if picked else None
 
 
+def is_final(resp):
+    return resp.get("final", True)
+
+
+def estimated_speed(valid, now, agent):
+    return (recent(valid, now, lambda r: r["agentId"] == agent["id"], 3, 600_000)
+            or recent(valid, now, lambda r: r.get("model") == agent.get("model") and agent.get("model"), 10, 1_800_000)
+            or recent(valid, now, lambda r: r["source"] == agent["source"], 10, 1_800_000))
+
+
 def live_rate(responses, agents, now):
     w0 = now - WINDOW_MS
-    valid = [r for r in responses if interval(r) is not None]
+    valid = [r for r in responses if interval(r) is not None and is_final(r)]
+    unmeasured = [r for r in responses if interval(r) is not None and not is_final(r)]
+    by_id = {a["id"]: a for a in agents}
     measured = [0.0, 0.0]
     for r in valid:
         s, e = interval(r)
@@ -348,14 +363,21 @@ def live_rate(responses, agents, now):
         measured[0] += r["output"] * frac
         measured[1] += (r["output"] + r["input"]) * frac
     estimated = [0.0, 0.0]
+    for r in unmeasured:
+        agent = by_id.get(r["agentId"], {"id": r["agentId"], "model": r.get("model"), "source": r["source"]})
+        sp = estimated_speed(valid, now, agent)
+        if sp is None:
+            continue
+        s, e = interval(r)
+        secs = overlap(w0, now, s, e) / 1000
+        estimated[0] += sp[0] * secs
+        estimated[1] += sp[1] * secs
     for a in agents:
         if a["phase"] != "generating" or a.get("inFlightStartMs") is None or a.get("lastLineMs") is None:
             continue
         if now - a["lastLineMs"] > 300_000:
             continue
-        sp = (recent(valid, now, lambda r: r["agentId"] == a["id"], 3, 600_000)
-              or recent(valid, now, lambda r: r.get("model") == a.get("model") and a.get("model"), 10, 1_800_000)
-              or recent(valid, now, lambda r: r["source"] == a["source"], 10, 1_800_000))
+        sp = estimated_speed(valid, now, a)
         if sp is None:
             continue
         own_ends = [r["endMs"] for r in responses if r["agentId"] == a["id"]]
@@ -373,7 +395,7 @@ def buckets(responses, first, last):
     values = {}
     for r in responses:
         iv = interval(r)
-        if iv is None:
+        if iv is None or not is_final(r):
             continue
         s, e = iv
         k = (s // 1000) * 1000
@@ -386,13 +408,14 @@ def buckets(responses, first, last):
 
 def today_stats(responses, today_start, now):
     today = [r for r in responses if r["endMs"] >= today_start]
-    valid = [r for r in today if interval(r) is not None]
+    valid = [r for r in today if interval(r) is not None and is_final(r)]
     sp = speed_of(valid)
     b = buckets(today, today_start, now)
     peak = 0.0
     for k in b:
         peak = max(peak, sum(b.get(k - i * 1000, 0.0) for i in range(3)) / 3)
     return dict(requests=len(today), output=sum(r["output"] for r in today),
+                unfinalized=sum(1 for r in today if not is_final(r)),
                 input=sum(r["input"] for r in today), average=sp[0] if sp else None, peak=peak, buckets=b)
 
 
@@ -425,7 +448,7 @@ def check_fixtures():
                 st = today_stats(case["responses"], case.get("todayStartMs", 0), q["nowMs"])
                 checks = (("todayRequests", st["requests"]), ("todayOutput", st["output"]),
                           ("todayInput", st["input"]), ("averageToday", st["average"]),
-                          ("peakTodayOutput", st["peak"]))
+                          ("peakTodayOutput", st["peak"]), ("todayUnfinalized", st["unfinalized"]))
                 for name, val in checks:
                     if abs((val or 0) - q[name]) > 1e-6:
                         failures.append("%s: %s expected %r got %r" % (case["name"], name, q[name], val))
@@ -481,7 +504,7 @@ def dump_today(codex_root, claude_root):
                                          ("model", r["model"]), ("startMs", r["startMs"]), ("endMs", r["endMs"]),
                                          ("input", r["input"]), ("cachedInput", r["cachedInput"]),
                                          ("cacheWriteInput", r["cacheWriteInput"]), ("output", r["output"]),
-                                         ("reasoning", r["reasoning"])]))
+                                         ("reasoning", r["reasoning"]), ("final", r["final"])]))
     rows.sort(key=lambda r: (r["endMs"], r["key"]))
     for r in rows:
         print(json.dumps(r, ensure_ascii=False, separators=(",", ":")))

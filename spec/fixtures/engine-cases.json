@@ -22,7 +22,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -67,7 +68,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -100,7 +102,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -141,7 +144,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 0,
-          "output": 200
+          "output": 200,
+          "final": true
         },
         {
           "key": "r2",
@@ -151,7 +155,8 @@
           "startMs": 1000000001000,
           "endMs": 1000000003000,
           "input": 0,
-          "output": 100
+          "output": 100,
+          "final": true
         }
       ],
       "queries": [
@@ -184,7 +189,8 @@
           "startMs": 1000000001000,
           "endMs": 1000000001100,
           "input": 0,
-          "output": 10
+          "output": 10,
+          "final": true
         }
       ],
       "queries": [
@@ -223,7 +229,8 @@
           "startMs": null,
           "endMs": 1000000002000,
           "input": 0,
-          "output": 500
+          "output": 500,
+          "final": true
         },
         {
           "key": "r2",
@@ -233,7 +240,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000960000,
           "input": 0,
-          "output": 500
+          "output": 500,
+          "final": true
         }
       ],
       "queries": [
@@ -280,7 +288,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -321,7 +330,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -362,7 +372,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         }
       ],
       "queries": [
@@ -395,7 +406,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000001000,
           "input": 0,
-          "output": 100
+          "output": 100,
+          "final": true
         },
         {
           "key": "r2",
@@ -405,7 +417,8 @@
           "startMs": 1000000002000,
           "endMs": 1000000003000,
           "input": 0,
-          "output": 50
+          "output": 50,
+          "final": true
         },
         {
           "key": "r3",
@@ -415,7 +428,8 @@
           "startMs": 1000000004000,
           "endMs": 1000000005000,
           "input": 0,
-          "output": 50
+          "output": 50,
+          "final": true
         },
         {
           "key": "r4",
@@ -425,7 +439,8 @@
           "startMs": 1000000006000,
           "endMs": 1000000007000,
           "input": 0,
-          "output": 50
+          "output": 50,
+          "final": true
         }
       ],
       "queries": [
@@ -458,7 +473,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000002000,
           "input": 0,
-          "output": 100
+          "output": 100,
+          "final": true
         }
       ],
       "queries": [
@@ -467,6 +483,59 @@
           "liveOutput": 50.0,
           "liveTotal": 50.0,
           "estimatedShare": 0.3333333333333333
+        }
+      ]
+    },
+    {
+      "name": "unmeasured responses are estimated from a measured reference",
+      "agents": [
+        {
+          "id": "a1",
+          "source": "claudeCode",
+          "model": "m1",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000004000
+        },
+        {
+          "id": "a2",
+          "source": "claudeCode",
+          "model": "m1",
+          "phase": "tools",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000
+        }
+      ],
+      "responses": [
+        {
+          "key": "r1",
+          "agentId": "a1",
+          "source": "claudeCode",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000004000,
+          "input": 0,
+          "output": 200,
+          "final": true
+        },
+        {
+          "key": "r2",
+          "agentId": "a2",
+          "source": "claudeCode",
+          "model": "m1",
+          "startMs": 1000000001000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 8,
+          "final": false
+        }
+      ],
+      "queries": [
+        {
+          "nowMs": 1000000003000,
+          "liveOutput": 83.33333333333333,
+          "liveTotal": 83.33333333333333,
+          "estimatedShare": 0.4
         }
       ]
     },
@@ -492,7 +561,8 @@
           "startMs": 999996395000,
           "endMs": 999996399999,
           "input": 999,
-          "output": 999
+          "output": 999,
+          "final": true
         },
         {
           "key": "r1",
@@ -502,7 +572,8 @@
           "startMs": 1000000000000,
           "endMs": 1000000004000,
           "input": 10000,
-          "output": 200
+          "output": 200,
+          "final": true
         },
         {
           "key": "r2",
@@ -512,7 +583,19 @@
           "startMs": 1000000002000,
           "endMs": 1000000003000,
           "input": 0,
-          "output": 300
+          "output": 300,
+          "final": true
+        },
+        {
+          "key": "r3",
+          "agentId": "a1",
+          "source": "codex",
+          "model": "m1",
+          "startMs": 1000000005000,
+          "endMs": 1000000006000,
+          "input": 0,
+          "output": 8,
+          "final": false
         }
       ],
       "queries": [
@@ -521,10 +604,11 @@
           "liveOutput": 0.0,
           "liveTotal": 0.0,
           "estimatedShare": 0.0,
-          "todayRequests": 2,
-          "todayOutput": 500,
+          "todayRequests": 3,
+          "todayOutput": 508,
           "todayInput": 10000,
           "averageToday": 100.0,
+          "todayUnfinalized": 1,
           "peakTodayOutput": 150.0,
           "historyMeasuredOutput": {
             "1000000000000": 50.0,
