@@ -120,6 +120,8 @@ Layers, back to front:
    is not available for layered windows, use a solid gradient) overlaid with a vertical gradient `#1B2030 → #090B10`
    at 88 % (multiplied by the opacity setting). A 1 px inner stroke, white 14 % at the top fading to 0 % at the bottom
    (specular rim), and a soft inner shadow. A faint radial "lens" highlight at the top-left (white 6 %).
+   - Embedded style (dashboard hero) only: the hero vehicle layer (section 4c) is drawn here, above the body and below
+     the gauge.
 3. **Gauge** — 270° arc starting at 135° (bottom-left) going clockwise to 45° (bottom-right), gap at the bottom.
    Radius `0.41 S`, made of **36 LED segments**, each `0.045 S` long radially, with 2.2° gaps. Unlit segments:
    white 7 %. Lit count = `h * 36` (fractional: the last segment is partially lit by brightness). Each lit segment has
@@ -135,7 +137,7 @@ Layers, back to front:
    heat to white-hot, additive blending, slight drag. Emission rate `120/s * ((h - 0.45) / 0.55)`.
    **Embers** at redline: rising flame particles around the upper half of the ring with turbulence and gravity
    pointing up, rate `+90/s * max(o, 0.3)`.
-6. **Readout** — centered.
+6. **Readout** — centered (floating orb only; the embedded style shows the hero vehicle instead).
    - Value: system font (SF Pro / Segoe UI Variable Display), weight bold, tabular digits, size `0.24 S`, white 96 %.
      Rolling digit transition on change. From boost upward the value gets a heat-colored glow (radius `0.035 S`).
      From overdrive upward the value leans forward: skew `-6° * h` (motion feel). At redline add a 0.6 px jitter
@@ -206,8 +208,9 @@ Follows system light/dark. Corner radius: platform default (macOS 12–16 pt, Wi
 
 Sections (top to bottom, 16 pt spacing, hairline separators):
 
-1. **Hero** — a 112 pt orb (same component, effects capped at Soft) on the left; on the right the value at 44 pt bold
-   tabular with `tok/s`, the speed title in heat color, and one line of context: `生成中 3 · 工具 1`.
+1. **Hero** — a 112 pt orb (same component, ring effects capped at Soft) on the left, its center carrying the hero
+   vehicle of the current speed title (section 4c); on the right the value at 44 pt bold tabular with `tok/s`, the
+   speed title in heat color, and one line of context: `生成中 3 · 工具 1`.
 2. **Live chart** — last 2 minutes (segmented control 1m / 2m / 5m), height 96. Smooth area chart (Catmull-Rom),
    fill = vertical gradient mapped through the heat palette by value, line 1.5 px. The in-flight estimated part is
    drawn with 45 % opacity and a dashed top line at the right edge. A dashed horizontal line marks today's peak with a
@@ -281,6 +284,249 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
 the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
 spinner. All numbers and dates follow the selected language; weeks start per locale.
+
+## 4c. Hero vehicle
+
+The empty center of the dashboard hero orb (section 4.1) carries a glowing line drawing of the current speed title's
+vehicle, moving at a pace set by the live value. It belongs to the instrument rather than sitting on it: one stroke
+weight, the heat colors and the same glow as the LED gauge and the comet. The floating orb keeps its readout.
+
+Source of truth: `spec/assets/vehicles.json` (art, rigs, emitters and the per-vehicle motion constants).
+`python3 spec/tools/vehicles.py` validates it; `--export` regenerates `spec/assets/vehicles/*.svg` (generated, never
+edited) and `--preview DIR` renders PNG previews in both appearances. Both apps embed the JSON (copied at build time,
+like `strings.json`) and draw only from it.
+
+### Art format
+
+- Canvas 100 × 100 units, y down, every vehicle faces right (+x). The canvas maps to a square of side `0.72 S`
+  centered on the orb (`S` = 112 pt, so 1 unit = 0.806 pt).
+- `safeCircle` (center 50, 50, r 42): every part, every rig pose and the full sweep of every spinning part stay inside
+  it, stroke included. Parts flagged `bleed` (train bodies, flames, the shock cone) may run to the canvas edge and
+  dissolve in the mask; the leading half of a bleeding body (x > 45) still stays inside.
+- Every vehicle carries a similar visual weight and is centered for its own shape: wide, low vehicles (cars, aircraft)
+  span almost the full width of the safe circle, tall ones (walker, riders, rocket) more of its height.
+- `stroke.width` 2.0 units (1.6 pt), round caps and joins. A part's `role` (table `roles`) sets its weight multiplier,
+  opacity, glow share, whether it is `sprung` (moves with the body) and its paint: `color: "hot"` uses the accent;
+  only `flame` (heat fill at 30 %) and `flameCore` (white-hot fill) fill.
+- Geometry: `d` holds absolute `M L C Q Z` commands, tokens separated by single spaces, numbers with at most two
+  decimals (WPF `Geometry.Parse` reads it directly; macOS builds a `CGPath` with a small tokenizer), or `circle` =
+  `[cx, cy, r]`. No arcs, no transforms.
+- Optional part fields: `spin {pivot, radius, symmetry}` (rotates with the ground, below), `nozzle {at, dir}` (flames
+  scale about it), `sprung` (overrides the role), `bleed`.
+- `rig`: `walk` (the walker) or `pedal` (bicycle and e-bike riders); limbs are generated, see Continuous motion.
+- `emitters`: `{id, type, at, dir}` plus type fields — `trail` (`lanes`, `length`), `dust`, `exhaust`, `arc`
+  (`count` = puffs or arcs per start-up burst), `sparks`, `contrail` (`weak`), `afterburner`, `plume`. `dir` is a unit
+  vector (0, 0 for radial bursts).
+- `idle`: `{vehicle: "last", fallback: "walk"}` (see Idle).
+- `groundY` (road, rail and guideway vehicles): the height of the vehicle's road line, rail or guideway top; tires
+  touch it and the scenery is drawn from it. Each vehicle has its own (60.1–79), because each one is centered for its
+  own shape.
+- `motion`: `speed [lo, hi]` world speed range in units/s, `rest` (ground distance of the static pose), and
+  `bob` / `float` / `hover` amplitudes in units. `heading` (rocket only): travel direction in degrees, screen space,
+  0 = right, −48 = up-right.
+- `scenery`: shared backdrops `road`, `rail`, `guideway`, `sky`, `stratosphere`, `space`; each vehicle names one.
+- Draw order: far rig limbs, then `parts` in array order, then near limbs and the head.
+
+### Placement, mask and layer order
+
+- Drawn after the body (layer 2) and before the gauge (layer 3), in place of the readout. The mask ends at 0.353 S
+  (49 units; the validator keeps it ≤ 0.3585 S), inside the gauge's inner edge (0.3875 S) and above the agent dots
+  (0.3785 S), so drawing the layer as an overlay above the whole orb looks identical and is allowed.
+- A soft circular mask covers the whole layer (scenery, speed lines, particles and glow included): opacity 1 up to
+  r = 42 units (`mask.solid`, equal to the safe circle), falling linearly to 0 at r = 49 (`mask.clear`). Speed lines
+  and train bodies dissolve at the rim; nothing ever reaches the gauge arc or the agent dots.
+- Per frame: (1) draw scenery, speed lines, vehicles and particles into a layer of `ceil(0.72 S × scale)` px;
+  (2) draw the vehicle strokes again into a glow source, each part at its role's `glow` share; (3) blur the glow source
+  and composite it under the crisp layer; (4) apply the mask; (5) composite onto the orb.
+
+### Color and glow
+
+| | Dark | Light |
+| --- | --- | --- |
+| Stroke `C` | heat color of the smoothed heat `h` | title label color: heat darkened 18 % (OKLab L), then stepped to ≥ 4.5:1 on the popover (`heatText`) |
+| Accent `H` (`light` and `glow` roles, flame outline) | `mix(C, #FFF7D6, 0.65 + 0.35 o)` | `mix(C, #FFB020, 0.45)` |
+| Flame core | `#FFF7D6`, toward white by `o` | `#FFB020` |
+| Glow blur σ | `1.0 + 1.4 h + 0.6 o` units (× 1.2 at Max) | same |
+| Glow opacity | `0.30 + 0.45 h + 0.15 o`, additive | `0.14 + 0.18 h`, normal blending |
+
+Mixes are in OKLab. Increase Contrast: stroke weights × 1.3, `detail` / `window` / `rim` / `spoke` opacity at least
+0.9, glow × 0.5, `C` at 7:1 (light) / 4.5:1 (dark). Where a GPU blur is unavailable, approximate the glow with two
+extra strokes under each part: width `w + 1.2 σ` at 0.5 × the glow opacity and `w + 2.6 σ` at 0.2 ×.
+
+### Speed model
+
+Everything that moves derives from one world distance `D`, so wheels, cranks, feet, road dashes and sleepers stay
+locked together: no sliding feet, no slipping tires.
+
+- Smoothed value: `v_s = R · h_s^(1/0.6)` while `h_s < 1`, else `R (1 + o_s)` (`h_s`, `o_s`: the section 1 springs).
+- Band progress inside the displayed title `k` (thresholds `T_k` from section 1; walk = 0.5 tok/s):
+  `b = clamp(ln(v_s / T_k) / ln(T_(k+1) / T_k), 0, 1)`; rocket: `b = o_s`.
+- Coasting: `c = clamp(v_s / T_k, 0, 1)`. The title holds through hysteresis, but the vehicle slows when the agents
+  stop.
+- Ground speed target `G* = 0` when parked, else `lerp(lo, hi, b) · √c` with `speed [lo, hi]` from the JSON. Each
+  range starts at or above the previous title's top (walk 24–41 … rocket 838–1008 units/s), so an upgrade never slows
+  the world down.
+- `G` follows `G*` with a critically damped spring, settle 0.9 s, evaluated exactly per frame: `ω = 6.2 / settle`,
+  `c1 = G − G*`, `c2 = a + ω c1`, then `G ← G* + (c1 + c2 Δt) e^(−ω Δt)` and `a ← (c2 − ω (c1 + c2 Δt)) e^(−ω Δt)`
+  (`a = dG/dt`, used below). The same form, settle 0.5 s, drives `wake`. `D += G Δt`; keep `D` in double precision
+  and reduce angles modulo 2π before handing them to the GPU. Off and Reduce Motion freeze `D` at `motion.rest`.
+
+### Continuous motion
+
+- **Spin** — angle `D / spin.radius` rad, clockwise. Wheels use their tire radius (rolling without slip); cranks use
+  tire radius × gear (bicycle 1.15; e-bike 1.9, so its rider pedals lazily while the motor works).
+- **Spoke blur** — spoke frequency `f = G / (2π radius) × symmetry`, `blur = smoothstep((f − 14) / 12)`. Spokes fade by
+  `1 − blur` while two motion arcs appear (radii `0.72 (radius − 2)` and `0.45 (radius − 2)`, 120° long, on opposite
+  sides, turning clockwise at 0.6 rev/s, opacity `0.5 blur`, spoke weight). Bicycle spokes stay crisp, car spokes
+  start to blur, sports and race car wheels read as spinning discs.
+- **Walker rig** (all lengths and amplitudes from `rig`) — gait phase `p = (D / cycle) mod 1`; near leg `p`, far leg
+  `p + 0.5`. Stance (`p < stance`): the foot rests at `groundY − 0.6` and slides from `+a` to `−a` (`a = cycle ·
+  stance / 2`) at exactly ground speed. Swing (`s = (p − stance) / (1 − stance)`): `x = −a + 2a smoothstep(s)`, lift
+  `lift · sin(π s)`. Hip bob `−bob · cos(4π (p − stance / 2))`. Knees by two-bone IK (`thigh`, `shin`), the knee on
+  the +x side of the hip–foot line (`cross(foot − hip, knee − hip) < 0`, y down); a `foot`-long toe stroke points
+  forward from the ankle. Shoulder = hip + `torso`, head circle = shoulder + `head` (dx, dy, r). Arms (`upperArm`,
+  `forearm`) swing `−armSwing° · cos(2π p)` from vertical, forearms bent a further `elbow`°. Far limbs at 42 %
+  opacity. Parked: legs and arms blend to a standing pose (feet ±1.6 under the hip, arms ±4°, elbows halved, hip at
+  `groundY − 0.6 − 0.97 (thigh + shin)`), time constant 0.18 s once `G < 6`.
+- **Pedal rig** — crank angle `φ = D / crank.radius`; near pedal `crank.pivot + crank.length (−sin φ, cos φ)`, far
+  pedal opposite. Hip bob `bob · cos 2φ`, applied to the torso, arm and head (`rider` parts) too. Legs (`thigh`,
+  `shin`) reach the pedals by the same IK; pedals are `pedal`-long horizontal strokes that stay level.
+- **Suspension** (road vehicles, sprung parts only):
+  `y = bob (0.6 sin(2π 1.7 (1 + 0.5 b) t) + 0.4 sin(2π 3.3 (1 + 0.5 b) t + 1.3)) (0.4 + 0.6 b)`. Acceleration pitch
+  `clamp(−0.0035 a, −1°, 1°)` about the rear tire's ground contact, and a forward lurch of the whole vehicle
+  `clamp(0.008 a, −1.2, 1.2)` units.
+- **Aircraft** — float `y = float · sin(2π 0.32 t)`, pitch `0.8° (float / 0.7) cos(2π 0.32 t)` about the vehicle center.
+  Rocket: `float · sin(2π 0.55 t)` across its heading, no pitch.
+- **Maglev** — hover lift `hover · (0.75 + 0.25 sin(2π 0.7 t))` units. The hover-gap glow line stays centered in the
+  gap, opacity × `(0.5 + 0.5 b)`, and a 14-unit bright pulse travels along it from nose to tail at `0.5 G`.
+- **Flames** (afterburner, scramjet, rocket plume) — scaled about `nozzle.at`: along `nozzle.dir` by
+  `(0.55 + 0.45 b + 0.35 o) · flicker`, `flicker = 1 + 0.1 · mean(sin 2π17t, sin(2π23t + 1.1), sin(2π31t + 2.3))`;
+  across by `(1 + 0.06 sin 2π13t) · min(1, 0.6 + 0.4 length)`. Standard and Max add three shock diamonds when
+  `b > 0.35`: at 3.0 / 5.8 / 8.6 units × the flame length behind the nozzle, half-height 1.0 / 0.82 / 0.64
+  (width 0.9 ×), weight 0.35, opacity `0.75 (b − 0.35) / 0.65`, shimmering ±25 % at 19 Hz.
+- **Shock cone** (hypersonic) — scaled vertically about the nose tip by `1.15 − 0.35 b` (the Mach cone narrows with
+  speed), opacity × `(0.4 + 0.6 b)(0.7 + 0.3 sin 2π11t)`.
+- **Contrails** — start 2 units behind each `contrail` emitter, 46 units long (`weak` wing-tip vapor: 22), sampled
+  every 2 units at `y(d) = at.y + float(t − d / 90) + 0.35 sin((at.x − d + 0.05 D) / 7) · d / 40`, so the trail ripples
+  behind the floating aircraft. Weight 0.8 (weak 0.45); opacity fades linearly from `0.55 (0.5 + 0.5 b)` (weak 0.26)
+  to 0.
+- **Trail marks** — the short speed marks behind each vehicle (`trail` emitters): lane `i` starts at
+  `at.x − 1.5 − 2.5 (i mod 2)`, length `length (0.45 + 0.55 b + 0.25 h)(1 + 0.18 sin(2π (5.3 + 1.7 i) t + i))` ×
+  `min(1, G / 20)`, opacity 0.55 fading to 0 along the mark, weight 0.5.
+- **Scenery** (opacity 0.30 dark / 0.34 light, weight 0.55, scrolling with `D` × the scenery's parallax):
+  - road: dashes 7 / gaps 5 on `groundY`. Anti-strobe smear `s = clamp(G / 60 / 12 / 0.45, 0, 1)` lengthens each dash by
+    `0.85 s × gap` and multiplies the opacity by `1 − 0.35 s`: at race-car speed the markings blur into a line instead
+    of appearing to run backwards.
+  - rail: rail on `groundY` (opacity × 1.3); sleepers every 9 units (2.6 deep, leaning back 1.2), smeared with
+    `s = clamp(G / 60 / 9 / 0.4, 0, 1)`: the lean grows by `4 s`, opacity × `1 − 0.55 s`.
+  - guideway: beams on `groundY` and `groundY + 3.4`, pylons every 38 units hanging 9 units below.
+  - sky: the two cloud outlines of the JSON on two layers, parallax 0.12 (near, below) and 0.05 (far, above),
+    spacing 72.
+  - stratosphere: the Earth's limb (circle center y 178, r 108, 207°–333°) with a soft blurred under-glow; fixed.
+  - space: 14 stars streaking against the rocket's heading at `0.5 G` × depth (0.5–1.2), length
+    `max(0.3, 0.5 G / 60 × 1.3)` × depth.
+- **Speed lines** — pool of 16. Live count `N = round((2 + 8 h) · clamp(G / lo, 0, 1))`, capped at 5 (Soft, 0.6 N),
+  9 (Standard) and 14 (Max, 1.4 N); a new line every `0.9 / N × (0.5…1.5)` s. Each line: length `(6 + 20 h) × (0.7…1.3)`
+  plus `1.5 G / 60` (never shorter than one frame of travel), speed `1.25 max(G, 40) × (0.85…1.15)`, opacity
+  `(0.16 + 0.32 h) × (0.7…1.3)` fading from head to tail, weight 0.5, 0.12 s fade-in, accent color at redline (dark).
+  `y` is uniform in 16…84; a line whose `y` crosses the vehicle's bounds is born at the vehicle's tail (it peels off the
+  body) instead of crossing the drawing. Rocket lines run against the heading across the whole disc.
+- **Particle streams** (Standard and Max; pool of 64): rocket sparks `26 + 60 o` per s from the nozzle; race-car floor
+  sparks `30 (b − 0.55) / 0.45` per s from the floor with gravity 260 units/s²; afterburner embers `6 + 14 b` per s
+  from the overdrive tier up. Sparks are short streaks (velocity × 0.022 s) shading from the flame core to `C`, life
+  0.25–0.45 s. Max: × 1.6.
+- **Camera shake** (Standard and Max, redline tier, not parked): amplitude `A = 0.2 + 0.5 o` units (× 1.4 at Max);
+  `x = A (0.5 sin 2π23t + 0.3 sin(2π31t + 1) + 0.2 sin(2π41t + 2))`,
+  `y = A (0.5 sin(2π19t + 0.5) + 0.3 sin(2π29t + 2) + 0.2 sin(2π37t + 1))`. It moves the layer's content, never the orb
+  or the mask.
+
+### Title transitions
+
+A transition starts on the same title-change event as the label slide (after the 0.8 s hold and the 90 % exit
+hysteresis), so label and vehicle change together. Transitions last at most 0.75 s, less than the hold, so they never
+queue; should one still be running, the incoming vehicle becomes the outgoing one from its current position. A jump
+across several titles goes straight to the final vehicle. `τ` = time since the change; offsets run along the heading
+(horizontal, up-right for the rocket).
+
+| | Outgoing | Incoming | Extras |
+| --- | --- | --- | --- |
+| Upgrade | accelerates away: `+90 easeInCubic(τ / 0.34)`, opacity `1 − smoothstep((τ − 0.12) / 0.18)` | swoops in from `τ = 0.12`: spring −62 → 0, initial velocity +140 units/s, response 0.5 s, damping 0.8 (≈ 1 unit overshoot), opacity `smoothstep((τ − 0.12) / 0.14)` | while faster than 40 units/s, 3 motion ghosts trailing by speed × 0.012 / 0.026 / 0.042 s at 26 / 13 / 6 %; at `τ = 0.32` a flash on the incoming vehicle's center (radial gradient, radius 8 → 36 units easeOutCubic over 0.35 s, opacity 0.42 dark / 0.26 light × `(1 − u)²` × `min(1.6, 1 + 0.2 (titles climbed − 1))`, × 0.6 at Soft) and +60 % glow fading over 0.4 s; 4 burst speed lines |
+| Downgrade | falls back: `−46 easeInOutSine(τ / 0.55)`, opacity `1 − smoothstep(τ / 0.45)` | glides in from +8: `8 (1 − easeOutCubic((τ − 0.1) / 0.55))`, opacity `smoothstep((τ − 0.1) / 0.35)` | none; `G` eases down through its spring |
+| Reduce Motion | 0.3 s crossfade | 0.3 s crossfade | none |
+| Off | cut | cut | none |
+
+Scenery belongs to its vehicle and crossfades with it when it changes (road → rail → road → guideway → sky →
+stratosphere → space). When both vehicles use the same scenery, it is drawn once and its ground line glides from the
+outgoing vehicle's `groundY` to the incoming one's over 0.45 s (`0.5 − 0.5 cos(π u)`), so the road never jumps.
+
+Motion keeps every drawing inside the soft fade: lurch, pitch, float and camera shake carry a tip at most ≈ 1.7 units
+past the safe circle (a hard downgrade; mask still ≥ 75 % there), the motorcycle's start-up wheelie ≈ 2.2 units, and
+the rocket's lift-off deliberately starts 6 units back inside the fade. Nothing comes near the clear radius (49) and
+nothing is ever cut.
+
+### Idle, start-up and parking
+
+- **Idle** — the last vehicle stays parked, also across relaunches: the apps persist the last non-idle title key in
+  their settings (`heroLastTitle`, a vehicle key such as `sportsCar`, written on every title change). First launch
+  ever, or an unknown value: the walker, standing. Color `C(0)` (slate) at 55 % (dark) / 50 % (light) × breathing
+  `0.86 + 0.14 sin(2π t / 4.8)`; no glow, speed lines, flames, contrails or hover; scenery still. Every 6 s, in step
+  with the gauge's idle sweep, a light band crosses the vehicle's strokes: an 18-unit horizontal gradient (white-hot
+  at 75 % dark / slate at 60 % light) travelling x −10 → 110 in 0.9 s, ease-in-out.
+- **Parking** (title → idle) — `G* = 0` (the vehicle has already coasted down with `c`); `wake` → 0 (critically
+  damped, settle 0.5 s) fades color, glow, flames, contrails and hover; the walker settles into the standing pose;
+  riders keep their last crank position.
+- **Start-up** (idle → title) — `wake` → 1 recolors slate → heat. Same vehicle: it starts where it stands. Another
+  vehicle: the parked one fades out (0–0.2 s) and the new one fades in on the spot (0.12–0.40 s). The choreography
+  starts 0.15 s (same) / 0.30 s (other) after the change; `G` rises from 0 through its spring, which gives every launch
+  its natural acceleration. `bump(a, p, e)`: smoothstep from 0 at `a` to 1 at `p`, back to 0 at `e` (seconds).
+
+| Vehicle | Start-up |
+| --- | --- |
+| walk | first step from standing; 3 dust puffs at the feet |
+| bicycle | the rider stands on the pedals (hip 1.3 up and 0.8 forward, `bump(0, 0.18, 0.6)`), push-off lurch `1.6 bump(0, 0.22, 0.9)`, 6 dust puffs at the rear tire |
+| e-bike | as the bicycle, plus power-on: battery LEDs and headlight flare `bump(0, 0.08, 0.5)`, 7 electric arcs around the hub motor (30 ms apart, 0.16–0.30 s each) |
+| motorcycle | two exhaust pops (0 s, 0.18 s), 0.3 s engine shake (0.35 units), wheelie −3° `bump(0.12, 0.34, 0.8)` about the rear contact, lurch `1.4 bump(0.1, 0.35, 0.9)`, dust |
+| car, sports car | double headlight blink (`bump(0, 0.04, 0.12)`, `bump(0.16, 0.2, 0.3)`), squat −1.3° `bump(0.05, 0.25, 0.7)`, lurch `1.2 bump(0.08, 0.3, 0.9)`; car: exhaust puff; sports car: an exhaust flame pop (0.22 s) |
+| race car | launch: 5 tire-smoke puffs, squat −1.1° `bump(0, 0.2, 0.6)`, lurch `2.0 bump(0.05, 0.28, 0.9)` |
+| bullet train | headlight on `bump(0, 0.15, 0.7)`, gentle pull-away lurch `1.0 bump(0.1, 0.45, 1.1)` |
+| maglev | levitation: the hover gap ignites (glow +`bump(0, 0.3, 0.8)`), the body lifts by `smoothstep((τ − 0.2) / 0.5)` |
+| jetliner | engines spool up: intake light `bump(0, 0.2, 0.8)`, contrails grow over 1.2 s, climb 2 units `bump(0.1, 0.5, 1.2)` |
+| fighter jet, hypersonic | afterburner light-off: the flame springs 0 → 1 (initial velocity 9/s, response 0.32 s, damping 0.55, ≈ 25 % overshoot), nozzle flash (glow +`bump(0, 0.06, 0.35)`), shock cone draws on over 0.4 s, lurch `1.4 bump(0, 0.2, 0.8)` |
+| rocket | ignition: white-hot flash, the plume springs to full (initial velocity 8/s, response 0.36 s, damping 0.5), 6 exhaust rings, 0.6 s shake (0.8 units), lift-off from 6 units back along the heading (easeInCubic, 0.9 s) |
+
+Puffs and rings are outline circles (weight 0.45 → 0.22) growing by 2.6–5 units while fading over 0.45–0.85 s; dust
+drifts back with the road. Every start-up adds 3 burst speed lines. Soft keeps the start-ups but caps each burst at 6
+particles.
+
+### Effects intensity
+
+| Level | Vehicle layer |
+| --- | --- |
+| Off | Static glyph in its rest pose, static scenery, 1–3 static speed marks by `b` (`< 0.34`, `< 0.67`, else), fixed glow (0.30 dark / 0.12 light), cuts between vehicles |
+| Soft | Every continuous motion (wheels, cranks, gait, suspension, scenery, trail marks, flames, contrails, hover, shock cone), ≤ 5 speed lines, transitions with ghosts and a 60 % flash, start-up bursts ≤ 6 particles; no particle streams, no shake |
+| Standard | Soft plus particle streams, shock diamonds, ≤ 9 speed lines, camera shake at redline |
+| Max | Standard with 1.6× particles, ≤ 14 speed lines, glow radius × 1.2, shake × 1.4 |
+
+The vehicle layer follows the user's Effects setting (default Standard); the hero's ring layers (aura, comet, pulses)
+stay capped at Soft as in section 4. Reduce Motion still caps the vehicle layer at Soft (below).
+
+### Accessibility and performance
+
+- Reduce Motion caps the layer at Soft and removes translation, rotation, scrolling, shake and particles: the vehicle
+  sits in its rest pose, and speed reads from 1–3 static speed marks (by `b`), flame length (by `b`, no flicker) and
+  the glow. Titles crossfade (0.3 s); a start-up is a crossfade plus the recolor; idle is static (no breathing, no
+  sweep).
+- Increase Contrast: see Color and glow. Windows high-contrast themes: no glow, scenery or speed lines; strokes in the
+  theme's highlight color, flames as outlines.
+- Decorative: hidden from VoiceOver and UI Automation (the hero already announces value and title), never
+  hit-testable, no announcements of its own.
+- Runs only while the dashboard is visible (popover or flyout open and not occluded). While moving it renders at the
+  display rate; parked, at 10 fps for the breathing and 30 fps during the 0.9 s sweep; Off and Reduce Motion redraw
+  only on change.
+- Budget: ≤ 2 ms CPU per frame at 60 Hz on Apple Silicon (and on the Windows reference machine), blur on the GPU. No
+  allocations per frame: parse the JSON once, build every part path once (`CGPath` / frozen `StreamGeometry`), keep
+  fixed pools (64 particles, 16 speed lines) and reuse mutable paths for rig limbs and contrails (WPF: update
+  `PathFigure` points in place).
 
 ## 5. Settings
 
