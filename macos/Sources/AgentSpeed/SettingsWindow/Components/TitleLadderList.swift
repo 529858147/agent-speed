@@ -1,9 +1,10 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// "Speed titles  Bicycle 8 · E-Bike 12 · … · Rocket 400": every title that scales with the redline and the speed it
-/// starts at, wrapping across lines (DESIGN section 5, Redline speed). Line breaks are decided with every value at its
-/// widest over the whole slider range, so dragging the redline changes the numbers but never the line count.
+/// "Speed titles" over an aligned grid of every title that scales with the redline and the speed it starts at
+/// (DESIGN section 5, Redline speed): four columns of three rows where they fit, else three or two, so the twelve
+/// titles always fill whole rows. Each column is as wide as its longest entry, and every value reserves the widest
+/// text it can take over the slider range, so dragging the redline changes the numbers but never the layout.
 /// Hovering or focusing a title highlights its tick on the heat strip.
 struct TitleLadderList: View {
     let redline: Double
@@ -18,39 +19,42 @@ struct TitleLadderList: View {
 
     private static let titleFont = Font.subheadline
     private static let valueFont = Font.subheadline.weight(.semibold).monospacedDigit()
+    /// Column counts that divide the twelve titles into full rows, widest first.
+    private static let columnChoices = [4, 3, 2]
 
     var body: some View {
-        TitleLadderFlow(lineSpacing: 3) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(l10n("title.ladder"))
                 .font(Self.titleFont.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .fixedSize()
-                .padding(.trailing, 6)
-                .layoutValue(key: LadderRoleKey.self, value: .heading)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(Array(SpeedTitle.scaledLadder.enumerated()), id: \.element) { index, title in
-                if index > 0 {
-                    Text(verbatim: "·")
-                        .font(Self.titleFont)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize()
-                        .padding(.horizontal, 5)
-                        .layoutValue(key: LadderRoleKey.self, value: .separator)
-                        .accessibilityHidden(true)
+            ViewThatFits(in: .horizontal) {
+                ForEach(Self.columnChoices, id: \.self) { columns in
+                    grid(columns: columns)
                 }
-                reserve(for: title)
-                    .layoutValue(key: LadderRoleKey.self, value: .reserve)
-                entry(for: title)
-                    .layoutValue(key: LadderRoleKey.self, value: .entry)
             }
         }
-        // Separators that would start a line and the width probes are placed outside this clip.
-        .clipShape(Rectangle().inset(by: -4))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(l10n("title.ladder"))
         .onChange(of: hovered) { publish() }
         .onChange(of: focused) { publish() }
+    }
+
+    private func grid(columns: Int) -> some View {
+        let titles = SpeedTitle.scaledLadder
+        let rows = stride(from: 0, to: titles.count, by: columns).map { Array(titles[$0..<min($0 + columns, titles.count)]) }
+        return Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 4) {
+            ForEach(rows, id: \.self) { row in
+                GridRow {
+                    ForEach(row, id: \.self) { title in
+                        entry(for: title)
+                    }
+                }
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func publish() {
@@ -69,46 +73,42 @@ struct TitleLadderList: View {
         let isHighlighted = highlighted == title
         let valueColor = HeatText.color(heat, dark: colorScheme == .dark, increasedContrast: contrast == .increased)
         let nameStyle: AnyShapeStyle = isHighlighted || contrast == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
-        return (Text(name(title)).foregroundStyle(nameStyle)
-            + Text(verbatim: " ")
-            + Text(verbatim: value).font(Self.valueFont).foregroundStyle(valueColor))
-            .font(Self.titleFont)
-            .lineLimit(1)
-            .fixedSize()
-            .background {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.primary.opacity(isHighlighted ? 0.07 : 0))
-                    .padding(.horizontal, -3)
-                    .padding(.vertical, -1)
-            }
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside {
-                    hovered = title
-                } else if hovered == title {
-                    hovered = nil
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(name(title))
+                .foregroundStyle(nameStyle)
+            Spacer(minLength: 8)
+            // The value keeps the width of its widest form, so the columns never shift while the slider moves.
+            ZStack(alignment: .trailing) {
+                ForEach(TitleLadderValues.shapes(for: title, metric: metric), id: \.self) { shape in
+                    Text(verbatim: shape).hidden()
                 }
+                Text(verbatim: value)
+                    .foregroundStyle(valueColor)
             }
-            .focusable(interactions: .activate)
-            .focused($focused, equals: title)
-            .focusEffectDisabled()
-            .animation(Motion.fade, value: isHighlighted)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(name(title)), \(l10n("mac.settings.speedValue", value))")
-    }
-
-    /// The entry at each width its value can take over the slider range; only measured, never shown.
-    private func reserve(for title: SpeedTitle) -> some View {
-        ZStack {
-            ForEach(TitleLadderValues.shapes(for: title, metric: metric), id: \.self) { shape in
-                (Text(name(title)) + Text(verbatim: " ") + Text(verbatim: shape).font(Self.valueFont))
-                    .font(Self.titleFont)
-                    .lineLimit(1)
-                    .fixedSize()
+            .font(Self.valueFont)
+        }
+        .font(Self.titleFont)
+        .lineLimit(1)
+        .background {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.primary.opacity(isHighlighted ? 0.07 : 0))
+                .padding(.horizontal, -4)
+                .padding(.vertical, -1)
+        }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                hovered = title
+            } else if hovered == title {
+                hovered = nil
             }
         }
-        .hidden()
-        .accessibilityHidden(true)
+        .focusable(interactions: .activate)
+        .focused($focused, equals: title)
+        .focusEffectDisabled()
+        .animation(Motion.fade, value: isHighlighted)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name(title)), \(l10n("mac.settings.speedValue", value))")
     }
 }
 
@@ -147,103 +147,5 @@ enum TitleLadderValues {
 
     static func pattern(_ text: String) -> String {
         String(text.map { $0.isNumber ? "0" : $0 })
-    }
-}
-
-enum LadderRole {
-    case heading
-    case separator
-    /// A hidden copy of the next entry at its widest, used only to decide line breaks.
-    case reserve
-    case entry
-}
-
-struct LadderRoleKey: LayoutValueKey {
-    static let defaultValue = LadderRole.entry
-}
-
-/// Places entries left to right and wraps them, dropping separators that would start a line.
-struct TitleLadderFlow: Layout {
-    var lineSpacing: CGFloat = 3
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrangement(width: proposal.width ?? .infinity, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let arrangement = arrangement(width: bounds.width, subviews: subviews)
-        for (index, subview) in subviews.enumerated() {
-            let origin = arrangement.origins[index].map { CGPoint(x: bounds.minX + $0.x, y: bounds.minY + $0.y) }
-                ?? CGPoint(x: bounds.maxX + 10_000, y: bounds.minY)
-            subview.place(at: origin, anchor: .topLeading, proposal: .unspecified)
-        }
-    }
-
-    private func arrangement(width: CGFloat, subviews: Subviews) -> FlowArrangement {
-        FlowArrangement(
-            pieces: subviews.map { FlowArrangement.Piece(role: $0[LadderRoleKey.self], size: $0.sizeThatFits(.unspecified)) },
-            width: width,
-            lineSpacing: lineSpacing
-        )
-    }
-}
-
-/// Line breaking of the ladder, free of views: entries wrap when their widest form would overflow the line; a
-/// separator is shown only between two entries on the same line.
-struct FlowArrangement {
-    struct Piece {
-        var role: LadderRole
-        var size: CGSize
-    }
-
-    /// Top-left of each piece, nil for pieces that are not shown.
-    private(set) var origins: [CGPoint?]
-    private(set) var size: CGSize = .zero
-    private(set) var lineCount = 0
-
-    init(pieces: [Piece], width: CGFloat, lineSpacing: CGFloat) {
-        origins = Array(repeating: nil, count: pieces.count)
-        var budgetX: CGFloat = 0
-        var placedX: CGFloat = 0
-        var y: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var widest: CGFloat = 0
-        var separator: Int?
-        var reserved: CGFloat?
-        for (index, piece) in pieces.enumerated() {
-            switch piece.role {
-            case .separator:
-                separator = index
-                continue
-            case .reserve:
-                reserved = piece.size.width
-                continue
-            case .heading, .entry:
-                break
-            }
-            let natural = piece.size.width
-            let budget = max(natural, reserved ?? natural)
-            let gap = separator.map { pieces[$0].size.width } ?? 0
-            if budgetX > 0, budgetX + gap + budget > width + 0.5 {
-                y += lineHeight + lineSpacing
-                budgetX = 0
-                placedX = 0
-                lineHeight = 0
-            } else if budgetX > 0, let separator {
-                origins[separator] = CGPoint(x: placedX, y: y)
-                placedX += gap
-                budgetX += gap
-                lineHeight = max(lineHeight, pieces[separator].size.height)
-            }
-            if budgetX == 0 { lineCount += 1 }
-            origins[index] = CGPoint(x: placedX, y: y)
-            placedX += natural
-            budgetX += budget
-            lineHeight = max(lineHeight, piece.size.height)
-            widest = max(widest, budgetX)
-            separator = nil
-            reserved = nil
-        }
-        size = CGSize(width: width.isFinite ? max(width, 0) : widest, height: y + lineHeight)
     }
 }

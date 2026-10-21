@@ -69,7 +69,9 @@ enum HistoryLogicChecks {
 
         // Text.
         check("axis numbers", HistoryText.axisNumber(1_500_000) == "1.5M" && HistoryText.axisNumber(500_000) == "500k"
-            && HistoryText.axisNumber(1_000_000) == "1M" && HistoryText.axisNumber(150) == "150")
+            && HistoryText.axisNumber(1_000_000) == "1M" && HistoryText.axisNumber(150) == "150"
+            && HistoryText.axisNumber(2_500_000_000) == "2.5B")
+        check("billions", SpeedFormat.tokens(2_491_000_000) == "2.49B" && SpeedFormat.tokens(999_700_000) == "1.00B")
         check("signed change", HistoryText.change(0.123) == "+12%" && HistoryText.change(-0.004) == "\u{2212}0.4%"
             && HistoryText.change(0.0001) == "0%")
         check("percent", HistoryText.percent(0.004) == "<1%" && HistoryText.percent(0.904) == "90%")

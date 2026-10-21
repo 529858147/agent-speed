@@ -29,7 +29,12 @@ public enum SpeedFormat {
         let millions = value / 1_000_000
         if round(millions, digits: 2) < 10 { return fixed(millions, digits: 2) + "M" }
         if round(millions, digits: 1) < 100 { return fixed(millions, digits: 1) + "M" }
-        return String(Int(millions.rounded())) + "M"
+        if millions.rounded() < 1000 { return String(Int(millions.rounded())) + "M" }
+        let billions = value / 1_000_000_000
+        if round(billions, digits: 2) < 10 { return fixed(billions, digits: 2) + "B" }
+        if round(billions, digits: 1) < 100 { return fixed(billions, digits: 1) + "B" }
+        // Three significant digits; beyond 999B the integer simply grows.
+        return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), billions.rounded()) + "B"
     }
 
     private static func round(_ value: Double, digits: Int) -> Double {
