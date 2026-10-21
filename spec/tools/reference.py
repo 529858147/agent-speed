@@ -2,7 +2,9 @@
 """Independent reference implementation of spec/METRICS.md, used to cross-check the Swift and C# cores.
 
   python3 spec/tools/reference.py --check-fixtures
-  python3 spec/tools/reference.py --dump-today [--codex PATH] [--claude PATH]
+  python3 spec/tools/reference.py --dump-today [--codex PATH] [--claude PATH] [--dsh PATH] [--gemini PATH]
+  python3 spec/tools/reference.py --dump-history [--utc] [...]
+  python3 spec/tools/reference.py --write-history-fixture
 
 The dump format matches the `--dump-today` output of both platform probes. Conversation content is never printed.
 """
@@ -12,7 +14,9 @@ import subprocess
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -22,6 +26,9 @@ DEDUPE_LIMIT = 65_536
 WINDOW_MS = 3000
 TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$")
 TOKEN_FIELDS = ("input", "cachedInput", "cacheWriteInput", "output", "reasoning")
+GEMINI_LEGACY_MAX = 64 * 1024 * 1024
+GEMINI_SANITIZE = re.compile(r"[^A-Za-z0-9_-]")
+GEMINI_CANCELLED = "Request cancelled."
 
 
 def parse_ts(value):
@@ -96,8 +103,18 @@ class FileState:
         self.prev_legacy = None
         # claude
         self.precise = False
-        # deepseek
+        # deepseek, gemini
         self.parent_session = None
+        # gemini
+        self.marker = None
+        self.seen_calls = set()
+        if source == "gemini":
+            parts = [p for p in re.split(r"[\\/]", path) if p]
+            nested = len(parts) >= 3 and parts[-3] == "chats"
+            self.source_decided = True
+            self.is_subagent = nested
+            self.parent_session = parts[-2] if nested else None
+            self.project = gemini_project(path)
 
 
 def emit(state, key, start, end, tokens, model, final=True):
@@ -358,7 +375,7 @@ def zstd_lines(path, start_offset=0):
         yield ("malformed", malformed)
 
 
-def read_lines(path, start_offset=0):
+def read_lines(path, start_offset=0, max_lines=None):
     with open(path, "rb") as f:
         f.seek(start_offset)
         data = f.read()
@@ -368,15 +385,20 @@ def read_lines(path, start_offset=0):
     end = data.rfind(b"\n")
     if end < 0:
         return
-    for raw in data[:end].split(b"\n"):
+    for count, raw in enumerate(data[:end].split(b"\n"), start=1):
+        if max_lines is not None and count > max_lines:
+            return
         if len(raw) > MAX_LINE or not raw.strip():
             continue
         yield raw
 
 
-def process_file(state, dedupe, start_offset=0):
-    handler = {"codex": codex_line, "deepseek": dsh_event}.get(state.source, claude_line)
-    lines = zstd_lines(state.path, start_offset) if state.path.endswith(".zstd") else read_lines(state.path, start_offset)
+def process_file(state, dedupe, start_offset=0, max_lines=None):
+    if state.source == "gemini" and state.path.endswith(".json"):
+        return gemini_legacy(state, dedupe)
+    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record}.get(state.source, claude_line)
+    lines = (zstd_lines(state.path, start_offset) if state.path.endswith(".zstd")
+             else read_lines(state.path, start_offset, max_lines))
     for raw in lines:
         if isinstance(raw, tuple):
             state.malformed += raw[1]
@@ -401,6 +423,12 @@ def resolve_parents(states):
             by_thread[s.thread_id] = s.path
         if s.source == "deepseek" and s.thread_id and s.thread_id not in by_session:
             by_session[s.thread_id] = s.path
+    gemini_mains = {}
+    for s in sorted((s for s in states if s.source == "gemini" and s.thread_id),
+                    key=lambda s: (0 if s.path.endswith(".jsonl") else 1, s.file_created or 0, s.path)):
+        parts = re.split(r"[\\/]", s.path)
+        if len(parts) >= 2 and parts[-2] == "chats":
+            gemini_mains.setdefault((os.sep.join(parts[:-1]), GEMINI_SANITIZE.sub("_", s.thread_id)), s.path)
     parents = {}
     for s in states:
         parent = None
@@ -408,6 +436,9 @@ def resolve_parents(states):
             parent = by_thread.get(s.parent_thread_id) if s.parent_thread_id else None
         elif s.source == "deepseek":
             parent = by_session.get(s.parent_session) if s.parent_session else None
+        elif s.source == "gemini":
+            chats = os.sep.join(re.split(r"[\\/]", s.path)[:-2])
+            parent = gemini_mains.get((chats, s.parent_session)) if s.parent_session else None
         else:
             parts = re.split(r"[\\/]", s.path)
             if len(parts) >= 3 and parts[-2] == "subagents":
@@ -556,6 +587,253 @@ def opencode_tokens(t):
     cr, cw, r = num(cache.get("read")), num(cache.get("write")), num(t.get("reasoning"))
     return dict(input=num(t.get("input")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
                 output=num(t.get("output")) + r, reasoning=r)
+
+
+def gemini_tokens(t):
+    return dict(input=num(t.get("input")) + num(t.get("tool")), cachedInput=num(t.get("cached")), cacheWriteInput=0,
+                output=num(t.get("output")) + num(t.get("thoughts")), reasoning=num(t.get("thoughts")))
+
+
+def gemini_content(content):
+    """(has visible non-thought text, has a functionCall part)."""
+    if isinstance(content, str):
+        return bool(content.strip()), False
+    if isinstance(content, dict):
+        content = [content]
+    text = call = False
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, str):
+                text = text or bool(part.strip())
+            elif isinstance(part, dict):
+                if isinstance(part.get("functionCall"), dict):
+                    call = True
+                value = part.get("text")
+                if isinstance(value, str) and value.strip() and part.get("thought") is not True:
+                    text = True
+    return text, call
+
+
+def gemini_touch(state, ts):
+    if ts is not None:
+        state.last_line = ts if state.last_line is None else max(state.last_line, ts)
+
+
+def gemini_idle(state):
+    state.phase, state.pending, state.marker, state.in_flight = "idle", None, None, None
+
+
+def gemini_generating(state, start, marker):
+    state.phase, state.pending, state.marker, state.in_flight = "generating", start, marker, start
+
+
+def gemini_model(msg):
+    return msg.get("model") if isinstance(msg.get("model"), str) and msg.get("model") else None
+
+
+def gemini_update(state, resp, end, tokens, model):
+    resp.update(tokens)
+    resp["endMs"] = max(resp["endMs"], end)
+    resp["model"] = model or resp["model"]
+    state.model = resp["model"] or state.model
+
+
+def gemini_record(state, obj, dedupe):
+    """One line of a Gemini CLI session (METRICS 4.6)."""
+    if isinstance(obj.get("$rewindTo"), str):
+        gemini_idle(state)
+    elif isinstance(obj.get("$patch"), dict):
+        removed = obj["$patch"].get("removeIds")
+        if state.phase == "generating" and isinstance(removed, list) and state.marker in removed:
+            gemini_idle(state)
+    elif isinstance(obj.get("id"), str):
+        gemini_message(state, obj, dedupe)
+    elif isinstance(obj.get("$set"), dict):
+        gemini_set(state, obj["$set"], dedupe)
+    elif isinstance(obj.get("sessionId"), str) and isinstance(obj.get("projectHash"), str):
+        gemini_header(state, obj, dedupe)
+
+
+def gemini_header(state, obj, dedupe):
+    state.thread_id = obj["sessionId"]
+    if obj.get("kind") == "subagent":
+        state.is_subagent = True
+    started = parse_ts(obj.get("startTime"))
+    if state.file_created is None:
+        state.file_created = started
+    gemini_touch(state, started)
+    gemini_touch(state, parse_ts(obj.get("lastUpdated")))
+    if isinstance(obj.get("messages"), list):
+        for msg in obj["messages"]:
+            if isinstance(msg, dict) and isinstance(msg.get("id"), str):
+                gemini_message(state, msg, dedupe)
+
+
+def gemini_set(state, values, dedupe):
+    gemini_touch(state, parse_ts(values.get("lastUpdated")))
+    if values.get("kind") == "subagent":
+        state.is_subagent = True
+    if isinstance(values.get("sessionId"), str):
+        state.thread_id = values["sessionId"]
+    if isinstance(values.get("messages"), list):
+        gemini_checkpoint(state, values["messages"], dedupe)
+    if isinstance(values.get("summary"), str) and values["summary"]:
+        gemini_idle(state)
+
+
+def gemini_checkpoint(state, messages, dedupe):
+    ids = set()
+    for msg in messages:
+        if not isinstance(msg, dict) or not isinstance(msg.get("id"), str):
+            continue
+        ids.add(msg["id"])
+        if msg.get("type") != "gemini" or not isinstance(msg.get("tokens"), dict):
+            continue
+        key, ts = msg["id"], parse_ts(msg.get("timestamp"))
+        if ts is None or dedupe.owner(key) not in (None, state.path):
+            continue
+        tokens, model = gemini_tokens(msg["tokens"]), gemini_model(msg)
+        resp = state.responses.get(key)
+        if resp is None:
+            dedupe.claim(key, state.path)
+            emit(state, key, None, ts, tokens, model)
+            state.model = model or state.model
+        else:
+            gemini_update(state, resp, ts, tokens, model)
+    if state.phase == "generating" and state.marker not in ids:
+        gemini_idle(state)
+
+
+def gemini_message(state, msg, dedupe):
+    ts = parse_ts(msg.get("timestamp"))
+    if ts is None:
+        return
+    gemini_touch(state, ts)
+    calls = msg.get("toolCalls") if isinstance(msg.get("toolCalls"), list) else []
+    calls = [c for c in calls if isinstance(c, dict) and isinstance(c.get("id"), str)]
+    call_ts = [t for t in (parse_ts(c.get("timestamp")) for c in calls) if t is not None]
+    for t in call_ts:
+        gemini_touch(state, t)
+    for th in msg.get("thoughts") if isinstance(msg.get("thoughts"), list) else []:
+        if isinstance(th, dict):
+            gemini_touch(state, parse_ts(th.get("timestamp")))
+    kind = msg.get("type")
+    if kind == "user":
+        gemini_generating(state, ts, msg["id"])
+        return
+    if kind == "error" or (kind == "info" and msg.get("content") == GEMINI_CANCELLED):
+        gemini_idle(state)
+        return
+    if kind != "gemini":
+        return
+    key = msg["id"]
+    if dedupe.owner(key) not in (None, state.path):
+        return
+    if isinstance(msg.get("tokens"), dict):
+        tokens, model = gemini_tokens(msg["tokens"]), gemini_model(msg)
+        resp = state.responses.get(key)
+        if resp is None:
+            start = None if call_ts and ts >= min(call_ts) else state.pending
+            dedupe.claim(key, state.path)
+            emit(state, key, start, ts, tokens, model)
+            state.model = model or state.model
+            has_text, has_call = gemini_content(msg.get("content"))
+            state.phase = "tools" if has_call or not has_text else "idle"
+            state.pending, state.marker, state.in_flight = None, None, None
+        else:
+            gemini_update(state, resp, ts, tokens, model)
+    new_calls = [c for c in calls if c["id"] not in state.seen_calls]
+    state.seen_calls.update(c["id"] for c in new_calls)
+    if not new_calls:
+        return
+    if any(c.get("name") == "complete_task" and c.get("status") == "success" for c in new_calls):
+        gemini_idle(state)
+    elif all(c.get("status") == "cancelled" for c in new_calls):
+        gemini_idle(state)
+    else:
+        times = [t for t in (parse_ts(c.get("timestamp")) for c in new_calls) if t is not None]
+        gemini_generating(state, max(times) if times else ts, key)
+
+
+def gemini_legacy(state, dedupe):
+    """A legacy (<= v0.38) whole-document session file: replayed from the start on every change."""
+    if os.path.getsize(state.path) > GEMINI_LEGACY_MAX:
+        state.partial_history = True
+        return
+    try:
+        with open(state.path, "rb") as f:
+            obj = json.loads(f.read())
+    except (ValueError, UnicodeDecodeError):
+        state.malformed += 1
+        return
+    if isinstance(obj, dict) and isinstance(obj.get("sessionId"), str):
+        gemini_header(state, obj, dedupe)
+    else:
+        state.malformed += 1
+
+
+_gemini_projects = {}
+
+
+def gemini_project(path):
+    parts = re.split(r"[\\/]", path)
+    if len(parts) >= 3 and parts[-2] == "chats":
+        project_dir = os.sep.join(parts[:-2])
+    elif len(parts) >= 4 and parts[-3] == "chats":
+        project_dir = os.sep.join(parts[:-3])
+    else:
+        return None
+    if project_dir in _gemini_projects:
+        return _gemini_projects[project_dir]
+    project = None
+    try:
+        with open(os.path.join(project_dir, ".project_root"), encoding="utf-8") as f:
+            project = basename(f.read().strip())
+    except OSError:
+        try:
+            registry = os.path.join(os.path.dirname(os.path.dirname(project_dir)), "projects.json")
+            with open(registry, encoding="utf-8") as f:
+                projects = json.load(f).get("projects")
+            slug = os.path.basename(project_dir)
+            if isinstance(projects, dict):
+                project = next((basename(k) for k, v in projects.items() if v == slug), None)
+        except (OSError, ValueError, AttributeError):
+            project = None
+    _gemini_projects[project_dir] = project
+    return project
+
+
+def gemini_roots(env=None, platform=None):
+    env = os.environ if env is None else env
+    platform = sys.platform if platform is None else platform
+    home = env.get("GEMINI_CLI_HOME") or os.path.expanduser("~")
+    found = [os.path.join(home, ".gemini", "tmp")]
+    if platform == "darwin":
+        found.append(os.path.join(home, ".cache", ".gemini", "tmp"))
+    return found
+
+
+def discover_gemini(root, limit=20_000):
+    found = []
+    if not os.path.isdir(root):
+        return found
+    for project in sorted(os.listdir(root)):
+        chats = os.path.join(root, project, "chats")
+        if os.path.islink(os.path.join(root, project)) or os.path.islink(chats) or not os.path.isdir(chats):
+            continue
+        for name in os.listdir(chats):
+            full = os.path.join(chats, name)
+            if os.path.islink(full):
+                continue
+            if os.path.isdir(full):
+                for sub in os.listdir(full):
+                    nested = os.path.join(full, sub)
+                    if sub.endswith((".jsonl", ".json")) and os.path.isfile(nested) and not os.path.islink(nested):
+                        found.append(nested)
+            elif name.endswith((".jsonl", ".json")) and os.path.isfile(full):
+                found.append(full)
+    found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return found[:limit]
 
 
 # ----------------------------------------------------------------------------- engine
@@ -722,8 +1000,7 @@ def check_fixtures():
     states = []
     for rel in expected["order"]:
         exp = expected["files"][rel]
-        source = "codex" if rel.startswith("codex/") else ("deepseek" if rel.startswith("dsh/") else "claudeCode")
-        state = FileState(os.path.join(root, rel), source)
+        state = FileState(os.path.join(root, rel), fixture_source(rel))
         process_file(state, dedupe)
         states.append(state)
         got = dict(source=state.source, project=state.project, model=state.model, isSubagent=state.is_subagent,
@@ -751,11 +1028,30 @@ def check_fixtures():
         got = os.path.relpath(parent, root) if parent else None
         if got != expected["files"][rel]["parentFile"]:
             failures.append("%s: parentFile expected %r got %r" % (rel, expected["files"][rel]["parentFile"], got))
+    gm = expected.get("gemini")
+    if gm:
+        groot = os.path.join(root, "gemini", "tmp")
+        found = sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in discover_gemini(groot))
+        if found != gm["discover"]:
+            failures.append("gemini discover: expected %r got %r" % (gm["discover"], found))
+        for t in gm["traces"]:
+            trace_dedupe = Deduper()
+            for rel in expected["order"]:
+                if rel == t["file"]:
+                    break
+                process_file(FileState(os.path.join(root, rel), fixture_source(rel)), trace_dedupe)
+            state = FileState(os.path.join(root, t["file"]), "gemini")
+            process_file(state, trace_dedupe, max_lines=t["afterLine"])
+            if (state.phase, state.in_flight) != (t["phase"], t["inFlightStartMs"]):
+                failures.append("%s line %d: expected %s/%r got %s/%r" % (
+                    t["file"], t["afterLine"], t["phase"], t["inFlightStartMs"], state.phase, state.in_flight))
+        if gemini_roots({"GEMINI_CLI_HOME": "/x"}, "linux") != [os.path.join("/x", ".gemini", "tmp")]:
+            failures.append("gemini roots: GEMINI_CLI_HOME not honoured")
+        if len(gemini_roots({"GEMINI_CLI_HOME": "/x"}, "darwin")) != 2:
+            failures.append("gemini roots: macOS sandbox root missing")
     hist_path = os.path.join(root, "history-expected.json")
     if os.path.exists(hist_path):
-        got = daily_history(collect_all(os.path.join(root, "codex", "sessions"), os.path.join(root, "claude", "projects"),
-                                        os.path.join(root, "dsh", "sessions"), os.path.join(root, "opencode", "opencode.db")),
-                            tz=timezone.utc)
+        got = fixture_history(root, expected)
         want = json.load(open(hist_path, encoding="utf-8"))["days"]
         if json.loads(json.dumps(got)) != want:
             failures.append("history: expected %s got %s" % (json.dumps(want)[:300], json.dumps(got)[:300]))
@@ -789,6 +1085,36 @@ def check_fixtures():
           % (len(expected["order"]), len(cases)))
 
 
+def fixture_source(rel):
+    for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini")):
+        if rel.startswith(prefix):
+            return source
+    return "claudeCode"
+
+
+def fixture_history(root, expected):
+    """Daily history over a copy of the fixtures whose modification times follow `mtimes` (git does not keep them)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = os.path.join(tmp, "fixtures")
+        shutil.copytree(root, copy)
+        for rel, ms in expected.get("mtimes", {}).items():
+            os.utime(os.path.join(copy, rel), (ms / 1000, ms / 1000))
+        return daily_history(collect_all(os.path.join(copy, "codex", "sessions"), os.path.join(copy, "claude", "projects"),
+                                         os.path.join(copy, "dsh", "sessions"), os.path.join(copy, "opencode", "opencode.db"),
+                                         [os.path.join(copy, "gemini", "tmp")]), tz=timezone.utc)
+
+
+def write_history_fixture():
+    root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
+    expected = json.load(open(os.path.join(root, "parser-expected.json"), encoding="utf-8"))
+    with open(os.path.join(root, "history-expected.json"), "w", encoding="utf-8") as f:
+        json.dump({"_comment": "Daily history (METRICS 8) over all fixtures, grouped in UTC, after setting each file's "
+                               "modification time from parser-expected.json `mtimes`. Generated by "
+                               "spec/tools/reference.py --write-history-fixture; platforms must match exactly.",
+                   "days": fixture_history(root, expected)}, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
 DSH_NAME = re.compile(r"^session\.v\d+\.jsonl(\.zstd)?$")
 
 
@@ -810,12 +1136,13 @@ def discover(root, limit=20_000, deepseek=False):
     return found[:limit]
 
 
-def dump_today(codex_root, claude_root, dsh_root):
+def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
     started = time.time()
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
     files = ([(p, "codex") for p in discover(codex_root)] + [(p, "claudeCode") for p in discover(claude_root)]
-             + [(p, "deepseek") for p in discover(dsh_root, deepseek=True)])
+             + [(p, "deepseek") for p in discover(dsh_root, deepseek=True)]
+             + [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d)])
     files = [(os.path.getmtime(p), p, s) for p, s in files]
     files.sort(key=lambda t: (t[0], t[1]))
     dedupe = Deduper()
@@ -825,6 +1152,8 @@ def dump_today(codex_root, claude_root, dsh_root):
             continue
         size = os.path.getsize(path)
         if size > 256 * 1024 * 1024 and path.endswith(".zstd"):
+            continue
+        if source == "gemini" and path.endswith(".json") and size > GEMINI_LEGACY_MAX:
             continue
         offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 else 0
         state = FileState(path, source)
@@ -849,7 +1178,7 @@ def dump_today(codex_root, claude_root, dsh_root):
                                   "bytesRead": read_bytes, "seedMs": int((time.time() - started) * 1000)}}))
 
 
-def collect_all(codex_root, claude_root, dsh_root, opencode_db, include_archived=True):
+def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), include_archived=True):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
     files = [(p, "codex") for p in discover(codex_root)]
     if include_archived:
@@ -857,6 +1186,7 @@ def collect_all(codex_root, claude_root, dsh_root, opencode_db, include_archived
         files += [(p, "codex") for p in discover(archived, limit=10 ** 9)]
     files += [(p, "claudeCode") for p in discover(claude_root, limit=10 ** 9)]
     files += [(p, "deepseek") for p in discover(dsh_root, limit=10 ** 9, deepseek=True)]
+    files += [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d, limit=10 ** 9)]
     files = sorted({(os.path.getmtime(p), p, s) for p, s in files}, key=lambda t: (t[0], t[1]))
     dedupe = Deduper(limit=10 ** 9)
     out = []
@@ -911,6 +1241,8 @@ def main():
     parser.add_argument("--codex", default=None)
     parser.add_argument("--claude", default=None)
     parser.add_argument("--dsh", default=None)
+    parser.add_argument("--gemini", action="append", default=None, help="Gemini CLI tmp folder (repeatable)")
+    parser.add_argument("--write-history-fixture", action="store_true")
     args = parser.parse_args()
     home = os.path.expanduser("~")
     codex_root = args.codex or (os.path.join(os.environ["CODEX_HOME"], "sessions") if os.environ.get("CODEX_HOME")
@@ -921,8 +1253,12 @@ def main():
                             else os.path.join(home, ".dsh", "sessions"))
     opencode_db = args.opencode or os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
                                                 "opencode", "opencode.db")
+    gemini_dirs = args.gemini or gemini_roots()
+    if args.write_history_fixture:
+        write_history_fixture()
+        return
     if args.dump_history:
-        rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db),
+        rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs),
                              tz=timezone.utc if args.utc else None)
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
@@ -930,7 +1266,7 @@ def main():
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root, dsh_root)
+        dump_today(codex_root, claude_root, dsh_root, gemini_dirs)
     else:
         parser.print_help()
 

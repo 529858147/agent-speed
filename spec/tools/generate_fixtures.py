@@ -4,8 +4,14 @@
 Usage: python3 spec/tools/generate_fixtures.py
 """
 import json
+import math
 import os
+import sys
 from datetime import datetime, timezone
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gemini_fixtures  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
 T0 = int(datetime(2026, 10, 20, 10, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
@@ -402,11 +408,29 @@ opencode_expected = {
                                              "claude-sonnet-5-5")]),
 }
 
+# --- Gemini CLI -----------------------------------------------------------------
+# Modification times: git does not keep them, so tests that depend on startup order (history) apply these first.
+mtimes = {}
+for rel in order:
+    when = int(math.ceil((files[rel]["lastLineMs"] + 1000) / 1000) * 1000)
+    mtimes[rel] = max(when, max(mtimes.values(), default=0) + 1000)
+    os.utime(os.path.join(ROOT, rel), (mtimes[rel] / 1000, mtimes[rel] / 1000))
+gemini = gemini_fixtures.write_fixtures(ROOT)
+assert min(gemini["mtimes"].values()) > max(mtimes.values())
+order += gemini["order"]
+files.update(gemini["files"])
+mtimes.update(gemini["mtimes"])
+
 with open(os.path.join(ROOT, "parser-expected.json"), "w", encoding="utf-8") as f:
     json.dump({"_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are "
-                           "relative to this folder.",
-               "order": order, "files": files,
-               "opencode": {"database": opencode_rel, "agents": opencode_expected}}, f, indent=2, ensure_ascii=False)
+                           "relative to this folder. `mtimes` (Unix ms) give the modification times that produce "
+                           "`order`; apply them to a copy of this folder before computing daily history. Gemini "
+                           "`traces` give the phase after feeding a .jsonl file up to and including physical line "
+                           "`afterLine` (after the files before it in `order`).",
+               "order": order, "files": files, "mtimes": mtimes,
+               "opencode": {"database": opencode_rel, "agents": opencode_expected},
+               "gemini": {"discover": gemini["discover"], "traces": gemini["traces"]}}, f, indent=2,
+              ensure_ascii=False)
     f.write("\n")
 
 # --- Engine cases -------------------------------------------------------------

@@ -21,14 +21,14 @@ shared fixtures in `spec/fixtures/`.
 | Claude Code + Claude Desktop | `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects` | user setting |
 | DeepSeek Harness (`dsh`, desktop app and CLI) | `$DSH_HOME/sessions`, else `~/.dsh/sessions` | user setting |
 | OpenCode (CLI and desktop app) | `$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/opencode/opencode.db` (same form on Windows under `%USERPROFILE%`) | user setting (folder that contains `opencode.db`) |
-| Gemini CLI | see section 4.6 | user setting |
+| Gemini CLI (interactive, `-p`, ACP/IDE sessions) | `<home>/.gemini/tmp`; on macOS also `<home>/.cache/.gemini/tmp` (seatbelt sandbox, v0.63+). `<home>` = `$GEMINI_CLI_HOME`, else `~` | user setting (one `tmp` folder; replaces both defaults) |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
 locally and are out of scope.
 
-Discovery: recursive enumeration of `*.jsonl` (DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`), maximum
-depth 6, never follow symlinks, at most 20 000 files per root.
+Discovery: recursive enumeration of `*.jsonl` (DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`; Gemini CLI:
+fixed depths, see 4.6), maximum depth 6, never follow symlinks, at most 20 000 files per root.
 The app never writes inside these folders.
 
 ## 3. Common rules
@@ -220,6 +220,179 @@ Rows of `session_message` are processed per session in `seq` order; `data` is JS
 Verified on real data: per-session sums of these responses equal OpenCode's own `session_v2.tokens_*` totals except
 for small background calls (titles) that OpenCode never stores as messages.
 
+### 4.6 Gemini CLI
+
+#### Format eras
+
+| Versions | Session file | What changes for us |
+| --- | --- | --- |
+| ≤ v0.38 | `session-*.json` (sub-agents `<id>.json`): one pretty-printed JSON object, rewritten in place | Legacy snapshot (below) |
+| v0.39 – v0.63 | `*.jsonl`, append-only | Full-history checkpoints `{"$set":{"messages":[…]}}` (v0.44+); failed requests (v0.54+) and aborted requests (v0.57+) are rolled back with a checkpoint |
+| ≥ v0.64 | `*.jsonl`, append-only | `$patch` deltas replace checkpoints; rollbacks write `$rewindTo` |
+
+Other version boundaries used below: ≤ v0.31 a response without text is first written when its tool calls finish;
+v0.44+ every tool-result submission writes a `user` record; v0.54+ usage and thoughts are written only for the
+successful stream attempt; v0.37+ sub-agents live in a per-parent directory; v0.29+ project directories are slugs.
+
+#### Layout and discovery
+
+- `<root>/<projectDir>/chats/<file>` — main sessions. `<file>` = `session-<YYYY-MM-DDTHH-MM>-<sessionId[0:8]>.jsonl`
+  (UTC minute; a same-minute collision inserts `-<n>` before the short id).
+- `<root>/<projectDir>/chats/<parentSessionId>/<sessionId>.jsonl` — sub-agents (v0.37+). Both ids have every
+  character outside `[A-Za-z0-9_-]` replaced by `_`. Nested sub-agents are stored flat under the *main* session id.
+- v0.33 – v0.36 wrote sub-agents as `session-*.json` directly in `chats/` (identified only by `kind`).
+- `<projectDir>` is a slug of the project folder name (`agent-speed`, `agent-speed-1`, …) containing a `.project_root`
+  file with the absolute project root (v0.29+; lowercased on Windows), or, for older versions, the SHA-256 hex of
+  the project root. `<root>/../projects.json` maps project roots to slugs.
+- Discovery: regular files (never symlinks) ending in `.jsonl` or `.json` whose path relative to the root is exactly
+  `<projectDir>/chats/<file>` or `<projectDir>/chats/<dir>/<file>`. Nothing else under `tmp` is a session
+  (`checkpoint-*.json`, `logs.json`, tool outputs, plans). Temporary and backup files (`*.tmp-<pid>`,
+  `*.unreadable-<ms>`) do not match.
+- Docker/Podman sandbox sessions are written to an ephemeral host temp directory and are out of scope.
+
+`.jsonl` files use the line reader of section 5. `.json` files are whole-document snapshots (Legacy, below).
+The startup reading order (section 5) covers all Gemini roots together.
+
+#### Record classification
+
+Every line is one JSON object, classified in this order (Gemini's own loader uses the same order):
+
+1. `$rewindTo` is a string → rewind
+2. `$patch` is an object → patch
+3. `id` is a string → message record (`type`: `user`, `gemini`, `info`, `warning`, `error`)
+4. `$set` is an object → metadata update
+5. `sessionId` and `projectHash` are strings → header (first line of every file)
+6. anything else → ignored
+
+A message record is the complete message. The same `id` is appended again whenever the message changes (tool calls
+attached, rarely tokens attached late, tool results masked); a later record replaces the earlier one and keeps the
+original `timestamp`. A message `timestamp` is its creation time, never its update time. A tool call `timestamp` is the
+time its batch of tool calls finished (all calls of a batch share it).
+
+#### Timing model
+
+- A `user` record is written immediately before the API request is sent: after compression, tool-output masking, model
+  routing and loop detection, before `BeforeModel` hooks and connection retries. From v0.44 tool results are submitted
+  as a `user` record too; before v0.44 the next request starts right after the tool calls are recorded on the previous
+  `gemini` message.
+- A `gemini` record is created once, after the last stream chunk (and after `AfterModel` hooks), already carrying the
+  final `tokens` (from v0.32; earlier only when the response had text). The stream start is never recorded.
+- Therefore `startMs` = latest `user` record, or the tool-call completion time when no `user` record followed it;
+  `endMs` = the `gemini` record `timestamp`. The duration includes time to first token, 429 back-off and mid-stream
+  retries of the same request.
+
+State: `sessionId`, `pendingStartMs`, `pendingMarker` (id of the record that set `pendingStartMs`),
+`seenToolCallIds` (set), `phase`; all start empty / `idle`.
+
+| Record | Action |
+| --- | --- |
+| header | `sessionId`; `isSubagent` when `kind == "subagent"`; `startTime`, `lastUpdated` count for `lastLineMs`. A header that carries a `messages` array (a legacy object written on one line) is replayed like a legacy file. |
+| `$set` | `lastUpdated` counts for `lastLineMs`; `kind`, `sessionId` as in the header; a non-empty string `summary` → phase `idle`, `pendingStartMs = null` (a sub-agent writes it when it finished; a main session only receives it from a later process); a `messages` array → checkpoint (below). Other keys are ignored. |
+| `$rewindTo` | phase `idle`, `pendingStartMs = null` (user `/rewind`, cancelled or failed request). Responses are never removed. |
+| `$patch` | if phase is `generating` and `$patch.removeIds` contains `pendingMarker` → phase `idle`, `pendingStartMs = null`. Nothing else. |
+| `user` | `pendingStartMs = ts`, `pendingMarker = id`, phase `generating` (`inFlightStartMs = ts`) |
+| `error` | phase `idle`, `pendingStartMs = null` (the interactive CLI writes it when a request failed) |
+| `info` whose `content` is exactly the string `Request cancelled.` | phase `idle`, `pendingStartMs = null` (the interactive CLI writes it when the user cancels, before any rollback record) |
+| other `info`, `warning`, other types | only `lastLineMs` |
+| `gemini` | see below |
+
+Message records without a parseable `timestamp` are ignored.
+
+`gemini` record:
+1. `key = id`. If the key was first seen in another file, ignore the record entirely (including its tool calls).
+2. If `tokens` is an object:
+   - New key: emit a response with `startMs = pendingStartMs`, `endMs = ts`, `final = true`, `model = model`. Exception:
+     when the record already carries tool calls with parseable timestamps and `ts >=` the earliest of them, the
+     message was created when its tools finished (≤ v0.31), the stream end is unknown, and `startMs = null`. Then
+     `pendingStartMs = null`, `pendingMarker = null`. Phase `tools` when `content` has no visible text (a string
+     that is empty after trimming, or no non-thought `text` part) or contains a `functionCall` part; otherwise `idle`.
+   - Known key (same file): replace the tokens, `model = model ?? previous`, `endMs = max(endMs, ts)`. Phase unchanged.
+3. Tool calls: the entries of `toolCalls` that have a string `id` not yet in `seenToolCallIds` are new (add them).
+   If there are new calls:
+   - one of them is named `complete_task` with `status == "success"` → phase `idle`, `pendingStartMs = null`
+     (a sub-agent finished);
+   - else all new calls have `status == "cancelled"` → phase `idle`, `pendingStartMs = null` (nothing is submitted);
+   - else phase `generating`, `pendingStartMs` = the latest `timestamp` of the new calls (else `ts`),
+     `pendingMarker = id`, `inFlightStartMs = pendingStartMs`.
+4. A `gemini` record without `tokens` and without new tool calls changes nothing (synthetic turns: compression
+   acknowledgement, binary-content acknowledgement, interrupted-response placeholder).
+
+Step 2 runs before step 3, so a record that both creates a response and reports finished tools ends in the phase of
+step 3.
+
+Checkpoint (`$set.messages`, v0.44 – v0.63): for every `gemini` message in it that has `tokens` and whose key is not
+owned by another file: a known key is updated as in step 2; an unknown key (only possible when reading started
+mid-file) is emitted with `startMs = null`. A checkpoint changes no other state, except: if phase is `generating` and
+no message in it has `id == pendingMarker`, the in-flight request was rolled back → phase `idle`,
+`pendingStartMs = null`.
+
+Tokens (`tokens` is Gemini's `usageMetadata`; missing fields are 0, negatives clamp to 0):
+
+| Field | Value |
+| --- | --- |
+| `input` | `tokens.input + tokens.tool` |
+| `cachedInput` | `tokens.cached` |
+| `cacheWriteInput` | 0 |
+| `output` | `tokens.output + tokens.thoughts` |
+| `reasoning` | `tokens.thoughts` |
+
+`tokens.input` is `promptTokenCount` (already includes cached content); `tokens.output` is `candidatesTokenCount`
+(excludes thoughts); `tokens.tool` is `toolUsePromptTokenCount`: results of server-side tools (search grounding, code
+execution, URL context) fed back to the model as input and not part of `promptTokenCount`. `tokens.total` is the sum of
+all four, so normalized `input + output == total`. `tokens.total` itself is not used.
+
+Metadata:
+- `lastLineMs` = the latest parseable timestamp among header/`$set` `startTime` and `lastUpdated`, message `timestamp`,
+  `toolCalls[].timestamp` and `thoughts[].timestamp` of every record, including records ignored by deduplication.
+  Messages inside checkpoints are not scanned.
+- `model` = the model of the latest response created or updated in this file.
+- `project` = basename of the trimmed contents of `<projectDir>/.project_root` (split on `/` and `\`); else the key of
+  `<root>/../projects.json` `projects` whose value equals the `<projectDir>` name; else null. The session file itself
+  never records the working directory. Read once per project directory and cache.
+- `isSubagent` = `kind == "subagent"` (header or `$set`), or the file is inside `chats/<dir>/`.
+
+#### Legacy `.json` (≤ v0.38)
+
+The file is one JSON object `{sessionId, projectHash, startTime, lastUpdated, messages[], kind?, directories?,
+summary?}`, rewritten in place (not atomically) on every change. Whenever its size or modification time changes, read
+the whole file (files over 64 MiB are not read and carry the `partialHistory` warning) and parse it. On a parse failure
+(caught mid-write) count one malformed line and keep the previous state. On success reset the file's parser state
+(never the dedupe set) and replay: the object as a header, then each `messages` element in order as a message record
+with the rules above. Responses of earlier snapshots missing from the new one (rewound) stay recorded; same-key
+emissions are updates (4.4). The startup rules of section 5 apply (files modified before `todayStartMs - 15 min` are
+not read).
+
+#### Deduplication and copied history
+
+- `key` = message `id` (random UUID), shared global dedupe set (3.4): the first file that emits a key owns it.
+- Resuming a `.jsonl` session appends to the same file; nothing is copied.
+- Resuming a legacy `.json` session (v0.39+) copies its header and every message, unchanged, into a new file with the
+  same name plus `l` (`….json` → `….jsonl`); the `.json` stays. The copied responses are owned by the `.json` (older
+  modification time, read first) and ignored. If the `.json` was not read, the copies count with their original
+  timestamps, normally before today.
+- When a `.jsonl` cannot be reloaded on resume, Gemini rewrites it atomically (rename): the identity change resets the
+  file (section 5); the same keys merge as same-file updates.
+- `$set.messages` checkpoints repeat messages already in the file; they merge by key.
+
+#### Known approximations
+
+- `tools` vs `idle` after a response: Gemini writes a response's tool calls only after they finish, so a response
+  that has text *and* calls tools shows `idle` while its tools run (and while they await approval). A final answer
+  with empty text after a tool result shows `tools` until the 300-second staleness rule.
+- Before v0.44 the next request's start is the tool-completion time, which also includes compression, masking and
+  routing that run before the request.
+- Up to v0.53 Gemini writes a `gemini` record for an invalid stream attempt before retrying; the retry's response
+  then has `startMs = null` (totals only). v0.54+ record only the successful attempt, so tokens of failed attempts are lost.
+- LLM calls that Gemini does not record (chat compression, model-routing classifier, next-speaker check, loop
+  detection, session summaries, helper tools) are not counted; totals are lower than Gemini's `/stats`.
+- Before v0.54 failed requests are not rolled back and before v0.57 cancelled ones are not: the interactive CLI's
+  `error` / `Request cancelled.` records end the phase; in `-p` and ACP sessions the phase stays `generating` until
+  staleness. A quota fallback that adds tool results without sending them also leaves `generating` until staleness.
+- If the previous `gemini` message has no tokens when a new response's usage arrives, Gemini attaches the new usage
+  to that older message: the response is emitted under the older key with an invalid interval (totals only).
+- Derived from the Gemini CLI source (v0.66, evidence in `spec/research/gemini-cli.md`); not yet verified against real
+  session files.
+
 ## 5. Reading files
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
@@ -324,6 +497,11 @@ Parent links (`parentId`, an agent id or null):
 - Codex: from the first `session_meta`, `parentThreadId = payload.parent_thread_id ??
   payload.source.subagent.thread_spawn.parent_thread_id`. The parent is the tracked file whose first `session_meta`
   has `payload.id == parentThreadId` (the earliest created one if several). `forked_from_id` alone is not a parent.
+- Gemini CLI: a file at `<chats>/<dir>/<name>` (where `<chats>` is the directory named `chats`) has as parent the
+  tracked Gemini file directly inside `<chats>` whose header `sessionId`, with every character outside
+  `[A-Za-z0-9_-]` replaced by `_`, equals `<dir>`; several candidates → prefer `.jsonl` over `.json`, then the
+  earliest header `startTime`, then ordinal path. Nested sub-agents therefore attach to the main session; v0.33 – v0.36
+  sub-agents (directly in `chats/`) have no parent.
 - Self references and cycles resolve to null.
 
 List:
@@ -358,8 +536,8 @@ Daily statistics are computed from the complete logs and kept permanently, so th
 logs (Claude Code removes transcripts after 30 days by default). Only aggregates are stored — never requests, keys in
 plain text, prompts or content.
 
-Scope: every discovered file of every enabled source with no date filter, plus Codex `archived_sessions` (the sibling
-of the sessions root) and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
+Scope: every discovered file of every enabled source with no date filter (all Gemini roots, legacy `.json` included),
+plus Codex `archived_sessions` (the sibling of the sessions root) and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
 machines, dedupe, copied-history rules) over whole files, in startup order (5).
 
 Per local calendar day (date of `endMs`, `YYYY-MM-DD` in the computer's time zone at computation time) and source:

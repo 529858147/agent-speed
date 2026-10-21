@@ -1,5 +1,5 @@
 {
-  "_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are relative to this folder.",
+  "_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are relative to this folder. `mtimes` (Unix ms) give the modification times that produce `order`; apply them to a copy of this folder before computing daily history. Gemini `traces` give the phase after feeding a .jsonl file up to and including physical line `afterLine` (after the files before it in `order`).",
   "order": [
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl",
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl",
@@ -8,7 +8,12 @@
     "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl",
     "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl",
     "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd",
-    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd"
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd",
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.json",
+    "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/0b8e6d2c-3f4a-4b5c-8d6e-7f8091a2b3c4.jsonl",
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl",
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl"
   ],
   "files": {
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": {
@@ -282,7 +287,195 @@
           "final": true
         }
       ]
+    },
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.json": {
+      "source": "gemini",
+      "project": "nova",
+      "model": "gemini-2.5-pro",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792491663004,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "c0c0c0c0-0000-4000-8000-000000000002",
+          "startMs": null,
+          "endMs": 1792491609000,
+          "input": 8000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "output": 260,
+          "reasoning": 200,
+          "model": "gemini-2.5-pro",
+          "final": true
+        },
+        {
+          "key": "c0c0c0c0-0000-4000-8000-000000000003",
+          "startMs": 1792491608998,
+          "endMs": 1792491614000,
+          "input": 8400,
+          "cachedInput": 4096,
+          "cacheWriteInput": 0,
+          "output": 220,
+          "reasoning": 0,
+          "model": "gemini-2.5-pro",
+          "final": true
+        }
+      ]
+    },
+    "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl": {
+      "source": "gemini",
+      "project": "orbit",
+      "model": "gemini-3-pro-preview",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "tools",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792492327002,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "a0a0a0a0-0000-4000-8000-000000000002",
+          "startMs": 1792492205000,
+          "endMs": 1792492211000,
+          "input": 15000,
+          "cachedInput": 12288,
+          "cacheWriteInput": 0,
+          "output": 500,
+          "reasoning": 410,
+          "model": "gemini-3-pro-preview",
+          "final": true
+        },
+        {
+          "key": "a0a0a0a0-0000-4000-8000-000000000004",
+          "startMs": 1792492212420,
+          "endMs": 1792492220000,
+          "input": 16296,
+          "cachedInput": 15000,
+          "cacheWriteInput": 0,
+          "output": 800,
+          "reasoning": 160,
+          "model": "gemini-3-pro-preview",
+          "final": true
+        },
+        {
+          "key": "a0a0a0a0-0000-4000-8000-000000000008",
+          "startMs": 1792492320000,
+          "endMs": 1792492327000,
+          "input": 17000,
+          "cachedInput": 16384,
+          "cacheWriteInput": 0,
+          "output": 420,
+          "reasoning": 300,
+          "model": "gemini-3-pro-preview",
+          "final": true
+        }
+      ]
+    },
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/0b8e6d2c-3f4a-4b5c-8d6e-7f8091a2b3c4.jsonl": {
+      "source": "gemini",
+      "project": "orbit",
+      "model": "gemini-3-flash-preview",
+      "isSubagent": true,
+      "parentFile": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+      "phase": "generating",
+      "inFlightStartMs": 1792492330810,
+      "lastLineMs": 1792492330811,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "b0b0b0b0-0000-4000-8000-000000000002",
+          "startMs": 1792492327200,
+          "endMs": 1792492330000,
+          "input": 6000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "output": 220,
+          "reasoning": 150,
+          "model": "gemini-3-flash-preview",
+          "final": true
+        }
+      ]
+    },
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl": {
+      "source": "gemini",
+      "project": "orbit",
+      "model": "gemini-3-flash-preview",
+      "isSubagent": true,
+      "parentFile": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792492332300,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "e0e0e0e0-0000-4000-8000-000000000002",
+          "startMs": 1792492327250,
+          "endMs": 1792492332000,
+          "input": 5000,
+          "cachedInput": 4096,
+          "cacheWriteInput": 0,
+          "output": 300,
+          "reasoning": 0,
+          "model": "gemini-3-flash-preview",
+          "final": true
+        }
+      ]
+    },
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl": {
+      "source": "gemini",
+      "project": "nova",
+      "model": "gemini-2.5-flash",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792492862010,
+      "malformedLines": 1,
+      "responses": [
+        {
+          "key": "d0d0d0d0-0000-4000-8000-000000000004",
+          "startMs": 1792492800000,
+          "endMs": 1792492804000,
+          "input": 9000,
+          "cachedInput": 8192,
+          "cacheWriteInput": 0,
+          "output": 120,
+          "reasoning": 40,
+          "model": "gemini-2.5-flash",
+          "final": true
+        },
+        {
+          "key": "d0d0d0d0-0000-4000-8000-000000000006",
+          "startMs": 1792492806520,
+          "endMs": 1792492809000,
+          "input": 9300,
+          "cachedInput": 9000,
+          "cacheWriteInput": 0,
+          "output": 150,
+          "reasoning": 0,
+          "model": "gemini-2.5-flash",
+          "final": true
+        }
+      ]
     }
+  },
+  "mtimes": {
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": 1792490412000,
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl": 1792490448000,
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl": 1792490471000,
+    "claude/projects/-Users-dev-projects-nova/s-cli.jsonl": 1792490546000,
+    "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl": 1792490547000,
+    "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl": 1792490586000,
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd": 1792490650000,
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd": 1792490657000,
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.json": 1792491664000,
+    "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl": 1792492328000,
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/0b8e6d2c-3f4a-4b5c-8d6e-7f8091a2b3c4.jsonl": 1792492331000,
+    "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl": 1792492333000,
+    "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl": 1792492863000
   },
   "opencode": {
     "database": "opencode/opencode.db",
@@ -360,5 +553,172 @@
         ]
       }
     }
+  },
+  "gemini": {
+    "discover": [
+      "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.json",
+      "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+      "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/0b8e6d2c-3f4a-4b5c-8d6e-7f8091a2b3c4.jsonl",
+      "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl",
+      "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl"
+    ],
+    "traces": [
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 2,
+        "phase": "generating",
+        "inFlightStartMs": 1792492205000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 4,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 6,
+        "phase": "generating",
+        "inFlightStartMs": 1792492212400
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 7,
+        "phase": "generating",
+        "inFlightStartMs": 1792492212420
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 9,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 11,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 12,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 14,
+        "phase": "generating",
+        "inFlightStartMs": 1792492260000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 16,
+        "phase": "generating",
+        "inFlightStartMs": 1792492260000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 17,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 19,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 20,
+        "phase": "generating",
+        "inFlightStartMs": 1792492290000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 22,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 25,
+        "phase": "generating",
+        "inFlightStartMs": 1792492310000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 26,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 27,
+        "phase": "generating",
+        "inFlightStartMs": 1792492320000
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/session-2026-10-20T10-30-7f3a2b10.jsonl",
+        "afterLine": 29,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl",
+        "afterLine": 4,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/orbit/chats/7f3a2b10-5c1d-4e2f-9a3b-0c4d5e6f7a8b/5d4c3b2a-1f0e-4d9c-8b7a-695847362514.jsonl",
+        "afterLine": 6,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 5,
+        "phase": "generating",
+        "inFlightStartMs": 1792491660000
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 6,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 10,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 12,
+        "phase": "generating",
+        "inFlightStartMs": 1792492806500
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 13,
+        "phase": "generating",
+        "inFlightStartMs": 1792492806520
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 18,
+        "phase": "generating",
+        "inFlightStartMs": 1792492860000
+      },
+      {
+        "file": "gemini/tmp/nova/chats/session-2026-10-20T10-20-1e9c0a77.jsonl",
+        "afterLine": 20,
+        "phase": "idle",
+        "inFlightStartMs": null
+      }
+    ]
   }
 }
