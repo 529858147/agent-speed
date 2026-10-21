@@ -539,9 +539,11 @@ group or shows a child without its parent.
 | `< 1000` | integer (`128`) |
 | `< 10 000` | `1.28k` (two decimals) |
 | `< 1 000 000` | `12.8k` / `128k` |
-| else | `1.28M` |
+| `< 1 000 000 000` | `1.28M` / `12.8M` / `128M` |
+| else | `1.28B` / `12.8B` / `128B` (three significant digits, more digits only above 999B) |
 
-Token counts in summaries use the same compact form (`1.2M`, `384k`).
+A value that rounds up to the next unit uses that unit (`999 700` → `1.00M`, `999 700 000` → `1.00B`). Token counts in
+summaries use the same compact form (`1.2M`, `384k`, `2.49B`).
 ## 8. Daily history
 
 Daily statistics are computed from the complete logs and kept permanently, so they survive tools deleting their own
