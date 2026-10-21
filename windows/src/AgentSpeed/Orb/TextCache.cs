@@ -25,7 +25,10 @@ internal sealed class TextCache
         }
     }
 
-    /// <summary>Registers a style; returns its id. Re-registering the same values returns the same id.</summary>
+    /// <summary>
+    /// Registers a style; returns its id. Re-registering the same values returns the same id. Ids stay valid until
+    /// <see cref="TrimStyles"/>, so a frame can hold several of them at once.
+    /// </summary>
     public int Style(Typeface typeface, double size, Brush brush)
     {
         for (var i = 0; i < _styles.Count; i++)
@@ -37,14 +40,18 @@ internal sealed class TextCache
             }
         }
 
+        _styles.Add(new TextStyle(typeface, size, brush));
+        return _styles.Count - 1;
+    }
+
+    /// <summary>Drops every style once too many have accumulated. Call only between frames, when no id is held.</summary>
+    public void TrimStyles()
+    {
         if (_styles.Count > 64)
         {
             Clear();
             _styles.Clear();
         }
-
-        _styles.Add(new TextStyle(typeface, size, brush));
-        return _styles.Count - 1;
     }
 
     public FormattedText Get(string text, int style)

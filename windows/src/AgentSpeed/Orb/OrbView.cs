@@ -522,6 +522,7 @@ internal sealed class OrbView : FrameworkElement
 
     private void DrawReadout()
     {
+        _text.TrimStyles();
         using var dc = _readout.RenderOpen();
         var s = Diameter;
         var c = _brushes.Center;
