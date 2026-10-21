@@ -5,6 +5,8 @@ import SwiftUI
 struct AgentRow: View {
     let model: AppModel
     let agent: AgentStatus
+    /// Visual nesting level in the parent tree; roots are 0.
+    let depth: Int
     /// Snapshot time, the reference for "x minutes ago".
     let now: Date
 
@@ -51,7 +53,7 @@ struct AgentRow: View {
                 .accessibilityLabel(l10n("mac.settings.speedValue", speedText))
         }
         .frame(minHeight: DashboardLayout.rowHeight)
-        .padding(.leading, agent.isSubagent ? DashboardLayout.subagentIndent : 0)
+        .padding(.leading, CGFloat(depth) * DashboardLayout.subagentIndent)
         .contentShape(Rectangle())
         .help("\(project) · \(status)")
         .accessibilityElement(children: .combine)

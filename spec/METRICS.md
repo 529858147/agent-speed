@@ -259,7 +259,9 @@ List:
    depth-first with every agent immediately followed by its children; siblings ordered by `generating` first, live
    output descending, latest activity descending, id (ordinal).
 
-UIs indent an agent by its depth in this tree and draw connectors from parent to children; they never reorder.
+UIs indent an agent by its depth in this tree and draw connectors from parent to children. To avoid jitter a UI may
+keep its previous order between groups or between siblings whose live values are nearly equal, but it never splits a
+group or shows a child without its parent.
 
 ## 7. Number formatting (both platforms)
 

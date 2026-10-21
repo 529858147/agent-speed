@@ -36,6 +36,8 @@ struct CodexSessionMeta: Equatable, Sendable {
     var cwd: String?
     var agentPath: String?
     var isSubagent: Bool
+    /// The spawning thread (METRICS 6.7).
+    var parentThreadId: String?
 }
 
 struct CodexLegacyInfo: Equatable, Sendable {
@@ -76,6 +78,8 @@ enum CodexLineExtractor {
         var agentPath: String?
         var threadSource: String?
         var sourceHasSubagent = false
+        var parentThreadId: String?
+        var spawnParentThreadId: String?
         var model: String?
         var responseId: String?
         var threadId: String?
@@ -118,7 +122,8 @@ enum CodexLineExtractor {
                 id: payload.id,
                 cwd: payload.cwd,
                 agentPath: payload.agentPath,
-                isSubagent: payload.threadSource == "subagent" || payload.sourceHasSubagent
+                isSubagent: payload.threadSource == "subagent" || payload.sourceHasSubagent,
+                parentThreadId: payload.parentThreadId ?? payload.spawnParentThreadId
             ))
         case 1:
             return .turnContext(model: payload?.model, cwd: payload?.cwd)
@@ -177,8 +182,10 @@ enum CodexLineExtractor {
                 payload.agentPath = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "thread_source") {
                 payload.threadSource = try scanner.readString()
+            } else if scanner.key(key, is: "parent_thread_id") {
+                payload.parentThreadId = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "source") {
-                payload.sourceHasSubagent = try scanSourceHasSubagent(&scanner)
+                (payload.sourceHasSubagent, payload.spawnParentThreadId) = try scanSource(&scanner)
             } else if scanner.key(key, is: "model") {
                 payload.model = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "response_id") {
@@ -196,18 +203,41 @@ enum CodexLineExtractor {
         return payload
     }
 
-    private static func scanSourceHasSubagent(_ scanner: inout JSONScanner) throws(JSONScanError) -> Bool {
-        guard try scanner.beginObjectIfPresent() else { return false }
+    /// `payload.source`: whether it names a sub-agent, and `subagent.thread_spawn.parent_thread_id`.
+    private static func scanSource(_ scanner: inout JSONScanner) throws(JSONScanError) -> (Bool, String?) {
+        guard try scanner.beginObjectIfPresent() else { return (false, nil) }
         var found = false
+        var parent: String?
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "subagent") {
                 found = try !scanner.readNull()
-                if found { try scanner.skipValue() }
+                parent = found ? try scanSpawnParent(&scanner) : nil
             } else {
                 try scanner.skipValue()
             }
         }
-        return found
+        return (found, parent)
+    }
+
+    private static func scanSpawnParent(_ scanner: inout JSONScanner) throws(JSONScanError) -> String? {
+        guard try scanner.beginObjectIfPresent() else { return nil }
+        var parent: String?
+        while let key = try scanner.nextMember() {
+            guard scanner.key(key, is: "thread_spawn") else {
+                try scanner.skipValue()
+                continue
+            }
+            parent = nil
+            guard try scanner.beginObjectIfPresent() else { continue }
+            while let inner = try scanner.nextMember() {
+                if scanner.key(inner, is: "parent_thread_id") {
+                    parent = try scanner.readNonEmptyString()
+                } else {
+                    try scanner.skipValue()
+                }
+            }
+        }
+        return parent
     }
 
     private static func scanInfo(_ scanner: inout JSONScanner) throws(JSONScanError) -> CodexLegacyInfo? {

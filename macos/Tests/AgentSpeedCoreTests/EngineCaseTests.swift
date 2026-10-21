@@ -27,7 +27,8 @@ struct EngineCaseTests {
                 model: agent.string("model"),
                 phase: try #require(AgentPhase(rawValue: agent.string("phase") ?? "")),
                 inFlightStartMs: agent.int64("inFlightStartMs"),
-                lastLineMs: agent.int64("lastLineMs")
+                lastLineMs: agent.int64("lastLineMs"),
+                parentId: agent.string("parentId")
             ))
         }
         for response in try #require(spec["responses"] as? [[String: Any]]) {
@@ -50,6 +51,12 @@ struct EngineCaseTests {
             Self.expectClose(output.live.output, query.double("liveOutput"), "\(label) liveOutput")
             Self.expectClose(output.live.total, query.double("liveTotal"), "\(label) liveTotal")
             Self.expectClose(output.liveEstimatedShare, query.double("estimatedShare"), "\(label) estimatedShare")
+            if let order = query["agentsOrder"] as? [String] {
+                #expect(output.agents.map(\.agent.id) == order, "\(label) agentsOrder")
+                let parents = try #require(query["agentParents"] as? [String: String])
+                let actual = output.agents.reduce(into: [String: String]()) { $0[$1.agent.id] = $1.parentId }
+                #expect(actual == parents, "\(label) agentParents")
+            }
             if let requests = query["todayRequests"] as? NSNumber {
                 #expect(output.today.requests == requests.intValue, "\(label) todayRequests")
             }

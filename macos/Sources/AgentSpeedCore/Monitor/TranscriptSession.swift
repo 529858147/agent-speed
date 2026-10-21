@@ -44,6 +44,9 @@ final class TranscriptSession {
     private var indexes: [TranscriptFamily: DirectoryIndex] = [:]
     private var deduper = Deduper()
     private var engine = SpeedEngine()
+    private var parentMembers: [String: AgentParents.Member] = [:]
+    private var parentLinks: [String: String] = [:]
+    private var parentLinksAreStale = false
     private var nextFileID: FileID = 0
     private var pendingEvents: [SpeedEvent] = []
     private var unreadablePaths: Set<String> = []
@@ -328,6 +331,11 @@ final class TranscriptSession {
     // MARK: - Engine
 
     func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool) -> (output: EngineOutput, events: [SpeedEvent]) {
+        if parentLinksAreStale {
+            parentLinks = AgentParents.resolve(Array(parentMembers.values))
+            engine.setParents(parentLinks)
+            parentLinksAreStale = false
+        }
         let output = engine.advance(nowMs: nowMs, todayStartMs: todayStartMs, emitsEvents: emitsEvents)
         let events = pendingEvents + output.events
         pendingEvents.removeAll()
@@ -364,10 +372,17 @@ final class TranscriptSession {
     private func syncAgent(_ file: TrackedFile) {
         let state = file.parser.state
         if state.lastLineMs != nil, enabledSources.contains(state.source) {
-            engine.setAgent(EngineAgent(id: file.path, state: state))
+            let member = AgentParents.Member(id: file.path, family: file.family, thread: state.thread)
+            if parentMembers.updateValue(member, forKey: file.path) != member { parentLinksAreStale = true }
+            engine.setAgent(EngineAgent(id: file.path, state: state, parentId: parentLinks[file.path]))
         } else {
-            engine.removeAgent(id: file.path)
+            removeAgent(file.path)
         }
+    }
+
+    private func removeAgent(_ path: String) {
+        if parentMembers.removeValue(forKey: path) != nil { parentLinksAreStale = true }
+        engine.removeAgent(id: path)
     }
 
     private func projectName(of file: TrackedFile) -> String {
@@ -390,7 +405,7 @@ final class TranscriptSession {
         guard let file = files.removeValue(forKey: path) else { return }
         removedMalformedLines += file.parser.state.malformedLines
         unreadablePaths.remove(path)
-        engine.removeAgent(id: path)
+        removeAgent(path)
     }
 
     /// Maps an FSEvents (canonical) path to the configured-root path, if it names a candidate transcript.

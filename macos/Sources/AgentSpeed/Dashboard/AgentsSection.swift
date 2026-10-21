@@ -1,7 +1,7 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// The busiest agents, already sorted by the engine (METRICS 6.7; DESIGN section 4.4).
+/// The busiest agents in parent groups, already ordered by the engine (METRICS 6.7; DESIGN section 4.4).
 struct AgentsSection: View {
     let model: AppModel
 
@@ -14,6 +14,8 @@ struct AgentsSection: View {
         let snapshot = model.snapshot
         let rows = order.arrange(snapshot.agents, limit: DashboardLayout.maxAgents) { model.value(of: $0.live) }
         let hidden = snapshot.agents.count - rows.count
+        let tree = AgentTree(rows)
+        let depths = tree.depths
 
         VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
             HStack(spacing: Spacing.s) {
@@ -32,14 +34,19 @@ struct AgentsSection: View {
                 VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, agent in
                         // Leaving rows go at once so they never ghost under the row taking their place.
-                        AgentRow(model: model, agent: agent, now: snapshot.timestamp)
-                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                            .zIndex(Double(rows.count - index))
+                        AgentRow(
+                            model: model,
+                            agent: agent,
+                            depth: min(depths[index], DashboardLayout.maxAgentDepth),
+                            now: snapshot.timestamp
+                        )
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                        .zIndex(Double(rows.count - index))
                     }
                 }
                 .overlayPreferenceValue(BadgeAnchors.self) { anchors in
                     GeometryReader { proxy in
-                        SubagentConnectors(rows: rows, anchors: anchors, proxy: proxy, color: DashboardPalette.rule(
+                        SubagentConnectors(tree: tree, anchors: anchors, proxy: proxy, color: DashboardPalette.rule(
                             dark: colorScheme == .dark,
                             increasedContrast: contrast == .increased
                         ))
@@ -68,31 +75,39 @@ struct BadgeAnchors: PreferenceKey {
     }
 }
 
-/// Thin elbow lines from a parent row's badge down to each indented sub-agent badge.
+/// Thin elbow lines from each parent row's badge down to the badges of its own sub-agents.
 private struct SubagentConnectors: View {
-    let rows: [AgentStatus]
+    let tree: AgentTree
     let anchors: [String: Anchor<CGRect>]
     let proxy: GeometryProxy
     let color: Color
 
     var body: some View {
         Path { path in
-            for (index, agent) in rows.enumerated() where agent.isSubagent {
-                guard let parentIndex = rows[..<index].lastIndex(where: { !$0.isSubagent }),
-                      let parentAnchor = anchors[rows[parentIndex].id],
-                      let childAnchor = anchors[agent.id] else { continue }
-                let parent = proxy[parentAnchor]
-                let child = proxy[childAnchor]
+            for (index, parentIndex) in tree.parents.enumerated() {
+                guard let parentIndex, let parent = badge(parentIndex), let child = badge(index) else { continue }
                 let x = parent.midX
                 let radius: CGFloat = 3
                 let endX = child.minX + 1
+                guard endX > x + radius else {
+                    // Past the deepest indent a group's rows stack, so link to the row right above.
+                    if let above = badge(index - 1) {
+                        path.move(to: CGPoint(x: child.midX, y: above.maxY + 2))
+                        path.addLine(to: CGPoint(x: child.midX, y: child.minY - 2))
+                    }
+                    continue
+                }
                 path.move(to: CGPoint(x: x, y: parent.maxY + 2))
                 path.addLine(to: CGPoint(x: x, y: child.midY - radius))
                 path.addQuadCurve(to: CGPoint(x: x + radius, y: child.midY), control: CGPoint(x: x, y: child.midY))
-                if endX > x + radius { path.addLine(to: CGPoint(x: endX, y: child.midY)) }
+                path.addLine(to: CGPoint(x: endX, y: child.midY))
             }
         }
         .stroke(color, style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+    }
+
+    private func badge(_ index: Int) -> CGRect? {
+        anchors[tree.rows[index].id].map { proxy[$0] }
     }
 }
 

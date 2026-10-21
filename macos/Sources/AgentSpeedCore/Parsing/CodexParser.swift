@@ -9,8 +9,6 @@ struct CodexParser: Sendable {
     let fileID: FileID
     private(set) var state = AgentState(source: .codex)
 
-    private var fileCreatedMs: Int64?
-    private var sessionId: String?
     private var myAgentPath = CodexParser.defaultAgentPath
     private var pendingStartMs: Int64?
     private var streaming = false
@@ -42,16 +40,15 @@ struct CodexParser: Sendable {
         guard let timestamp = line.timestampMs else { return }
         if case .sessionMeta(let meta) = line.kind {
             // Only the first session_meta applies; sub-agent files copy their parent's right after their own.
-            guard fileCreatedMs == nil else { return }
+            guard state.thread == nil else { return }
             state.noteLine(at: timestamp)
-            fileCreatedMs = timestamp
+            state.thread = CodexThread(id: meta.id, parentId: meta.parentThreadId, createdMs: timestamp)
             if let cwd = meta.cwd { state.setProject(fromWorkingDirectory: cwd) }
             myAgentPath = meta.agentPath ?? Self.defaultAgentPath
             state.isSubagent = meta.isSubagent
-            sessionId = meta.id
             return
         }
-        if let created = fileCreatedMs, timestamp < created - Self.copiedHistoryToleranceMs {
+        if let created = state.thread?.createdMs, timestamp < created - Self.copiedHistoryToleranceMs {
             return
         }
         state.noteLine(at: timestamp)
@@ -77,7 +74,7 @@ struct CodexParser: Sendable {
 
         case .modernUsage(let responseId, let threadId, let usage):
             sawModernUsage = true
-            let key = responseId ?? "codex:\(threadId ?? sessionId ?? agentId):\(timestamp)"
+            let key = responseId ?? "codex:\(threadId ?? state.thread?.id ?? agentId):\(timestamp)"
             guard deduper.claim(key, for: fileID) == .new else { return }
             complete(key: key, usage: usage.normalized, at: timestamp, emit: emit)
 
@@ -97,7 +94,7 @@ struct CodexParser: Sendable {
                 tokens = info.last ?? total
             }
             previousLegacyTotals = total
-            let key = "codex-legacy:\(threadId ?? sessionId ?? agentId):\(total.total)"
+            let key = "codex-legacy:\(threadId ?? state.thread?.id ?? agentId):\(total.total)"
             guard deduper.claim(key, for: fileID) == .new else { return }
             complete(key: key, usage: tokens.normalized, at: timestamp, emit: emit)
 

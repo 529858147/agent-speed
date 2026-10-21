@@ -3,7 +3,7 @@ import Foundation
 
 /// Deterministic sample data for `--render-previews`.
 enum PreviewData {
-    static func snapshot(speed: Double, redline: Double, now: Date = Date()) -> SpeedSnapshot {
+    static func snapshot(speed: Double, redline: Double, grouped: Bool = false, now: Date = Date()) -> SpeedSnapshot {
         let second = floor(now.timeIntervalSince1970)
         let history: [HistoryPoint] = (0..<300).map { index in
             let t = Double(index)
@@ -18,10 +18,10 @@ enum PreviewData {
                 estimated: Rate(output: isTail ? base * 0.6 : 0, total: isTail ? base * 15 : 0)
             )
         }
-        let agents = [
+        let agents = grouped ? groupedAgents(speed: speed, now: now) : [
             agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.38, now),
             agent("nova", .claudeCode, "nova", "claude-opus-5-5", .generating, false, speed * 0.31, now),
-            agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.18, now),
+            agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.18, now, parent: "nova"),
             agent("orbit", .claudeDesktop, "orbit", "claude-fable-5-1", .generating, false, speed * 0.13, now),
             agent("atlas", .codex, "atlas-web", "gpt-6.1-sol-mini", .tools, false, 0, now.addingTimeInterval(-14)),
             agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
@@ -43,17 +43,31 @@ enum PreviewData {
             today: today,
             sources: sources,
             agents: agents,
-            generatingCount: 4,
-            toolsCount: 1,
+            generatingCount: agents.filter { $0.phase == .generating }.count,
+            toolsCount: agents.filter { $0.phase == .tools }.count,
             history: history,
             lastResponse: nil,
             warnings: []
         )
     }
 
+    /// Nested groups, a sub-agent whose parent is not listed, and a group cut by the row limit.
+    private static func groupedAgents(speed: Double, now: Date) -> [AgentStatus] {
+        [
+            agent("orbit", .claudeDesktop, "orbit", "claude-opus-5-5", .generating, false, speed * 0.22, now),
+            agent("orbit-explore", .claudeDesktop, "orbit", "claude-sonnet-5-5", .generating, true, speed * 0.16, now, parent: "orbit"),
+            agent("orbit-review", .claudeDesktop, "orbit", "claude-haiku-5", .generating, true, speed * 0.06, now, parent: "orbit-explore"),
+            agent("orbit-tests", .claudeDesktop, "orbit", "claude-sonnet-5-5", .tools, true, 0, now.addingTimeInterval(-6), parent: "orbit"),
+            agent("atlas-worker", .codex, "atlas-web", "gpt-6.1-sol-mini", .generating, true, speed * 0.2, now),
+            agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.12, now),
+            agent("rocket-worker", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.06, now, parent: "rocket"),
+            agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
+        ]
+    }
+
     private static func agent(
         _ id: String, _ source: SourceKind, _ project: String, _ model: String,
-        _ phase: AgentPhase, _ isSubagent: Bool, _ live: Double, _ activity: Date
+        _ phase: AgentPhase, _ isSubagent: Bool, _ live: Double, _ activity: Date, parent: String? = nil
     ) -> AgentStatus {
         AgentStatus(
             id: "/preview/\(id).jsonl",
@@ -64,7 +78,8 @@ enum PreviewData {
             isSubagent: isSubagent,
             live: Rate(output: live, total: live * 26),
             recentSpeed: live > 0 ? live : nil,
-            lastActivity: activity
+            lastActivity: activity,
+            parentId: parent.map { "/preview/\($0).jsonl" }
         )
     }
 

@@ -27,8 +27,8 @@ enum PreviewRenderer {
             SurfacePreviews.renderMenuBar(model: model, into: directory)
         }
         if wants("dashboard") {
-            for (name, speed) in [("cruise", redline * 0.08), ("redline", redline * 0.92)] {
-                publish(model, speed: speed)
+            for (name, speed, grouped) in [("cruise", redline * 0.08, false), ("redline", redline * 0.92, false), ("groups", redline * 0.6, true)] {
+                publish(model, speed: speed, grouped: grouped)
                 for dark in [false, true] {
                     PreviewSnapshot.writeHosted(
                         DashboardView(model: model).appEnvironment(model).environment(\.orbStillTime, Clock.now),
@@ -55,8 +55,8 @@ enum PreviewRenderer {
         }
     }
 
-    static func publish(_ model: AppModel, speed: Double) {
-        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline)
+    static func publish(_ model: AppModel, speed: Double, grouped: Bool = false) {
+        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline, grouped: grouped)
         model.store.publishLive(snapshot)
         model.gauge.snap(to: model.value(of: snapshot.live), now: Clock.now)
     }

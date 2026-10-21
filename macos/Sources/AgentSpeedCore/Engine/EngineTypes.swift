@@ -10,6 +10,8 @@ struct EngineAgent: Equatable, Sendable {
     var phase: AgentPhase
     var inFlightStartMs: Int64?
     var lastLineMs: Int64?
+    /// Resolved parent agent (METRICS 6.7), which may be outside the list.
+    var parentId: String?
 
     init(
         id: String,
@@ -19,7 +21,8 @@ struct EngineAgent: Equatable, Sendable {
         isSubagent: Bool = false,
         phase: AgentPhase = .idle,
         inFlightStartMs: Int64? = nil,
-        lastLineMs: Int64? = nil
+        lastLineMs: Int64? = nil,
+        parentId: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -29,9 +32,10 @@ struct EngineAgent: Equatable, Sendable {
         self.phase = phase
         self.inFlightStartMs = inFlightStartMs
         self.lastLineMs = lastLineMs
+        self.parentId = parentId
     }
 
-    init(id: String, state: AgentState) {
+    init(id: String, state: AgentState, parentId: String? = nil) {
         self.init(
             id: id,
             source: state.source,
@@ -40,7 +44,8 @@ struct EngineAgent: Equatable, Sendable {
             isSubagent: state.isSubagent,
             phase: state.phase,
             inFlightStartMs: state.inFlightStartMs,
-            lastLineMs: state.lastLineMs
+            lastLineMs: state.lastLineMs,
+            parentId: parentId
         )
     }
 
@@ -59,6 +64,8 @@ struct EngineAgentStatus: Equatable, Sendable {
     var phase: AgentPhase
     var live: Rate
     var recentSpeed: Double?
+    /// The parent's id when the parent is listed too; nil for a root.
+    var parentId: String?
 }
 
 /// Everything the engine computes for one instant.

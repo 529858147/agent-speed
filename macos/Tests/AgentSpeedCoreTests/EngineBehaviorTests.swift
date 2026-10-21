@@ -93,6 +93,43 @@ struct EngineBehaviorTests {
         #expect(output.sourceLive[.codex]?.output == busyLive)
     }
 
+    @Test func subagentsStayUnderTheirInactiveParents() {
+        var engine = SpeedEngine()
+        let now = Self.base
+        engine.setAgent(EngineAgent(id: "main", source: .claudeDesktop, project: "p", phase: .idle, lastLineMs: now - 1_200_000))
+        engine.setAgent(EngineAgent(id: "sub", source: .claudeDesktop, project: "p", model: "m", phase: .generating,
+                                    inFlightStartMs: now - 2000, lastLineMs: now - 2000, parentId: "main"))
+        engine.setAgent(EngineAgent(id: "nested", source: .claudeDesktop, project: "p", phase: .tools, lastLineMs: now - 5000,
+                                    parentId: "sub"))
+        engine.setAgent(EngineAgent(id: "busy", source: .codex, project: "p", model: "m", phase: .generating,
+                                    inFlightStartMs: now - 1000, lastLineMs: now - 1000))
+        engine.setAgent(EngineAgent(id: "orphan", source: .codex, project: "p", phase: .tools, lastLineMs: now - 3000,
+                                    parentId: "gone"))
+        engine.upsert(Self.record("r1", agent: "busy", start: now - 10_000, end: now - 6000, output: 800), project: "p",
+                      isCompletion: true, emitsEvents: false)
+        engine.upsert(Self.record("r2", agent: "sub", start: now - 10_000, end: now - 6000, output: 200), project: "p",
+                      isCompletion: true, emitsEvents: false)
+        let output = engine.advance(nowMs: now, todayStartMs: now - 3_600_000, emitsEvents: false)
+        #expect(output.agents.map(\.agent.id) == ["busy", "main", "sub", "nested", "orphan"])
+        #expect(output.agents.map(\.parentId) == [nil, nil, "main", "sub", nil])
+        #expect(output.agents[1].phase == .idle)
+    }
+
+    @Test func parentLinksCanBeReplacedAndLoopsStillList() {
+        var engine = SpeedEngine()
+        let now = Self.base
+        engine.setAgent(EngineAgent(id: "a", source: .codex, project: "p", phase: .tools, lastLineMs: now - 1000, parentId: "b"))
+        engine.setAgent(EngineAgent(id: "b", source: .codex, project: "p", phase: .tools, lastLineMs: now - 2000, parentId: "a"))
+        let looped = engine.advance(nowMs: now, todayStartMs: now - 3_600_000, emitsEvents: false)
+        #expect(Set(looped.agents.map(\.agent.id)) == ["a", "b"])
+        #expect(looped.agents.filter { $0.parentId == nil }.count == 1)
+
+        engine.setParents(["b": "a"])
+        let fixed = engine.advance(nowMs: now, todayStartMs: now - 3_600_000, emitsEvents: false)
+        #expect(fixed.agents.map(\.agent.id) == ["a", "b"])
+        #expect(fixed.agents.map(\.parentId) == [nil, "a"])
+    }
+
     @Test func historyHasThreeHundredBucketsEndingNow() {
         var engine = SpeedEngine()
         let output = engine.advance(nowMs: Self.base + 1500, todayStartMs: Self.base, emitsEvents: false)

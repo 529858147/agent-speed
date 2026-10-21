@@ -38,6 +38,7 @@ enum WatchMode {
             item.add("source", agent.source.rawValue)
             item.add("phase", agent.phase.rawValue)
             item.add("live", agent.live.output)
+            item.add("parent", agent.parentId.map { ($0 as NSString).lastPathComponent })
             return item.text
         }
         line.add("agents", raw: JSONLine.array(agents))

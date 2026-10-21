@@ -65,4 +65,24 @@ struct ParserFixtureTests {
             }
         }
     }
+
+    @Test func parentLinksMatchExpectations() throws {
+        let (expected, results) = try Self.runFixtures()
+        let files = try #require(expected["files"] as? [String: [String: Any]])
+        let path = { (relative: String) in Fixtures.root.appendingPathComponent(relative).path }
+        let members = results.map { relative, result in
+            AgentParents.Member(
+                id: path(relative),
+                family: relative.hasPrefix("codex/") ? .codex : .claude,
+                thread: result.state.thread
+            )
+        }
+        let parents = AgentParents.resolve(members)
+        for (relative, spec) in files {
+            #expect(spec.keys.contains("parentFile"), "\(relative) parentFile")
+            let parent = parents[path(relative)]
+            let wanted = spec.string("parentFile").map(path)
+            #expect(parent == wanted, "\(relative) parentFile")
+        }
+    }
 }

@@ -38,6 +38,13 @@ struct SpeedEngine: Sendable {
         agents[id] = nil
     }
 
+    /// Replaces the parent link of every agent (METRICS 6.7).
+    mutating func setParents(_ parents: [String: String]) {
+        for (id, agent) in agents where agent.parentId != parents[id] {
+            agents[id]?.parentId = parents[id]
+        }
+    }
+
     /// Stores (or replaces) a response. Returns a `responseCompleted` event for live completions.
     @discardableResult
     mutating func upsert(
@@ -203,30 +210,30 @@ struct SpeedEngine: Sendable {
     // MARK: - Agents list
 
     private func agentList(nowMs: Int64, window: LiveWindow, references: SpeedReferences) -> [EngineAgentStatus] {
-        var rows: [EngineAgentStatus] = []
-        for agent in agents.values {
+        func status(of agent: EngineAgent) -> EngineAgentStatus {
             let isFresh = agent.lastLineMs.map { nowMs - $0 <= Self.staleMs } ?? false
-            let phase = isFresh ? agent.phase : .idle
-            let isRecent = agent.lastLineMs.map { $0 >= nowMs - Self.agentListWindowMs } ?? false
-            guard isRecent || phase == .generating else { continue }
-            rows.append(EngineAgentStatus(
+            return EngineAgentStatus(
                 agent: agent,
-                phase: phase,
+                phase: isFresh ? agent.phase : .idle,
                 live: window.byAgent[agent.id] ?? .zero,
                 recentSpeed: references.recent(for: agent.id)?.output
-            ))
+            )
         }
-        rows.sort { lhs, rhs in
-            let lhsGenerating = lhs.phase == .generating
-            let rhsGenerating = rhs.phase == .generating
-            if lhsGenerating != rhsGenerating { return lhsGenerating }
-            if lhs.live.output != rhs.live.output { return lhs.live.output > rhs.live.output }
-            let lhsActivity = lhs.agent.lastLineMs ?? .min
-            let rhsActivity = rhs.agent.lastLineMs ?? .min
-            if lhsActivity != rhsActivity { return lhsActivity > rhsActivity }
-            return lhs.agent.id < rhs.agent.id
+        var listed: [String: EngineAgentStatus] = [:]
+        for agent in agents.values {
+            let row = status(of: agent)
+            let isRecent = agent.lastLineMs.map { $0 >= nowMs - Self.agentListWindowMs } ?? false
+            if isRecent || row.phase == .generating { listed[agent.id] = row }
         }
-        return rows
+        // Ancestors of a listed agent are listed too, even when inactive.
+        for id in Array(listed.keys) {
+            var next = agents[id]?.parentId
+            while let parentId = next, listed[parentId] == nil, let parent = agents[parentId] {
+                listed[parentId] = status(of: parent)
+                next = parent.parentId
+            }
+        }
+        return AgentListOrder.arrange(listed)
     }
 
     // MARK: - Summaries

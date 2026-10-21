@@ -16,6 +16,8 @@ enum DashboardLayout {
     static let tokensColumn: CGFloat = 52
     static let badgeWidth: CGFloat = 16
     static let subagentIndent: CGFloat = 12
+    /// Deeper sub-agents share the last indent.
+    static let maxAgentDepth = 2
     static let maxAgents = 6
 }
 

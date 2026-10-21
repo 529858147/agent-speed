@@ -54,7 +54,8 @@ enum SnapshotBuilder {
                 isSubagent: row.agent.isSubagent,
                 live: row.live,
                 recentSpeed: row.recentSpeed,
-                lastActivity: date(row.agent.lastLineMs ?? 0)
+                lastActivity: date(row.agent.lastLineMs ?? 0),
+                parentId: row.parentId
             )
         }
         let sources = SourceKind.allCases.map { kind in

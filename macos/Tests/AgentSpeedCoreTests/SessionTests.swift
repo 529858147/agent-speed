@@ -43,6 +43,30 @@ struct SessionTests {
         _ = directory
     }
 
+    @Test func subagentsAreListedRightAfterTheirParents() throws {
+        let (directory, configuration) = try Self.makeFixtureRoots()
+        let session = TranscriptSession(configuration: configuration)
+        let fixtureDay = Clock.milliseconds(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_792_490_400)))
+        _ = session.seed(todayStartMs: fixtureDay)
+        // The Codex parent's last line is just over 10 minutes old; its sub-agent's is not.
+        let (output, _) = session.advance(nowMs: 1_792_490_410_700 + 600_001, todayStartMs: fixtureDay, emitsEvents: false)
+        let agents = SnapshotBuilder.running(output, context: SnapshotContext(session: session, todayStartMs: fixtureDay)).agents
+        let pairs = [
+            ("rollout-2026-10-20T10-00-00-modern.jsonl", "rollout-2026-10-20T10-00-20-subagent.jsonl"),
+            ("s-cli.jsonl", "agent-abc.jsonl"),
+        ]
+        for (parentName, childName) in pairs {
+            let child = try #require(agents.firstIndex { $0.id.hasSuffix("/" + childName) }, "\(childName) listed")
+            #expect(child > 0)
+            #expect(agents[child - 1].id.hasSuffix("/" + parentName), "\(childName) follows its parent")
+            #expect(agents[child].parentId == agents[child - 1].id)
+            #expect(agents[child - 1].parentId == nil)
+        }
+        #expect(agents.count == 6)
+        #expect(agents.filter { $0.parentId != nil }.count == 2)
+        _ = directory
+    }
+
     @Test func disabledSourcesAreExcluded() throws {
         let (directory, base) = try Self.makeFixtureRoots()
         var configuration = base

@@ -124,7 +124,8 @@ def codex_line(state, obj, dedupe):
         state.is_subagent = state.is_subagent or payload.get("thread_source") == "subagent" or (
             isinstance(source, dict) and "subagent" in source)
         state.thread_id = payload.get("id") or state.thread_id
-        spawn = source.get("subagent", {}).get("thread_spawn", {}) if isinstance(source, dict) else {}
+        subagent = source.get("subagent") if isinstance(source, dict) else None
+        spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
         state.parent_thread_id = payload.get("parent_thread_id") or (
             spawn.get("parent_thread_id") if isinstance(spawn, dict) else None)
         return
