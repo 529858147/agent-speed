@@ -156,8 +156,10 @@ Glanceable and calm; it must never jitter in width.
 - Gauge glyph: 270° ring, 2 px stroke (scale with DPI), diameter = text cap height × 1.5 (16 pt in the menu bar),
   track at 25 % of the label color, fill fraction `h` in the heat color with a 6 px soft glow from overdrive upward.
   At redline the fill flickers gently (opacity 85–100 %, 6 Hz). Monochrome option uses the label color only.
-- Value: system font, 13 pt (menu bar) / 15 px semibold (taskbar), tabular digits, right-aligned inside a fixed width
-  sized for `8888` so the item never changes width. Idle value uses the secondary label color.
+- Value: system font, 13 pt (menu bar) / 15 px semibold (taskbar), tabular digits, placed tight against the glyph
+  (4–5 pt gap, never more). The item hugs its content: its width grows immediately when the formatted value gets
+  longer and shrinks only after the shorter width has held for 6 s, so with tabular digits it changes only when the
+  digit count changes and never flickers. Idle value uses the secondary label color.
 - Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting).
 - Display modes (setting): glyph + value (default), value only, glyph only.
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.
