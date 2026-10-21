@@ -528,6 +528,29 @@ stay capped at Soft as in section 4. Reduce Motion still caps the vehicle layer 
   fixed pools (64 particles, 16 speed lines) and reuse mutable paths for rig limbs and contrails (WPF: update
   `PathFigure` points in place).
 
+
+### Resolved details (normative; found while implementing)
+
+1. Glow is composited **over** the strokes, not under: additive in dark mode, normal blending in light mode. Glow share
+   values above 1 (2, 1.6) clamp to 1.
+2. Afterburner and rocket ignition overshoot come from the spring parameters given above (≈ 14.5 % fighter jet,
+   ≈ 18.6 % rocket); the "about 25 %" wording is descriptive only.
+3. Suspension and every other speed-dependent oscillation use an **accumulated phase**: `φ += 2π · f(b) · dt`, then
+   `sin(φ)`; never `sin(2π · f(b) · t)`, which jumps when `b` changes.
+4. The spoke motion arc rotates at its own 0.6 rev/s only; it does not add the wheel's rotation.
+5. Leaving idle into the walker, the standing pose fades into the gait with a 0.18 s time constant (no pose jump).
+6. During a transition, scene parts shared by both vehicles (road, track, sky) are drawn once at full strength, not at
+   the max of the two vehicle opacities.
+7. With Reduce Motion, contrails are frozen as well.
+8. The lurch (forward surge) applies to every vehicle along its direction of travel (the rocket: up-right).
+9. A title change during a running transition continues from the current positions, never restarting at 0.
+10. The idle light band starts 0.63 s into the gauge's 6 s sweep cycle, so it crosses the vehicle's center while the
+    gauge sweep passes the top.
+11. Frame rate: the largest integer divisor of the display refresh rate that is ≥ 60 (144 Hz → 72, 120 Hz → 60,
+    60 Hz → 60); parked/idle: ≈ 15 fps; static: no frames.
+12. At Soft, start-up engine shake (motorcycle, rocket) stays; redline camera shake needs Standard or higher.
+13. The spring `settle` time leaves ≈ 1.5 % of the step at `settle` (ω = 6.2 / settle); the behaviour is defined by ω.
+
 ## 5. Settings
 
 Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluent WPF window with Mica). Sections:
