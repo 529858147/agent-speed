@@ -186,6 +186,12 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
    truncated), phase badge (generating: animated three-dot shimmer in the source color; tools: wrench glyph;
    idle: grey dot), live tok/s right-aligned. Sub-agents are indented 12 pt with a thin connector line.
    Empty state: `目前沒有 agent 在工作` with a muted gauge glyph.
+   Collapsed (default) shows up to 6 rows; when more agents exist, a disclosure row `agents.expand` ("+4 個 agent",
+   with a small chevron, accessibility label `agents.expand.a11y`) expands the list in place with a spring height
+   animation; expanded shows every agent and ends with `agents.collapse`. Beyond 12 rows the expanded list scrolls
+   inside a fixed-height region (12 rows tall) so the panel never outgrows the screen. Truncation keeps whole groups
+   (a child is never shown without its parent) and the hidden count counts agents, not groups. The expanded/collapsed
+   choice is remembered.
 5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time.
 6. **Footer** — floating orb toggle, metric info button (ⓘ explaining the measurement in one paragraph), settings,
    quit.

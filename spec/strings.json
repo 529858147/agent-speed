@@ -827,5 +827,23 @@
     "zh-Hans": "DeepSeek Harness（dsh）桌面版与命令行共用这个文件夹。",
     "en": "The DeepSeek Harness (dsh) desktop app and CLI share this folder.",
     "ja": "DeepSeek Harness（dsh）のデスクトップアプリと CLI はこのフォルダを共有します。"
+  },
+  "agents.expand": {
+    "zh-Hant": "+%d 個 agent",
+    "zh-Hans": "+%d 个 agent",
+    "en": "+%d more",
+    "ja": "ほか %d 個の agent"
+  },
+  "agents.collapse": {
+    "zh-Hant": "收合",
+    "zh-Hans": "收起",
+    "en": "Show less",
+    "ja": "閉じる"
+  },
+  "agents.expand.a11y": {
+    "zh-Hant": "顯示全部 %d 個 agent",
+    "zh-Hans": "显示全部 %d 个 agent",
+    "en": "Show all %d agents",
+    "ja": "%d 個の agent をすべて表示"
   }
 }
