@@ -64,6 +64,17 @@ enum SpeedTitle: Int, SpeedLadder {
     var next: SpeedTitle? { SpeedTitle(rawValue: rawValue + 1) }
     var previous: SpeedTitle? { SpeedTitle(rawValue: rawValue - 1) }
 
+    /// The hero vehicle's key in `spec/assets/vehicles.json` (DESIGN 4c); nil while idle.
+    var vehicleKey: String? {
+        guard self != .idle else { return nil }
+        return String(titleKey.dropFirst("title.".count))
+    }
+
+    init?(vehicleKey: String) {
+        guard let title = SpeedTitle.ladder.first(where: { $0.vehicleKey == vehicleKey }) else { return nil }
+        self = title
+    }
+
     static func < (lhs: SpeedTitle, rhs: SpeedTitle) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 

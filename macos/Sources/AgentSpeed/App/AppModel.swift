@@ -87,6 +87,11 @@ final class AppModel {
             self.gauge.ingest(self.value(of: snapshot.live), now: Clock.now)
         })
         loops.append(ObservationLoop { [weak self] in
+            // The effects preview sweeps every title; it must not replace the vehicle the agents last reached.
+            guard let self, let key = self.gauge.title.vehicleKey, !self.store.isPreviewing else { return }
+            if self.settings.heroLastTitle != key { self.settings.heroLastTitle = key }
+        })
+        loops.append(ObservationLoop { [weak self] in
             guard let self else { return }
             let previewing = self.store.isPreviewing
             if self.isPreviewing != previewing { self.isPreviewing = previewing }

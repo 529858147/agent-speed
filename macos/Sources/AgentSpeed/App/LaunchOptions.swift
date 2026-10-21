@@ -15,6 +15,10 @@ struct LaunchOptions: Sendable {
     /// `--history-screenshots DIR` captures only the history window.
     var screenshotsDirectory: URL?
     var screenshotsOnlyHistory = false
+    /// `--hero-frames DIR`: records the dashboard hero vehicle frame by frame, see `HeroFrameHarness`.
+    var heroFramesDirectory: URL?
+    /// `--hero-cpu DIR`: measures the app's CPU with the dashboard open and closed, see `HeroLiveHarness`.
+    var heroCPUDirectory: URL?
     #endif
 
     static func parse(_ arguments: [String] = CommandLine.arguments) -> LaunchOptions {
@@ -36,6 +40,14 @@ struct LaunchOptions: Sendable {
             case "--motion-harness":
                 if let path = iterator.next() {
                     options.motionHarnessDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--hero-cpu":
+                if let path = iterator.next() {
+                    options.heroCPUDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--hero-frames":
+                if let path = iterator.next() {
+                    options.heroFramesDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
             case "--screenshots", "--history-screenshots":
                 if let path = iterator.next() {

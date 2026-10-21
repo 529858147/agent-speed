@@ -25,6 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             return
         }
         #if DEBUG
+        if let directory = options.heroCPUDirectory {
+            HeroLiveHarness.start(into: directory)
+            return
+        }
+        if let directory = options.heroFramesDirectory {
+            HeroFrameHarness.run(into: directory)
+            NSApp.terminate(nil)
+            return
+        }
         if let directory = options.motionHarnessDirectory {
             MotionHarness.start(into: directory)
             return

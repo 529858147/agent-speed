@@ -30,6 +30,12 @@ enum PreviewRenderer {
         if wants("titles") {
             TitlePreviews.render(model: model, into: directory)
         }
+        if wants("hero") {
+            HeroPreviews.render(model: model, into: directory)
+        }
+        if only?.contains("herobench") == true {
+            HeroBenchmark.run(model: model, into: directory)
+        }
         if wants("dashboard") {
             let cases: [(String, Double, PreviewData.AgentSet, Bool)] = [
                 ("cruise", redline * 0.08, .standard, false),

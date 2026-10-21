@@ -1,3 +1,4 @@
+import AgentSpeedHero
 import CoreGraphics
 import simd
 
@@ -88,7 +89,16 @@ struct OrbBatch {
     var instances: [OrbInstance] = []
 }
 
+/// The dashboard hero's vehicle layer for one frame: canvas unit (0, 0) at `origin`, `unit` points per canvas unit.
+struct OrbVehicleLayer {
+    let list: HeroDrawList
+    let origin: CGPoint
+    let unit: CGFloat
+}
+
 struct OrbScene {
+    /// Drawn first, over the body and under everything else (DESIGN 4c, Placement).
+    var vehicle: OrbVehicleLayer?
     var batches: [OrbBatch] = []
     /// Drawn after all shapes, in order.
     var texts: [OrbTextDraw] = []

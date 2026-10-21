@@ -4,6 +4,9 @@ import SwiftUI
 /// Hosts the GPU-drawn layers of the orb. Runs at 60 fps while active and draws only on demand while paused.
 struct OrbMetalView: NSViewRepresentable {
     let mode: OrbAnimator.FrameMode
+    /// Active frames follow the display's cadence (the refresh rate divided down to no less than 60 fps) instead of a
+    /// fixed 60 fps, which a 144 Hz display can only show at 48 (the dashboard hero, DESIGN 4c).
+    var followsDisplay = false
     /// Changes whenever a paused orb must redraw once (content or settled values changed).
     let redrawKey: AnyHashable
     let scene: @MainActor (CGSize, CGFloat, TimeInterval) -> OrbScene
@@ -11,12 +14,14 @@ struct OrbMetalView: NSViewRepresentable {
     func makeNSView(context: Context) -> OrbMTKView {
         let view = OrbMTKView()
         view.sceneProvider = scene
+        view.followsDisplay = followsDisplay
         view.apply(mode)
         return view
     }
 
     func updateNSView(_ view: OrbMTKView, context: Context) {
         view.sceneProvider = scene
+        view.followsDisplay = followsDisplay
         view.apply(mode)
         if view.redrawKey != redrawKey {
             view.redrawKey = redrawKey
@@ -33,6 +38,9 @@ struct OrbMetalView: NSViewRepresentable {
 final class OrbMTKView: MTKView, MTKViewDelegate {
     var sceneProvider: (@MainActor (CGSize, CGFloat, TimeInterval) -> OrbScene)?
     var redrawKey: AnyHashable?
+    var followsDisplay = false {
+        didSet { if followsDisplay != oldValue { reapply() } }
+    }
     private let encoder: OrbEncoder?
     private var mode: OrbAnimator.FrameMode?
 
@@ -60,16 +68,39 @@ final class OrbMTKView: MTKView, MTKViewDelegate {
     func apply(_ newMode: OrbAnimator.FrameMode) {
         guard newMode != mode else { return }
         mode = newMode
-        switch newMode {
+        reapply()
+    }
+
+    private func reapply() {
+        guard let mode else { return }
+        switch mode {
         case .active:
             enableSetNeedsDisplay = false
-            preferredFramesPerSecond = 60
+            preferredFramesPerSecond = activeRate
+            isPaused = false
+        case .ambient(let fps):
+            enableSetNeedsDisplay = false
+            preferredFramesPerSecond = fps
             isPaused = false
         case .paused:
             isPaused = true
             enableSetNeedsDisplay = true
             needsDisplay = true
         }
+    }
+
+    /// 60 fps, or with `followsDisplay` the display rate divided by the largest integer that keeps it at 60 fps or
+    /// more (144 Hz → 72, 120 Hz → 60), so every frame lands on a refresh.
+    private var activeRate: Int {
+        guard followsDisplay, let maximum = window?.screen?.maximumFramesPerSecond, maximum > 60 else { return 60 }
+        var divisor = 1
+        while maximum / (divisor + 1) >= 60 { divisor += 1 }
+        return maximum / divisor
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if followsDisplay { reapply() }
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}

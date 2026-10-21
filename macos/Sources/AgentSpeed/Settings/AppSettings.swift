@@ -75,6 +75,12 @@ final class AppSettings {
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
 
+    /// The vehicle of the last speed title other than idle (DESIGN 4c, Idle), parked in the dashboard hero while idle,
+    /// also across relaunches. Nil before any title was reached.
+    var heroLastTitle: String? {
+        didSet { if heroLastTitle != oldValue { store(heroLastTitle, .heroLastTitle) } }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -120,6 +126,7 @@ final class AppSettings {
         opencodeRoot = Self.url(defaults.string(forKey: Key.opencodeRoot.rawValue))
         geminiRoot = Self.url(defaults.string(forKey: Key.geminiRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
+        heroLastTitle = defaults.string(forKey: Key.heroLastTitle.rawValue)
     }
 
     var monitorConfiguration: MonitorConfiguration {
@@ -182,6 +189,7 @@ final class AppSettings {
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources, codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot
         case autoCheckUpdates
+        case heroLastTitle
     }
 }
 

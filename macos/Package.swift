@@ -53,9 +53,13 @@ let package = Package(
             dependencies: ["CZstd"],
             path: "Sources/AgentSpeedCore"
         ),
+        .target(
+            name: "AgentSpeedHero",
+            path: "Sources/AgentSpeedHero"
+        ),
         .executableTarget(
             name: "AgentSpeed",
-            dependencies: ["AgentSpeedCore"],
+            dependencies: ["AgentSpeedCore", "AgentSpeedHero"],
             path: "Sources/AgentSpeed",
             linkerSettings: sdkStamp
         ),
@@ -69,6 +73,11 @@ let package = Package(
             name: "AgentSpeedCoreTests",
             dependencies: ["AgentSpeedCore"],
             path: "Tests/AgentSpeedCoreTests"
+        ),
+        .testTarget(
+            name: "AgentSpeedHeroTests",
+            dependencies: ["AgentSpeedHero"],
+            path: "Tests/AgentSpeedHeroTests"
         ),
     ]
 )

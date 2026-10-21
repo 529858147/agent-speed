@@ -1,17 +1,21 @@
 import AgentSpeedCore
+import AgentSpeedHero
 import Observation
 import SwiftUI
 
 /// Per-orb animation state: frame scheduling, live events and the particle and pulse simulation.
 ///
 /// Frames run at 60 fps while anything moves and not at all otherwise (or while the orb is hidden), so a quiet orb
-/// costs no CPU and holds no GPU memory. The idle sweep runs in Core Animation (`OrbIdleSweep`).
+/// costs no CPU and holds no GPU memory. The idle sweep runs in Core Animation (`OrbIdleSweep`). The dashboard hero's
+/// parked vehicle breathes at 10 fps (30 fps while its light band crosses).
 @MainActor
 @Observable
 final class OrbAnimator {
     enum FrameMode: Equatable {
         case paused
         case active
+        /// A slow ambient rate (frames per second).
+        case ambient(Int)
     }
 
     struct Pulse {
@@ -19,6 +23,13 @@ final class OrbAnimator {
         var strength: Double
         var heat: Double
     }
+
+    #if DEBUG
+    /// `AGENT_SPEED_NO_HERO=1` (debug builds): the dashboard orb without its vehicle, for measurements.
+    private static let disablesHero = ProcessInfo.processInfo.environment["AGENT_SPEED_NO_HERO"] == "1"
+    #else
+    private static let disablesHero = false
+    #endif
 
     static let pulseDuration: TimeInterval = 0.7
     static let peakDuration: TimeInterval = 1.8
@@ -44,6 +55,8 @@ final class OrbAnimator {
     @ObservationIgnored private(set) var skew = OrbEnvelope()
     @ObservationIgnored var readout = OrbRollingReadout()
     @ObservationIgnored let textCache = OrbTextCache()
+    /// The hero vehicle of the embedded (dashboard) orb, DESIGN 4c.
+    @ObservationIgnored let hero: HeroVehicleDriver?
     @ObservationIgnored private var cachedGeometry: OrbGeometry?
 
     @ObservationIgnored private weak var model: AppModel?
@@ -68,6 +81,7 @@ final class OrbAnimator {
 
     init(style: OrbStyle) {
         self.style = style
+        hero = style == .embedded && !Self.disablesHero ? HeroVehicleDriver() : nil
     }
 
     var isAttached: Bool { model != nil }
@@ -229,6 +243,7 @@ final class OrbAnimator {
 
     /// Prepares an unattached animator to draw a still frame of the current state.
     func primeForStill(model: AppModel) {
+        hero?.reset()
         let value = model.gauge.readoutValue
         readout.reset(SpeedFormat.speed(value), value: value)
         prime(tier: model.gauge.tier, effects: effects(for: model))
@@ -291,7 +306,17 @@ final class OrbAnimator {
         if let interaction, !interaction.isVisibleOnScreen { return .paused }
         let gauge = model.gauge
         let effects = effects(for: model)
-        let busy = !gauge.isSettled(at: now)
+        let busy = isBusy(model: model, gauge: gauge, effects: effects, now: now)
+        guard !busy else { return .active }
+        switch hero?.demand() {
+        case .full?: return .active
+        case .idle(let fps)?: return .ambient(fps)
+        case .still?, nil: return .paused
+        }
+    }
+
+    private func isBusy(model: AppModel, gauge: LiveGauge, effects: OrbEffects, now: TimeInterval) -> Bool {
+        !gauge.isSettled(at: now)
             || (gauge.tier != .idle && (effects.ambient || effects.shimmer))
             || !particles.isEmpty
             || !pulses.isEmpty
@@ -307,7 +332,6 @@ final class OrbAnimator {
             || !valueGlow.isSettled(at: envelopeTargets.glow)
             || !skew.isSettled(at: envelopeTargets.skew)
             || now - readoutChangedAt < OrbRollingReadout.duration + 0.05
-        return busy ? .active : .paused
     }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {

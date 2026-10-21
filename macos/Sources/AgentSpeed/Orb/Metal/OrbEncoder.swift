@@ -9,6 +9,7 @@ final class OrbEncoder {
     private var buffers: [MTLBuffer?]
     private var index = 0
     private let semaphore = DispatchSemaphore(value: ringSize)
+    private lazy var heroEncoder: HeroLayerEncoder? = gpu.hero.map(HeroLayerEncoder.init)
 
     init(gpu: OrbGPU) {
         self.gpu = gpu
@@ -42,7 +43,11 @@ final class OrbEncoder {
             }
         }
 
+        if scene.vehicle != nil { gpu.hero?.configure(pass) }
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+            if let vehicle = scene.vehicle {
+                heroEncoder?.encode(vehicle.list, origin: vehicle.origin, unit: vehicle.unit, viewport: size, scale: scale, into: encoder)
+            }
             var uniforms = SIMD4<Float>(Float(size.width), Float(size.height), Float(scale), 0)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)

@@ -83,6 +83,10 @@ enum OrbSceneBuilder {
         )
 
         var scene = OrbScene()
+        if let hero = animator.hero {
+            scene.vehicle = hero.layer(model: model, content: content, geometry: frame.geometry, time: time,
+                                       sweepEpoch: animator.idleEpoch(for: gauge))
+        }
         addAura(&scene, frame, animator: animator)
         addPulses(&scene, frame, animator: animator)
         addPeakRays(&scene, frame, animator: animator)

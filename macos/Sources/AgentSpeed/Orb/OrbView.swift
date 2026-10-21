@@ -7,8 +7,10 @@ enum OrbStyle: Sendable {
     case embedded
 }
 
-/// The orb instrument (DESIGN section 2): a static body under one GPU-drawn layer with the gauge, effects and readout.
-/// The GPU layer runs at 60 fps only while something moves, at 10 fps for the idle sweep, and is paused otherwise.
+/// The orb instrument (DESIGN section 2): a static body under one GPU-drawn layer with the gauge, effects and readout
+/// (the dashboard's embedded orb carries the hero vehicle instead, DESIGN 4c). The GPU layer runs at 60 fps (the
+/// embedded orb at the display's cadence) only while something moves, at 10–30 fps while the hero's parked vehicle
+/// breathes, and is paused otherwise.
 struct OrbView: View {
     /// The canvas is this many times the disc diameter so the aura and sparks can leave the disc.
     static let canvasScale: CGFloat = 1.5
@@ -78,7 +80,7 @@ struct OrbView: View {
                     Image(decorative: image, scale: 2)
                 }
             } else {
-                OrbMetalView(mode: animator.frameMode, redrawKey: redrawKey(content: content)) { size, scale, time in
+                OrbMetalView(mode: animator.frameMode, followsDisplay: style == .embedded, redrawKey: redrawKey(content: content)) { size, scale, time in
                     OrbSceneBuilder.scene(content: content, animator: animator, model: model, canvasSide: size.width, scale: scale, time: time)
                 }
                 .frame(width: canvasSide, height: canvasSide)

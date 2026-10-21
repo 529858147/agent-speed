@@ -10,6 +10,8 @@ final class OrbGPU: Sendable {
     let over: MTLRenderPipelineState
     let additive: MTLRenderPipelineState
     let text: MTLRenderPipelineState
+    /// The dashboard hero's vehicle layer (DESIGN 4c); nil if its shaders failed, which only hides the vehicle.
+    let hero: HeroLayerGPU?
     static let pixelFormat = MTLPixelFormat.bgra8Unorm
 
     private init?() {
@@ -29,6 +31,7 @@ final class OrbGPU: Sendable {
         }
         self.device = device
         self.queue = queue
+        hero = HeroLayerGPU(device: device)
     }
 
     func pipeline(for blend: OrbBatch.Blend) -> MTLRenderPipelineState {
