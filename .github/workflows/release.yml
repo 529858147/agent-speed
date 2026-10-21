@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+      - name: Test core
+        working-directory: macos
+        run: swift test
+      - name: Build app bundle
+        run: macos/scripts/build-app.sh --version "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentSpeed-macOS
+          path: dist/AgentSpeed-macOS.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test core
+        run: dotnet test windows/tests/AgentSpeed.Core.Tests -c Release
+      - name: Test presentation
+        run: dotnet test windows/tests/AgentSpeed.Presentation.Tests -c Release
+      - name: Publish
+        shell: pwsh
+        run: ./windows/scripts/publish.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentSpeed-Windows
+          path: dist/AgentSpeed-Windows-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum AgentSpeed-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s/{{VERSION}}/${GITHUB_REF_NAME}/g" .github/release-notes.md > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Agent Speed ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag

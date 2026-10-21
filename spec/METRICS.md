@@ -56,8 +56,8 @@ Missing numeric fields are 0. Negative values are clamped to 0. `total = input +
 
 ### 3.4 Deduplication
 A global, bounded (65 536 entries, FIFO eviction) set of response keys shared by all files of all sources.
-A key first seen in file A and later seen in file B is ignored in B (forks and resumes copy history). Repeated lines
-of the same key in the same file are merged (section 4.3).
+A key first seen in file A and later seen in file B is ignored in B (forks and resumes copy history). Claude: repeated
+lines of the same key in the same file are merged (4.1, 4.3). Codex: every repeat of a key is skipped (4.2).
 
 ### 3.5 Copied history
 For Codex, once `session_meta` has been read, any later line whose timestamp is earlier than `fileCreatedMs - 2000`
@@ -151,6 +151,8 @@ emissions with the same key in the same file are *updates*: the engine replaces 
 
 ## 5. Reading files
 
+- Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
+  ties broken by ordinal path comparison. Each file is read to its end before the next one starts.
 - Startup: every file whose modification time is within `todayStartMs - 15 min` or later is read from offset 0.
   Older files start at their current size (nothing is read). Files larger than 256 MiB are read from
   `size - 64 MiB`, aligned to the next newline, and the snapshot carries a `partialHistory` warning.
