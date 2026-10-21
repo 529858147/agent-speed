@@ -441,7 +441,8 @@ counts one malformed line; what was parsed before stays. The file is never taile
 or identity changes, reset it (parser state, never the dedupe set) and read it again from the start. Startup follows
 the same modification-time rule as other files; the 256 MiB tail rule does not apply. A session compressed while it
 is tracked shows up as a new file whose response keys are already owned by the `.jsonl` (3.4), so nothing counts
-twice.
+twice. Reading or re-reading a whole compressed file (or a legacy Gemini `.json`) while running happens off the
+live loop, so live updates never pause; its results are applied in one step when the read completes.
 
 ## 6. Engine
 
@@ -521,7 +522,9 @@ Parent links (`parentId`, an agent id or null):
 
 List:
 1. Staleness first: a phase older than 300 seconds without a new line is reported as `idle`.
-2. Base set: agents whose `lastLineMs` is within the last 10 minutes, or whose phase is `generating`.
+2. Base set: agents whose `lastLineMs` is within the last 10 minutes, or whose phase is `generating`. An agent whose
+   file no longer exists (deleted, or replaced by its `.jsonl.zst`) leaves the list as soon as that is noticed; its
+   responses stay in every total.
 3. Closure: add every ancestor (following `parentId`) of an agent in the set, even if it is inactive.
 4. Tree: an agent's tree parent is its `parentId` when that agent is in the list; otherwise it is a root, and the
    reported `parentId` is null.
