@@ -51,11 +51,13 @@ Add `--purge` / `-Purge` to remove settings as well. On Windows you can also uni
 
 - **Floating orb** — a smoked-glass instrument with a 36-segment LED gauge. As speed climbs, so does its title — from *Walking* and *Bicycle* through *Bullet Train* and *Fighter Jet* to *Rocket* at the redline — while the gauge sweeps through the heat spectrum, a comet races around the ring, sparks fly, embers rise and every finished response sends out a shockwave. Beat your daily peak and it celebrates.
 - **Menu bar / taskbar** — a compact gauge and number that never jitters, right where you look. On Windows it lives inside the taskbar, next to the clock.
-- **Dashboard** — live chart, per-source speed, every active agent (including sub-agents) with its phase, and today's totals. Click a source to open its history.
+- **Dashboard** — a glowing line drawing of your current speed title's vehicle moves inside its orb — a walker, a bicycle pushing off, all the way to a rocket at the redline — plus a live chart, per-source speed, every active agent (including sub-agents) with its phase, and today's totals. Click a source to open its history.
 - **Usage history** — every day since your oldest log: output and input tokens, requests, average speed and peak, charted by source over any date range, with CSV export. Only daily totals are kept, so your history survives even after your tools delete old logs.
 - **Native everywhere** — SwiftUI + AppKit on macOS, WPF with Fluent/Mica on Windows. Light, dark or automatic theme. English, 繁體中文, 简体中文, 日本語.
 - **Humane** — effects intensity from *Off* to *Max*, respects Reduce Motion and high contrast, click-through mode, magnetic edges, remembers its place on every display, launches at login.
 - **Always current** — checks GitHub Releases in the background and updates with one click, verified by SHA-256.
+
+<p align="center"><img src="docs/images/hero-vehicle.gif" width="480" alt="The vehicle inside the dashboard orb, from bicycle to rocket"></p>
 
 <p align="center"><img src="docs/images/dashboards.png" width="560" alt="Dashboard in dark and light"></p>
 
