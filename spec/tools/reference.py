@@ -393,12 +393,35 @@ def read_lines(path, start_offset=0, max_lines=None):
         yield raw
 
 
+def zst_stream_lines(path):
+    """A compressed Codex session (METRICS 5.3): decompressed as one stream, always from the start."""
+    proc = subprocess.Popen(["zstd", "-dc", "-q", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    pending = b""
+    try:
+        for chunk in iter(lambda: proc.stdout.read(1 << 20), b""):
+            pending += chunk
+            *complete, pending = pending.split(b"\n")
+            for raw in complete:
+                if raw.strip() and len(raw) <= MAX_LINE:
+                    yield raw
+            if len(pending) > MAX_LINE:
+                pending = b""
+    finally:
+        proc.stdout.close()
+        if proc.wait() != 0:
+            yield ("malformed", 1)
+
+
 def process_file(state, dedupe, start_offset=0, max_lines=None):
     if state.source == "gemini" and state.path.endswith(".json"):
         return gemini_legacy(state, dedupe)
     handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record}.get(state.source, claude_line)
-    lines = (zstd_lines(state.path, start_offset) if state.path.endswith(".zstd")
-             else read_lines(state.path, start_offset, max_lines))
+    if state.path.endswith(".zstd"):
+        lines = zstd_lines(state.path, start_offset)
+    elif state.path.endswith(".jsonl.zst"):
+        lines = zst_stream_lines(state.path)
+    else:
+        lines = read_lines(state.path, start_offset, max_lines)
     for raw in lines:
         if isinstance(raw, tuple):
             state.malformed += raw[1]
@@ -1129,7 +1152,7 @@ def discover(root, limit=20_000, deepseek=False):
         dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             path = os.path.join(dirpath, name)
-            wanted = DSH_NAME.match(name) if deepseek else name.endswith(".jsonl")
+            wanted = DSH_NAME.match(name) if deepseek else name.endswith((".jsonl", ".jsonl.zst"))
             if wanted and not os.path.islink(path):
                 found.append(path)
     found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
@@ -1155,7 +1178,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
             continue
         if source == "gemini" and path.endswith(".json") and size > GEMINI_LEGACY_MAX:
             continue
-        offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 else 0
+        offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 and not path.endswith(".jsonl.zst") else 0
         state = FileState(path, source)
         process_file(state, dedupe, offset)
         read_files += 1
@@ -1180,7 +1203,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
 
 def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), include_archived=True):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
-    files = [(p, "codex") for p in discover(codex_root)]
+    files = [(p, "codex") for p in discover(codex_root, limit=10 ** 9)]
     if include_archived:
         archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
         files += [(p, "codex") for p in discover(archived, limit=10 ** 9)]

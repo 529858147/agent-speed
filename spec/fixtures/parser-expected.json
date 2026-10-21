@@ -4,6 +4,7 @@
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl",
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl",
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl",
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-20-compressed.jsonl.zst",
     "claude/projects/-Users-dev-projects-nova/s-cli.jsonl",
     "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl",
     "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl",
@@ -123,6 +124,43 @@
           "output": 302,
           "reasoning": 32,
           "model": "gpt-5.5",
+          "final": true
+        }
+      ]
+    },
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-20-compressed.jsonl.zst": {
+      "source": "codex",
+      "project": "comet",
+      "model": "gpt-6.1-sol-mini",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490488700,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "resp-z1",
+          "startMs": 1792490481010,
+          "endMs": 1792490484010,
+          "input": 6000,
+          "cachedInput": 5000,
+          "cacheWriteInput": 0,
+          "output": 150,
+          "reasoning": 40,
+          "model": "gpt-6.1-sol-mini",
+          "final": true
+        },
+        {
+          "key": "resp-z2",
+          "startMs": 1792490485500,
+          "endMs": 1792490488500,
+          "input": 6300,
+          "cachedInput": 6000,
+          "cacheWriteInput": 0,
+          "output": 210,
+          "reasoning": 0,
+          "model": "gpt-6.1-sol-mini",
           "final": true
         }
       ]
@@ -466,6 +504,7 @@
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": 1792490412000,
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl": 1792490448000,
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl": 1792490471000,
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-20-compressed.jsonl.zst": 1792490490000,
     "claude/projects/-Users-dev-projects-nova/s-cli.jsonl": 1792490546000,
     "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl": 1792490547000,
     "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl": 1792490586000,

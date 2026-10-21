@@ -6,6 +6,7 @@ Usage: python3 spec/tools/generate_fixtures.py
 import json
 import math
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -172,6 +173,51 @@ expect(rel, source="codex", project="legacy-app", model="gpt-5.5", isSubagent=Fa
        ])
 
 
+# --- Codex, compressed session (.jsonl.zst) -------------------------------------
+# Two zstd frames split in the middle of a line, with a skippable frame between them.
+rel = "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-20-compressed.jsonl.zst"
+z1 = cx(6000, 5000, 150, 40, 0)
+z2 = cx(6300, 6000, 210, 0, 0)
+zcum = cx(12300, 11000, 360, 40, 0)
+zrows = [
+    codex(at(1, 20), "session_meta", {"id": "thread-zst", "session_id": "sess-z", "timestamp": ts(at(1, 20)),
+                                      "cwd": "/Users/dev/projects/comet", "originator": "codex_cli_rs",
+                                      "cli_version": "0.170.0", "source": "cli"}),
+    codex(at(1, 20, 100), "turn_context", {"cwd": "/Users/dev/projects/comet", "model": "gpt-6.1-sol-mini"}),
+    codex(at(1, 21), "event_msg", {"type": "task_started", "turn_id": "turn-z"}),
+    codex(at(1, 21), "event_msg", {"type": "user_message", "message": "Tidy up", "images": []}),
+    codex(at(1, 21, 10), "response_item", {"type": "message", "role": "user",
+                                           "content": [{"type": "input_text", "text": "Tidy up"}]}),
+    codex(at(1, 24), "response_item", {"type": "function_call", "name": "shell", "arguments": "{}",
+                                       "call_id": "call-z"}),
+    codex(at(1, 24, 10), "token_usage_record", {"thread_id": "thread-zst", "session_id": "sess-z",
+                                                "response_id": "resp-z1", "usage": z1,
+                                                "turn_token_usage": z1, "thread_token_usage": z1}),
+    codex(at(1, 24, 12), "event_msg", {"type": "token_count", "info": {"total_token_usage": z1, "last_token_usage": z1}}),
+    codex(at(1, 25, 500), "response_item", {"type": "function_call_output", "call_id": "call-z", "output": "ok"}),
+    codex(at(1, 27), "response_item", {"type": "message", "role": "assistant",
+                                       "content": [{"type": "output_text", "text": "Tidied"}]}),
+    codex(at(1, 28, 500), "token_usage_record", {"thread_id": "thread-zst", "session_id": "sess-z",
+                                                 "response_id": "resp-z2", "usage": z2,
+                                                 "turn_token_usage": z2, "thread_token_usage": zcum}),
+    codex(at(1, 28, 502), "event_msg", {"type": "token_count", "info": {"total_token_usage": zcum, "last_token_usage": z2}}),
+    codex(at(1, 28, 700), "event_msg", {"type": "task_complete", "turn_id": "turn-z"}),
+]
+ztext = "".join(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in zrows).encode("utf-8")
+zsplit = ztext.index(b"resp-z1")
+zpath = os.path.join(ROOT, rel)
+os.makedirs(os.path.dirname(zpath), exist_ok=True)
+with open(zpath, "wb") as f:
+    f.write(subprocess.run(["zstd", "-q", "-c"], input=ztext[:zsplit], check=True, capture_output=True).stdout)
+    f.write((0x184D2A50).to_bytes(4, "little") + (4).to_bytes(4, "little") + b"skip")
+    f.write(subprocess.run(["zstd", "-q", "-c"], input=ztext[zsplit:], check=True, capture_output=True).stdout)
+expect(rel, source="codex", project="comet", model="gpt-6.1-sol-mini", isSubagent=False, parentFile=None,
+       phase="idle", inFlightStartMs=None, lastLineMs=at(1, 28, 700), malformedLines=0,
+       responses=[
+           resp("resp-z1", at(1, 21, 10), at(1, 24, 10), 6000, 5000, 0, 150, 40, "gpt-6.1-sol-mini"),
+           resp("resp-z2", at(1, 25, 500), at(1, 28, 500), 6300, 6000, 0, 210, 0, "gpt-6.1-sol-mini"),
+       ])
+
 # --- Claude Code CLI ----------------------------------------------------------
 def claude(kind, ms, entry="cli", cwd="/Users/dev/projects/nova", session="s-cli", sidechain=False, **extra):
     row = {"parentUuid": None, "isSidechain": sidechain, "userType": "external", "cwd": cwd,
@@ -256,7 +302,6 @@ expect(rel, source="claudeDesktop", project="orbit", model="claude-opus-5-5", is
 
 
 # --- DeepSeek Harness (dsh): zstd frame streams ------------------------------
-import subprocess
 
 
 def write_zstd(rel, frames):

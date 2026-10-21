@@ -27,7 +27,7 @@ shared fixtures in `spec/fixtures/`.
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
 locally and are out of scope.
 
-Discovery: recursive enumeration of `*.jsonl` (DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`; Gemini CLI:
+Discovery: recursive enumeration of `*.jsonl` (Codex also `*.jsonl.zst`, 5.3; DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`; Gemini CLI:
 fixed depths, see 4.6), maximum depth 6, never follow symlinks, at most 20 000 files per root.
 The app never writes inside these folders.
 
@@ -429,6 +429,17 @@ new rows with `time_created > cursor` (indexed) plus the current versions of row
 updated recently (`id IN (...)`), and sessions whose `time_updated` advanced. Startup reads sessions with
 `time_updated >= todayStartMs - 15 min` completely. The source counts as one "file" for discovery statistics.
 
+### 5.3 Compressed Codex sessions (`.jsonl.zst`)
+Codex compresses finished rollouts in place (`rollout-….jsonl` becomes `rollout-….jsonl.zst`, written once). Such a
+file is one zstd stream (usually one frame; its decompressed size can exceed 1 GB). Read it with streaming
+decompression from offset 0 with bounded buffers: any number of frames, skippable frames skipped, no per-frame output
+limit, the decoded bytes fed to the line reader (section 5 line rules). A decoding error stops the file there and
+counts one malformed line; what was parsed before stays. The file is never tailed: when its size, modification time
+or identity changes, reset it (parser state, never the dedupe set) and read it again from the start. Startup follows
+the same modification-time rule as other files; the 256 MiB tail rule does not apply. A session compressed while it
+is tracked shows up as a new file whose response keys are already owned by the `.jsonl` (3.4), so nothing counts
+twice.
+
 ## 6. Engine
 
 All engine functions take an explicit `nowMs` so they are deterministic and testable. Production calls them every
@@ -465,8 +476,9 @@ out of `generating` or starts a new in-flight interval at the response end.
 Per-source and per-agent live rates use the same formula restricted to that source or agent.
 
 ### 6.4 Events (live only, never during seeding)
-- `responseCompleted` — the first emission of a key (4.4), carrying source, project, model, output, total, duration
-  and speed.
+- `responseCompleted` — the first emission of a key (4.4) whose `endMs >= nowMs - 120 000`, carrying source,
+  project, model, output, total, duration and speed. Older responses that appear later (a whole-file source such as a
+  legacy Gemini `.json` or a `.jsonl.zst` read for the first time while running) update totals silently.
 - `newPeak` — when the measured+estimated live output exceeds the previous peak of today by at least 1 tok/s, is at
   least 20 tok/s, and no `newPeak` was emitted in the last 60 seconds.
 
@@ -536,15 +548,18 @@ Daily statistics are computed from the complete logs and kept permanently, so th
 logs (Claude Code removes transcripts after 30 days by default). Only aggregates are stored — never requests, keys in
 plain text, prompts or content.
 
-Scope: every discovered file of every enabled source with no date filter (all Gemini roots, legacy `.json` included),
-plus Codex `archived_sessions` (the sibling of the sessions root) and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
+Scope: every discovered file of every enabled source with no date filter and no file-count limit (Codex `.jsonl.zst`
+and all Gemini roots with legacy `.json` included), plus Codex `archived_sessions` (the sibling of the sessions root)
+and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
 machines, dedupe, copied-history rules) over whole files, in startup order (5).
 
 Per local calendar day (date of `endMs`, `YYYY-MM-DD` in the computer's time zone at computation time) and source:
 `requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning`, `measuredOutput` and `measuredMs`
 (sum of output and widened duration of measured responses, 3.3), `unfinalized` (count), `agents` (distinct agent ids
 with at least one response), and per model `requests` and `output`. The day's average speed is
-`measuredOutput / (measuredMs / 1000)`; `peak` is stored only for days observed live (the day's `peakToday`).
+`measuredOutput / (measuredMs / 1000)`. `peak` is stored only for days observed live: it is the day's overall
+`peakToday` (all sources together), repeated on every source row of that day; a UI shows it only for all sources and
+combines rows with max, never sum.
 
 Incremental cache: for each file keep its identity (path, size, modification time), the 64-bit FNV-1a hashes of the
 response keys it owns, and its per-day contributions. On launch and periodically (every 10 minutes and at midnight),

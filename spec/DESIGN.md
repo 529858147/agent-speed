@@ -265,11 +265,12 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
    breaks (no line) on days without measurements. Today's bar is drawn hatched/lighter and labelled 進行中. Weekend
    bars are not special-cased; month boundaries get a faint vertical rule and a month label. Hover (or keyboard
    arrows) shows a crosshair and a tooltip card: date with weekday, output, input (incl. cache), requests, average
-   speed, peak (if recorded) and the top 3 models with share bars. Clicking a bar scrolls the table to that day and
+   speed, peak (if recorded; all-sources view only, METRICS 8) and the top 3 models with share bars. Clicking a bar scrolls the table to that day and
    highlights it for 1.2 s. Transitions between ranges/sources animate bar heights with a spring (≤ 0.45 s);
    Reduce Motion → crossfade.
 4. **Daily table** — newest first; columns: 日期 (date + weekday; 今天 / 昨天 for the latest two), 請求, 輸出, 輸入（含快取）,
-   快取命中 (cachedInput ÷ input, percentage), 平均速度 (tok/s, `history.noSpeed` when none), 峰值 (if recorded),
+   快取命中 (cachedInput ÷ input, percentage), 平均速度 (tok/s, `history.noSpeed` when none), 峰值 (if recorded;
+   all-sources view only),
    Agent, 主要模型 (up to 2 model names, rest as "+n"). Sortable headers, tabular digits, right-aligned numbers,
    alternating subtle row tint, hover highlight linked with the chart, keyboard navigation, copy row as text.
    Days without data inside the range are not listed (the chart shows the gap).
