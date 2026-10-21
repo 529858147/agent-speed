@@ -34,7 +34,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
     /// File names (and for Gemini CLI, folder layout) of this family's transcripts (METRICS 2, 4.6).
     var names: TranscriptNames {
         switch self {
-        case .codex, .claude: .jsonl
+        case .codex: .codexSession
+        case .claude: .jsonl
         case .dsh: .dshSession
         case .gemini: .geminiSession
         }

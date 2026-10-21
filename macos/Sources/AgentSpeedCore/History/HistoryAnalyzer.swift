@@ -92,7 +92,8 @@ final class HistoryAnalyzer {
         var seen: Set<String> = []
         for (family, root) in Self.roots(configuration) {
             guard TranscriptDiscovery.isAvailable(root: root) else { continue }
-            var index = indexes[root] ?? DirectoryIndex(root: root, names: family.names)
+            // The daily history has no file-count limit (METRICS 8).
+            var index = indexes[root] ?? DirectoryIndex(root: root, names: family.names, maxCandidates: .max)
             let paths = index.scan()
             indexes[root] = index
             for path in paths where seen.insert(path).inserted {

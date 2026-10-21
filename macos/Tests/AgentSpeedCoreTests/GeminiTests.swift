@@ -11,7 +11,8 @@ struct GeminiTests {
     /// Feeds a fixture file to a parser the way the reader does; `lines` limits a `.jsonl` file to its first physical lines.
     static func feed(_ relative: String, into parser: inout TranscriptParser, deduper: inout Deduper, lines: Int? = nil) throws {
         let url = Fixtures.root.appendingPathComponent(relative)
-        if lines == nil, TranscriptReader.isFrameStream(url.path) || TranscriptReader.isDocument(url.path) {
+        if lines == nil, TranscriptReader.isFrameStream(url.path) || TranscriptReader.isCompressedStream(url.path)
+            || TranscriptReader.isDocument(url.path) {
             var reader = TranscriptReader(path: url.path)
             _ = reader.read(onMalformed: { parser.noteMalformedLine() }) { bytes in
                 parser.consume(rawLine: bytes, deduper: &deduper) { _ in }
@@ -115,7 +116,8 @@ struct GeminiTests {
         let directory = try TempDirectory()
         let relative = "tmp/proj/chats/session-2026-10-20T10-00-aaaa.json"
         try directory.write(relative, Self.legacyDocument([("g1", 100)]))
-        let session = TranscriptSession(configuration: MonitorConfiguration(enabledSources: [.gemini], geminiRoot: directory.file("tmp")))
+        let session = TranscriptSession(configuration: MonitorConfiguration(enabledSources: [.gemini], geminiRoot: directory.file("tmp")),
+                                        clock: { 1_792_490_500_000 })
         _ = session.seed(todayStartMs: 0)
         #expect(session.responses.map(\.key) == ["g1"])
         #expect(session.responses.first?.usage == TokenUsage(input: 11, cachedInput: 0, cacheWriteInput: 0, output: 105, reasoning: 5))

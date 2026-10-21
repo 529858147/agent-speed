@@ -15,6 +15,8 @@ struct SpeedEngine: Sendable {
     static let newPeakMinimum = 20.0
     static let newPeakMargin = 1.0
     static let newPeakCooldownMs: Int64 = 60_000
+    /// Only responses that ended this recently announce their completion (METRICS 6.4).
+    static let completionEventMaxAgeMs: Int64 = 120_000
 
     private(set) var agents: [String: EngineAgent] = [:]
     private var responses: [String: ResponseRecord] = [:]
@@ -45,13 +47,16 @@ struct SpeedEngine: Sendable {
         }
     }
 
-    /// Stores (or replaces) a response. Returns a `responseCompleted` event for live completions.
+    /// Stores (or replaces) a response. Returns a `responseCompleted` event for live completions that ended within
+    /// `completionEventMaxAgeMs` of `nowMs`; older ones (a whole-file source read late) update totals silently.
+    /// Without `nowMs` the age is not checked.
     @discardableResult
     mutating func upsert(
         _ record: ResponseRecord,
         project: String,
         isCompletion: Bool,
-        emitsEvents: Bool
+        emitsEvents: Bool,
+        nowMs: Int64? = nil
     ) -> SpeedEvent? {
         let old = responses.updateValue(record, forKey: record.key)
         projects[record.key] = project
@@ -61,6 +66,7 @@ struct SpeedEngine: Sendable {
             lastResponse = summary
         }
         guard isCompletion, emitsEvents else { return nil }
+        if let nowMs, record.endMs < nowMs - Self.completionEventMaxAgeMs { return nil }
         return .responseCompleted(summary)
     }
 

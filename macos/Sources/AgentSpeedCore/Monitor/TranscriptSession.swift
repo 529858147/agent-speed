@@ -62,9 +62,17 @@ final class TranscriptSession {
     private var opencodeNeedsSeed = false
     private var opencodeLinks: [String: String] = [:]
 
-    init(configuration: MonitorConfiguration, limits: ReadingLimits = .standard) {
+    /// Wall-clock milliseconds, for the age rule of completion events (METRICS 6.4); tests pin it.
+    private let clock: @Sendable () -> Int64
+
+    init(
+        configuration: MonitorConfiguration,
+        limits: ReadingLimits = .standard,
+        clock: @escaping @Sendable () -> Int64 = { Clock.milliseconds(Date()) }
+    ) {
         enabledSources = configuration.enabledSources
         self.limits = limits
+        self.clock = clock
         roots = TranscriptFamily.allCases.flatMap { family in
             configuration.resolvedRoots(for: family).map { path in
                 Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false)
@@ -143,7 +151,8 @@ final class TranscriptSession {
                     partialHistory = true
                     start = .end(file.stat.size)
                     readsBacklog = false
-                } else if file.stat.size > limits.largeFileBytes {
+                } else if file.stat.size > limits.largeFileBytes, !TranscriptReader.isCompressedStream(file.path) {
+                    // Compressed sessions are always read whole (METRICS 5.3).
                     partialHistory = true
                     if TranscriptReader.isFrameStream(file.path) {
                         // A frame stream cannot be entered in the middle, so it is not seeded at all (METRICS 5.1).
@@ -318,7 +327,7 @@ final class TranscriptSession {
                 seedOpencode(todayStartMs: todayStartMs)
                 changed = true
             } else {
-                changed = apply(opencode.rediscover(nowMs: Clock.milliseconds(Date()), deduper: &deduper), live: true) || changed
+                changed = apply(opencode.rediscover(nowMs: clock(), deduper: &deduper), live: true) || changed
             }
         }
         return changed
@@ -411,7 +420,8 @@ final class TranscriptSession {
 
     private func deliver(_ upsert: ResponseUpsert, project: String, live: Bool) {
         guard enabledSources.contains(upsert.record.source) else { return }
-        if let event = engine.upsert(upsert.record, project: project, isCompletion: upsert.isCompletion, emitsEvents: live) {
+        let nowMs = live ? clock() : nil
+        if let event = engine.upsert(upsert.record, project: project, isCompletion: upsert.isCompletion, emitsEvents: live, nowMs: nowMs) {
             pendingEvents.append(event)
         }
     }

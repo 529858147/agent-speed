@@ -1141,7 +1141,7 @@ def write_history_fixture():
 DSH_NAME = re.compile(r"^session\.v\d+\.jsonl(\.zstd)?$")
 
 
-def discover(root, limit=20_000, deepseek=False):
+def discover(root, limit=20_000, deepseek=False, codex=False):
     found = []
     if not os.path.isdir(root):
         return found
@@ -1152,7 +1152,7 @@ def discover(root, limit=20_000, deepseek=False):
         dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             path = os.path.join(dirpath, name)
-            wanted = DSH_NAME.match(name) if deepseek else name.endswith((".jsonl", ".jsonl.zst"))
+            wanted = DSH_NAME.match(name) if deepseek else name.endswith((".jsonl", ".jsonl.zst") if codex else ".jsonl")
             if wanted and not os.path.islink(path):
                 found.append(path)
     found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
@@ -1163,7 +1163,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
     started = time.time()
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    files = ([(p, "codex") for p in discover(codex_root)] + [(p, "claudeCode") for p in discover(claude_root)]
+    files = ([(p, "codex") for p in discover(codex_root, codex=True)] + [(p, "claudeCode") for p in discover(claude_root)]
              + [(p, "deepseek") for p in discover(dsh_root, deepseek=True)]
              + [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d)])
     files = [(os.path.getmtime(p), p, s) for p, s in files]
@@ -1203,10 +1203,10 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
 
 def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), include_archived=True):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
-    files = [(p, "codex") for p in discover(codex_root, limit=10 ** 9)]
+    files = [(p, "codex") for p in discover(codex_root, limit=10 ** 9, codex=True)]
     if include_archived:
         archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
-        files += [(p, "codex") for p in discover(archived, limit=10 ** 9)]
+        files += [(p, "codex") for p in discover(archived, limit=10 ** 9, codex=True)]
     files += [(p, "claudeCode") for p in discover(claude_root, limit=10 ** 9)]
     files += [(p, "deepseek") for p in discover(dsh_root, limit=10 ** 9, deepseek=True)]
     files += [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d, limit=10 ** 9)]

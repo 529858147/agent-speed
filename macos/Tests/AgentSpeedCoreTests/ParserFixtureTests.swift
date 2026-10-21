@@ -31,7 +31,8 @@ struct ParserFixtureTests {
                     latest[upsert.record.key] = upsert.record
                 }
             }
-            if TranscriptReader.isFrameStream(url.path) || TranscriptReader.isDocument(url.path) {
+            if TranscriptReader.isFrameStream(url.path) || TranscriptReader.isCompressedStream(url.path)
+                || TranscriptReader.isDocument(url.path) {
                 var reader = TranscriptReader(path: url.path)
                 let read = reader.read(onMalformed: { parser.noteMalformedLine() }, onLine: consume)
                 #expect(!read.failed, "\(relative) readable")

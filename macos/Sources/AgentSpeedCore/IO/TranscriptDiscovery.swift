@@ -10,6 +10,8 @@ struct DiscoveredFile: Equatable, Sendable {
 enum TranscriptNames: Sendable {
     /// `*.jsonl`
     case jsonl
+    /// `*.jsonl` or compressed `*.jsonl.zst` (Codex, METRICS 5.3).
+    case codexSession
     /// `session.v<N>.jsonl` or `session.v<N>.jsonl.zstd` (DeepSeek Harness).
     case dshSession
     /// `*.jsonl` or legacy `*.json`, only at `<project>/chats/<file>` and `<project>/chats/<dir>/<file>` (Gemini CLI).
@@ -19,6 +21,8 @@ enum TranscriptNames: Sendable {
         switch self {
         case .jsonl:
             return name.hasSuffix(".jsonl")
+        case .codexSession:
+            return name.hasSuffix(".jsonl") || name.hasSuffix(".jsonl.zst")
         case .geminiSession:
             return name.hasSuffix(".jsonl") || name.hasSuffix(".json")
         case .dshSession:

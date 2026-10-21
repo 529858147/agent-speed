@@ -1,15 +1,19 @@
 import Foundation
 
-/// Follows one transcript file: plain JSONL (METRICS 5), a zstd frame stream for `.zstd` files (METRICS 5.1), or a
-/// whole document re-read on every change for Gemini CLI legacy `.json` files (METRICS 4.6).
+/// Follows one transcript file: plain JSONL (METRICS 5), a zstd frame stream for `.zstd` files (METRICS 5.1), a
+/// compressed Codex session re-read from the start on every change (`.jsonl.zst`, METRICS 5.3), or a whole document
+/// re-read on every change for Gemini CLI legacy `.json` files (METRICS 4.6).
 struct TranscriptReader: Sendable {
     private var plain: FileTailer?
     private var frames: ZstdFrameTailer?
+    private var compressed: CompressedStreamReader?
     private var document: DocumentReader?
 
     init(path: String, start: FileTailer.Start = .beginning, maxLineBytes: Int = FileTailer.defaultMaxLineBytes) {
         if Self.isFrameStream(path) {
             frames = ZstdFrameTailer(path: path, start: start, maxLineBytes: maxLineBytes)
+        } else if Self.isCompressedStream(path) {
+            compressed = CompressedStreamReader(path: path, start: start, maxLineBytes: maxLineBytes)
         } else if Self.isDocument(path) {
             document = DocumentReader(path: path, start: start)
         } else {
@@ -19,6 +23,10 @@ struct TranscriptReader: Sendable {
 
     static func isFrameStream(_ path: String) -> Bool {
         path.hasSuffix(".zstd")
+    }
+
+    static func isCompressedStream(_ path: String) -> Bool {
+        path.hasSuffix(".jsonl.zst")
     }
 
     static func isDocument(_ path: String) -> Bool {
@@ -36,6 +44,9 @@ struct TranscriptReader: Sendable {
     ) -> FileTailer.ReadResult {
         if frames != nil {
             return frames!.read(onReset: onReset, onMalformed: onMalformed, onLine: onLine)
+        }
+        if compressed != nil {
+            return compressed!.read(onReset: onReset, onMalformed: onMalformed, onLine: onLine)
         }
         if document != nil {
             return document!.read(onReset: onReset, onDocument: onLine)

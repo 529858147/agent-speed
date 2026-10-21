@@ -20,12 +20,19 @@ struct DirectoryIndex: Sendable {
     let root: String
     let names: TranscriptNames
     let maxDepth: Int
+    let maxCandidates: Int
     private var listings: [String: Listing] = [:]
 
-    init(root: String, names: TranscriptNames = .jsonl, maxDepth: Int = TranscriptDiscovery.maxDepth) {
+    init(
+        root: String,
+        names: TranscriptNames = .jsonl,
+        maxDepth: Int = TranscriptDiscovery.maxDepth,
+        maxCandidates: Int = DirectoryIndex.maxCandidates
+    ) {
         self.root = TranscriptDiscovery.normalizedRoot(root)
         self.names = names
         self.maxDepth = maxDepth
+        self.maxCandidates = maxCandidates
     }
 
     /// Paths of every transcript regular file within the limits. Symlinks are never followed below the root.
@@ -50,7 +57,7 @@ struct DirectoryIndex: Sendable {
             if names.acceptsFiles(inDirectoryAtDepth: depth) {
                 for path in listing.transcripts {
                     found.append(path)
-                    if found.count >= Self.maxCandidates { return found }
+                    if found.count >= maxCandidates { return found }
                 }
             }
             if depth < maxDepth {

@@ -9,6 +9,9 @@ final class OrderedDecoder: @unchecked Sendable {
         var path: String
         var family: TranscriptFamily
         var size: Int64
+
+        /// Compressed sessions decode to several times their size; the window counts that.
+        var weight: Int64 { TranscriptReader.isCompressedStream(path) ? size &* 8 : size }
     }
 
     struct Output: Sendable {
@@ -55,7 +58,7 @@ final class OrderedDecoder: @unchecked Sendable {
             condition.wait()
         }
         guard !cancelled, let output = results.removeValue(forKey: nextToConsume) else { return nil }
-        bytesAhead -= jobs[nextToConsume].size
+        bytesAhead -= jobs[nextToConsume].weight
         nextToConsume += 1
         condition.broadcast()
         return output
@@ -100,7 +103,7 @@ final class OrderedDecoder: @unchecked Sendable {
         defer { condition.unlock() }
         while !cancelled, nextToClaim < jobs.count {
             let ahead = nextToClaim - nextToConsume
-            let size = jobs[nextToClaim].size
+            let size = jobs[nextToClaim].weight
             // The consumer's next file is always admitted, however large.
             if ahead == 0 || (ahead < maxFilesAhead && bytesAhead + size <= maxBytesAhead) {
                 let index = nextToClaim

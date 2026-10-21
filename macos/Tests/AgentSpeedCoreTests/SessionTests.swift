@@ -30,10 +30,11 @@ struct SessionTests {
         let session = TranscriptSession(configuration: configuration)
         let fixtureDay = Clock.milliseconds(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_792_490_400)))
         let summary = session.seed(todayStartMs: fixtureDay)
-        #expect(summary.filesRead == 8)
-        #expect(summary.filesDiscovered == 8)
+        #expect(summary.filesRead == 9)
+        #expect(summary.filesDiscovered == 9)
         #expect(Set(session.responses.map(\.key)) == [
             "resp-1", "resp-2", "resp-3", "resp-4", "codex-legacy:thread-legacy:20213", "codex-legacy:thread-legacy:41000",
+            "resp-z1", "resp-z2",
             "msg_A", "msg_B", "msg_C", "msg_D", "msg_E", "dsm-1", "dsm-2", "dss-1",
         ])
         #expect(session.responses.first { $0.key == "msg_B" }?.agentId.hasSuffix("s-cli.jsonl") == true)
@@ -70,7 +71,7 @@ struct SessionTests {
             #expect(agents[child].parentId == agents[child - 1].id)
             #expect(agents[child - 1].parentId == nil)
         }
-        #expect(agents.count == 8)
+        #expect(agents.count == 9)
         #expect(agents.filter { $0.parentId != nil }.count == 3)
         _ = directory
     }
@@ -87,7 +88,7 @@ struct SessionTests {
 
     @Test func liveAppendsProduceCompletionsAndTruncationDoesNotDoubleCount() throws {
         let (directory, configuration) = try Self.makeFixtureRoots()
-        let session = TranscriptSession(configuration: configuration)
+        let session = TranscriptSession(configuration: configuration, clock: { 1_792_490_440_000 })
         _ = session.seed(todayStartMs: Self.startOfToday())
         let relative = "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl"
         try directory.append(relative, #"{"timestamp":"2026-10-20T10:00:20.000Z","type":"event_msg","payload":{"type":"user_message","message":"x"}}"# + "\n")
@@ -135,7 +136,7 @@ struct SessionTests {
 
     @Test func deepseekFramesAppendedLiveProduceCompletions() throws {
         let (directory, configuration) = try Self.makeFixtureRoots()
-        let session = TranscriptSession(configuration: configuration)
+        let session = TranscriptSession(configuration: configuration, clock: { 1_792_490_700_000 })
         _ = session.seed(todayStartMs: Self.startOfToday())
         let relative = "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd"
         let message = #"{"type":"assistant/message","seq":26,"time":1792490657010,"data":{"message":{"id":"dss-live","#
