@@ -35,7 +35,7 @@ jobs:
         run: swift test
       - name: Build app bundle
         run: macos/scripts/build-app.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AgentSpeed-macOS
           path: dist/AgentSpeed-macOS.zip
@@ -46,7 +46,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - name: Test core
@@ -56,7 +56,7 @@ jobs:
       - name: Publish
         shell: pwsh
         run: ./windows/scripts/publish.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AgentSpeed-Windows
           path: dist/AgentSpeed-Windows-*.zip
