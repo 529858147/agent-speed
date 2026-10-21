@@ -1,0 +1,275 @@
+using System.Globalization;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using AgentSpeed.Controls;
+using AgentSpeed.Core;
+using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Orb;
+using AgentSpeed.Presentation.Settings;
+
+namespace AgentSpeed.Taskbar;
+
+/// <summary>
+/// Draws the taskbar widget (DESIGN section 3) with WPF into a premultiplied BGRA buffer. Runs on the taskbar
+/// thread; every WPF object here belongs to that thread.
+/// </summary>
+internal sealed class TaskbarRenderer
+{
+    private const double ValueSize = 15;
+    private const double UnitSize = 11;
+    private const double GlyphSize = 16;
+    private const double Padding = 8;
+    private const double GlyphGap = 6;
+    private const double UnitGap = 3;
+
+    private static readonly string[] WidestValues = ["8888", "8.88k", "88.8k", "888k", "8.88M", "88.8M"];
+
+    private readonly Typeface _valueFace = new(new FontFamily("Segoe UI Variable Display, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private readonly Typeface _unitFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+    private readonly Dictionary<(char, int), FormattedText> _glyphCache = new();
+    private readonly DrawingVisual _visual = new();
+    private RenderTargetBitmap? _bitmap;
+    private double _cacheScale = -1;
+    private Color _cachePrimary;
+    private Color _cacheSecondary;
+    private double _digitWidth;
+    private double _valueBoxWidth;
+    private FormattedText? _unit;
+    private string _unitText = string.Empty;
+
+    public TaskbarRenderer()
+    {
+        TextOptions.SetTextRenderingMode(_visual, TextRenderingMode.Grayscale);
+        TextOptions.SetTextHintingMode(_visual, TextHintingMode.Fixed);
+    }
+
+    /// <summary>Widget length along the taskbar in physical pixels (fixed for a given layout, never jitters).</summary>
+    public int MeasureLength(TaskbarState state, double scale, bool vertical)
+    {
+        var colors = Palette(state);
+        EnsureCache(scale, colors.Primary, colors.Secondary, state.UnitText);
+        if (vertical)
+        {
+            var lines = state.Mode == BarDisplayMode.GlyphAndValue ? 2 : 1;
+            var height = Padding + lines * 20 + (state.ShowUnit && state.Mode != BarDisplayMode.GlyphOnly ? 14 : 0) + Padding;
+            return (int)Math.Ceiling(height * scale);
+        }
+
+        var width = Padding * 2;
+        if (state.Mode != BarDisplayMode.ValueOnly)
+        {
+            width += GlyphSize;
+        }
+
+        if (state.Mode != BarDisplayMode.GlyphOnly)
+        {
+            if (state.Mode == BarDisplayMode.GlyphAndValue)
+            {
+                width += GlyphGap;
+            }
+
+            width += _valueBoxWidth;
+            if (state.ShowUnit && _unit is not null)
+            {
+                width += UnitGap + _unit.WidthIncludingTrailingWhitespace;
+            }
+        }
+
+        return (int)Math.Ceiling(width * scale);
+    }
+
+    /// <summary>Renders into <paramref name="destination"/> (top-down, premultiplied BGRA, stride = width * 4).</summary>
+    public void Render(
+        TaskbarState state, BarScene scene, int widthPx, int heightPx, double scale, bool vertical,
+        bool hovered, bool pressed, nint destination, int destinationBytes)
+    {
+        var colors = Palette(state);
+        EnsureCache(scale, colors.Primary, colors.Secondary, state.UnitText);
+
+        var width = widthPx / scale;
+        var height = heightPx / scale;
+        using (var dc = _visual.RenderOpen())
+        {
+            // Alpha 1/255 everywhere keeps the whole rectangle hit-testable without being visible.
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), null, new Rect(0, 0, width, height));
+
+            if (hovered || pressed)
+            {
+                var fill = Color.FromArgb((byte)(pressed ? 0x0A : 0x12), colors.Primary.R, colors.Primary.G, colors.Primary.B);
+                var inset = vertical ? new Rect(3, 2, width - 6, height - 4) : new Rect(2, Math.Max(2, (height - 40) / 2), width - 4, Math.Min(height - 4, 40));
+                dc.DrawRoundedRectangle(new SolidColorBrush(fill), null, inset, 4, 4);
+            }
+
+            if (vertical)
+            {
+                DrawVertical(dc, state, scene, colors, width, height);
+            }
+            else
+            {
+                DrawHorizontal(dc, state, scene, colors, width, height, scale);
+            }
+        }
+
+        if (_bitmap is null || _bitmap.PixelWidth != widthPx || _bitmap.PixelHeight != heightPx || Math.Abs(_bitmap.DpiX - 96 * scale) > 0.01)
+        {
+            _bitmap = new RenderTargetBitmap(widthPx, heightPx, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        }
+        else
+        {
+            _bitmap.Clear();
+        }
+
+        _bitmap.Render(_visual);
+        _bitmap.CopyPixels(new Int32Rect(0, 0, widthPx, heightPx), destination, destinationBytes, widthPx * 4);
+    }
+
+    private void DrawHorizontal(DrawingContext dc, TaskbarState state, BarScene scene, (Color Primary, Color Secondary) colors,
+        double width, double height, double scale)
+    {
+        var x = Padding;
+        var centerY = height / 2;
+
+        if (state.Mode != BarDisplayMode.ValueOnly)
+        {
+            var glyphRect = new Rect(Snap(x, scale), Snap(centerY - GlyphSize / 2, scale), GlyphSize, GlyphSize);
+            DrawGlyph(dc, state, scene, colors.Primary, glyphRect, scale);
+            x += GlyphSize + (state.Mode == BarDisplayMode.GlyphAndValue ? GlyphGap : 0);
+        }
+
+        if (state.Mode == BarDisplayMode.GlyphOnly)
+        {
+            return;
+        }
+
+        var valueText = SpeedFormat.Speed(state.Value);
+        var idle = state.Tier == SpeedTier.Idle || state.Value <= 0;
+        var role = idle ? 1 : 0;
+        var baseline = Snap(centerY + CapHeight / 2, scale);
+        DrawTabular(dc, valueText, x + _valueBoxWidth, baseline, role, scale);
+        x += _valueBoxWidth;
+
+        if (state.ShowUnit && _unit is not null)
+        {
+            x += UnitGap;
+            dc.DrawText(_unit, new Point(Snap(x, scale), baseline - _unit.Baseline));
+        }
+    }
+
+    private void DrawVertical(DrawingContext dc, TaskbarState state, BarScene scene, (Color Primary, Color Secondary) colors,
+        double width, double height)
+    {
+        var y = Padding;
+        if (state.Mode != BarDisplayMode.ValueOnly)
+        {
+            var rect = new Rect((width - GlyphSize) / 2, y, GlyphSize, GlyphSize);
+            DrawGlyph(dc, state, scene, colors.Primary, rect, 1);
+            y += 20;
+        }
+
+        if (state.Mode == BarDisplayMode.GlyphOnly)
+        {
+            return;
+        }
+
+        var text = SpeedFormat.Speed(state.Value);
+        var role = state.Tier == SpeedTier.Idle || state.Value <= 0 ? 1 : 0;
+        var total = TabularWidth(text, role);
+        var sample = Glyph('8', role);
+        DrawTabular(dc, text, (width + total) / 2, y + sample.Baseline, role, 1);
+        y += sample.Height;
+        if (state.ShowUnit && _unit is not null)
+        {
+            dc.DrawText(_unit, new Point((width - _unit.WidthIncludingTrailingWhitespace) / 2, y - 2));
+        }
+    }
+
+    private static void DrawGlyph(DrawingContext dc, TaskbarState state, BarScene scene, Color label, Rect rect, double scale)
+    {
+        var monochrome = !state.ColoredGlyph || state.HighContrast;
+        var stroke = Math.Max(2, Math.Round(2 * scale)) / scale;
+        GaugeGlyphPainter.Draw(dc, rect, scene.Heat, label, monochrome, scene.FillOpacity,
+            state.HighContrast ? 0 : scene.Glow, stroke);
+    }
+
+    private void DrawTabular(DrawingContext dc, string text, double right, double baseline, int role, double scale)
+    {
+        var x = right - TabularWidth(text, role);
+        foreach (var c in text)
+        {
+            var glyph = Glyph(c, role);
+            var cell = char.IsDigit(c) ? _digitWidth : glyph.WidthIncludingTrailingWhitespace;
+            var offset = (cell - glyph.WidthIncludingTrailingWhitespace) / 2;
+            dc.DrawText(glyph, new Point(Snap(x + offset, scale), baseline - glyph.Baseline));
+            x += cell;
+        }
+    }
+
+    private double TabularWidth(string text, int role)
+    {
+        var width = 0.0;
+        foreach (var c in text)
+        {
+            width += char.IsDigit(c) ? _digitWidth : Glyph(c, role).WidthIncludingTrailingWhitespace;
+        }
+
+        return width;
+    }
+
+    private FormattedText Glyph(char c, int role)
+    {
+        if (!_glyphCache.TryGetValue((c, role), out var text))
+        {
+            text = new FormattedText(c.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _valueFace,
+                ValueSize, new SolidColorBrush(role == 0 ? _cachePrimary : _cacheSecondary), null,
+                TextFormattingMode.Ideal, _cacheScale);
+            _glyphCache[(c, role)] = text;
+        }
+
+        return text;
+    }
+
+    private void EnsureCache(double scale, Color primary, Color secondary, string unitText)
+    {
+        if (Math.Abs(scale - _cacheScale) < 0.001 && primary == _cachePrimary && secondary == _cacheSecondary && unitText == _unitText)
+        {
+            return;
+        }
+
+        _cacheScale = scale;
+        _cachePrimary = primary;
+        _cacheSecondary = secondary;
+        _unitText = unitText;
+        _glyphCache.Clear();
+
+        _digitWidth = 0;
+        for (var c = '0'; c <= '9'; c++)
+        {
+            _digitWidth = Math.Max(_digitWidth, Glyph(c, 0).WidthIncludingTrailingWhitespace);
+        }
+
+        _valueBoxWidth = WidestValues.Max(v => TabularWidth(v, 0));
+        _valueBoxWidth = Math.Ceiling(_valueBoxWidth);
+        _unit = string.IsNullOrEmpty(unitText)
+            ? null
+            : new FormattedText(unitText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _unitFace, UnitSize,
+                new SolidColorBrush(secondary), null, TextFormattingMode.Ideal, scale);
+    }
+
+    private double CapHeight => (_valueFace.CapsHeight > 0 ? _valueFace.CapsHeight : 0.7) * ValueSize;
+
+    private static (Color Primary, Color Secondary) Palette(TaskbarState state)
+    {
+        if (state.HighContrast)
+        {
+            var text = SystemColors.WindowTextColor;
+            return (text, text);
+        }
+
+        return state.TaskbarDark
+            ? (Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x9E, 0xFF, 0xFF, 0xFF))
+            : (Color.FromArgb(0xE6, 0x00, 0x00, 0x00), Color.FromArgb(0x99, 0x00, 0x00, 0x00));
+    }
+
+    private static double Snap(double value, double scale) => Math.Round(value * scale) / scale;
+}

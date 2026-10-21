@@ -1,0 +1,135 @@
+{
+  "_comment": "Windows-only UI strings. Same format as spec/strings.json; every key needs zh-Hant, zh-Hans, en and ja.",
+  "win.chart.peak": {
+    "zh-Hant": "峰值 %@",
+    "zh-Hans": "峰值 %@",
+    "en": "Peak %@",
+    "ja": "ピーク %@"
+  },
+  "win.dashboard.chart": {
+    "zh-Hant": "即時速度圖表",
+    "zh-Hans": "实时速度图表",
+    "en": "Live speed chart",
+    "ja": "ライブ速度チャート"
+  },
+  "win.dashboard.metricInfo": {
+    "zh-Hant": "速度的計算方式",
+    "zh-Hans": "速度的计算方式",
+    "en": "How speed is measured",
+    "ja": "速度の計測方法"
+  },
+  "win.dashboard.range": {
+    "zh-Hant": "圖表時間範圍",
+    "zh-Hans": "图表时间范围",
+    "en": "Chart time range",
+    "ja": "チャートの期間"
+  },
+  "win.dashboard.range.1m": {
+    "zh-Hant": "1 分",
+    "zh-Hans": "1 分",
+    "en": "1m",
+    "ja": "1 分"
+  },
+  "win.dashboard.range.2m": {
+    "zh-Hant": "2 分",
+    "zh-Hans": "2 分",
+    "en": "2m",
+    "ja": "2 分"
+  },
+  "win.dashboard.range.5m": {
+    "zh-Hant": "5 分",
+    "zh-Hans": "5 分",
+    "en": "5m",
+    "ja": "5 分"
+  },
+  "win.settings.about.license": {
+    "zh-Hant": "MIT 授權條款",
+    "zh-Hans": "MIT 许可协议",
+    "en": "MIT License",
+    "ja": "MIT ライセンス"
+  },
+  "win.settings.about.logs": {
+    "zh-Hant": "開啟記錄檔資料夾",
+    "zh-Hans": "打开日志文件夹",
+    "en": "Open log folder",
+    "ja": "ログフォルダを開く"
+  },
+  "win.settings.appearance.description": {
+    "zh-Hant": "跟隨 Windows，或固定使用淺色、深色。",
+    "zh-Hans": "跟随 Windows，或固定使用浅色、深色。",
+    "en": "Follow Windows, or always use light or dark.",
+    "ja": "Windows に合わせるか、常にライトまたはダークを使います。"
+  },
+  "win.settings.bar.show.description": {
+    "zh-Hant": "在通知區域左側顯示即時速度。",
+    "zh-Hans": "在通知区域左侧显示实时速度。",
+    "en": "Shows the live speed next to the notification area.",
+    "ja": "通知領域の左にライブ速度を表示します。"
+  },
+  "win.settings.clickThrough.description": {
+    "zh-Hant": "懸浮窗不再攔截滑鼠，可從工作列或通知區域圖示操作。",
+    "zh-Hans": "悬浮窗不再拦截鼠标，可从任务栏或通知区域图标操作。",
+    "en": "The orb ignores the mouse; control it from the taskbar or the notification area icon.",
+    "ja": "オーブはマウス操作を受け付けません。タスクバーまたは通知領域のアイコンから操作します。"
+  },
+  "win.settings.fadeIdle.description": {
+    "zh-Hant": "閒置 60 秒後淡出，有動態或滑鼠移入時立即恢復。",
+    "zh-Hans": "空闲 60 秒后淡出，有动态或鼠标移入时立即恢复。",
+    "en": "Fades after 60 seconds of idle and returns instantly on activity or hover.",
+    "ja": "60 秒間待機すると薄くなり、動きがあるかマウスを重ねるとすぐに戻ります。"
+  },
+  "win.settings.language.description": {
+    "zh-Hant": "變更立即生效，不需重新啟動。",
+    "zh-Hans": "更改立即生效，无需重新启动。",
+    "en": "Changes apply immediately, no restart needed.",
+    "ja": "変更はすぐに反映され、再起動は不要です。"
+  },
+  "win.settings.launchAtLogin.description": {
+    "zh-Hant": "登入 Windows 後在背景開始監測。",
+    "zh-Hans": "登录 Windows 后在后台开始监测。",
+    "en": "Starts monitoring in the background when you sign in to Windows.",
+    "ja": "Windows にサインインするとバックグラウンドで計測を始めます。"
+  },
+  "win.settings.metric.description": {
+    "zh-Hant": "每個指標各有自己的紅線速度。",
+    "zh-Hans": "每个指标各有自己的红线速度。",
+    "en": "Each metric keeps its own redline.",
+    "ja": "指標ごとに個別のレッドラインを使います。"
+  },
+  "win.settings.navigation": {
+    "zh-Hant": "設定類別",
+    "zh-Hans": "设置类别",
+    "en": "Settings categories",
+    "ja": "設定のカテゴリ"
+  },
+  "win.settings.preview.description": {
+    "zh-Hant": "以 20 秒的示範依序展示每個等級的特效。",
+    "zh-Hans": "用 20 秒的演示依次展示每个等级的特效。",
+    "en": "A 20-second demo that sweeps through every tier.",
+    "ja": "20 秒のデモですべての段階のエフェクトを順に表示します。"
+  },
+  "win.settings.sources.claude": {
+    "zh-Hant": "Claude Code 與 Claude Desktop",
+    "zh-Hans": "Claude Code 与 Claude Desktop",
+    "en": "Claude Code and Claude Desktop",
+    "ja": "Claude Code と Claude Desktop"
+  },
+  "win.settings.sources.folders": {
+    "zh-Hant": "資料夾",
+    "zh-Hans": "文件夹",
+    "en": "Folders",
+    "ja": "フォルダ"
+  },
+  "win.settings.taskbar.floating": {
+    "zh-Hant": "無法直接嵌入工作列，目前以浮動方式顯示在工作列上方。",
+    "zh-Hans": "无法直接嵌入任务栏，目前以浮动方式显示在任务栏上方。",
+    "en": "The widget could not be embedded in the taskbar and is shown floating over it instead.",
+    "ja": "タスクバーに埋め込めないため、タスクバーの上に重ねて表示しています。"
+  },
+  "win.settings.taskbar.unavailable": {
+    "zh-Hant": "目前找不到工作列，速度仍會顯示在通知區域圖示上。",
+    "zh-Hans": "目前找不到任务栏，速度仍会显示在通知区域图标上。",
+    "en": "The taskbar is not available right now; the speed is still shown on the notification area icon.",
+    "ja": "タスクバーが見つかりません。速度は通知領域のアイコンに引き続き表示されます。"
+  }
+}

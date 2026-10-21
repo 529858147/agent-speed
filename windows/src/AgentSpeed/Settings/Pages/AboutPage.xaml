@@ -1,0 +1,29 @@
+<UserControl x:Class="AgentSpeed.Settings.Pages.AboutPage"
+             x:ClassModifier="internal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:AgentSpeed.Localization"
+             xmlns:controls="clr-namespace:AgentSpeed.Controls"
+             Focusable="False">
+    <StackPanel>
+        <Border Padding="20" CornerRadius="4" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" Margin="0,0,0,4">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <controls:GaugeGlyph Width="40" Height="40" Heat="0.78" />
+                    <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Loc app.name}" Style="{StaticResource SubtitleText}" />
+                        <TextBlock Text="{Binding VersionText}" Style="{StaticResource CaptionText}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Text="{loc:Loc settings.about.privacy}" Style="{StaticResource BodyText}" Margin="0,16,0,0" />
+                <TextBlock Text="{loc:Loc settings.about.update}" Style="{StaticResource CaptionText}" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="-4,12,0,0">
+                    <Button Style="{StaticResource LinkButton}" Command="{Binding OpenRepositoryCommand}" Content="{loc:Loc settings.about.github}" />
+                    <Button Style="{StaticResource LinkButton}" Command="{Binding OpenLicenseCommand}" Content="{loc:Loc win.settings.about.license}" Margin="12,0,0,0" />
+                    <Button Style="{StaticResource LinkButton}" Command="{Binding OpenLogsCommand}" Content="{loc:Loc win.settings.about.logs}" Margin="12,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

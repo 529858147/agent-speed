@@ -1,5 +1,14 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/AgentSpeed.Core/AgentSpeed.Core.csproj" />
+    <Project Path="src/AgentSpeed.Presentation/AgentSpeed.Presentation.csproj" />
+    <Project Path="src/AgentSpeed/AgentSpeed.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AgentSpeed.Core.Tests/AgentSpeed.Core.Tests.csproj" />
+    <Project Path="tests/AgentSpeed.Presentation.Tests/AgentSpeed.Presentation.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AgentSpeed.Probe/AgentSpeed.Probe.csproj" />
   </Folder>
 </Solution>

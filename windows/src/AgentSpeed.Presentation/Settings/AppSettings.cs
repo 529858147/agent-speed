@@ -1,0 +1,212 @@
+using System.Collections.Immutable;
+using AgentSpeed.Core;
+using AgentSpeed.Presentation.Chart;
+using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Localization;
+
+namespace AgentSpeed.Presentation.Settings;
+
+public enum AppearanceMode
+{
+    Auto,
+    Light,
+    Dark,
+}
+
+public enum BarDisplayMode
+{
+    GlyphAndValue,
+    ValueOnly,
+    GlyphOnly,
+}
+
+public enum EffectsIntensity
+{
+    Off,
+    Soft,
+    Standard,
+    Max,
+}
+
+/// <summary>Orb center as a fraction (0..1) of a monitor's work area, so it survives resolution and DPI changes.</summary>
+public readonly record struct OrbAnchor(double X, double Y);
+
+/// <summary>All user settings (DESIGN section 5). Immutable; use <c>with</c> to change.</summary>
+public sealed record AppSettings
+{
+    public const double MinOrbSize = 96;
+    public const double MaxOrbSize = 240;
+    public const double DefaultOrbSize = 148;
+    public const double MinOrbOpacity = 0.4;
+    public const double MaxOrbOpacity = 1.0;
+    public const int MaxStoredMonitors = 16;
+    public const int MaxPathLength = 32_767;
+
+    public static IReadOnlyList<double> OrbSizePresets { get; } = [112, 148, 196];
+
+    public static AppSettings Default { get; } = new();
+
+    public AppearanceMode Appearance { get; init; } = AppearanceMode.Auto;
+
+    public AppLanguage Language { get; init; } = AppLanguage.System;
+
+    public SpeedMetric Metric { get; init; } = SpeedMetric.Output;
+
+    /// <summary>Redline for the output-speed metric (tok/s).</summary>
+    public double RedlineOutput { get; init; } = HeatMath.DefaultRedline;
+
+    /// <summary>Redline for the total-throughput metric (tok/s, includes cached input).</summary>
+    public double RedlineTotal { get; init; } = HeatMath.DefaultRedlineTotal;
+
+    /// <summary>Redline of the selected metric; heat and tiers always use this.</summary>
+    public double Redline => RedlineFor(Metric);
+
+    public double RedlineFor(SpeedMetric metric) => metric == SpeedMetric.Total ? RedlineTotal : RedlineOutput;
+
+    public AppSettings WithRedline(SpeedMetric metric, double redline) => metric == SpeedMetric.Total
+        ? this with { RedlineTotal = HeatMath.ClampRedlineTotal(redline) }
+        : this with { RedlineOutput = HeatMath.ClampRedline(redline) };
+
+    public bool ShowOnTaskbar { get; init; } = true;
+
+    public BarDisplayMode BarMode { get; init; } = BarDisplayMode.GlyphAndValue;
+
+    public bool BarColoredGlyph { get; init; } = true;
+
+    public bool BarShowUnit { get; init; } = true;
+
+    public bool ShowOrb { get; init; } = true;
+
+    public double OrbSize { get; init; } = DefaultOrbSize;
+
+    public double OrbOpacity { get; init; } = MaxOrbOpacity;
+
+    public bool OrbAlwaysOnTop { get; init; } = true;
+
+    public bool OrbClickThrough { get; init; }
+
+    public bool OrbFadeWhenIdle { get; init; }
+
+    public EffectsIntensity Effects { get; init; } = EffectsIntensity.Standard;
+
+    public bool CelebratePeaks { get; init; } = true;
+
+    public bool ResponsePulses { get; init; } = true;
+
+    public bool CodexEnabled { get; init; } = true;
+
+    public bool ClaudeCodeEnabled { get; init; } = true;
+
+    public bool ClaudeDesktopEnabled { get; init; } = true;
+
+    /// <summary>Null uses the default Codex sessions folder.</summary>
+    public string? CodexRoot { get; init; }
+
+    /// <summary>Null uses the default Claude projects folder.</summary>
+    public string? ClaudeRoot { get; init; }
+
+    public int ChartSeconds { get; init; } = 120;
+
+    /// <summary>Key of the monitor the orb was last placed on.</summary>
+    public string? OrbMonitor { get; init; }
+
+    public ImmutableDictionary<string, OrbAnchor> OrbAnchors { get; init; } =
+        ImmutableDictionary<string, OrbAnchor>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase);
+
+    public bool IsSourceEnabled(SourceKind kind) => kind switch
+    {
+        SourceKind.Codex => CodexEnabled,
+        SourceKind.ClaudeCode => ClaudeCodeEnabled,
+        SourceKind.ClaudeDesktop => ClaudeDesktopEnabled,
+        _ => false,
+    };
+
+    public AppSettings WithSourceEnabled(SourceKind kind, bool enabled) => kind switch
+    {
+        SourceKind.Codex => this with { CodexEnabled = enabled },
+        SourceKind.ClaudeCode => this with { ClaudeCodeEnabled = enabled },
+        SourceKind.ClaudeDesktop => this with { ClaudeDesktopEnabled = enabled },
+        _ => this,
+    };
+
+    public MonitorConfiguration ToMonitorConfiguration()
+    {
+        var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
+        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot);
+    }
+
+    public AppSettings WithOrbAnchor(string monitorKey, OrbAnchor anchor)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(monitorKey);
+        var anchors = OrbAnchors.SetItem(monitorKey, Clamp(anchor));
+        if (anchors.Count > MaxStoredMonitors)
+        {
+            var keep = anchors.Keys.Where(k => !string.Equals(k, monitorKey, StringComparison.OrdinalIgnoreCase))
+                .Take(MaxStoredMonitors - 1)
+                .Append(monitorKey)
+                .ToArray();
+            anchors = anchors.Where(kv => keep.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                .ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return this with { OrbMonitor = monitorKey, OrbAnchors = anchors };
+    }
+
+    /// <summary>Returns a copy with every value inside its valid range.</summary>
+    public AppSettings Validated() => this with
+    {
+        Appearance = Enum.IsDefined(Appearance) ? Appearance : AppearanceMode.Auto,
+        Language = Enum.IsDefined(Language) ? Language : AppLanguage.System,
+        Metric = Enum.IsDefined(Metric) ? Metric : SpeedMetric.Output,
+        RedlineOutput = HeatMath.ClampRedline(RedlineOutput),
+        RedlineTotal = HeatMath.ClampRedlineTotal(RedlineTotal),
+        BarMode = Enum.IsDefined(BarMode) ? BarMode : BarDisplayMode.GlyphAndValue,
+        OrbSize = double.IsFinite(OrbSize) ? Math.Clamp(Math.Round(OrbSize), MinOrbSize, MaxOrbSize) : DefaultOrbSize,
+        OrbOpacity = double.IsFinite(OrbOpacity) ? Math.Clamp(OrbOpacity, MinOrbOpacity, MaxOrbOpacity) : MaxOrbOpacity,
+        Effects = Enum.IsDefined(Effects) ? Effects : EffectsIntensity.Standard,
+        CodexRoot = CleanPath(CodexRoot),
+        ClaudeRoot = CleanPath(ClaudeRoot),
+        ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
+        OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
+        OrbAnchors = CleanAnchors(OrbAnchors),
+    };
+
+    private static ImmutableDictionary<string, OrbAnchor> CleanAnchors(ImmutableDictionary<string, OrbAnchor> anchors)
+    {
+        var builder = ImmutableDictionary.CreateBuilder<string, OrbAnchor>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, anchor) in anchors.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (builder.Count >= MaxStoredMonitors)
+            {
+                break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(key) && key.Length <= 256 && !builder.ContainsKey(key))
+            {
+                builder[key] = Clamp(anchor);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    internal static string? CleanPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var trimmed = path.Trim();
+        if (trimmed.Length > MaxPathLength || trimmed.IndexOf('\0') >= 0)
+        {
+            return null;
+        }
+
+        return Path.IsPathFullyQualified(trimmed) ? trimmed : null;
+    }
+
+    private static OrbAnchor Clamp(OrbAnchor anchor) => new(
+        double.IsFinite(anchor.X) ? Math.Clamp(anchor.X, 0, 1) : 1,
+        double.IsFinite(anchor.Y) ? Math.Clamp(anchor.Y, 0, 1) : 1);
+}

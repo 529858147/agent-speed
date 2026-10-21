@@ -1,0 +1,45 @@
+<UserControl x:Class="AgentSpeed.Settings.Pages.OrbPage"
+             x:ClassModifier="internal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:AgentSpeed.Localization"
+             xmlns:controls="clr-namespace:AgentSpeed.Controls"
+             Focusable="False">
+    <StackPanel>
+        <controls:SettingsCard Header="{loc:Loc settings.orb.show}" Icon="&#xEA3A;">
+            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowOrb, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.orb.show}" />
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc settings.orb.size}" Icon="&#xE740;">
+            <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource SegmentedContainer}" Margin="0,0,14,0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource SubtleButton}" Height="24" Content="{loc:Loc menu.size.small}" Command="{Binding SizePresetCommand}" CommandParameter="112" />
+                        <Button Style="{StaticResource SubtleButton}" Height="24" Content="{loc:Loc menu.size.medium}" Command="{Binding SizePresetCommand}" CommandParameter="148" />
+                        <Button Style="{StaticResource SubtleButton}" Height="24" Content="{loc:Loc menu.size.large}" Command="{Binding SizePresetCommand}" CommandParameter="196" />
+                    </StackPanel>
+                </Border>
+                <Slider Width="180" Minimum="96" Maximum="240" TickFrequency="4" IsSnapToTickEnabled="True" SmallChange="4" LargeChange="24"
+                        VerticalAlignment="Center" Value="{Binding OrbSize, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.orb.size}" />
+                <TextBlock Text="{Binding OrbSizeText}" MinWidth="32" TextAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc settings.orb.opacity}" Icon="&#xE706;">
+            <StackPanel Orientation="Horizontal">
+                <Slider Width="220" Minimum="40" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" SmallChange="5" LargeChange="10"
+                        VerticalAlignment="Center" Value="{Binding OrbOpacityPercent, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.orb.opacity}" />
+                <TextBlock Text="{Binding OrbOpacityText}" MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc menu.alwaysOnTop}" Icon="&#xE718;">
+            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding OrbAlwaysOnTop, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc menu.alwaysOnTop}" />
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc menu.clickThrough}" Icon="&#xE7C9;" Description="{loc:Loc win.settings.clickThrough.description}">
+            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding OrbClickThrough, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc menu.clickThrough}" />
+        </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc settings.orb.fadeIdle}" Icon="&#xE708;" Description="{loc:Loc win.settings.fadeIdle.description}">
+            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding OrbFadeWhenIdle, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.orb.fadeIdle}" />
+        </controls:SettingsCard>
+    </StackPanel>
+</UserControl>

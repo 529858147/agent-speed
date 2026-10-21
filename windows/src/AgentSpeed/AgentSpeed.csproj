@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>AgentSpeed</AssemblyName>
+    <RootNamespace>AgentSpeed</RootNamespace>
+    <StartupObject>AgentSpeed.App.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SatelliteResourceLanguages>en;zh-Hant;zh-Hans;ja</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- WPF0001: Application.ThemeMode (Fluent theme) is marked experimental in .NET 9/10; it is the supported way to
+         get native Windows 11 Fluent controls and Mica in WPF, so the diagnostic is intentionally acknowledged. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\assets\icon\AgentSpeed.ico')">
+    <ApplicationIcon>$(MSBuildThisFileDirectory)..\..\..\assets\icon\AgentSpeed.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\assets\icon\AgentSpeed.ico')">
+    <Resource Include="..\..\..\assets\icon\AgentSpeed.ico" Link="Assets\AgentSpeed.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AgentSpeed.Core\AgentSpeed.Core.csproj" />
+    <ProjectReference Include="..\AgentSpeed.Presentation\AgentSpeed.Presentation.csproj" />
+  </ItemGroup>
+</Project>

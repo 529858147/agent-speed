@@ -23,4 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/AgentSpeed.Core/AgentSpeed.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../../spec/fixtures/**/*" LinkBase="spec/fixtures" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
 </Project>
