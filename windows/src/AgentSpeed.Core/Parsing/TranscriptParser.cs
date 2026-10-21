@@ -78,6 +78,8 @@ internal abstract class TranscriptParser
 
     protected void CountMalformed() => MalformedLines++;
 
+    protected void MarkChanged() => Version++;
+
     protected void Touch(long timestampMs)
     {
         if (LastLineMs is not { } last || timestampMs > last)

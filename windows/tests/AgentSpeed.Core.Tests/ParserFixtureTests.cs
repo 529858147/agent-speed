@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Tests;
@@ -75,6 +76,21 @@ public sealed class ParserFixtureTests
             Assert.Equal(parser.Source, r.Source);
             Assert.Equal(parser.AgentId, r.AgentId);
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(FileNames))]
+    public void ParentFileMatchesExpectation(string relative)
+    {
+        var parents = ParentLinks.Resolve(
+            Results.Value.Values.Select(r => AgentLink.Of(r.Parser)).ToList(), StringComparer.Ordinal);
+        var expected = Expected.GetProperty("files").GetProperty(relative).GetProperty("parentFile").GetString();
+
+        var parent = parents.GetValueOrDefault(Results.Value[relative].Parser.AgentId);
+        var actual = parent is null
+            ? null
+            : Path.GetRelativePath(FixtureLocator.FixturesDirectory, parent).Replace(Path.DirectorySeparatorChar, '/');
+        Assert.Equal(expected, actual);
     }
 
     [Fact]

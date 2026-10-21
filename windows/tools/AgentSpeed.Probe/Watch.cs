@@ -86,6 +86,7 @@ internal static class Watch
             .Add("source", JsonLine.SourceName(a.Source))
             .Add("phase", JsonLine.PhaseName(a.Phase))
             .Add("live", a.Live.Output)
+            .Add("parent", a.ParentId is null ? null : Path.GetFileName(a.ParentId))
             .Text);
         return line
             .Raw("live", JsonLine.Rate(s.Live))

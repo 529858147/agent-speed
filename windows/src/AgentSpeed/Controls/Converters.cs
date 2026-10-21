@@ -23,13 +23,3 @@ internal sealed class DimOpacityConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         Binding.DoNothing;
 }
-
-[ValueConversion(typeof(bool), typeof(Thickness))]
-internal sealed class SubagentIndentConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-        value is true ? new Thickness(12, 0, 0, 0) : new Thickness(0);
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
-        Binding.DoNothing;
-}

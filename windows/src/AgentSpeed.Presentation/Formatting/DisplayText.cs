@@ -61,6 +61,9 @@ public static class DisplayText
         return localizer.Format("agents.context", snapshot.GeneratingCount, snapshot.ToolsCount);
     }
 
+    /// <summary><c>+3 個 agent</c>: agents that did not fit in the list.</summary>
+    public static string HiddenAgents(int count, Localizer localizer) => "+" + localizer.Format("agents.count", count);
+
     public static string TimeAgo(TimeSpan elapsed, Localizer localizer)
     {
         if (elapsed < TimeSpan.FromSeconds(5))

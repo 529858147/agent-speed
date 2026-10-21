@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Windows;
 using System.Windows.Media;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Theme;
 
@@ -50,7 +52,8 @@ internal sealed class AgentRow : ObservableObject
     private AgentPhase _phase = AgentPhase.Idle;
     private Color _color = Colors.Gray;
     private string _liveText = string.Empty;
-    private bool _isSubagent;
+    private Thickness _indent;
+    private TreeGuides _guides;
     private string _accessibleName = string.Empty;
 
     public string Project { get => _project; set => Set(ref _project, value); }
@@ -63,7 +66,10 @@ internal sealed class AgentRow : ObservableObject
 
     public string LiveText { get => _liveText; set => Set(ref _liveText, value); }
 
-    public bool IsSubagent { get => _isSubagent; set => Set(ref _isSubagent, value); }
+    /// <summary>Left margin for the row's depth in the agent tree.</summary>
+    public Thickness Indent { get => _indent; set => Set(ref _indent, value); }
+
+    public TreeGuides Guides { get => _guides; set => Set(ref _guides, value); }
 
     public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
 }
@@ -83,6 +89,7 @@ internal sealed class DashboardViewModel : ObservableObject
     private bool _isRunning = true;
     private double _loadingProgress;
     private bool _hasAgents;
+    private string _hiddenAgentsText = string.Empty;
     private string _outputText = "0";
     private string _inputText = "0";
     private string _requestsText = "0";
@@ -125,6 +132,21 @@ internal sealed class DashboardViewModel : ObservableObject
     public double LoadingProgress { get => _loadingProgress; private set => Set(ref _loadingProgress, value); }
 
     public bool HasAgents { get => _hasAgents; private set => Set(ref _hasAgents, value); }
+
+    /// <summary><c>+3 個 agent</c> when rows did not fit; empty otherwise.</summary>
+    public string HiddenAgentsText
+    {
+        get => _hiddenAgentsText;
+        private set
+        {
+            if (Set(ref _hiddenAgentsText, value))
+            {
+                OnPropertyChanged(nameof(HasHiddenAgents));
+            }
+        }
+    }
+
+    public bool HasHiddenAgents => _hiddenAgentsText.Length > 0;
 
     public string OutputText { get => _outputText; private set => Set(ref _outputText, value); }
 
@@ -232,20 +254,21 @@ internal sealed class DashboardViewModel : ObservableObject
 
     private void UpdateAgents(SpeedSnapshot snapshot, SpeedMetric metric, Localizer loc)
     {
-        var agents = snapshot.Agents.Take(MaxAgents).ToArray();
-        while (Agents.Count > agents.Length)
+        var layout = AgentTree.Arrange(snapshot.Agents, MaxAgents);
+        var rows = layout.Rows;
+        while (Agents.Count > rows.Count)
         {
             Agents.RemoveAt(Agents.Count - 1);
         }
 
-        while (Agents.Count < agents.Length)
+        while (Agents.Count < rows.Count)
         {
             Agents.Add(new AgentRow());
         }
 
-        for (var i = 0; i < agents.Length; i++)
+        for (var i = 0; i < rows.Count; i++)
         {
-            var agent = agents[i];
+            var agent = rows[i].Agent;
             var row = Agents[i];
             var source = loc[DisplayText.SourceKey(agent.Source)];
             row.Project = string.IsNullOrWhiteSpace(agent.Project) ? source : agent.Project;
@@ -255,11 +278,13 @@ internal sealed class DashboardViewModel : ObservableObject
             row.Color = HeatPalette.SourceColor(agent.Source).ToColor();
             var live = agent.Live.ValueFor(metric);
             row.LiveText = live > 0 ? SpeedFormat.Speed(live) : agent.Phase == AgentPhase.Generating ? "…" : "0";
-            row.IsSubagent = agent.IsSubagent;
+            row.Indent = new Thickness(rows[i].Indent * TreeConnectors.LevelWidth, 0, 0, 0);
+            row.Guides = rows[i].Guides;
             row.AccessibleName = string.Create(CultureInfo.InvariantCulture,
                 $"{row.Project}, {row.Detail}, {loc[DisplayText.PhaseKey(agent.Phase)]}, {row.LiveText} {loc["unit.tokS"]}");
         }
 
-        HasAgents = agents.Length > 0;
+        HasAgents = rows.Count > 0;
+        HiddenAgentsText = layout.Hidden > 0 ? DisplayText.HiddenAgents(layout.Hidden, loc) : string.Empty;
     }
 }

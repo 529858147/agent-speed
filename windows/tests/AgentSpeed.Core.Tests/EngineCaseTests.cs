@@ -43,7 +43,8 @@ public sealed class EngineCaseTests
                 false,
                 ParsePhase(agent.GetProperty("phase").GetString()!),
                 OptionalLong(agent, "inFlightStartMs"),
-                OptionalLong(agent, "lastLineMs")));
+                OptionalLong(agent, "lastLineMs"),
+                OptionalString(agent, "parentId")));
         }
 
         foreach (var response in item.GetProperty("responses").EnumerateArray())
@@ -71,6 +72,13 @@ public sealed class EngineCaseTests
             AssertClose(query.GetProperty("liveOutput").GetDouble(), frame.Live.Output, at + " liveOutput");
             AssertClose(query.GetProperty("liveTotal").GetDouble(), frame.Live.Total, at + " liveTotal");
             AssertClose(query.GetProperty("estimatedShare").GetDouble(), frame.EstimatedShare, at + " estimatedShare");
+
+            if (query.TryGetProperty("agentsOrder", out var order))
+            {
+                Assert.Equal(order.EnumerateArray().Select(e => e.GetString()!), frame.Agents.Select(a => a.Info.Id));
+                var parents = query.GetProperty("agentParents").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString());
+                Assert.Equal(parents, frame.Agents.Where(a => a.ParentId is not null).ToDictionary(a => a.Info.Id, a => a.ParentId));
+            }
 
             if (query.TryGetProperty("todayRequests", out var requests))
             {

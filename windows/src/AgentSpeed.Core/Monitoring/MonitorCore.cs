@@ -31,7 +31,10 @@ internal sealed class MonitorCore
     private readonly Deduper _deduper = new();
     private readonly SpeedEngine _engine;
     private readonly Dictionary<string, TrackedFile> _files = new(PathComparer);
+    private readonly Dictionary<string, AgentLink> _links = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _parents = new(StringComparer.Ordinal);
     private readonly Collector _collector = new();
+    private bool _linksChanged;
     private long _removedMalformedLines;
     private long _removedOversizedLines;
     private int _responsesSeen;
@@ -297,6 +300,7 @@ internal sealed class MonitorCore
     public (SpeedSnapshot Snapshot, IReadOnlyList<SpeedEvent> Events) BuildSnapshot(
         long nowMs, long todayStartMs, MonitorState state, bool observeLive)
     {
+        ResolveParents();
         var frame = _engine.Compute(nowMs, todayStartMs, observeLive);
         var agents = frame.Agents
             .Select(a => new AgentStatus(
@@ -308,7 +312,8 @@ internal sealed class MonitorCore
                 a.Info.IsSubagent,
                 a.Live,
                 a.RecentSpeed,
-                DateTimeOffset.FromUnixTimeMilliseconds(a.Info.LastLineMs ?? nowMs)))
+                DateTimeOffset.FromUnixTimeMilliseconds(a.Info.LastLineMs ?? nowMs),
+                a.ParentId))
             .ToList();
 
         var sources = Enum.GetValues<SourceKind>()
@@ -571,7 +576,15 @@ internal sealed class MonitorCore
         if (!_enabled.Contains(parser.Source))
         {
             _engine.RemoveAgent(parser.AgentId);
+            _linksChanged |= _links.Remove(parser.AgentId);
             return;
+        }
+
+        var link = AgentLink.Of(parser);
+        if (!_links.TryGetValue(parser.AgentId, out var known) || known != link)
+        {
+            _links[parser.AgentId] = link;
+            _linksChanged = true;
         }
 
         _engine.UpdateAgent(new AgentInfo(
@@ -582,7 +595,34 @@ internal sealed class MonitorCore
             parser.IsSubagent,
             parser.Phase,
             parser.InFlightStartMs,
-            parser.LastLineMs));
+            parser.LastLineMs,
+            _parents.GetValueOrDefault(parser.AgentId)));
+    }
+
+    /// <summary>Re-resolves parent links over the engine's agents after any of them changed (METRICS 6.7).</summary>
+    private void ResolveParents()
+    {
+        if (!_linksChanged)
+        {
+            return;
+        }
+
+        _linksChanged = false;
+        var resolved = ParentLinks.Resolve(_links.Values, PathComparer);
+        foreach (var id in _links.Keys)
+        {
+            var parent = resolved.GetValueOrDefault(id);
+            if (!string.Equals(parent, _parents.GetValueOrDefault(id), StringComparison.Ordinal))
+            {
+                _engine.SetParent(id, parent);
+            }
+        }
+
+        _parents.Clear();
+        foreach (var (id, parent) in resolved)
+        {
+            _parents[id] = parent;
+        }
     }
 
     private void HandleReadFailure(TrackedFile tracked, Exception error)

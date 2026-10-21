@@ -82,6 +82,8 @@ internal struct CodexLine
     public string? Model;
     public string? AgentPath;
     public string? Id;
+    public string? ParentThreadId;
+    public string? SpawnParentThreadId;
     public string? ThreadId;
     public string? ResponseId;
     public TokenCounts Usage;
@@ -221,12 +223,17 @@ internal static class CodexLineReader
             else if (hints.Meta && reader.ValueTextEquals("source"u8))
             {
                 reader.Read();
-                result.SourceHasSubagent = ObjectHasProperty(ref reader, "subagent"u8);
+                ReadSource(ref reader, ref result);
             }
             else if (hints.Meta && reader.ValueTextEquals("id"u8))
             {
                 reader.Read();
                 result.Id = JsonScan.ReadString(ref reader);
+            }
+            else if (hints.Meta && reader.ValueTextEquals("parent_thread_id"u8))
+            {
+                reader.Read();
+                result.ParentThreadId = JsonScan.ReadString(ref reader);
             }
             else if ((hints.UsageRecord || hints.TokenCount) && reader.ValueTextEquals("thread_id"u8))
             {
@@ -410,23 +417,73 @@ internal static class CodexLineReader
             : CodexPayloadKind.Other;
     }
 
-    private static bool ObjectHasProperty(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
+    // source.subagent marks a sub-agent; source.subagent.thread_spawn.parent_thread_id names its parent.
+    private static void ReadSource(ref Utf8JsonReader reader, ref CodexLine result)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return false;
+            return;
         }
 
-        var found = false;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
-            found |= reader.ValueTextEquals(name);
+            var subagent = reader.ValueTextEquals("subagent"u8);
             reader.Read();
+            if (!subagent)
+            {
+                JsonScan.SkipValue(ref reader);
+                continue;
+            }
+
+            result.SourceHasSubagent = true;
+            result.SpawnParentThreadId = null;
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                JsonScan.SkipValue(ref reader);
+                continue;
+            }
+
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var spawn = reader.ValueTextEquals("thread_spawn"u8);
+                reader.Read();
+                if (spawn)
+                {
+                    result.SpawnParentThreadId = ReadStringProperty(ref reader, "parent_thread_id"u8);
+                }
+                else
+                {
+                    JsonScan.SkipValue(ref reader);
+                }
+            }
+        }
+    }
+
+    private static string? ReadStringProperty(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
             JsonScan.SkipValue(ref reader);
+            return null;
         }
 
-        return found;
+        string? value = null;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var match = reader.ValueTextEquals(name);
+            reader.Read();
+            if (match)
+            {
+                value = JsonScan.ReadString(ref reader);
+            }
+            else
+            {
+                JsonScan.SkipValue(ref reader);
+            }
+        }
+
+        return value;
     }
 
     private readonly record struct Hints(bool Meta, bool AgentMessage, bool UsageRecord, bool TokenCount);

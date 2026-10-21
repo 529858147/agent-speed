@@ -46,6 +46,14 @@ internal sealed class SpeedEngine
 
     public void RemoveAgent(string id) => _agents.Remove(id);
 
+    public void SetParent(string id, string? parentId)
+    {
+        if (_agents.TryGetValue(id, out var agent) && !string.Equals(agent.ParentId, parentId, StringComparison.Ordinal))
+        {
+            _agents[id] = agent with { ParentId = parentId };
+        }
+    }
+
     /// <summary>Adds or replaces a response (METRICS 4.3). Seeded responses never produce events.</summary>
     public void Upsert(ParsedResponse response, bool isCompletion, bool seeded)
     {
@@ -327,55 +335,17 @@ internal sealed class SpeedEngine
         out int generating,
         out int tools)
     {
-        var list = new List<AgentFrame>();
-        generating = 0;
-        tools = 0;
-        foreach (var agent in _agents.Values)
+        var list = AgentList.Build(_agents, nowMs, (agent, phase) =>
         {
-            if (agent.LastLineMs is not { } last)
-            {
-                continue;
-            }
-
-            var phase = nowMs - last > StaleMs ? AgentPhase.Idle : agent.Phase;
-            if (nowMs - last > AgentListWindowMs && phase != AgentPhase.Generating)
-            {
-                continue;
-            }
-
             measured.AgentTotals.TryGetValue(agent.Id, out var m);
             estimated.AgentTotals.TryGetValue(agent.Id, out var e);
             var live = new Rate((m.Output + e.Output) / seconds, (m.Total + e.Total) / seconds);
             double? recentSpeed = recent.TryGetValue(agent.Id, out var own) ? own.Output : null;
-            list.Add(new AgentFrame(agent, phase, live, recentSpeed));
-            if (phase == AgentPhase.Generating)
-            {
-                generating++;
-            }
-            else if (phase == AgentPhase.Tools)
-            {
-                tools++;
-            }
-        }
-
-        list.Sort(static (a, b) =>
-        {
-            var aGenerating = a.Phase == AgentPhase.Generating;
-            var bGenerating = b.Phase == AgentPhase.Generating;
-            if (aGenerating != bGenerating)
-            {
-                return aGenerating ? -1 : 1;
-            }
-
-            var byLive = b.Live.Output.CompareTo(a.Live.Output);
-            if (byLive != 0)
-            {
-                return byLive;
-            }
-
-            var byActivity = (b.Info.LastLineMs ?? long.MinValue).CompareTo(a.Info.LastLineMs ?? long.MinValue);
-            return byActivity != 0 ? byActivity : string.CompareOrdinal(a.Info.Id, b.Info.Id);
+            return new AgentFrame(agent, phase, live, recentSpeed);
         });
+
+        generating = list.Count(a => a.Phase == AgentPhase.Generating);
+        tools = list.Count(a => a.Phase == AgentPhase.Tools);
         return list;
     }
 

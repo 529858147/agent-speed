@@ -12,6 +12,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     private long? _fileCreatedMs;
     private string _myAgentPath = RootAgentPath;
     private string? _metaThreadId;
+    private string? _parentThreadId;
     private long? _pendingStartMs;
     private bool _streaming;
     private bool _sawModernUsage;
@@ -24,12 +25,22 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         SetSubagent(_pathIsSubagent);
     }
 
+    /// <summary>Time of the first <c>session_meta</c>, i.e. when the rollout was created.</summary>
+    public long? CreatedMs => _fileCreatedMs;
+
+    /// <summary><c>payload.id</c> of the first <c>session_meta</c>.</summary>
+    public string? MetaThreadId => _metaThreadId;
+
+    /// <summary>The spawning thread named by the first <c>session_meta</c> (METRICS 6.7).</summary>
+    public string? ParentThreadId => _parentThreadId;
+
     public override void Reset()
     {
         base.Reset();
         _fileCreatedMs = null;
         _myAgentPath = RootAgentPath;
         _metaThreadId = null;
+        _parentThreadId = null;
         _pendingStartMs = null;
         _streaming = false;
         _sawModernUsage = false;
@@ -96,6 +107,8 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         SetProjectFromCwd(line.Cwd);
         _myAgentPath = line.AgentPath ?? RootAgentPath;
         _metaThreadId = line.Id ?? _metaThreadId;
+        _parentThreadId = line.ParentThreadId ?? line.SpawnParentThreadId;
+        MarkChanged();
         SetSubagent(IsSubagent || line.ThreadSourceIsSubagent || line.SourceHasSubagent);
     }
 

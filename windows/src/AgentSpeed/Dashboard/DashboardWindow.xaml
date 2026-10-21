@@ -25,7 +25,6 @@
         <BooleanToVisibilityConverter x:Key="Visible" />
         <controls:InverseBoolToVisibilityConverter x:Key="Hidden" />
         <controls:DimOpacityConverter x:Key="Dim" />
-        <controls:SubagentIndentConverter x:Key="Indent" />
 
         <Style x:Key="MetricValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="20" />
@@ -155,34 +154,31 @@
                     <ItemsControl ItemsSource="{Binding Agents}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type dash:AgentRow}">
-                                <Grid MinHeight="40" Margin="{Binding IsSubagent, Converter={StaticResource Indent}}"
-                                      AutomationProperties.Name="{Binding AccessibleName}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="30" />
-                                        <ColumnDefinition Width="56" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border x:Name="Connector" Width="8" Margin="-10,0,4,18" BorderThickness="1,0,0,1" CornerRadius="0,0,0,3"
-                                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Visibility="Collapsed" />
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,3,8,3">
-                                        <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Detail}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    </StackPanel>
-                                    <dash:PhaseBadge Grid.Column="2" Phase="{Binding Phase}" Color="{Binding Color}"
-                                                     ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                    <TextBlock Grid.Column="3" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
-                                               VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                                <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->
+                                <Grid MinHeight="40" AutomationProperties.Name="{Binding AccessibleName}">
+                                    <dash:TreeConnectors Guides="{Binding Guides}" Stroke="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                                    <Grid Margin="{Binding Indent}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="30" />
+                                            <ColumnDefinition Width="56" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,3,8,3">
+                                            <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Detail}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <dash:PhaseBadge Grid.Column="1" Phase="{Binding Phase}" Color="{Binding Color}"
+                                                         ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                                    </Grid>
                                 </Grid>
-                                <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding IsSubagent}" Value="True">
-                                        <Setter TargetName="Connector" Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <TextBlock Text="{Binding HiddenAgentsText}" Style="{StaticResource CaptionText}" Margin="0,2,0,0"
+                               Visibility="{Binding HasHiddenAgents, Converter={StaticResource Visible}}" />
 
                     <!-- Today -->
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />
