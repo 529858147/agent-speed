@@ -82,14 +82,18 @@ public static class PlacementMath
         return best;
     }
 
-    /// <summary>Flyout rectangle in the work-area corner next to the taskbar's notification area.</summary>
+    /// <summary>
+    /// Flyout rectangle in the work-area corner next to the taskbar's notification area. The edges against the
+    /// corner are snapped first and the size is subtracted from them, so a flyout whose height animates keeps its
+    /// anchored edge on the same pixel every frame.
+    /// </summary>
     public static RectD Flyout(RectD work, TaskbarEdge edge, double width, double height, double margin)
     {
-        width = Math.Min(width, Math.Max(0, work.Width - 2 * margin));
-        height = Math.Min(height, Math.Max(0, work.Height - 2 * margin));
-        var x = edge == TaskbarEdge.Left ? work.X + margin : work.Right - margin - width;
-        var y = edge == TaskbarEdge.Top ? work.Y + margin : work.Bottom - margin - height;
-        return new RectD(Math.Round(x), Math.Round(y), Math.Round(width), Math.Round(height));
+        width = Math.Round(Math.Min(width, Math.Max(0, work.Width - 2 * margin)));
+        height = Math.Round(Math.Min(height, Math.Max(0, work.Height - 2 * margin)));
+        var x = edge == TaskbarEdge.Left ? Math.Round(work.X + margin) : Math.Round(work.Right - margin) - width;
+        var y = edge == TaskbarEdge.Top ? Math.Round(work.Y + margin) : Math.Round(work.Bottom - margin) - height;
+        return new RectD(x, y, width, height);
     }
 
     /// <summary>

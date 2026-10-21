@@ -1,55 +1,56 @@
-using System.Windows;
 using System.Windows.Media;
+using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Motion;
 
 namespace AgentSpeed.Dashboard;
 
 /// <summary>
-/// Drives an element's <see cref="FrameworkElement.Height"/> with the layout spring (DESIGN section 6). Frames run only
-/// while it moves; a retarget mid-flight keeps the current velocity.
+/// Runs <see cref="DisclosureMotion"/> once per composed frame, from <see cref="CompositionTarget.Rendering"/>, so each
+/// frame's heights are applied before that frame is laid out and drawn. Frames run only while it moves; a retarget
+/// mid-flight keeps the current velocities.
 /// </summary>
-internal sealed class HeightSpring(FrameworkElement element)
+internal sealed class HeightSpring
 {
     private const double MaxStep = 1 / 30.0;
 
-    private DampedSpring _spring = DampedSpring.Layout();
+    private readonly DisclosureMotion _motion = new();
     private TimeSpan _lastFrame = TimeSpan.MinValue;
-    private double _target;
 
-    /// <summary>After each animated frame, with the new height.</summary>
-    public event EventHandler<double>? Stepped;
+    /// <summary>After each animated frame, with the heights to apply.</summary>
+    public event EventHandler<FlyoutHeights>? Stepped;
 
-    /// <summary>The height reached its target, by settling or by <see cref="Finish"/>.</summary>
+    /// <summary>The heights reached their targets, by settling or by <see cref="Finish"/>.</summary>
     public event EventHandler? Settled;
 
     public bool IsRunning { get; private set; }
 
-    public double Target => _target;
+    public FlyoutHeights Current => _motion.Current;
 
-    /// <summary>Starts from <paramref name="from"/>, or continues the running animation toward the new target.</summary>
-    public void AnimateTo(double from, double target)
+    public FlyoutHeights Target => _motion.Target;
+
+    public double Cap => _motion.Cap;
+
+    /// <summary>Starts from <paramref name="from"/> at rest, or continues the running animation toward the new target.</summary>
+    public void AnimateTo(FlyoutHeights from, FlyoutHeights target, double cap)
     {
-        _target = Math.Max(0, target);
         if (IsRunning)
         {
+            _motion.Retarget(target, cap);
             return;
         }
 
-        _spring = DampedSpring.Layout(Math.Max(0, from));
+        _motion.Start(from, target, cap);
         _lastFrame = TimeSpan.MinValue;
         IsRunning = true;
         CompositionTarget.Rendering += OnRendering;
     }
 
-    public void Retarget(double target) => _target = Math.Max(0, target);
-
-    /// <summary>Stops any animation and jumps to <paramref name="height"/> without raising <see cref="Settled"/>.</summary>
-    public void Snap(double height)
+    public void Retarget(FlyoutHeights target, double cap)
     {
-        Stop();
-        _target = Math.Max(0, height);
-        _spring.Snap(_target);
-        element.Height = _target;
+        if (IsRunning)
+        {
+            _motion.Retarget(target, cap);
+        }
     }
 
     /// <summary>Completes a running animation at once.</summary>
@@ -60,17 +61,16 @@ internal sealed class HeightSpring(FrameworkElement element)
             return;
         }
 
-        Snap(_target);
+        Stop();
+        _motion.Snap(_motion.Target);
+        Stepped?.Invoke(this, _motion.Current);
         Settled?.Invoke(this, EventArgs.Empty);
     }
 
     private void Stop()
     {
-        if (IsRunning)
-        {
-            CompositionTarget.Rendering -= OnRendering;
-            IsRunning = false;
-        }
+        CompositionTarget.Rendering -= OnRendering;
+        IsRunning = false;
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -84,15 +84,13 @@ internal sealed class HeightSpring(FrameworkElement element)
 
         var dt = _lastFrame == TimeSpan.MinValue ? 1 / 60.0 : Math.Clamp((now - _lastFrame).TotalSeconds, 0, MaxStep);
         _lastFrame = now;
-        _spring.Step(_target, dt);
-        if (_spring.IsSettled(_target, 0.25))
+        var heights = _motion.Step(dt);
+        if (_motion.IsSettled)
         {
             Finish();
             return;
         }
 
-        var height = Math.Max(0, _spring.Value);
-        element.Height = height;
-        Stepped?.Invoke(this, height);
+        Stepped?.Invoke(this, heights);
     }
 }

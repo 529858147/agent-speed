@@ -31,6 +31,8 @@ public static class DisplayText
         SourceKind.ClaudeCode => "source.claudeCode",
         SourceKind.ClaudeDesktop => "source.claudeDesktop",
         SourceKind.DeepSeek => "source.deepseek",
+        SourceKind.OpenCode => "source.opencode",
+        SourceKind.Gemini => "source.gemini",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 

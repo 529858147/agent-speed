@@ -27,6 +27,13 @@ public sealed record AgentList(AgentTreeLayout Collapsed, AgentTreeLayout Expand
     /// <summary>Rows visible without scrolling in either mode.</summary>
     public int ViewportRowsFor(bool expanded) => expanded ? ExpandedViewportRows : Collapsed.Rows.Count;
 
+    /// <summary>
+    /// Viewport height for fixed-height rows: a whole number of rows, so the animation target comes from the row count
+    /// alone and never from a measured height.
+    /// </summary>
+    public double ViewportHeightFor(bool expanded, double rowHeight) =>
+        double.IsFinite(rowHeight) && rowHeight > 0 ? ViewportRowsFor(expanded) * rowHeight : 0;
+
     public static AgentList Arrange(IReadOnlyList<AgentStatus> agents)
     {
         ArgumentNullException.ThrowIfNull(agents);

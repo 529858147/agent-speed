@@ -101,6 +101,7 @@ internal sealed class DashboardViewModel : ObservableObject
     private string _agentsToggleAccessibleName = string.Empty;
     private double _agentsViewportHeight;
     private double _collapsedAgentsHeight;
+    private int _collapsedAgentCount;
     private bool _agentsScroll;
     private IReadOnlyList<AgentStatus> _lastAgents = [];
     private SpeedMetric _lastMetric;
@@ -191,6 +192,9 @@ internal sealed class DashboardViewModel : ObservableObject
 
     /// <summary>Height the viewport settles at once collapsed, the target of the closing animation.</summary>
     public double CollapsedAgentsHeight { get => _collapsedAgentsHeight; private set => Set(ref _collapsedAgentsHeight, value); }
+
+    /// <summary>Rows the collapsed list shows; the rows after them are the ones expanding reveals.</summary>
+    public int CollapsedAgentCount { get => _collapsedAgentCount; private set => Set(ref _collapsedAgentCount, value); }
 
     /// <summary>The shown rows exceed the viewport.</summary>
     public bool AgentsScroll { get => _agentsScroll; private set => Set(ref _agentsScroll, value); }
@@ -350,8 +354,9 @@ internal sealed class DashboardViewModel : ObservableObject
         CanToggleAgents = list.CanExpand;
         AgentsToggleText = _agentsExpanded ? loc["agents.collapse"] : DisplayText.ExpandAgents(list.Collapsed.Hidden, loc);
         AgentsToggleAccessibleName = _agentsExpanded ? AgentsToggleText : DisplayText.ExpandAgentsAccessibility(list.Total, loc);
-        AgentsViewportHeight = list.ViewportRowsFor(showAll) * AgentRowHeight;
-        CollapsedAgentsHeight = list.Collapsed.Rows.Count * AgentRowHeight;
+        CollapsedAgentCount = list.Collapsed.Rows.Count;
+        AgentsViewportHeight = list.ViewportHeightFor(showAll, AgentRowHeight);
+        CollapsedAgentsHeight = list.ViewportHeightFor(expanded: false, AgentRowHeight);
         AgentsScroll = showAll && list.ExpandedScrolls;
     }
 }

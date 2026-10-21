@@ -98,7 +98,7 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Empty(events);
         Assert.Equal(new TokenTotals(1, 1000, 800, 0, 200, 20), snapshot.Today);
         Assert.Equal(50.0, snapshot.AverageToday!.Value, 6);
-        Assert.Equal(4, snapshot.Sources.Count);
+        Assert.Equal(Enum.GetValues<SourceKind>().Length, snapshot.Sources.Count);
         Assert.Equal(Enum.GetValues<SourceKind>(), snapshot.Sources.Select(s => s.Kind));
         Assert.Equal(1, snapshot.Sources[0].SessionCount);
     }
@@ -181,7 +181,7 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Equal(4, core.TrackedFileCount);
         Assert.Equal(1, core.SessionCount(SourceKind.ClaudeDesktop, _todayStart));
         Assert.Equal(1, core.SessionCount(SourceKind.ClaudeCode, _todayStart));
-        Assert.Equal([0, 1, 1, 0], snapshot.Sources.Select(s => s.SessionCount));
+        Assert.Equal([0, 1, 1, 0, 0, 0], snapshot.Sources.Select(s => s.SessionCount));
     }
 
     [Fact]

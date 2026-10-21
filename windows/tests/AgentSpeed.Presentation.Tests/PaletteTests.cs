@@ -230,6 +230,8 @@ public class PaletteTests
     [InlineData(SourceKind.ClaudeCode, "#FF8A65")]
     [InlineData(SourceKind.ClaudeDesktop, "#B39DFF")]
     [InlineData(SourceKind.DeepSeek, "#4D6BFE")]
+    [InlineData(SourceKind.OpenCode, "#F4B13E")]
+    [InlineData(SourceKind.Gemini, "#34B8F0")]
     public void SourceColorsMatchDesign(SourceKind source, string hex)
     {
         Assert.Equal(hex, HeatPalette.SourceColor(source).ToHex());

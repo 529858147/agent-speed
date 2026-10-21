@@ -8,22 +8,35 @@ using System.Windows.Media.Animation;
 using AgentSpeed.Interop;
 using AgentSpeed.Orb;
 using AgentSpeed.Presentation.Layout;
+using AgentSpeed.Presentation.Motion;
 
 namespace AgentSpeed.Dashboard;
 
-/// <summary>Flyout above the taskbar near the notification area (DESIGN section 4).</summary>
+/// <summary>
+/// Flyout above the taskbar near the notification area (DESIGN section 4). The window is sized from code, never by
+/// SizeToContent: at rest it hugs its content, and while the agents list opens or closes one spring frame sets the
+/// viewport height and the window rectangle together (a single SetWindowPos with the taskbar-side edge fixed), before
+/// that frame is laid out and drawn.
+/// </summary>
 internal sealed partial class DashboardWindow : Window
 {
     private const double FlyoutWidth = 368;
     private const double ScreenMargin = 12;
 
+    /// <summary>Height differences below this (DIPs) are float noise; layout-rounded heights move by whole pixels.</summary>
+    private const double HeightTolerance = 0.01;
+
     private readonly DashboardViewModel _model;
-    private readonly HeightSpring _agentsHeight;
+    private readonly HeightSpring _heights = new();
+    private readonly RowFade _fade;
     private nint _hwnd;
     private TaskbarEdge _edge = TaskbarEdge.Bottom;
     private RECT _work;
     private double _scale = 1;
     private bool _placing;
+    private RectD _placedRect;
+    private double _placedHeight;
+    private double _chrome;
     private bool _suppressRange;
     private bool _toggling;
     private bool _collapsing;
@@ -35,18 +48,19 @@ internal sealed partial class DashboardWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         _model = viewModel;
-        _agentsHeight = new HeightSpring(AgentsViewport);
-        _agentsHeight.Stepped += OnAgentsStepped;
-        _agentsHeight.Settled += OnAgentsSettled;
-        _agentsHeight.Snap(viewModel.AgentsViewportHeight);
+        _fade = new RowFade(AgentsItems);
+        _heights.Stepped += OnHeightsStepped;
+        _heights.Settled += OnHeightsSettled;
+        AgentsViewport.Height = viewModel.AgentsViewportHeight;
         viewModel.PropertyChanged += OnModelChanged;
         TurnChevron(animate: false);
-        UpdateAgentsScrollBar();
+        UpdateScrollBars();
         IsVisibleChanged += (_, _) =>
         {
             if (!IsVisible)
             {
-                _agentsHeight.Finish();
+                _heights.Finish();
+                _fade.Finish();
             }
         };
         Hero = new OrbView(clock)
@@ -59,11 +73,12 @@ internal sealed partial class DashboardWindow : Window
         HeroHost.Children.Add(Hero);
         SourceInitialized += OnSourceInitialized;
         Deactivated += (_, _) => Dismiss();
-        SizeChanged += (_, _) => Reanchor();
+        LayoutUpdated += OnLayoutUpdated;
         DpiChanged += (_, e) =>
         {
             _scale = e.NewDpi.DpiScaleX;
-            Dispatcher.BeginInvoke(() => Reanchor());
+            _placedRect = default;
+            Dispatcher.BeginInvoke(() => Place(_placedHeight));
         };
     }
 
@@ -144,15 +159,20 @@ internal sealed partial class DashboardWindow : Window
         helper.EnsureHandle();
         _hwnd = helper.Handle;
 
-        Root.Measure(new Size(FlyoutWidth, double.PositiveInfinity));
-        Reanchor(Math.Min(Root.DesiredSize.Height, MaxHeight));
+        _heights.Finish();
+        _fade.Finish();
+        UpdateScrollBars();
+        // The sections get the same constraint from the outer scroller (full width, unbounded height), so this measure
+        // stays valid for the next layout pass and works before the window has ever been shown.
+        Sections.Measure(new Size(FlyoutWidth, double.PositiveInfinity));
+        Place(FlyoutHeights.Fit(Sections.DesiredSize.Height, MaxHeight), raise: true);
 
         if (!IsVisible)
         {
             Show();
         }
 
-        Reanchor();
+        Place(_placedHeight, raise: true);
         LastShownTick = Environment.TickCount64;
         User32.SetForegroundWindow(_hwnd);
         Activate();
@@ -232,11 +252,22 @@ internal sealed partial class DashboardWindow : Window
         }
     }
 
-    private void Reanchor() => Reanchor(ActualHeight);
-
-    private void Reanchor(double heightDip)
+    /// <summary>
+    /// Moves and sizes the window in one call, keeping the edge against the taskbar on the same pixel, so a height
+    /// change never shows an intermediate frame (grown away from the taskbar, then moved back).
+    /// </summary>
+    private void Place(double heightDip, bool raise = false)
     {
         if (_hwnd == 0 || _placing || heightDip <= 0 || _work.IsEmpty)
+        {
+            return;
+        }
+
+        _placedHeight = heightDip;
+        var work = new RectD(_work.Left, _work.Top, _work.Width, _work.Height);
+        var rect = PlacementMath.Flyout(work, _edge, FlyoutWidth * _scale, FlyoutHeights.ToPixels(heightDip, _scale),
+            ScreenMargin * _scale);
+        if (rect == _placedRect && !raise)
         {
             return;
         }
@@ -244,14 +275,50 @@ internal sealed partial class DashboardWindow : Window
         _placing = true;
         try
         {
-            var work = new RectD(_work.Left, _work.Top, _work.Width, _work.Height);
-            var rect = PlacementMath.Flyout(work, _edge, FlyoutWidth * _scale, heightDip * _scale, ScreenMargin * _scale);
-            User32.SetWindowPos(_hwnd, HWND.TOPMOST, (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height,
-                SWP.NOACTIVATE);
+            _placedRect = rect;
+            var flags = raise ? SWP.NOACTIVATE : SWP.NOACTIVATE | SWP.NOZORDER | SWP.NOOWNERZORDER;
+            User32.SetWindowPos(_hwnd, HWND.TOPMOST, (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height, flags);
         }
         finally
         {
             _placing = false;
+        }
+    }
+
+    /// <summary>
+    /// At rest the window follows its content's natural height (the sections are measured with unbounded height and a
+    /// fixed width, so the window size never feeds back into it). While the agents spring runs it owns the window, and
+    /// a content change elsewhere only moves its target.
+    /// </summary>
+    private void OnLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (_placing || _hwnd == 0 || !IsVisible)
+        {
+            return;
+        }
+
+        var natural = Sections.DesiredSize.Height;
+        if (natural <= 0)
+        {
+            return;
+        }
+
+        if (_heights.IsRunning)
+        {
+            var chrome = natural - AgentsViewport.ActualHeight;
+            if (Math.Abs(chrome - _chrome) > HeightTolerance)
+            {
+                _chrome = chrome;
+                _heights.Retarget(FlyoutHeights.For(_chrome, _heights.Target.Viewport, MaxHeight), MaxHeight);
+            }
+
+            return;
+        }
+
+        var fit = FlyoutHeights.Fit(natural, MaxHeight);
+        if (Math.Abs(fit - _placedHeight) > HeightTolerance)
+        {
+            Place(fit);
         }
     }
 
@@ -313,33 +380,39 @@ internal sealed partial class DashboardWindow : Window
         switch (e.PropertyName)
         {
             case nameof(DashboardViewModel.AgentsViewportHeight) when !_toggling && !_collapsing:
-                if (_agentsHeight.IsRunning)
+                if (_heights.IsRunning)
                 {
-                    _agentsHeight.Retarget(_model.AgentsViewportHeight);
+                    _heights.Retarget(FlyoutHeights.For(_chrome, _model.AgentsViewportHeight, MaxHeight), MaxHeight);
                 }
                 else
                 {
-                    _agentsHeight.Snap(_model.AgentsViewportHeight);
+                    // The window follows in the same frame (OnLayoutUpdated).
+                    AgentsViewport.Height = _model.AgentsViewportHeight;
                 }
 
                 break;
             case nameof(DashboardViewModel.CollapsedAgentsHeight) when _collapsing:
-                _agentsHeight.Retarget(_model.CollapsedAgentsHeight);
+                _heights.Retarget(FlyoutHeights.For(_chrome, _model.CollapsedAgentsHeight, MaxHeight), MaxHeight);
                 break;
             case nameof(DashboardViewModel.AgentsExpanded):
                 TurnChevron(animate: IsVisible && !_model.ReduceMotion);
                 break;
             case nameof(DashboardViewModel.AgentsScroll):
-                UpdateAgentsScrollBar();
+                UpdateScrollBars();
                 break;
         }
     }
 
     private void OnAgentsToggle(object sender, RoutedEventArgs e)
     {
-        var animate = IsVisible && !_model.ReduceMotion;
-        var from = AgentsViewport.ActualHeight;
+        _fade.Finish();
+        var transition = AgentsDisclosure.TransitionFor(IsVisible, _model.ReduceMotion);
         var expand = !_model.AgentsExpanded;
+        var from = new FlyoutHeights(_heights.IsRunning ? _heights.Current.Viewport : AgentsViewport.Height, _placedHeight);
+        var offset = AgentsViewport.VerticalOffset;
+
+        // Both values come from the last layout pass, so their difference is everything but the viewport.
+        var chrome = Sections.DesiredSize.Height - AgentsViewport.ActualHeight;
         _toggling = true;
         try
         {
@@ -351,8 +424,8 @@ internal sealed partial class DashboardWindow : Window
             }
             else
             {
-                // Rows stay until the height settles, so the list closes over them instead of leaving a gap.
-                _model.HoldAllAgents = animate;
+                // Rows stay until the list has closed over them (or faded out), so it never leaves a gap.
+                _model.HoldAllAgents = transition != DisclosureTransition.Instant;
                 _model.AgentsExpanded = false;
             }
         }
@@ -361,40 +434,64 @@ internal sealed partial class DashboardWindow : Window
             _toggling = false;
         }
 
-        if (!animate)
+        switch (transition)
         {
-            AgentsViewport.ScrollToVerticalOffset(0);
-            _agentsHeight.Snap(_model.AgentsViewportHeight);
-        }
-        else if (expand)
-        {
-            _agentsHeight.AnimateTo(from, _model.AgentsViewportHeight);
-        }
-        else
-        {
-            _collapsing = true;
-            _collapseFromHeight = from;
-            _collapseFromOffset = AgentsViewport.VerticalOffset;
-            _agentsHeight.AnimateTo(from, _model.CollapsedAgentsHeight);
+            case DisclosureTransition.Spring:
+                _chrome = chrome;
+                _collapsing = !expand;
+                _collapseFromHeight = from.Viewport;
+                _collapseFromOffset = offset;
+                var target = expand ? _model.AgentsViewportHeight : _model.CollapsedAgentsHeight;
+                _heights.AnimateTo(from, FlyoutHeights.For(chrome, target, MaxHeight), MaxHeight);
+                break;
+            case DisclosureTransition.Crossfade when expand:
+                AgentsViewport.Height = _model.AgentsViewportHeight;
+                var (first, count) = AgentsDisclosure.ChangingRows(_model.CollapsedAgentCount, _model.Agents.Count);
+                _fade.FadeIn(first, count);
+                break;
+            case DisclosureTransition.Crossfade:
+                var (leaving, leavingCount) = AgentsDisclosure.ChangingRows(_model.CollapsedAgentCount, _model.Agents.Count);
+                _fade.FadeOut(leaving, leavingCount, () => CompleteFadedCollapse(scrolled: offset > 0.5));
+                break;
+            default:
+                AgentsViewport.ScrollToVerticalOffset(0);
+                AgentsViewport.Height = _model.AgentsViewportHeight;
+                break;
         }
 
-        UpdateAgentsScrollBar();
+        UpdateScrollBars();
         AgentsExpandedChanged?.Invoke(this, expand);
     }
 
-    private void OnAgentsStepped(object? sender, double height)
+    /// <summary>Reduce Motion: the leaving rows have faded, so the list closes at once.</summary>
+    private void CompleteFadedCollapse(bool scrolled)
     {
-        if (!_collapsing)
+        AgentsViewport.ScrollToVerticalOffset(0);
+        _model.HoldAllAgents = false;
+        if (scrolled && !_model.AgentsExpanded)
         {
-            return;
+            // The first rows were scrolled away; they fade in where the faded rows were.
+            _fade.FadeIn(0, _model.CollapsedAgentCount);
         }
 
-        var span = _collapseFromHeight - _agentsHeight.Target;
-        var remaining = span > 0 ? Math.Clamp((height - _agentsHeight.Target) / span, 0, 1) : 0;
-        AgentsViewport.ScrollToVerticalOffset(_collapseFromOffset * remaining);
+        UpdateScrollBars();
     }
 
-    private void OnAgentsSettled(object? sender, EventArgs e)
+    private void OnHeightsStepped(object? sender, FlyoutHeights frame)
+    {
+        // Viewport first, then the window: the resize lays out the new viewport height in the same pass.
+        var heights = frame.SnapToPixels(_scale);
+        AgentsViewport.Height = heights.Viewport;
+        if (_collapsing)
+        {
+            AgentsViewport.ScrollToVerticalOffset(AgentsDisclosure.CollapseOffset(
+                _collapseFromOffset, _collapseFromHeight, _heights.Target.Viewport, heights.Viewport));
+        }
+
+        Place(heights.Window);
+    }
+
+    private void OnHeightsSettled(object? sender, EventArgs e)
     {
         if (_collapsing)
         {
@@ -403,14 +500,19 @@ internal sealed partial class DashboardWindow : Window
             _model.HoldAllAgents = false;
         }
 
-        UpdateAgentsScrollBar();
+        UpdateScrollBars();
     }
 
-    /// <summary>The scroll bar appears only once the expanded list rests in its 12-row viewport.</summary>
-    private void UpdateAgentsScrollBar() =>
-        AgentsViewport.VerticalScrollBarVisibility = _model.AgentsScroll && !_agentsHeight.IsRunning
-            ? ScrollBarVisibility.Auto
-            : ScrollBarVisibility.Hidden;
+    /// <summary>
+    /// Scroll bars show only at rest, and neither takes width from the content (see the scroll viewer styles), so
+    /// switching them never re-lays out the rows.
+    /// </summary>
+    private void UpdateScrollBars()
+    {
+        var resting = !_heights.IsRunning;
+        AgentsViewport.VerticalScrollBarVisibility = _model.AgentsScroll && resting ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden;
+        Scroller.VerticalScrollBarVisibility = resting ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden;
+    }
 
     private void TurnChevron(bool animate)
     {
@@ -434,7 +536,7 @@ internal sealed partial class DashboardWindow : Window
     private void OnAgentsWheel(object sender, MouseWheelEventArgs e)
     {
         var offset = AgentsViewport.VerticalOffset;
-        var canScroll = _model.AgentsScroll && !_agentsHeight.IsRunning
+        var canScroll = _model.AgentsScroll && !_heights.IsRunning
             && (e.Delta > 0 ? offset > 0.5 : offset < AgentsViewport.ScrollableHeight - 0.5);
         if (canScroll)
         {

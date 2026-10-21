@@ -7,7 +7,6 @@
         xmlns:dash="clr-namespace:AgentSpeed.Dashboard"
         Title="{loc:Loc app.name}"
         Width="368"
-        SizeToContent="Height"
         WindowStyle="SingleBorderWindow"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -39,8 +38,9 @@
         <Border.RenderTransform>
             <TranslateTransform x:Name="Slide" />
         </Border.RenderTransform>
-        <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
-            <StackPanel Margin="20,20,20,12">
+        <!-- The window height is set from code (no SizeToContent), anchored to the taskbar edge; see DashboardWindow.Place. -->
+        <ScrollViewer x:Name="Scroller" Style="{StaticResource OverlayScrollViewer}">
+            <StackPanel x:Name="Sections" Margin="20,20,20,12">
 
                 <!-- Hero -->
                 <Grid Height="112">
@@ -151,10 +151,11 @@
                         <controls:GaugeGlyph Width="18" Height="18" Opacity="0.55" />
                         <TextBlock Text="{loc:Loc agents.empty}" Style="{StaticResource CaptionText}" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
-                    <!-- Expanded lists beyond 12 rows scroll inside a fixed viewport; its height springs between modes. -->
-                    <ScrollViewer x:Name="AgentsViewport" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
-                                  Focusable="False" PanningMode="VerticalOnly" PreviewMouseWheel="OnAgentsWheel">
-                        <ItemsControl ItemsSource="{Binding Agents}" Focusable="False" VerticalAlignment="Top">
+                    <!-- One viewport in every state: beyond 12 rows the expanded list scrolls inside it, and its height springs
+                         between modes. It reaches 20 DIP into the right padding, where its scroll bar has a gutter of its own. -->
+                    <ScrollViewer x:Name="AgentsViewport" Style="{StaticResource GutterScrollViewer}" Margin="0,0,-20,0"
+                                  VerticalScrollBarVisibility="Hidden" PanningMode="VerticalOnly" PreviewMouseWheel="OnAgentsWheel">
+                        <ItemsControl x:Name="AgentsItems" ItemsSource="{Binding Agents}" Focusable="False" VerticalAlignment="Top">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type dash:AgentRow}">
                                     <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->

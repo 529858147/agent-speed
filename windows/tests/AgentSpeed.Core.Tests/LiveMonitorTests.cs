@@ -27,7 +27,7 @@ public sealed class LiveMonitorTests : IDisposable
         {
             monitor.Start();
             var running = await probe.WaitForAsync(s => s.State.Kind == MonitorStateKind.Running && s.Today.Requests == 1);
-            Assert.Equal(4, running.Sources.Count);
+            Assert.Equal(Enum.GetValues<SourceKind>().Length, running.Sources.Count);
             Assert.True(running.Sources.Single(s => s.Kind == SourceKind.Codex).Available);
             Assert.Equal(300, running.History.Count);
             Assert.Empty(probe.Events);

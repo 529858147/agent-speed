@@ -83,6 +83,21 @@ public class AgentListTests
         Assert.Equal(agents, list.Expanded.Rows.Count);
     }
 
+    [Theory]
+    [InlineData(3, 120, 120)]
+    [InlineData(9, 240, 360)]
+    [InlineData(12, 240, 480)]
+    [InlineData(40, 240, 480)]
+    public void ViewportHeightIsAWholeNumberOfRows(int agents, double collapsed, double expanded)
+    {
+        var list = AgentList.Arrange(Roots(agents));
+
+        Assert.Equal(collapsed, list.ViewportHeightFor(expanded: false, rowHeight: 40));
+        Assert.Equal(expanded, list.ViewportHeightFor(expanded: true, rowHeight: 40));
+        Assert.Equal(0, list.ViewportHeightFor(expanded: true, rowHeight: 0));
+        Assert.Equal(0, list.ViewportHeightFor(expanded: true, rowHeight: double.NaN));
+    }
+
     [Fact]
     public void CollapsedRowsArePrefixOfExpandedRows()
     {

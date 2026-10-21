@@ -202,6 +202,44 @@ public class PlacementMathTests
         Assert.Equal(600, flyout.Height);
     }
 
+    [Theory]
+    [InlineData(TaskbarEdge.Bottom, 12)]
+    [InlineData(TaskbarEdge.Bottom, 15)]
+    [InlineData(TaskbarEdge.Bottom, 21)]
+    [InlineData(TaskbarEdge.Top, 18)]
+    [InlineData(TaskbarEdge.Left, 15)]
+    [InlineData(TaskbarEdge.Right, 18)]
+    public void FlyoutKeepsItsAnchoredEdgesOnOnePixelWhileItsSizeAnimates(TaskbarEdge edge, double margin)
+    {
+        var work = new RectD(0.4, 48.6, 2560.3, 1391.7);
+        var first = PlacementMath.Flyout(work, edge, 460, 500, margin);
+        for (var height = 500.0; height < 1300; height += 0.37)
+        {
+            var width = 460 + (height - 500) / 100;
+            var flyout = PlacementMath.Flyout(work, edge, width, height, margin);
+            if (edge == TaskbarEdge.Top)
+            {
+                Assert.Equal(first.Y, flyout.Y);
+            }
+            else
+            {
+                Assert.Equal(first.Bottom, flyout.Bottom);
+            }
+
+            if (edge == TaskbarEdge.Left)
+            {
+                Assert.Equal(first.X, flyout.X);
+            }
+            else
+            {
+                Assert.Equal(first.Right, flyout.Right);
+            }
+
+            Assert.Equal(Math.Round(height), flyout.Height);
+            Assert.Equal(Math.Round(flyout.Y), flyout.Y);
+        }
+    }
+
     [Fact]
     public void TaskbarWidgetSitsLeftOfTheTray()
     {

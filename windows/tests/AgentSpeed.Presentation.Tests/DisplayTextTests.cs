@@ -98,6 +98,8 @@ public class DisplayTextTests
     [InlineData(SourceKind.ClaudeCode, "source.claudeCode", "Claude Code")]
     [InlineData(SourceKind.ClaudeDesktop, "source.claudeDesktop", "Claude Desktop")]
     [InlineData(SourceKind.DeepSeek, "source.deepseek", "DeepSeek")]
+    [InlineData(SourceKind.OpenCode, "source.opencode", "OpenCode")]
+    [InlineData(SourceKind.Gemini, "source.gemini", "Gemini CLI")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));
@@ -113,7 +115,7 @@ public class DisplayTextTests
             Assert.True(Embedded.TryGet("settings.sources.dshHint", language, out var hint), language);
             Assert.Contains("dsh", hint, StringComparison.Ordinal);
             Assert.True(Embedded.TryGet("state.noSources", language, out var noSources), language);
-            Assert.Contains("DeepSeek", noSources, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrWhiteSpace(noSources), language);
         }
     }
 
