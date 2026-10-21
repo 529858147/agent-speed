@@ -24,7 +24,7 @@ internal abstract class TranscriptParser
 {
     private AgentPhase _phase = AgentPhase.Idle;
 
-    protected TranscriptParser(string agentId, Deduper deduper, SourceKind initialSource)
+    protected TranscriptParser(string agentId, IDeduper deduper, SourceKind initialSource)
     {
         AgentId = agentId;
         Deduper = deduper;
@@ -58,7 +58,7 @@ internal abstract class TranscriptParser
     /// <summary>Changes whenever agent-visible state changes.</summary>
     public int Version { get; private set; }
 
-    protected Deduper Deduper { get; }
+    protected IDeduper Deduper { get; }
 
     protected SourceKind InitialSource { get; }
 
@@ -157,7 +157,7 @@ internal abstract class TranscriptParser
 internal abstract class TranscriptParser<TLine> : TranscriptParser
     where TLine : struct
 {
-    protected TranscriptParser(string agentId, Deduper deduper, SourceKind initialSource)
+    protected TranscriptParser(string agentId, IDeduper deduper, SourceKind initialSource)
         : base(agentId, deduper, initialSource)
     {
     }

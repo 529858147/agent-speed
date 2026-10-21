@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using AgentSpeed.Core.Engine;
 using AgentSpeed.Core.IO;
+using AgentSpeed.Core.OpenCode;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Monitoring;
@@ -16,7 +17,7 @@ internal sealed record SeedReport(long ElapsedMs, int FilesDiscovered, int Files
 /// Owns discovery, tailing, parsing and the engine for one configuration (METRICS 2 and 5). Single-threaded:
 /// every public member must be called from the monitor thread; only seeding fans file reads out to the pool.
 /// </summary>
-internal sealed class MonitorCore
+internal sealed class MonitorCore : IDisposable
 {
     public const long BacklogWindowMs = 15 * 60_000;
     public const long LargeFileBytes = 256L * 1024 * 1024;
@@ -34,6 +35,9 @@ internal sealed class MonitorCore
     private readonly Dictionary<string, AgentLink> _links = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _parents = new(StringComparer.Ordinal);
     private readonly Collector _collector = new();
+    private readonly List<SourceRoot> _roots = [];
+    private readonly OpenCodeSource? _openCode;
+    private bool _openCodeSeeded;
     private bool _linksChanged;
     private long _removedMalformedLines;
     private long _removedOversizedLines;
@@ -47,16 +51,34 @@ internal sealed class MonitorCore
         string dshRoot,
         long todayStartMs,
         IResponseObserver? observer = null)
+        : this(configuration, new SourceLocations(codexRoot, claudeRoot, dshRoot, string.Empty, []), todayStartMs, observer)
+    {
+    }
+
+    public MonitorCore(
+        MonitorConfiguration configuration,
+        SourceLocations locations,
+        long todayStartMs,
+        IResponseObserver? observer = null)
     {
         _enabled = configuration.EnabledSources;
         _observer = observer;
         _engine = new SpeedEngine(todayStartMs);
-        CodexRoot = new SourceRoot(RootFamily.Codex, codexRoot, _enabled.Contains(SourceKind.Codex));
-        ClaudeRoot = new SourceRoot(
-            RootFamily.Claude,
-            claudeRoot,
-            _enabled.Contains(SourceKind.ClaudeCode) || _enabled.Contains(SourceKind.ClaudeDesktop));
-        DshRoot = new SourceRoot(RootFamily.DeepSeek, dshRoot, _enabled.Contains(SourceKind.DeepSeek));
+        foreach (var (family, path) in locations.FileRoots())
+        {
+            _roots.Add(new SourceRoot(family, path, Families.IsEnabled(family, _enabled)));
+        }
+
+        CodexRoot = _roots.First(r => r.Family == RootFamily.Codex);
+        ClaudeRoot = _roots.First(r => r.Family == RootFamily.Claude);
+        DshRoot = _roots.First(r => r.Family == RootFamily.DeepSeek);
+        if (Families.IsEnabled(RootFamily.OpenCode, _enabled) && locations.OpenCodeRoot.Length > 0)
+        {
+            _openCode = new OpenCodeSource(locations.OpenCodeRoot, _deduper);
+            OpenCodeRoot = new SourceRoot(RootFamily.OpenCode, _openCode.WatchDirectory, enabled: true);
+        }
+
+        OpenCodeRootPath = locations.OpenCodeRoot;
         RefreshAvailability();
     }
 
@@ -66,27 +88,37 @@ internal sealed class MonitorCore
 
     public SourceRoot DshRoot { get; }
 
-    public IEnumerable<SourceRoot> Roots
-    {
-        get
-        {
-            yield return CodexRoot;
-            yield return ClaudeRoot;
-            yield return DshRoot;
-        }
-    }
+    /// <summary>The folder watched for the OpenCode database; null when OpenCode is disabled.</summary>
+    public SourceRoot? OpenCodeRoot { get; }
 
-    public bool AnyEnabledRootAvailable => Roots.Any(r => r.Enabled && r.Available);
+    public string OpenCodeRootPath { get; }
+
+    internal OpenCodeSource? OpenCode => _openCode;
+
+    /// <summary>Transcript roots (file families).</summary>
+    public IReadOnlyList<SourceRoot> Roots => _roots;
+
+    /// <summary>Every folder a file watcher should observe, including the OpenCode database folder.</summary>
+    public IEnumerable<SourceRoot> WatchRoots => OpenCodeRoot is { } openCode ? _roots.Append(openCode) : _roots;
+
+    public bool AnyEnabledRootAvailable => _roots.Any(r => r.Enabled && r.Available) || OpenCodeRoot?.Available == true;
 
     public int TrackedFileCount => _files.Count;
 
     public void RefreshAvailability()
     {
-        foreach (var root in Roots)
+        foreach (var root in _roots)
         {
             root.Available = SafeDirectoryExists(root.Path);
         }
+
+        if (_openCode is not null)
+        {
+            OpenCodeRoot!.Available = _openCode.CheckExists();
+        }
     }
+
+    public void Dispose() => _openCode?.Dispose();
 
     /// <summary>Reads the startup backlog of every enabled, available root (METRICS 5).</summary>
     public SeedReport Seed(long nowMs, long todayStartMs, CancellationToken cancellationToken, Action<double>? progress = null)
@@ -94,7 +126,7 @@ internal sealed class MonitorCore
         var stopwatch = Stopwatch.StartNew();
         var plans = new List<ReadPlan>();
         var discovered = 0;
-        foreach (var root in Roots)
+        foreach (var root in _roots)
         {
             if (!root.Enabled || root.Seeded)
             {
@@ -128,6 +160,25 @@ internal sealed class MonitorCore
         }
 
         var (filesRead, bytesRead) = ReadPlans(plans, seeded: true, cancellationToken, progress);
+        if (_openCode is { } openCode && !_openCodeSeeded)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OpenCodeRoot!.Available = openCode.CheckExists();
+            if (OpenCodeRoot.Available)
+            {
+                discovered++;
+                openCode.RefreshAvailability();
+                ApplyOpenCode(openCode.Seed(todayStartMs), seeded: true);
+                if (openCode.Status == OpenCodeStatus.Ready)
+                {
+                    filesRead++;
+                    bytesRead += openCode.DatabaseBytes;
+                }
+            }
+
+            _openCodeSeeded = true;
+        }
+
         return new SeedReport(stopwatch.ElapsedMilliseconds, discovered, filesRead, bytesRead, _responsesSeen);
     }
 
@@ -135,8 +186,15 @@ internal sealed class MonitorCore
     public bool ProcessPaths(IEnumerable<string> paths, long nowMs, long todayStartMs)
     {
         var changed = false;
+        var openCodeChanged = false;
         foreach (var path in paths)
         {
+            if (_openCode?.IsWatchedPath(path) == true)
+            {
+                openCodeChanged = true;
+                continue;
+            }
+
             if (_files.TryGetValue(path, out var tracked))
             {
                 if (!SafeFileExists(path))
@@ -152,7 +210,7 @@ internal sealed class MonitorCore
                 continue;
             }
 
-            foreach (var root in Roots)
+            foreach (var root in _roots)
             {
                 if (root.Enabled && root.Seeded && TranscriptDiscovery.IsAcceptablePath(root.Path, path, root.Naming))
                 {
@@ -162,6 +220,11 @@ internal sealed class MonitorCore
             }
         }
 
+        if (openCodeChanged && _openCodeSeeded && _openCode is { } openCode)
+        {
+            changed |= ApplyOpenCode(openCode.Refresh(), seeded: false);
+        }
+
         return changed;
     }
 
@@ -169,6 +232,7 @@ internal sealed class MonitorCore
     public bool PollRecent(long nowMs)
     {
         var cutoff = DateTime.UnixEpoch.AddMilliseconds(nowMs - RecentWriteWindowMs);
+        var changed = _openCodeSeeded && _openCode?.RefreshIfChanged() is { } update && ApplyOpenCode(update, seeded: false);
         List<TrackedFile>? due = null;
         foreach (var tracked in _files.Values)
         {
@@ -180,10 +244,9 @@ internal sealed class MonitorCore
 
         if (due is null)
         {
-            return false;
+            return changed;
         }
 
-        var changed = false;
         foreach (var tracked in due)
         {
             var info = new FileInfo(tracked.Path);
@@ -205,7 +268,16 @@ internal sealed class MonitorCore
     public bool Rediscover(long nowMs, long todayStartMs, CancellationToken cancellationToken)
     {
         var changed = false;
-        foreach (var root in Roots)
+        if (_openCode is { } openCode && _openCodeSeeded)
+        {
+            var available = openCode.CheckExists();
+            changed |= available != OpenCodeRoot!.Available;
+            OpenCodeRoot.Available = available;
+            var update = openCode.Rediscover(nowMs, todayStartMs);
+            changed |= ApplyOpenCode(update, seeded: update.Reset);
+        }
+
+        foreach (var root in _roots)
         {
             if (!root.Enabled)
             {
@@ -254,6 +326,11 @@ internal sealed class MonitorCore
     /// <summary>Files of that source with at least one line today.</summary>
     public int SessionCount(SourceKind kind, long todayStartMs)
     {
+        if (kind == SourceKind.OpenCode)
+        {
+            return _openCode?.ActiveSessionCount(todayStartMs) ?? 0;
+        }
+
         var count = 0;
         foreach (var tracked in _files.Values)
         {
@@ -291,14 +368,21 @@ internal sealed class MonitorCore
             warnings.Add(new MonitorWarning.UnfinalizedUsage(unfinalizedToday));
         }
 
+        if (_openCode?.Status == OpenCodeStatus.Unsupported)
+        {
+            warnings.Add(new MonitorWarning.UnsupportedFormat(SourceKind.OpenCode));
+        }
+
         return warnings;
     }
 
-    public long MalformedLineCount => _removedMalformedLines + _files.Values.Sum(f => f.Parser.MalformedLines);
+    public long MalformedLineCount =>
+        _removedMalformedLines + _files.Values.Sum(f => f.Parser.MalformedLines) + (_openCode?.MalformedRows ?? 0);
 
     public long OversizedLineCount => _removedOversizedLines + _files.Values.Sum(f => f.Tailer.OversizedLines);
 
-    public int UnreadableFileCount => _files.Values.Count(f => f.Unreadable);
+    public int UnreadableFileCount =>
+        _files.Values.Count(f => f.Unreadable) + (_openCode?.Status == OpenCodeStatus.Unreadable ? 1 : 0);
 
     public bool PartialHistory => _partialHistory;
 
@@ -361,19 +445,30 @@ internal sealed class MonitorCore
 
     private SourceStatus BuildSourceStatus(SourceKind kind, long todayStartMs, Rate live, TokenTotals today, int activeAgents)
     {
-        var root = kind switch
-        {
-            SourceKind.Codex => CodexRoot,
-            SourceKind.DeepSeek => DshRoot,
-            _ => ClaudeRoot,
-        };
         var enabled = _enabled.Contains(kind);
+        string path;
+        bool available, rootEnabled;
+        if (kind == SourceKind.OpenCode)
+        {
+            path = OpenCodeRootPath;
+            available = OpenCodeRoot?.Available ?? SafeFileExists(OpenCodeDatabase.DatabasePath(OpenCodeRootPath));
+            rootEnabled = OpenCodeRoot is not null;
+        }
+        else
+        {
+            var family = Families.Of(kind);
+            var roots = _roots.Where(r => r.Family == family).ToList();
+            path = roots.Count > 0 ? roots[0].Path : string.Empty;
+            available = roots.Any(r => r.Available);
+            rootEnabled = roots.Any(r => r.Enabled);
+        }
+
         return new SourceStatus(
             kind,
             enabled,
-            root.Path,
-            root.Available,
-            root.Enabled ? SessionCount(kind, todayStartMs) : 0,
+            path,
+            available,
+            rootEnabled ? SessionCount(kind, todayStartMs) : 0,
             enabled ? live : Rate.Zero,
             enabled ? today : TokenTotals.Zero,
             enabled ? activeAgents : 0);
@@ -386,7 +481,7 @@ internal sealed class MonitorCore
         var modifiedMs = new DateTimeOffset(DateTime.SpecifyKind(file.LastWriteUtc, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
         if (modifiedMs < todayStartMs - BacklogWindowMs)
         {
-            tracked.Tailer.StartAt(file.Length, StartAlignment.SkipPartialLine);
+            StartAtEnd(tracked, file);
             return null;
         }
 
@@ -398,7 +493,14 @@ internal sealed class MonitorCore
             return null;
         }
 
-        if (file.Length > LargeFileBytes)
+        if (file.Length > DocumentTailer.MaxBytes && tracked.Tailer is DocumentTailer)
+        {
+            _partialHistory = true;
+            StartAtEnd(tracked, file);
+            return null;
+        }
+
+        if (file.Length > LargeFileBytes && tracked.Tailer is FileTailer)
         {
             _partialHistory = true;
             return new ReadPlan(
@@ -406,6 +508,18 @@ internal sealed class MonitorCore
         }
 
         return new ReadPlan(tracked, file.LastWriteUtc, 0, StartAlignment.None, file.Length);
+    }
+
+    private static void StartAtEnd(TrackedFile tracked, DiscoveredFile file)
+    {
+        if (tracked.Tailer is WholeFileTailer whole)
+        {
+            whole.StartAtEnd(file.Length, file.LastWriteUtc);
+        }
+        else
+        {
+            tracked.Tailer.StartAt(file.Length, StartAlignment.SkipPartialLine);
+        }
     }
 
     private (int Files, long Bytes) ReadPlans(
@@ -510,6 +624,7 @@ internal sealed class MonitorCore
 
         _collector.Items.Clear();
         prepared.Batch.ApplyTo(_collector);
+        _partialHistory |= tracked.Tailer is DocumentTailer { Oversized: true };
         tracked.KnownLength = prepared.Result.Length;
         tracked.KnownWriteUtc = prepared.Result.LastWriteUtc;
         tracked.Unreadable = false;
@@ -615,6 +730,56 @@ internal sealed class MonitorCore
             parser.InFlightStartMs,
             parser.LastLineMs,
             _parents.GetValueOrDefault(parser.AgentId)));
+    }
+
+    /// <summary>Applies one read of the OpenCode database; true when anything changed.</summary>
+    private bool ApplyOpenCode(OpenCodeUpdate update, bool seeded)
+    {
+        foreach (var id in update.Removed)
+        {
+            _engine.RemoveAgent(id);
+            _linksChanged |= _links.Remove(id);
+        }
+
+        foreach (var state in update.Agents.Values)
+        {
+            PushOpenCodeAgent(state);
+        }
+
+        foreach (var (response, isCompletion) in update.Responses)
+        {
+            _responsesSeen++;
+            _engine.Upsert(response, isCompletion, seeded);
+            _observer?.OnResponse(response, isCompletion, seeded);
+        }
+
+        return !update.IsEmpty;
+    }
+
+    private void PushOpenCodeAgent(OpenCodeAgentState state)
+    {
+        if (state.LastLineMs is null)
+        {
+            return;
+        }
+
+        var link = new AgentLink(state.Id, LinkKind.OpenCodeSession, state.SessionId, state.ParentSessionId, state.CreatedMs);
+        if (!_links.TryGetValue(state.Id, out var known) || known != link)
+        {
+            _links[state.Id] = link;
+            _linksChanged = true;
+        }
+
+        _engine.UpdateAgent(new AgentInfo(
+            state.Id,
+            SourceKind.OpenCode,
+            state.Project,
+            state.Model,
+            state.IsSubagent,
+            state.Phase,
+            state.InFlightStartMs,
+            state.LastLineMs,
+            _parents.GetValueOrDefault(state.Id)));
     }
 
     /// <summary>Re-resolves parent links over the engine's agents after any of them changed (METRICS 6.7).</summary>

@@ -18,7 +18,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     private bool _sawModernUsage;
     private CodexUsage? _previousLegacyTotals;
 
-    public CodexParser(string agentId, Deduper deduper)
+    public CodexParser(string agentId, IDeduper deduper)
         : base(agentId, deduper, SourceKind.Codex)
     {
         _pathIsSubagent = PathText.HasDirectoryComponent(agentId, "subagents");

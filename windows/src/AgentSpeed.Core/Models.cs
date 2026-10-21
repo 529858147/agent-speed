@@ -110,6 +110,9 @@ public abstract record MonitorWarning
 
     /// <summary>Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.</summary>
     public sealed record UnfinalizedUsage(int Count) : MonitorWarning;
+
+    /// <summary>The source's data exists but has an unsupported format (an OpenCode database without the expected tables).</summary>
+    public sealed record UnsupportedFormat(SourceKind Source) : MonitorWarning;
 }
 
 /// <param name="LiveEstimatedShare">Share of <paramref name="Live"/> (0..1) that is an in-flight estimate.</param>

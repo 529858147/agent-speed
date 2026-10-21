@@ -10,7 +10,7 @@ internal sealed class DshParser : TranscriptParser<DshLine>
     private string? _parentSession;
     private long? _pendingStartMs;
 
-    public DshParser(string agentId, Deduper deduper)
+    public DshParser(string agentId, IDeduper deduper)
         : base(agentId, deduper, SourceKind.DeepSeek)
     {
     }

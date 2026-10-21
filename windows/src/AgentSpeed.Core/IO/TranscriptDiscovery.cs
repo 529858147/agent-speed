@@ -7,11 +7,20 @@ internal readonly record struct DiscoveredFile(string Path, long Length, DateTim
 /// <summary>Which file names a root's transcripts have (METRICS 2).</summary>
 internal enum TranscriptNaming
 {
-    /// <summary><c>*.jsonl</c> (Codex, Claude).</summary>
+    /// <summary><c>*.jsonl</c> (Claude).</summary>
     Jsonl,
 
     /// <summary><c>session.v&lt;N&gt;.jsonl.zstd</c> or <c>session.v&lt;N&gt;.jsonl</c> (DeepSeek Harness).</summary>
     DshSession,
+
+    /// <summary><c>*.jsonl</c> or compressed <c>*.jsonl.zst</c> (Codex, METRICS 5.3).</summary>
+    CodexRollout,
+
+    /// <summary><c>*.jsonl</c> or legacy <c>*.json</c> at fixed depths (Gemini CLI, METRICS 4.6).</summary>
+    GeminiSession,
+
+    /// <summary><c>opencode.db</c> and its WAL in one folder (OpenCode, METRICS 5.2); not enumerated.</summary>
+    OpenCodeDatabase,
 }
 
 /// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
@@ -25,9 +34,15 @@ internal static class TranscriptDiscovery
     private const int MaxScannedEntries = 200_000;
 
     public static bool IsTranscriptName(ReadOnlySpan<char> fileName, TranscriptNaming naming = TranscriptNaming.Jsonl) =>
-        naming == TranscriptNaming.DshSession
-            ? IsDshSessionName(fileName)
-            : fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase);
+        naming switch
+        {
+            TranscriptNaming.DshSession => IsDshSessionName(fileName),
+            TranscriptNaming.CodexRollout => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase),
+            TranscriptNaming.GeminiSession => Gemini.GeminiDiscovery.IsSessionFileName(fileName),
+            TranscriptNaming.OpenCodeDatabase => false,
+            _ => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
+        };
 
     public static bool IsDshSessionName(ReadOnlySpan<char> fileName)
     {
@@ -50,9 +65,24 @@ internal static class TranscriptDiscovery
                 || rest.Equals(".jsonl.zstd", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <param name="limit">Newest files kept; <see cref="int.MaxValue"/> also lifts the scan cap (daily history).</param>
     public static List<DiscoveredFile> Enumerate(
-        string root, TranscriptNaming naming = TranscriptNaming.Jsonl, CancellationToken cancellationToken = default)
+        string root,
+        TranscriptNaming naming = TranscriptNaming.Jsonl,
+        CancellationToken cancellationToken = default,
+        int limit = MaxFilesPerRoot)
     {
+        if (naming == TranscriptNaming.GeminiSession)
+        {
+            return Gemini.GeminiDiscovery.Enumerate(root, limit, cancellationToken);
+        }
+
+        if (naming == TranscriptNaming.OpenCodeDatabase)
+        {
+            return [];
+        }
+
+        var scanCap = limit == int.MaxValue ? int.MaxValue : MaxScannedEntries;
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true,
@@ -84,7 +114,7 @@ internal static class TranscriptDiscovery
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 files.Add(file);
-                if (++scanned >= MaxScannedEntries)
+                if (++scanned >= scanCap)
                 {
                     break;
                 }
@@ -94,10 +124,10 @@ internal static class TranscriptDiscovery
         {
         }
 
-        if (files.Count > MaxFilesPerRoot)
+        if (files.Count > limit)
         {
             files.Sort(static (a, b) => b.LastWriteUtc.CompareTo(a.LastWriteUtc));
-            files.RemoveRange(MaxFilesPerRoot, files.Count - MaxFilesPerRoot);
+            files.RemoveRange(limit, files.Count - limit);
         }
 
         return files;
@@ -109,6 +139,11 @@ internal static class TranscriptDiscovery
     /// </summary>
     public static bool IsAcceptablePath(string root, string path, TranscriptNaming naming = TranscriptNaming.Jsonl)
     {
+        if (naming == TranscriptNaming.GeminiSession)
+        {
+            return Gemini.GeminiDiscovery.IsSessionPath(root, path);
+        }
+
         if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan()), naming))
         {
             return false;

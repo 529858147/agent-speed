@@ -82,6 +82,35 @@ public sealed class LiveMonitor : IDisposable
         }
     }
 
+    /// <summary><c>%XDG_DATA_HOME%\opencode</c>, else <c>~/.local/share/opencode</c> (the folder that contains opencode.db).</summary>
+    public static string DefaultOpenCodeRoot
+    {
+        get
+        {
+            var data = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            return string.IsNullOrEmpty(data)
+                ? Path.Combine(UserHome, ".local", "share", "opencode")
+                : Path.Combine(data, "opencode");
+        }
+    }
+
+    /// <summary><c>&lt;home&gt;/.gemini/tmp</c>, where home is <c>%GEMINI_CLI_HOME%</c>, else the user profile.</summary>
+    public static string DefaultGeminiRoot => Path.Combine(GeminiHome, ".gemini", "tmp");
+
+    /// <summary>Every default Gemini CLI root; on macOS also the seatbelt sandbox root (METRICS 2).</summary>
+    internal static IReadOnlyList<string> DefaultGeminiRoots => OperatingSystem.IsMacOS()
+        ? [DefaultGeminiRoot, Path.Combine(GeminiHome, ".cache", ".gemini", "tmp")]
+        : [DefaultGeminiRoot];
+
+    private static string GeminiHome
+    {
+        get
+        {
+            var home = Environment.GetEnvironmentVariable("GEMINI_CLI_HOME");
+            return string.IsNullOrEmpty(home) ? UserHome : home;
+        }
+    }
+
     private static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     public void Start()
@@ -217,12 +246,7 @@ public sealed class LiveMonitor : IDisposable
     private void RunSession(MonitorConfiguration configuration, CancellationToken token)
     {
         var zone = TimeZoneInfo.Local;
-        var core = new MonitorCore(
-            configuration,
-            NormalizeRoot(configuration.CodexRoot ?? DefaultCodexRoot),
-            NormalizeRoot(configuration.ClaudeRoot ?? DefaultClaudeRoot),
-            NormalizeRoot(configuration.DshRoot ?? DefaultDshRoot),
-            LocalDay.StartMs(NowMs(), zone));
+        using var core = new MonitorCore(configuration, SourceLocations.Resolve(configuration), LocalDay.StartMs(NowMs(), zone));
         var watchers = new Dictionary<SourceRoot, RootWatcher>();
         try
         {
@@ -372,7 +396,7 @@ public sealed class LiveMonitor : IDisposable
 
     private void EnsureWatchers(MonitorCore core, Dictionary<SourceRoot, RootWatcher> watchers)
     {
-        foreach (var root in core.Roots)
+        foreach (var root in core.WatchRoots)
         {
             var wanted = root.Enabled && root.Available;
             if (wanted && !watchers.ContainsKey(root))
@@ -491,16 +515,4 @@ public sealed class LiveMonitor : IDisposable
     private static TimeSpan Min(TimeSpan a, TimeSpan b, TimeSpan c) => a < b ? (a < c ? a : c) : (b < c ? b : c);
 
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-    private static string NormalizeRoot(string root)
-    {
-        try
-        {
-            return string.IsNullOrWhiteSpace(root) ? string.Empty : Path.GetFullPath(root);
-        }
-        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return string.Empty;
-        }
-    }
 }

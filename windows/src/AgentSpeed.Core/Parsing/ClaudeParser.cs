@@ -11,7 +11,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
     private long? _pendingStartMs;
     private bool _preciseStart;
 
-    public ClaudeParser(string agentId, Deduper deduper)
+    public ClaudeParser(string agentId, IDeduper deduper)
         : base(agentId, deduper, SourceKind.ClaudeCode)
     {
         _pathIsSubagent = PathText.HasDirectoryComponent(agentId, "subagents");

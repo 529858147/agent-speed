@@ -1,3 +1,4 @@
+using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Monitoring;
@@ -13,21 +14,61 @@ internal enum LinkKind : byte
 
     /// <summary>DeepSeek Harness: by parent session id.</summary>
     DshSession,
+
+    /// <summary>OpenCode: by <c>session_v2.parent_id</c>.</summary>
+    OpenCodeSession,
+
+    /// <summary>Gemini CLI: by the sanitized main session id inside the same <c>chats</c> folder.</summary>
+    GeminiSession,
 }
 
 /// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
 /// <param name="ThreadId">The id other transcripts use to name this one as their parent.</param>
-internal readonly record struct AgentLink(string Id, LinkKind Kind, string? ThreadId, string? ParentThreadId, long? CreatedMs)
+/// <param name="Rank">Preferred first among several candidates with the same <paramref name="ThreadId"/> when lower.</param>
+internal readonly record struct AgentLink(
+    string Id, LinkKind Kind, string? ThreadId, string? ParentThreadId, long? CreatedMs, int Rank = 0)
 {
     public static AgentLink Of(TranscriptParser parser) => parser switch
     {
         CodexParser codex => new AgentLink(codex.AgentId, LinkKind.CodexThread, codex.MetaThreadId, codex.ParentThreadId, codex.CreatedMs),
         DshParser dsh => new AgentLink(dsh.AgentId, LinkKind.DshSession, dsh.SessionId, dsh.ParentSession, dsh.CreatedMs),
+        GeminiParser gemini => OfGemini(gemini),
         _ => new AgentLink(parser.AgentId, LinkKind.Path, null, null, null),
     };
+
+    // Main sessions are keyed by their chats folder plus sanitized session id; sub-agents name <chats>/<dir>.
+    private static AgentLink OfGemini(GeminiParser gemini)
+    {
+        var path = gemini.AgentId;
+        var thread = gemini.IsMainSession && gemini.SessionId is { Length: > 0 } session && FolderOf(path, 1) is { } chats
+            ? chats + "\n" + GeminiPaths.Sanitize(session)
+            : null;
+        var parent = gemini.ParentDirectory is { Length: > 0 } directory && FolderOf(path, 2) is { } parentChats
+            ? parentChats + "\n" + directory
+            : null;
+        return new AgentLink(path, LinkKind.GeminiSession, thread, parent, gemini.StartTimeMs ?? 0, gemini.IsDocument ? 1 : 0);
+    }
+
+    private static string? FolderOf(string path, int levels)
+    {
+        var end = path.Length;
+        for (var i = 0; i < levels; i++)
+        {
+            end = path.AsSpan(0, end).LastIndexOfAny('/', '\\');
+            if (end < 0)
+            {
+                return null;
+            }
+        }
+
+        return path[..end];
+    }
 }
 
-/// <summary>Resolves parent agent ids (METRICS 6.7): Claude by path, Codex by parent thread, dsh by parent session.</summary>
+/// <summary>
+/// Resolves parent agent ids (METRICS 6.7): Claude by path, Codex by parent thread, dsh, OpenCode and Gemini by parent
+/// session.
+/// </summary>
 internal static class ParentLinks
 {
     private const string SubagentsFolder = "subagents";
@@ -94,6 +135,11 @@ internal static class ParentLinks
 
     private static bool CreatedBefore(in AgentLink a, in AgentLink b)
     {
+        if (a.Rank != b.Rank)
+        {
+            return a.Rank < b.Rank;
+        }
+
         var byTime = (a.CreatedMs ?? long.MaxValue).CompareTo(b.CreatedMs ?? long.MaxValue);
         return byTime != 0 ? byTime < 0 : string.CompareOrdinal(a.Id, b.Id) < 0;
     }

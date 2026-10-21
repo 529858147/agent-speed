@@ -22,6 +22,9 @@ internal sealed class SpeedEngine
     public const long PeakCooldownMs = 60_000;
     public const int MaxEventsPerFrame = 50;
 
+    /// <summary>Older responses that appear while running update totals silently (METRICS 6.4).</summary>
+    public const long CompletionEventWindowMs = 120_000;
+
     private static readonly int SourceCount = Enum.GetValues<SourceKind>().Length;
 
     private readonly Dictionary<string, Stored> _responses = new(StringComparer.Ordinal);
@@ -179,7 +182,7 @@ internal sealed class SpeedEngine
 
         var agents = BuildAgents(nowMs, measured, estimated, recent, seconds, out var generating, out var tools);
         var history = BuildHistory(nowMs, valid, estimates);
-        var events = DrainCompletions();
+        var events = DrainCompletions(nowMs);
         var peak = UpdatePeak(nowMs, live, observeLive, events);
 
         var sourceToday = new TokenTotals[SourceCount];
@@ -409,9 +412,10 @@ internal sealed class SpeedEngine
         return points;
     }
 
-    private List<SpeedEvent> DrainCompletions()
+    private List<SpeedEvent> DrainCompletions(long nowMs)
     {
         var events = new List<SpeedEvent>();
+        _completions.RemoveAll(r => r.EndMs < nowMs - CompletionEventWindowMs);
         var skip = Math.Max(0, _completions.Count - MaxEventsPerFrame);
         for (var i = skip; i < _completions.Count; i++)
         {

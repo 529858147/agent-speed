@@ -5,6 +5,8 @@ namespace AgentSpeed.Core;
 /// <summary>Compact number formatting shared by every surface (METRICS section 7).</summary>
 public static class SpeedFormat
 {
+    private static readonly (double Scale, string Unit)[] Units = [(1e3, "k"), (1e6, "M"), (1e9, "B")];
+
     public static string Speed(double value)
     {
         if (!double.IsFinite(value) || value <= 0)
@@ -37,31 +39,30 @@ public static class SpeedFormat
         return value < 1000 ? value.ToString(CultureInfo.InvariantCulture) : Compact(value);
     }
 
+    // Three significant digits; a value that rounds up to the next unit uses it (999 700 → 1.00M).
     private static string Compact(double value)
     {
-        var thousands = value / 1000;
-        if (Round(thousands, 2) < 10)
+        for (var i = 0; i < Units.Length; i++)
         {
-            return Fixed(thousands, 2) + "k";
+            var (scale, unit) = Units[i];
+            var scaled = value / scale;
+            if (Round(scaled, 2) < 10)
+            {
+                return Fixed(scaled, 2) + unit;
+            }
+
+            if (Round(scaled, 1) < 100)
+            {
+                return Fixed(scaled, 1) + unit;
+            }
+
+            if (Round(scaled, 0) < 1000 || i == Units.Length - 1)
+            {
+                return Fixed(scaled, 0) + unit;
+            }
         }
 
-        if (Round(thousands, 1) < 100)
-        {
-            return Fixed(thousands, 1) + "k";
-        }
-
-        if (Round(thousands, 0) < 1000)
-        {
-            return Fixed(thousands, 0) + "k";
-        }
-
-        var millions = value / 1_000_000;
-        if (Round(millions, 2) < 10)
-        {
-            return Fixed(millions, 2) + "M";
-        }
-
-        return Round(millions, 1) < 100 ? Fixed(millions, 1) + "M" : Fixed(millions, 0) + "M";
+        return Fixed(value, 0);
     }
 
     private static double Round(double value, int digits) =>

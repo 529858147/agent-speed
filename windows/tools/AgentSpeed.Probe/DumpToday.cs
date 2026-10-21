@@ -10,15 +10,9 @@ internal static class DumpToday
     public static int Run(ProbeOptions options, ProbeOutput output)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var todayStart = LocalDay.StartMs(now, TimeZoneInfo.Local);
+        var todayStart = options.SinceMs ?? LocalDay.StartMs(now, TimeZoneInfo.Local);
         var collector = new Collector();
-        var core = new MonitorCore(
-            MonitorConfiguration.Default,
-            Path.GetFullPath(options.CodexRoot ?? LiveMonitor.DefaultCodexRoot),
-            Path.GetFullPath(options.ClaudeRoot ?? LiveMonitor.DefaultClaudeRoot),
-            Path.GetFullPath(options.DshRoot ?? LiveMonitor.DefaultDshRoot),
-            todayStart,
-            collector);
+        using var core = new MonitorCore(MonitorConfiguration.Default, options.Locations, todayStart, collector);
         var report = core.Seed(now, todayStart, CancellationToken.None);
         var (snapshot, _) = core.BuildSnapshot(now, todayStart, MonitorState.Running, observeLive: false);
 

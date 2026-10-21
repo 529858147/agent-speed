@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
@@ -12,7 +13,7 @@ public sealed class ParserFixtureTests
 
     private static readonly Lazy<Dictionary<string, FileResult>> Results = new(RunAll);
 
-    private static JsonElement Expected => ExpectedDocument.Value.RootElement;
+    internal static JsonElement Expected => ExpectedDocument.Value.RootElement;
 
     public static TheoryData<string> FileNames()
     {
@@ -113,6 +114,8 @@ public sealed class ParserFixtureTests
         SourceKind.ClaudeCode => "claudeCode",
         SourceKind.ClaudeDesktop => "claudeDesktop",
         SourceKind.DeepSeek => "deepseek",
+        SourceKind.OpenCode => "opencode",
+        SourceKind.Gemini => "gemini",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -127,6 +130,78 @@ public sealed class ParserFixtureTests
     internal static long? NullableLong(JsonElement element) =>
         element.ValueKind == JsonValueKind.Null ? null : element.GetInt64();
 
+    /// <summary>Parses one fixture file completely, or its first <paramref name="maxLines"/> physical lines.</summary>
+    internal static TranscriptParser ParseFixture(string relative, IDeduper deduper, IResponseSink sink, int? maxLines = null)
+    {
+        var path = FixtureLocator.PathOf(relative);
+        var content = File.ReadAllBytes(path);
+        if (relative.StartsWith("claude/", StringComparison.Ordinal))
+        {
+            return FeedLines(new ClaudeParser(path, deduper), content, sink, maxLines);
+        }
+
+        if (relative.StartsWith("codex/", StringComparison.Ordinal))
+        {
+            var codex = new CodexParser(path, deduper);
+            if (!relative.EndsWith(".jsonl.zst", StringComparison.Ordinal))
+            {
+                return FeedLines(codex, content, sink, maxLines);
+            }
+
+            var batch = codex.NewBatch();
+            new ZstStreamTailer(path).ReadAppended(batch);
+            batch.ApplyTo(sink);
+            return codex;
+        }
+
+        if (relative.StartsWith("dsh/", StringComparison.Ordinal))
+        {
+            var dsh = new DshParser(path, deduper);
+            var batch = dsh.NewBatch();
+            new ZstdFrameTailer(path).ReadAppended(batch);
+            batch.ApplyTo(sink);
+            return dsh;
+        }
+
+        if (relative.StartsWith("gemini/", StringComparison.Ordinal))
+        {
+            var gemini = new GeminiParser(path, deduper);
+            if (!gemini.IsDocument)
+            {
+                return FeedLines(gemini, content, sink, maxLines);
+            }
+
+            gemini.Feed(content, sink);
+            return gemini;
+        }
+
+        throw new InvalidOperationException("Unknown fixture source: " + relative);
+    }
+
+    private static TranscriptParser FeedLines<TLine>(TranscriptParser<TLine> parser, byte[] content, IResponseSink sink, int? maxLines)
+        where TLine : struct
+    {
+        var lines = maxLines is { } count ? PhysicalLines(content).Take(count) : Feed.SplitJsonl(content);
+        foreach (var line in lines)
+        {
+            parser.Feed(line, sink);
+        }
+
+        return parser;
+    }
+
+    /// <summary>Newline-terminated lines, blank ones included, as the reference's <c>read_lines</c> counts them.</summary>
+    private static IEnumerable<byte[]> PhysicalLines(byte[] content)
+    {
+        var start = 0;
+        int newline;
+        while ((newline = Array.IndexOf(content, (byte)'\n', start)) >= 0)
+        {
+            yield return content.AsSpan(start, newline - start).ToArray();
+            start = newline + 1;
+        }
+    }
+
     private static Dictionary<string, FileResult> RunAll()
     {
         var deduper = new Deduper();
@@ -134,44 +209,8 @@ public sealed class ParserFixtureTests
         foreach (var element in Expected.GetProperty("order").EnumerateArray())
         {
             var relative = element.GetString()!;
-            var path = FixtureLocator.PathOf(relative);
             var sink = new RecordingSink();
-            var content = File.ReadAllBytes(path);
-            TranscriptParser parser;
-            if (relative.StartsWith("claude/", StringComparison.Ordinal))
-            {
-                var claude = new ClaudeParser(path, deduper);
-                foreach (var line in Feed.SplitJsonl(content))
-                {
-                    claude.Feed(line, sink);
-                }
-
-                parser = claude;
-            }
-            else if (relative.StartsWith("codex/", StringComparison.Ordinal))
-            {
-                var codex = new CodexParser(path, deduper);
-                foreach (var line in Feed.SplitJsonl(content))
-                {
-                    codex.Feed(line, sink);
-                }
-
-                parser = codex;
-            }
-            else if (relative.StartsWith("dsh/", StringComparison.Ordinal))
-            {
-                var dsh = new DshParser(path, deduper);
-                var batch = dsh.NewBatch();
-                new ZstdFrameTailer(path).ReadAppended(batch);
-                batch.ApplyTo(sink);
-                parser = dsh;
-            }
-            else
-            {
-                throw new InvalidOperationException("Unknown fixture source: " + relative);
-            }
-
-            results[relative] = new FileResult(parser, sink);
+            results[relative] = new FileResult(ParseFixture(relative, deduper, sink), sink);
         }
 
         return results;

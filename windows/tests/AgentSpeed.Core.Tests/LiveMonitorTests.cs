@@ -119,8 +119,17 @@ public sealed class LiveMonitorTests : IDisposable
         Assert.Throws<ObjectDisposedException>(monitor.Start);
     }
 
+    private string OpenCodeRoot => _temp.Combine("opencode");
+
+    private string GeminiRoot => _temp.Combine("gemini", "tmp");
+
     private MonitorConfiguration Configuration(params SourceKind[] enabled) => new(
-        new HashSet<SourceKind>(enabled.Length == 0 ? Enum.GetValues<SourceKind>() : enabled), CodexRoot, ClaudeRoot, DshRoot);
+        new HashSet<SourceKind>(enabled.Length == 0 ? Enum.GetValues<SourceKind>() : enabled),
+        CodexRoot,
+        ClaudeRoot,
+        DshRoot,
+        OpenCodeRoot,
+        GeminiRoot);
 
     private sealed class HubProbe
     {

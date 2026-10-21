@@ -24,8 +24,7 @@ internal static class Watch
             }
         };
 
-        var configuration = new MonitorConfiguration(
-            new HashSet<SourceKind>(Enum.GetValues<SourceKind>()), options.CodexRoot, options.ClaudeRoot, options.DshRoot);
+        var configuration = options.Configuration;
         var process = Process.GetCurrentProcess();
         var started = Stopwatch.StartNew();
         TimeSpan? runningCpu = null;

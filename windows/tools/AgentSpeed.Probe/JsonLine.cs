@@ -82,6 +82,8 @@ internal sealed class JsonLine
         SourceKind.ClaudeCode => "claudeCode",
         SourceKind.ClaudeDesktop => "claudeDesktop",
         SourceKind.DeepSeek => "deepseek",
+        SourceKind.OpenCode => "opencode",
+        SourceKind.Gemini => "gemini",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

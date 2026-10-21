@@ -41,9 +41,15 @@ internal abstract class TranscriptTailer
 
     protected LineSplitter Lines { get; } = new();
 
-    /// <summary>Plain JSONL for most files, a zstd frame stream for <c>.zstd</c> (METRICS 5.1).</summary>
+    /// <summary>
+    /// Plain JSONL for most files, a zstd frame stream for <c>.zstd</c> (METRICS 5.1), a whole zstd stream for Codex
+    /// <c>.jsonl.zst</c> (5.3) and a whole document for legacy Gemini <c>.json</c> (4.6).
+    /// </summary>
     public static TranscriptTailer For(string path) =>
-        path.EndsWith(".zstd", StringComparison.OrdinalIgnoreCase) ? new ZstdFrameTailer(path) : new FileTailer(path);
+        path.EndsWith(".zstd", StringComparison.OrdinalIgnoreCase) ? new ZstdFrameTailer(path)
+        : path.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase) ? new ZstStreamTailer(path)
+        : path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? new DocumentTailer(path)
+        : new FileTailer(path);
 
     /// <summary>Opens for reading without ever locking the writer out (read/write/delete sharing).</summary>
     public static SafeFileHandle Open(string path) => File.OpenHandle(

@@ -18,15 +18,16 @@ internal sealed class RootWatcher : IDisposable
         FileSystemWatcher? watcher = null;
         try
         {
-            watcher = new FileSystemWatcher(root, "*.jsonl")
+            var database = naming == TranscriptNaming.OpenCodeDatabase;
+            watcher = new FileSystemWatcher(root)
             {
-                IncludeSubdirectories = true,
+                IncludeSubdirectories = !database,
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
                 InternalBufferSize = 64 * 1024,
             };
-            if (naming == TranscriptNaming.DshSession)
+            foreach (var filter in Filters(naming))
             {
-                watcher.Filters.Add("*.zstd");
+                watcher.Filters.Add(filter);
             }
 
             watcher.Changed += (_, e) => onPath(e.FullPath);
@@ -48,6 +49,15 @@ internal sealed class RootWatcher : IDisposable
             return null;
         }
     }
+
+    private static string[] Filters(TranscriptNaming naming) => naming switch
+    {
+        TranscriptNaming.DshSession => ["*.jsonl", "*.zstd"],
+        TranscriptNaming.CodexRollout => ["*.jsonl", "*.zst"],
+        TranscriptNaming.GeminiSession => ["*.jsonl", "*.json"],
+        TranscriptNaming.OpenCodeDatabase => [OpenCode.OpenCodeDatabase.FileName, OpenCode.OpenCodeDatabase.FileName + "-wal"],
+        _ => ["*.jsonl"],
+    };
 
     public void Dispose()
     {

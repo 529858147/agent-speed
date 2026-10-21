@@ -16,6 +16,13 @@ public sealed class SpeedFormatTests
     [InlineData(128400, "128k")]
     [InlineData(999700, "1.00M")]
     [InlineData(1284000, "1.28M")]
+    [InlineData(12_840_000, "12.8M")]
+    [InlineData(128_400_000, "128M")]
+    [InlineData(999_700_000, "1.00B")]
+    [InlineData(2_490_000_000, "2.49B")]
+    [InlineData(12_840_000_000, "12.8B")]
+    [InlineData(128_400_000_000, "128B")]
+    [InlineData(1_234_000_000_000, "1234B")]
     public void FormatsSpeed(double value, string expected)
     {
         Assert.Equal(expected, SpeedFormat.Speed(value));
@@ -28,6 +35,11 @@ public sealed class SpeedFormatTests
     [InlineData(384000, "384k")]
     [InlineData(1000, "1.00k")]
     [InlineData(12800, "12.8k")]
+    [InlineData(999_499_999, "999M")]
+    [InlineData(999_500_000, "1.00B")]
+    [InlineData(2_490_000_000, "2.49B")]
+    [InlineData(99_960_000_000, "100B")]
+    [InlineData(999_999_999_999, "1000B")]
     public void FormatsTokens(long value, string expected)
     {
         Assert.Equal(expected, SpeedFormat.Tokens(value));

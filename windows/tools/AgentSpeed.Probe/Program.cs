@@ -9,4 +9,9 @@ if (options is null)
 }
 
 using var output = new ProbeOutput();
-return options.Mode == ProbeMode.DumpToday ? DumpToday.Run(options, output) : Watch.Run(options, output);
+return options.Mode switch
+{
+    ProbeMode.DumpToday => DumpToday.Run(options, output),
+    ProbeMode.DumpHistory => DumpHistory.Run(options, output),
+    _ => Watch.Run(options, output),
+};
