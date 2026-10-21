@@ -145,4 +145,32 @@ public class LaunchArgumentsTests
         var args = LaunchArguments.Parse(LaunchArguments.ForRelaunch(previous, pid));
         Assert.Equal(new LaunchArguments(true, previous, pid, false), args);
     }
+
+    [Theory]
+    [InlineData(new[] { "--hero-demo" }, "tour")]
+    [InlineData(new[] { "--hero-demo", "startups" }, "startups")]
+    [InlineData(new[] { "--HERO-DEMO", "idle" }, "idle")]
+    [InlineData(new[] { "--hero-demo", "--reduce-motion" }, "tour")]
+    [InlineData(new[] { "--hero-demo", "banana" }, "tour")]
+    public void ParsesTheHeroDemo(string[] args, string scenario)
+    {
+        Assert.Equal(scenario, LaunchArguments.Parse(args).HeroDemo);
+    }
+
+    [Fact]
+    public void ParsesTheHeroDevelopmentFlags()
+    {
+        var args = LaunchArguments.Parse(["--hero-glow", "strokes", "--reduce-motion", "--no-hero", "--hero-demo", "--wait-pid", "5"]);
+        Assert.Equal("strokes", args.HeroGlow);
+        Assert.True(args.ReduceMotion);
+        Assert.True(args.NoHero);
+        Assert.Equal("tour", args.HeroDemo);
+        Assert.Equal(5, args.WaitPid);
+
+        var plain = LaunchArguments.Parse(["--hero-glow", "neon"]);
+        Assert.Null(plain.HeroGlow);
+        Assert.False(plain.ReduceMotion);
+        Assert.False(plain.NoHero);
+        Assert.Null(plain.HeroDemo);
+    }
 }

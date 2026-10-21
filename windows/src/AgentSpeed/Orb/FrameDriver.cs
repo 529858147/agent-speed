@@ -1,15 +1,19 @@
 using System.Windows.Media;
 using System.Windows.Threading;
+using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Orb;
 
 namespace AgentSpeed.Orb;
 
 /// <summary>
-/// Drives animation frames: display-synced (CompositionTarget.Rendering) while something animates, an 8 fps
-/// timer for slow ambient effects, a single wake-up for scheduled ones, and nothing at all otherwise.
+/// Drives animation frames: display-synced (CompositionTarget.Rendering) while something animates, a 10 fps (or
+/// 15 fps) timer for slow ambient effects, a single wake-up for scheduled ones, and nothing at all otherwise.
 /// </summary>
 internal sealed class FrameDriver
 {
+    private static readonly TimeSpan SlowInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan MediumInterval = TimeSpan.FromSeconds(1 / HeroStage.ParkedFrameRate);
+
     private readonly Action _frame;
     private readonly Func<FrameDemand> _demand;
     private readonly Func<double?> _nextWake;
@@ -26,7 +30,7 @@ internal sealed class FrameDriver
         _demand = demand;
         _nextWake = nextWake;
         _now = now;
-        _slow = new DispatcherTimer(TimeSpan.FromMilliseconds(125), DispatcherPriority.Render, (_, _) => Step(), dispatcher);
+        _slow = new DispatcherTimer(SlowInterval, DispatcherPriority.Render, (_, _) => Step(), dispatcher);
         _slow.Stop();
         _wake = new DispatcherTimer(DispatcherPriority.Render, dispatcher);
         _wake.Tick += (_, _) =>
@@ -95,16 +99,23 @@ internal sealed class FrameDriver
 
     private void Schedule()
     {
-        switch (_demand())
+        var demand = _demand();
+        switch (demand)
         {
             case FrameDemand.Full:
                 _slow.Stop();
                 _wake.Stop();
                 Hook();
                 break;
-            case FrameDemand.Slow:
+            case FrameDemand.Slow or FrameDemand.Medium:
                 Unhook();
                 _wake.Stop();
+                var interval = demand == FrameDemand.Medium ? MediumInterval : SlowInterval;
+                if (_slow.Interval != interval)
+                {
+                    _slow.Interval = interval;
+                }
+
                 if (!_slow.IsEnabled)
                 {
                     _slow.Start();

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Chart;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Updates;
 
@@ -145,6 +146,12 @@ public sealed record AppSettings
     /// <summary>The dashboard shows every agent instead of the collapsed list.</summary>
     public bool AgentsExpanded { get; init; }
 
+    /// <summary>
+    /// Vehicle key of the last non-idle speed title (for example <c>sportsCar</c>); the dashboard hero keeps that vehicle
+    /// parked while idle, also across relaunches (DESIGN 4c "Idle"). Null shows the walker.
+    /// </summary>
+    public string? HeroLastTitle { get; init; }
+
     /// <summary>Last frame of the Usage History window; null opens it at its default size, centered.</summary>
     public WindowFrame? HistoryWindow { get; init; }
 
@@ -230,6 +237,7 @@ public sealed record AppSettings
         GeminiRoot = CleanPath(GeminiRoot),
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
+        HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),
         LastUpdateCheck = CleanTimestamp(LastUpdateCheck),

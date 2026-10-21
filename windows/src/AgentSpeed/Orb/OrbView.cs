@@ -3,10 +3,13 @@ using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AgentSpeed.App;
 using AgentSpeed.Core;
+using AgentSpeed.Orb.Hero;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Gauge;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Particles;
@@ -16,7 +19,8 @@ namespace AgentSpeed.Orb;
 
 /// <summary>
 /// The orb instrument (DESIGN section 2) drawn with retained DrawingVisual layers. Only layers that change are
-/// re-recorded; frames run only while the scene animates, and never while the view is hidden.
+/// re-recorded; frames run only while the scene animates, and never while the view is hidden. The dashboard hero
+/// (embedded style) draws the hero vehicle (DESIGN 4c) in place of the readout.
 /// </summary>
 internal sealed class OrbView : FrameworkElement
 {
@@ -63,6 +67,19 @@ internal sealed class OrbView : FrameworkElement
     private bool _overlayEmpty;
     private double _lastScale = double.NaN;
     private double _valueWidthTarget;
+    private HeroLayer? _heroLayer;
+    private HeroStage? _heroStage;
+    private HeroConfig? _heroConfig;
+    private readonly HeroStats _heroStats = new();
+    private double _heroValue;
+    private SpeedTier _heroTier = SpeedTier.Idle;
+    private SpeedTitle _heroTitle = SpeedTitle.Idle;
+    private double _heroResyncUntil = double.NegativeInfinity;
+    private bool _heroSettledDrawn;
+    private double _heroLastRender = double.NegativeInfinity;
+    private double _heroFrameInterval = 1 / 60.0;
+    private FrameDemand _heroLastDemand = FrameDemand.Full;
+    private static bool _heroArtWarned;
 
     public OrbView(Func<double> clock)
     {
@@ -96,6 +113,9 @@ internal sealed class OrbView : FrameworkElement
     public OrbScene Scene { get; }
 
     public double Diameter => _config.Diameter;
+
+    /// <summary>The dashboard hero style: the vehicle replaces the readout and the view is decorative for UI Automation.</summary>
+    public bool IsEmbedded => _heroConfig is not null;
 
     /// <summary>Spoken text such as <c>每秒 128 個 token，加速</c>; updated at most once per second.</summary>
     public string AccessibleName => _accessibleName;
@@ -131,8 +151,42 @@ internal sealed class OrbView : FrameworkElement
         _text.Clear();
         _bodyDirty = true;
         _hasDrawnStatic = false;
+        ConfigureHero(config);
         InvalidateLayers();
         _driver.Kick();
+    }
+
+    private void ConfigureHero(OrbConfig config)
+    {
+        var art = config.Hero is null ? null : VehicleArt.Shared;
+        if (config.Hero is { } hero && art is not null)
+        {
+            _heroConfig = hero;
+            if (_heroLayer is null)
+            {
+                _heroLayer = new HeroLayer(art);
+                _root.Children.Insert(_root.Children.IndexOf(_body) + 1, _heroLayer.Root);
+            }
+
+            _heroStage ??= new HeroStage(art, hero.ParkedKey, (uint)Environment.TickCount | 1);
+            _heroLayer.Configure(_brushes.Center, config.Diameter, hero.Glow);
+            _heroSettledDrawn = false;
+            return;
+        }
+
+        if (config.Hero is not null && !_heroArtWarned)
+        {
+            _heroArtWarned = true;
+            AppLog.Warn($"The hero vehicle art could not be loaded: {VehicleArt.LoadError}");
+        }
+
+        _heroConfig = null;
+        if (_heroLayer is not null)
+        {
+            _root.Children.Remove(_heroLayer.Root);
+            _heroLayer = null;
+            _heroStage = null;
+        }
     }
 
     private void InvalidateLayers()
@@ -159,6 +213,9 @@ internal sealed class OrbView : FrameworkElement
         // Idle snapshots arrive twice a second; when nothing visible changed, do not wake the renderer.
         var agents = generating as IReadOnlyCollection<SourceKind> ?? generating.ToArray();
         var target = double.IsFinite(value) && value > 0 ? value : 0;
+        _heroValue = target;
+        _heroTier = tier;
+        _heroTitle = title;
         var text = SpeedFormat.Speed(target);
         if (tier == _lastTier && title == _lastTitle && text == _lastText && Math.Abs(target - _lastValue) <= 1e-6 * Math.Max(1, target)
             && agents.SequenceEqual(_lastAgents))
@@ -234,13 +291,39 @@ internal sealed class OrbView : FrameworkElement
         base.OnDpiChanged(oldDpi, newDpi);
         _text.PixelsPerDip = newDpi.PixelsPerDip;
         _hasDrawnStatic = false;
+        _heroSettledDrawn = false;
         _driver.Kick();
     }
 
     private void UpdateActive()
     {
-        _isActive = IsVisible && !_pausedExternally;
+        var active = IsVisible && !_pausedExternally;
+        if (active && !_isActive)
+        {
+            // Reopened: the vehicle shows the current state at once instead of replaying what happened while hidden.
+            _heroResyncUntil = _clock() + 0.35;
+            _heroSettledDrawn = false;
+            if (_heroLayer is not null)
+            {
+                _heroFrameInterval = 1 / HeroStage.MovingFrameRate(RefreshRate());
+            }
+        }
+
+        _isActive = active;
         _driver.Enabled = _isActive;
+    }
+
+    /// <summary>Refresh rate of the display showing this view (60 when unknown).</summary>
+    private int RefreshRate()
+    {
+        if (PresentationSource.FromVisual(this) is System.Windows.Interop.HwndSource source
+            && Interop.Monitors.FromWindow(source.Handle) is { } monitor
+            && Interop.Monitors.RefreshRate(monitor) is { } rate)
+        {
+            return rate;
+        }
+
+        return 60;
     }
 
     private void FlushAccessibleName()
@@ -252,7 +335,7 @@ internal sealed class OrbView : FrameworkElement
         }
 
         _accessibleName = _pendingAccessibleName;
-        if (UIElementAutomationPeer.FromElement(this) is { } peer)
+        if (!IsEmbedded && UIElementAutomationPeer.FromElement(this) is { } peer)
         {
             peer.RaisePropertyChangedEvent(AutomationElementIdentifiers.NameProperty, string.Empty, _accessibleName);
         }
@@ -281,7 +364,10 @@ internal sealed class OrbView : FrameworkElement
             _bodyDirty = false;
             _hasDrawnStatic = true;
             InvalidateLayers();
+            _heroSettledDrawn = false;
         }
+
+        RenderHero();
 
         // Each layer is re-recorded only when its inputs changed, so an idle frame touches (and dirties) nothing.
         var auraKey = AuraKey();
@@ -327,8 +413,53 @@ internal sealed class OrbView : FrameworkElement
         }
     }
 
-    private FrameDemand Demand() =>
-        !_valueWidth.IsSettled(_valueWidthTarget, 0.05) ? FrameDemand.Full : Scene.Demand;
+    private FrameDemand Demand()
+    {
+        var demand = !_valueWidth.IsSettled(_valueWidthTarget, 0.05) ? FrameDemand.Full : Scene.Demand;
+        if (_heroStage is { } stage && stage.Demand > demand)
+        {
+            demand = stage.Demand;
+        }
+
+        return demand;
+    }
+
+    /// <summary>
+    /// Advances and draws the hero vehicle. With Off and Reduce Motion a settled vehicle is drawn once and then left
+    /// alone, even while the ring keeps animating.
+    /// </summary>
+    private void RenderHero()
+    {
+        if (_heroLayer is not { } layer || _heroStage is not { } stage || _heroConfig is not { } hero)
+        {
+            return;
+        }
+
+        var started = HeroStats.Begin(out var bytes);
+        var now = Scene.Time;
+        var sweep = Scene.IdleSweepStart;
+        stage.IdleSweepOrigin = double.IsFinite(sweep) ? sweep : double.NaN;
+        stage.Update(now, _heroValue, _config.Redline, _heroTier, _heroTitle, hero.Options, snap: now <= _heroResyncUntil);
+        // Moving: the largest divisor of the refresh rate that is at least 60 fps; parked: about 15 fps; static: drawn
+        // once. The ring may ask for more frames; the vehicle keeps its own pace.
+        var demand = stage.Demand;
+        var interval = demand switch
+        {
+            FrameDemand.None => double.PositiveInfinity,
+            FrameDemand.Full => 0.75 * _heroFrameInterval,
+            _ => 1 / HeroStage.ParkedFrameRate - 0.008,
+        };
+        if (_heroSettledDrawn && demand == _heroLastDemand && now - _heroLastRender < interval)
+        {
+            return;
+        }
+
+        layer.Render(stage, _config.HighContrast ? SystemColors.HighlightColor.ToRgba() : null);
+        _heroLastRender = now;
+        _heroLastDemand = demand;
+        _heroSettledDrawn = true;
+        _heroStats.End(started, bytes, stage.Parked ? "parked" : stage.CurrentKey);
+    }
 
     private long AuraKey()
     {
@@ -360,6 +491,11 @@ internal sealed class OrbView : FrameworkElement
     /// <summary>Change key of the readout layer; <see cref="long.MaxValue"/> means it animates every frame.</summary>
     private long ReadoutKey()
     {
+        if (IsEmbedded)
+        {
+            return EmbeddedReadoutKey();
+        }
+
         var now = Scene.Time;
         var animated = Scene.Readout.IsAnimating(now)
             || Scene.Transition.Progress < 1
@@ -383,6 +519,25 @@ internal sealed class OrbView : FrameworkElement
         hash.Add(Math.Round(Scene.SkewDegrees * 20));
         hash.Add(Scene.HoverBlend > 0.5);
         hash.Add(_infoLine);
+        hash.Add(Scene.AgentDots.Count);
+        hash.Add(Scene.AgentOverflow);
+        foreach (var agent in Scene.AgentDots)
+        {
+            hash.Add(agent);
+        }
+
+        return hash.ToHashCode() & 0x7FFF_FFFFL;
+    }
+
+    /// <summary>Embedded style: only the agent dots and the new-peak pill remain of the readout.</summary>
+    private long EmbeddedReadoutKey()
+    {
+        if (Scene.PeakPillAge is not null || (Scene.AgentDots.Count > 0 && Scene.Effects.AuraBreathing))
+        {
+            return long.MaxValue;
+        }
+
+        var hash = new HashCode();
         hash.Add(Scene.AgentDots.Count);
         hash.Add(Scene.AgentOverflow);
         foreach (var agent in Scene.AgentDots)
@@ -696,6 +851,12 @@ internal sealed class OrbView : FrameworkElement
         var valueStyle = _text.Style(ValueFace, 0.24 * s, _brushes.Solid.Get(valueColor));
         var capHeight = (ValueFace.CapsHeight > 0 ? ValueFace.CapsHeight : 0.7) * 0.24 * s;
         var baseline = c.Y - 0.035 * s + capHeight / 2;
+        if (IsEmbedded)
+        {
+            DrawAgentDots(dc, c, s, hc);
+            DrawPeakPill(dc, c, s, baseline - capHeight - 0.075 * s);
+            return;
+        }
 
         var digitCell = 0.0;
         for (var d = '0'; d <= '9'; d++)
@@ -1078,8 +1239,9 @@ internal sealed class OrbView : FrameworkElement
 
         protected override string GetClassNameCore() => "AgentSpeedOrb";
 
-        protected override bool IsContentElementCore() => true;
+        // The dashboard hero is decorative: its value and title are read from the text beside it.
+        protected override bool IsContentElementCore() => !((OrbView)Owner).IsEmbedded;
 
-        protected override bool IsControlElementCore() => true;
+        protected override bool IsControlElementCore() => !((OrbView)Owner).IsEmbedded;
     }
 }

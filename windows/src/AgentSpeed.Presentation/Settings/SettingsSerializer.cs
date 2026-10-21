@@ -85,6 +85,7 @@ public static class SettingsSerializer
             w.WriteStartObject("dashboard");
             w.WriteNumber("chartSeconds", s.ChartSeconds);
             w.WriteBoolean("agentsExpanded", s.AgentsExpanded);
+            WriteNullableString(w, "heroLastTitle", s.HeroLastTitle);
             w.WriteEndObject();
 
             w.WriteStartObject("history");
@@ -180,6 +181,7 @@ public static class SettingsSerializer
             HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),
+            HeroLastTitle = ReadString(dashboard, "heroLastTitle"),
             AutoCheckUpdates = ReadBool(updates, "autoCheck", d.AutoCheckUpdates),
             LastUpdateCheck = ReadTimestamp(updates, "lastCheck"),
             SkippedVersion = ReadString(updates, "skippedVersion"),

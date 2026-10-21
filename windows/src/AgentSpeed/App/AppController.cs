@@ -9,9 +9,11 @@ using AgentSpeed.Interop;
 using AgentSpeed.Localization;
 using AgentSpeed.Menus;
 using AgentSpeed.Orb;
+using AgentSpeed.Orb.Hero;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Settings;
@@ -42,6 +44,8 @@ internal sealed class AppController : IAppCommands, IDisposable
     private HistoryController? _history;
     private HistoryService? _historyService;
     private PinnedSpeedDriver? _pinnedSpeeds;
+    private HeroTourDriver? _heroTour;
+    private SpeedTitle _dashboardTitle = SpeedTitle.Idle;
     private DispatcherTimer? _historyStartFallback;
     private bool _historyStarted;
     private SpeedModel _speed = null!;
@@ -92,7 +96,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         LocalizationSource.Instance.Attach(_loc);
         phases.Mark("settings+strings");
 
-        _theme = new ThemeService(_ui, Settings.Appearance);
+        _theme = new ThemeService(_ui, Settings.Appearance, _launch.ReduceMotion);
         _app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
             Source = new Uri("pack://application:,,,/AgentSpeed;component/Theme/Styles.xaml", UriKind.Absolute),
@@ -177,9 +181,15 @@ internal sealed class AppController : IAppCommands, IDisposable
             StartUpdates();
             if (_launch.DemoSpeedValues is { Count: > 0 } speeds)
             {
+                HeroStats.Enabled = true;
                 AppLog.Info($"--demo-speed: holding the speed at {_launch.DemoSpeeds} tok/s in turn.");
                 _pinnedSpeeds = new PinnedSpeedDriver(_hub, _ui, speeds);
                 _pinnedSpeeds.Start();
+            }
+
+            if (_launch.HeroDemo is { } scenarioName && HeroTour.TryParse(scenarioName, out var scenario))
+            {
+                StartHeroDemo(scenario);
             }
 
             if (_launch.PreviewHistory)
@@ -292,6 +302,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         Try(() => _settings.Flush());
         Try(() => _preview.Stop());
         Try(() => _pinnedSpeeds?.Dispose());
+        Try(() => _heroTour?.Dispose());
         Try(() => _monitor?.Dispose());
         Try(() => _taskbar?.Dispose());
         Try(() => _tray?.Dispose());
@@ -358,12 +369,20 @@ internal sealed class AppController : IAppCommands, IDisposable
         {
             dashboard.Hero.SetData(value, tier, title, generating, accessible);
             _dashboardDirty = true;
+            if (title != _dashboardTitle)
+            {
+                // The title label changes in the same frame as the hero vehicle.
+                RefreshDashboard();
+            }
+
             if (!_dashboardTimer!.IsEnabled)
             {
                 FlushDashboard();
                 _dashboardTimer.Start();
             }
         }
+
+        RememberHeroTitle(title);
 
         UpdateTaskbar();
         _tray?.Update(TrayState());
@@ -432,6 +451,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         _dashboardDirty = false;
+        _dashboardTitle = _speed.Title;
         var snapshot = _speed.Snapshot;
         _dashboardModel.ReduceMotion = _theme.ReduceMotion;
         _dashboardModel.AgentsExpanded = Settings.AgentsExpanded;
@@ -480,7 +500,31 @@ internal sealed class AppController : IAppCommands, IDisposable
     {
         var s = Settings;
         _orb?.Configure(BuildOrbConfig(s.OrbSize, null), s.OrbAlwaysOnTop, s.OrbClickThrough, s.OrbFadeWhenIdle, _theme.ReduceMotion);
-        _dashboard?.Hero.Configure(BuildOrbConfig(HeroDiameter, EffectsIntensity.Soft) with { BodyOpacity = 1 });
+        // The hero's ring stays at Soft (DESIGN 4.1); its vehicle layer follows the Effects setting (DESIGN 4c).
+        var hero = new HeroConfig(new HeroOptions(s.Effects, _theme.ReduceMotion, _theme.HighContrast, _theme.IsDark), s.HeroLastTitle,
+            _launch.HeroGlow == "strokes" ? HeroGlowMode.Strokes : HeroGlowMode.Blur);
+        _dashboard?.Hero.Configure(BuildOrbConfig(HeroDiameter, EffectsIntensity.Soft) with { BodyOpacity = 1, Hero = _launch.NoHero ? null : hero });
+    }
+
+    /// <summary>Persists the last non-idle title so the hero parks that vehicle across relaunches (not during previews).</summary>
+    private void RememberHeroTitle(SpeedTitle title)
+    {
+        if (title == SpeedTitle.Idle || _speed.IsPreviewing || VehicleArt.KeyFor(title) is not { } key || key == Settings.HeroLastTitle)
+        {
+            return;
+        }
+
+        _settings.Update(s => s with { HeroLastTitle = key });
+    }
+
+    /// <summary>Developer option <c>--hero-demo</c>: the hero vehicle tour on a loop, with the dashboard open.</summary>
+    private void StartHeroDemo(HeroTourScenario scenario)
+    {
+        AppLog.Info($"--hero-demo: running the {scenario} scenario ({_launch.HeroGlow ?? "blur"} glow).");
+        HeroStats.Enabled = true;
+        _heroTour = new HeroTourDriver(_hub, _ui, scenario, () => _speed.Redline);
+        _heroTour.Start();
+        ShowDashboard(CursorAnchor());
     }
 
     private OrbConfig BuildOrbConfig(double diameter, EffectsIntensity? cap)
@@ -694,6 +738,12 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     private void OnSettingsChanged(AppSettings previous, AppSettings current)
     {
+        if (previous with { HeroLastTitle = current.HeroLastTitle } == current)
+        {
+            // Only the parked hero vehicle was remembered; nothing on screen depends on it.
+            return;
+        }
+
         if (previous.Appearance != current.Appearance)
         {
             _theme.Mode = current.Appearance;

@@ -1,5 +1,7 @@
 using AgentSpeed.Presentation.Colors;
+using AgentSpeed.Orb.Hero;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Settings;
 
@@ -26,6 +28,12 @@ internal sealed record OrbConfig(
         ["IDLE", "WALKING", "BICYCLE", "E-BIKE", "MOTORCYCLE", "CAR", "SPORTS CAR", "BULLET TRAIN", "RACE CAR", "MAGLEV", "JETLINER",
             "FIGHTER JET", "HYPERSONIC", "ROCKET"]);
 
+    /// <summary>The dashboard hero's vehicle layer (embedded style, DESIGN 4c); null for the floating orb.</summary>
+    public HeroConfig? Hero { get; init; }
+
     /// <summary>The label for a speed title, indexed by <see cref="SpeedTitle"/>.</summary>
     public string TitleLabel(SpeedTitle title) => (int)title < TitleLabels.Count ? TitleLabels[(int)title] : string.Empty;
 }
+
+/// <summary>Vehicle layer settings: its own effects level, the vehicle parked at launch and the glow technique.</summary>
+internal sealed record HeroConfig(HeroOptions Options, string? ParkedKey, HeroGlowMode Glow);

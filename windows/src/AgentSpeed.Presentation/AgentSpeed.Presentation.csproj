@@ -14,6 +14,8 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\spec\strings.json" Link="Localization\strings.json" LogicalName="AgentSpeed.Strings.Shared.json" />
     <EmbeddedResource Include="Localization\Strings.Windows.json" LogicalName="AgentSpeed.Strings.Windows.json" />
+    <!-- DESIGN 4c: the hero vehicle art; spec/assets/vehicles.json stays the single source of truth. -->
+    <EmbeddedResource Include="..\..\..\spec\assets\vehicles.json" Link="Hero\vehicles.json" LogicalName="AgentSpeed.Vehicles.json" />
   </ItemGroup>
 
   <ItemGroup>

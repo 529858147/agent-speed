@@ -15,7 +15,14 @@ public readonly record struct TitleTransition(SpeedTitle From, SpeedTitle To, do
 public enum FrameDemand
 {
     None,
+
+    /// <summary>About 10 fps (ambient breathing and slow sweeps).</summary>
     Slow,
+
+    /// <summary>About 15 fps (the parked hero vehicle: breathing and its idle light band).</summary>
+    Medium,
+
+    /// <summary>Every display frame.</summary>
     Full,
 }
 
@@ -213,6 +220,9 @@ public sealed class OrbScene
             return t is >= 0 and < 1 ? t : null;
         }
     }
+
+    /// <summary>Start time of the gauge's latest idle sweep (negative infinity before the first one).</summary>
+    public double IdleSweepStart => _tier == SpeedTier.Idle && Effects.IdleSweep ? _sweepStart : double.NegativeInfinity;
 
     public double JitterX { get; private set; }
 

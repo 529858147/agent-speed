@@ -46,6 +46,16 @@ internal static unsafe class Monitors
 
     public static MonitorInfo? FromRect(RECT rect) => Describe(User32.MonitorFromRect(rect, MONITOR.DEFAULTTONEAREST));
 
+    /// <summary>The display's refresh rate in Hz, or null when Windows does not report one.</summary>
+    public static int? RefreshRate(MonitorInfo monitor)
+    {
+        var mode = new DEVMODEW { dmSize = (ushort)sizeof(DEVMODEW) };
+        const int CurrentSettings = -1;
+        return User32.EnumDisplaySettings(monitor.DeviceName, CurrentSettings, ref mode) && mode.dmDisplayFrequency > 1
+            ? (int)mode.dmDisplayFrequency
+            : null;
+    }
+
     public static MonitorInfo? Primary() => All().FirstOrDefault(m => m.IsPrimary) ?? FromPoint(new POINT(0, 0));
 
     public static MonitorInfo? Describe(nint monitor)

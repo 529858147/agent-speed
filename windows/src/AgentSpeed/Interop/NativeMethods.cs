@@ -130,6 +130,10 @@ internal static unsafe partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetMonitorInfo(nint hMonitor, ref MONITORINFOEX lpmi);
 
+    [LibraryImport(Dll, EntryPoint = "EnumDisplaySettingsW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool EnumDisplaySettings(string? lpszDeviceName, int iModeNum, ref DEVMODEW lpDevMode);
+
     [LibraryImport(Dll)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool EnumDisplayMonitors(

@@ -15,12 +15,15 @@ internal sealed class ThemeService : IDisposable
     private bool _refreshQueued;
     private AppearanceMode _mode = AppearanceMode.Auto;
 
+    private readonly bool _forceReduceMotion;
     private bool _fluentEnabled;
 
-    public ThemeService(Dispatcher dispatcher, AppearanceMode mode)
+    /// <param name="forceReduceMotion">Development flag <c>--reduce-motion</c>: act as if system animations were off.</param>
+    public ThemeService(Dispatcher dispatcher, AppearanceMode mode, bool forceReduceMotion = false)
     {
         _dispatcher = dispatcher;
         _mode = mode;
+        _forceReduceMotion = forceReduceMotion;
         ReadSystem();
         IsDark = Resolve(_mode);
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -162,7 +165,7 @@ internal sealed class ThemeService : IDisposable
         }
 
         HighContrast = SystemParameters.HighContrast;
-        ReduceMotion = !SystemParameters.ClientAreaAnimation;
+        ReduceMotion = _forceReduceMotion || !SystemParameters.ClientAreaAnimation;
     }
 
     private static int ReadDword(RegistryKey? key, string name, int fallback) =>
