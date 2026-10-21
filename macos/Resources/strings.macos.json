@@ -1,0 +1,231 @@
+{
+  "_comment": "macOS-only UI strings. Every key needs zh-Hant, zh-Hans, en and ja. Run macos/scripts/sync-strings.py after editing.",
+  "mac.launchAtLogin.requiresApproval": {
+    "zh-Hant": "請在「系統設定」›「一般」›「登入項目」中允許 Agent Speed。",
+    "zh-Hans": "请在“系统设置”›“通用”›“登录项”中允许 Agent Speed。",
+    "en": "Allow Agent Speed in System Settings › General › Login Items.",
+    "ja": "「システム設定」›「一般」›「ログイン項目」で Agent Speed を許可してください。"
+  },
+  "mac.launchAtLogin.openSettings": {
+    "zh-Hant": "打開系統設定",
+    "zh-Hans": "打开系统设置",
+    "en": "Open System Settings",
+    "ja": "システム設定を開く"
+  },
+  "mac.launchAtLogin.failed": {
+    "zh-Hant": "無法變更登入項目。",
+    "zh-Hans": "无法更改登录项。",
+    "en": "Couldn't change the login item.",
+    "ja": "ログイン項目を変更できませんでした。"
+  },
+  "mac.launchAtLogin.unavailable": {
+    "zh-Hant": "將 Agent Speed 移到「應用程式」資料夾後即可使用。",
+    "zh-Hans": "将 Agent Speed 移到“应用程序”文件夹后即可使用。",
+    "en": "Available once Agent Speed is in the Applications folder.",
+    "ja": "Agent Speed を「アプリケーション」フォルダに移動すると使用できます。"
+  },
+  "mac.settings.orb.clickThroughHint": {
+    "zh-Hant": "開啟後懸浮窗不會攔截滑鼠，請從選單列控制。",
+    "zh-Hans": "开启后悬浮窗不会拦截鼠标，请从菜单栏控制。",
+    "en": "The orb ignores the mouse. Control it from the menu bar.",
+    "ja": "オーブはマウス操作を受け付けません。メニューバーから操作してください。"
+  },
+  "mac.settings.orb.resetPosition": {
+    "zh-Hant": "重設位置",
+    "zh-Hans": "重置位置",
+    "en": "Reset Position",
+    "ja": "位置をリセット"
+  },
+  "mac.settings.orb.sizeValue": {
+    "zh-Hant": "%d pt",
+    "zh-Hans": "%d pt",
+    "en": "%d pt",
+    "ja": "%d pt"
+  },
+  "mac.settings.percentValue": {
+    "zh-Hant": "%d%%",
+    "zh-Hans": "%d%%",
+    "en": "%d%%",
+    "ja": "%d%%"
+  },
+  "mac.settings.speedValue": {
+    "zh-Hant": "%@ tok/s",
+    "zh-Hans": "%@ tok/s",
+    "en": "%@ tok/s",
+    "ja": "%@ tok/s"
+  },
+  "mac.settings.sources.default": {
+    "zh-Hant": "預設位置",
+    "zh-Hans": "默认位置",
+    "en": "Default location",
+    "ja": "デフォルトの場所"
+  },
+  "mac.settings.sources.custom": {
+    "zh-Hant": "自訂位置",
+    "zh-Hans": "自定位置",
+    "en": "Custom location",
+    "ja": "カスタムの場所"
+  },
+  "mac.settings.sources.chooseCodex": {
+    "zh-Hant": "選擇 Codex 的 sessions 資料夾",
+    "zh-Hans": "选择 Codex 的 sessions 文件夹",
+    "en": "Choose the Codex sessions folder",
+    "ja": "Codex の sessions フォルダを選択"
+  },
+  "mac.settings.sources.chooseClaude": {
+    "zh-Hant": "選擇 Claude 的 projects 資料夾",
+    "zh-Hans": "选择 Claude 的 projects 文件夹",
+    "en": "Choose the Claude projects folder",
+    "ja": "Claude の projects フォルダを選択"
+  },
+  "mac.settings.sources.choosePrompt": {
+    "zh-Hant": "選擇",
+    "zh-Hans": "选择",
+    "en": "Choose",
+    "ja": "選択"
+  },
+  "mac.settings.sources.reveal": {
+    "zh-Hant": "在 Finder 中顯示",
+    "zh-Hans": "在访达中显示",
+    "en": "Show in Finder",
+    "ja": "Finder に表示"
+  },
+  "mac.settings.sources.checking": {
+    "zh-Hant": "正在讀取…",
+    "zh-Hans": "正在读取…",
+    "en": "Reading…",
+    "ja": "読み込み中…"
+  },
+  "mac.settings.about.license": {
+    "zh-Hant": "以 MIT 授權開放原始碼",
+    "zh-Hans": "以 MIT 许可证开源",
+    "en": "Open source under the MIT License",
+    "ja": "MIT ライセンスのオープンソース"
+  },
+  "mac.settings.about.tagline": {
+    "zh-Hant": "本機 AI agent 的即時 token 速度。",
+    "zh-Hans": "本机 AI agent 的实时 token 速度。",
+    "en": "Live token speed of your local AI agents.",
+    "ja": "ローカル AI エージェントのリアルタイム token 速度。"
+  },
+  "mac.dashboard.range": {
+    "zh-Hant": "時間範圍",
+    "zh-Hans": "时间范围",
+    "en": "Time range",
+    "ja": "表示期間"
+  },
+  "mac.dashboard.range.1m": {
+    "zh-Hant": "1 分",
+    "zh-Hans": "1 分",
+    "en": "1m",
+    "ja": "1分"
+  },
+  "mac.dashboard.range.2m": {
+    "zh-Hant": "2 分",
+    "zh-Hans": "2 分",
+    "en": "2m",
+    "ja": "2分"
+  },
+  "mac.dashboard.range.5m": {
+    "zh-Hant": "5 分",
+    "zh-Hans": "5 分",
+    "en": "5m",
+    "ja": "5分"
+  },
+  "mac.dashboard.peakLine": {
+    "zh-Hant": "峰值 %@",
+    "zh-Hans": "峰值 %@",
+    "en": "Peak %@",
+    "ja": "ピーク %@"
+  },
+  "mac.dashboard.openSettings": {
+    "zh-Hant": "前往設定",
+    "zh-Hans": "前往设置",
+    "en": "Open Settings",
+    "ja": "設定を開く"
+  },
+  "mac.dashboard.info": {
+    "zh-Hant": "如何測量",
+    "zh-Hans": "如何测量",
+    "en": "How it's measured",
+    "ja": "計測方法"
+  },
+  "mac.dashboard.chart": {
+    "zh-Hant": "即時速度圖表",
+    "zh-Hans": "实时速度图表",
+    "en": "Live speed chart",
+    "ja": "リアルタイム速度グラフ"
+  },
+  "mac.dashboard.now": {
+    "zh-Hant": "現在",
+    "zh-Hans": "现在",
+    "en": "Now",
+    "ja": "現在"
+  },
+  "mac.dashboard.preview": {
+    "zh-Hant": "特效預覽中，顯示的是示範資料",
+    "zh-Hans": "特效预览中，显示的是示范数据",
+    "en": "Previewing effects with sample data",
+    "ja": "エフェクトをサンプルデータでプレビュー中"
+  },
+  "mac.dashboard.stopPreview": {
+    "zh-Hant": "停止",
+    "zh-Hans": "停止",
+    "en": "Stop",
+    "ja": "停止"
+  },
+  "mac.a11y.statusItem": {
+    "zh-Hant": "Agent Speed，每秒 %@ 個 token，%@",
+    "zh-Hans": "Agent Speed，每秒 %@ 个 token，%@",
+    "en": "Agent Speed, %@ tokens per second, %@",
+    "ja": "Agent Speed、毎秒 %@ token、%@"
+  },
+  "mac.a11y.orbHint": {
+    "zh-Hant": "拖曳即可移動，按兩下打開面板",
+    "zh-Hans": "拖动即可移动，双击打开面板",
+    "en": "Drag to move. Double-click to open the dashboard.",
+    "ja": "ドラッグで移動、ダブルクリックでパネルを開きます"
+  },
+  "mac.settings.language.systemValue": {
+    "zh-Hant": "跟隨系統（%@）",
+    "zh-Hans": "跟随系统（%@）",
+    "en": "System (%@)",
+    "ja": "システムに合わせる（%@）"
+  },
+  "mac.settings.orb.presets": {
+    "zh-Hant": "常用大小",
+    "zh-Hans": "常用大小",
+    "en": "Presets",
+    "ja": "プリセット"
+  },
+  "mac.settings.effects.previewHint": {
+    "zh-Hant": "用 20 秒依序展示每個速度階段。",
+    "zh-Hans": "用 20 秒依次展示每个速度阶段。",
+    "en": "A 20-second sweep through every speed tier.",
+    "ja": "20 秒間ですべての速度段階を順に表示します。"
+  },
+  "mac.settings.sources.folder": {
+    "zh-Hant": "資料夾",
+    "zh-Hans": "文件夹",
+    "en": "Folder",
+    "ja": "フォルダ"
+  },
+  "mac.settings.about.copyright": {
+    "zh-Hant": "© 2026 zoefix",
+    "zh-Hans": "© 2026 zoefix",
+    "en": "© 2026 zoefix",
+    "ja": "© 2026 zoefix"
+  },
+  "mac.dashboard.chart.summary": {
+    "zh-Hant": "最高 %@ tok/s，現在 %@ tok/s",
+    "zh-Hans": "最高 %@ tok/s，现在 %@ tok/s",
+    "en": "High %@ tok/s, now %@ tok/s",
+    "ja": "最高 %@ tok/s、現在 %@ tok/s"
+  },
+  "mac.dashboard.chart.timeAxis": {
+    "zh-Hant": "時間",
+    "zh-Hans": "时间",
+    "en": "Time",
+    "ja": "時間"
+  }
+}

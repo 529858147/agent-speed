@@ -1,0 +1,67 @@
+import AppKit
+import SwiftUI
+
+/// Hosts the dashboard in a transient popover anchored to the status item.
+@MainActor
+final class DashboardController: NSObject, NSPopoverDelegate {
+    static let width: CGFloat = 368
+
+    /// Room kept free between the popover and the screen's visible edges (arrow included).
+    private static let screenMargin: CGFloat = 28
+
+    private let model: AppModel
+    private var popover: NSPopover?
+    private var closedAt: TimeInterval = 0
+    var onVisibilityChange: ((Bool) -> Void)?
+
+    init(model: AppModel) {
+        self.model = model
+    }
+
+    var isShown: Bool { popover?.isShown ?? false }
+
+    func toggle(relativeTo view: NSView) {
+        if isShown {
+            close()
+        } else if Clock.now - closedAt > 0.15 {
+            show(relativeTo: view)
+        }
+    }
+
+    func show(relativeTo view: NSView) {
+        guard !isShown else { return }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !model.accessibility.reduceMotion
+        popover.delegate = self
+        let root = DashboardView(model: model, maxHeight: Self.maxHeight(below: view))
+            .appEnvironment(model)
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        self.popover = popover
+        NSApp.activate()
+        popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        onVisibilityChange?(true)
+    }
+
+    func close() {
+        popover?.performClose(nil)
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        closedAt = Clock.now
+        popover?.contentViewController = nil
+        popover = nil
+        onVisibilityChange?(false)
+    }
+
+    /// Height available under the anchor on its screen, so the popover never runs off the bottom edge.
+    private static func maxHeight(below view: NSView) -> CGFloat? {
+        guard let window = view.window, let screen = window.screen ?? NSScreen.main else { return nil }
+        let anchor = window.convertToScreen(view.convert(view.bounds, to: nil))
+        let available = anchor.minY - screen.visibleFrame.minY - screenMargin
+        return available > 240 ? available : nil
+    }
+}
