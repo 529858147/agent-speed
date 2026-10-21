@@ -8,6 +8,10 @@ final class TrackedFile {
     var reader: TranscriptReader
     var parser: TranscriptParser
     var lastStat: FileStat
+    /// A whole-file read of this file runs off the session queue (METRICS 5.3).
+    var wholeReadInFlight = false
+    /// The file changed again while that read ran; read once more when it completes.
+    var wholeReadAgain = false
 
     init(
         path: String,

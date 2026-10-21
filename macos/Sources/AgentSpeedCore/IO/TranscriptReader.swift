@@ -35,6 +35,9 @@ struct TranscriptReader: Sendable {
 
     var isDocument: Bool { document != nil }
 
+    /// Every read of this file decodes it whole (a compressed session or a legacy Gemini document).
+    var readsWholeFile: Bool { compressed != nil || document != nil }
+
     /// Reads every complete line appended since the last call (a document is delivered whole, as one unit).
     /// `onMalformed` reports frames that failed to decode.
     mutating func read(

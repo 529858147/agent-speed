@@ -19,6 +19,9 @@ final class OpencodeDatabase {
     }
 
     let path: String
+    /// Opened with `immutable=1` because OpenCode had closed the database (no `-wal`, METRICS 4.5).
+    let isImmutable: Bool
+    private let openedStat: FileStat
     private let connection: SQLiteConnection
     private let sessionsStatement: SQLiteStatement
     private let sessionsSinceStatement: SQLiteStatement
@@ -30,36 +33,92 @@ final class OpencodeDatabase {
     private static let sessionColumns = "id, parent_id, directory, time_created, time_updated"
     private static let rowColumns = "id, session_id, type, seq, time_created, time_updated, data"
 
+    private struct Statements {
+        var sessions: SQLiteStatement
+        var sessionsSince: SQLiteStatement
+        var sessionRows: SQLiteStatement
+        var sessionRowsSince: SQLiteStatement
+        var rowsCreatedSince: SQLiteStatement
+        var maxCreated: SQLiteStatement
+    }
+
+    /// OpenCode closes a WAL database cleanly by removing its `-wal` and `-shm` files (METRICS 4.5). Then — the
+    /// header says WAL and no `-wal` exists — the file is opened `immutable=1`, which creates nothing. Otherwise it is
+    /// opened `mode=ro`, falling back to `immutable=1` when that fails while no `-wal` exists.
     init(path: String) throws(OpenError) {
         guard let stat = FileStat.stat(path), stat.isRegularFile else { throw .missing }
         self.path = path
+        openedStat = stat
+        var opened: (SQLiteConnection, Statements)
+        var immutable = false
+        if FileStat.stat(path + "-wal") == nil, Self.headerSaysWAL(path) {
+            opened = try Self.open(path, mode: .immutable)
+            immutable = true
+        } else {
+            do {
+                opened = try Self.open(path, mode: .readOnly)
+            } catch .unreadable where FileStat.stat(path + "-wal") == nil {
+                opened = try Self.open(path, mode: .immutable)
+                immutable = true
+            }
+        }
+        isImmutable = immutable
+        connection = opened.0
+        sessionsStatement = opened.1.sessions
+        sessionsSinceStatement = opened.1.sessionsSince
+        sessionRowsStatement = opened.1.sessionRows
+        sessionRowsSinceStatement = opened.1.sessionRowsSince
+        rowsCreatedSinceStatement = opened.1.rowsCreatedSince
+        maxCreatedStatement = opened.1.maxCreated
+    }
+
+    private static func open(_ path: String, mode: SQLiteConnection.Mode) throws(OpenError) -> (SQLiteConnection, Statements) {
         let connection: SQLiteConnection
         do {
-            connection = try SQLiteConnection(path: path, mode: .readOnly)
+            connection = try SQLiteConnection(path: path, mode: mode)
         } catch {
             throw .unreadable
         }
-        self.connection = connection
         do {
-            let tables = try Self.tableNames(connection)
-            guard Self.requiredTables.isSubset(of: tables) else { throw OpenError.unsupported }
-            sessionsStatement = try connection.prepare("SELECT \(Self.sessionColumns) FROM session_v2")
-            sessionsSinceStatement = try connection.prepare(
-                "SELECT \(Self.sessionColumns) FROM session_v2 WHERE time_updated >= ?1")
-            sessionRowsStatement = try connection.prepare(
-                "SELECT \(Self.rowColumns) FROM session_message WHERE session_id = ?1 ORDER BY seq")
-            sessionRowsSinceStatement = try connection.prepare(
-                "SELECT \(Self.rowColumns) FROM session_message WHERE session_id = ?1 AND time_updated >= ?2 ORDER BY seq")
-            rowsCreatedSinceStatement = try connection.prepare(
-                "SELECT \(Self.rowColumns) FROM session_message WHERE time_created >= ?1 ORDER BY session_id, seq")
-            maxCreatedStatement = try connection.prepare("SELECT max(time_created) FROM session_message")
+            let tables = try tableNames(connection)
+            guard requiredTables.isSubset(of: tables) else { throw OpenError.unsupported }
+            let statements = Statements(
+                sessions: try connection.prepare("SELECT \(sessionColumns) FROM session_v2"),
+                sessionsSince: try connection.prepare("SELECT \(sessionColumns) FROM session_v2 WHERE time_updated >= ?1"),
+                sessionRows: try connection.prepare(
+                    "SELECT \(rowColumns) FROM session_message WHERE session_id = ?1 ORDER BY seq"),
+                sessionRowsSince: try connection.prepare(
+                    "SELECT \(rowColumns) FROM session_message WHERE session_id = ?1 AND time_updated >= ?2 ORDER BY seq"),
+                rowsCreatedSince: try connection.prepare(
+                    "SELECT \(rowColumns) FROM session_message WHERE time_created >= ?1 ORDER BY session_id, seq"),
+                maxCreated: try connection.prepare("SELECT max(time_created) FROM session_message")
+            )
+            return (connection, statements)
         } catch let error as OpenError {
             throw error
         } catch let error as SQLiteError {
-            throw Self.classify(error)
+            throw classify(error)
         } catch {
             throw .unreadable
         }
+    }
+
+    /// Bytes 18 and 19 of the database header (read and write format versions) are both 2 in WAL mode.
+    static func headerSaysWAL(_ path: String) -> Bool {
+        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { return false }
+        defer { Darwin.close(descriptor) }
+        var header = [UInt8](repeating: 0, count: 20)
+        let count = header.withUnsafeMutableBytes { Darwin.pread(descriptor, $0.baseAddress, 20, 0) }
+        return count == 20 && header[18] == 2 && header[19] == 2
+    }
+
+    /// An immutable connection must be dropped as soon as the database changes or a `-wal` appears.
+    var isStale: Bool {
+        guard isImmutable else { return false }
+        if FileStat.stat(path + "-wal") != nil { return true }
+        guard let stat = FileStat.stat(path) else { return true }
+        return stat.size != openedStat.size || stat.modifiedNs != openedStat.modifiedNs || stat.identity != openedStat.identity
     }
 
     /// `opencode.db` inside a configured folder; a configured path that names the database file itself also works.

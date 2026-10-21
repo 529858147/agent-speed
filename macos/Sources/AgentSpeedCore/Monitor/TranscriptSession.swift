@@ -12,6 +12,29 @@ public struct SeedSummary: Equatable, Sendable {
     public init() {}
 }
 
+/// A live whole-file read (compressed Codex session or legacy Gemini document), prepared on the session queue and
+/// performed elsewhere so live updates never pause (METRICS 5.3).
+struct WholeFileRead: Sendable {
+    let path: String
+    let family: TranscriptFamily
+    let fileID: FileID
+    let reader: TranscriptReader
+
+    func perform() -> WholeFileResult {
+        var reader = self.reader
+        let (lines, read) = TranscriptDecoder.decode(family, reader: &reader)
+        return WholeFileResult(path: path, fileID: fileID, reader: reader, lines: lines, read: read)
+    }
+}
+
+struct WholeFileResult: Sendable {
+    let path: String
+    let fileID: FileID
+    let reader: TranscriptReader
+    let lines: DecodedLines
+    let read: FileTailer.ReadResult
+}
+
 /// Every transcript file of the enabled roots, the OpenCode database, their parsers, the shared dedupe set and the
 /// engine.
 ///
@@ -64,6 +87,9 @@ final class TranscriptSession {
 
     /// Wall-clock milliseconds, for the age rule of completion events (METRICS 6.4); tests pin it.
     private let clock: @Sendable () -> Int64
+    /// When set, live whole-file reads are handed here instead of running on the session queue; the owner performs
+    /// them and returns the result through `completeWholeFileRead`. Without it they run inline.
+    var wholeFileReads: ((WholeFileRead) -> Void)?
 
     init(
         configuration: MonitorConfiguration,
@@ -354,6 +380,16 @@ final class TranscriptSession {
 
     @discardableResult
     private func read(_ file: TrackedFile, live: Bool) -> Bool {
+        if live, let schedule = wholeFileReads, file.reader.readsWholeFile {
+            guard !file.wholeReadInFlight else {
+                file.wholeReadAgain = true
+                return false
+            }
+            file.wholeReadInFlight = true
+            if let stat = FileStat.lstat(file.path) { file.lastStat = stat }
+            schedule(WholeFileRead(path: file.path, family: file.family, fileID: file.fileID, reader: file.reader))
+            return false
+        }
         var upserts: [ResponseUpsert] = []
         let result = file.reader.read(onReset: { file.resetParser() }, onMalformed: { file.parser.noteMalformedLine() }) { bytes in
             file.parser.consume(rawLine: bytes, deduper: &deduper) { upserts.append($0) }
@@ -368,6 +404,30 @@ final class TranscriptSession {
         }
         finishRead(of: file, result: result)
         return result.bytesRead > 0 || result.didReset
+    }
+
+    /// Applies a whole-file read in one step. A key another file emitted first in the meantime stays that file's.
+    /// Returns true when anything changed.
+    @discardableResult
+    func completeWholeFileRead(_ result: WholeFileResult) -> Bool {
+        guard let file = files[result.path], file.fileID == result.fileID else { return false }
+        file.wholeReadInFlight = false
+        file.reader = result.reader
+        if result.read.failed, FileStat.lstat(file.path) == nil {
+            untrack(file.path)
+            return true
+        }
+        if result.read.didReset { file.resetParser() }
+        var upserts: [ResponseUpsert] = []
+        file.parser.consume(result.lines, deduper: &deduper) { upserts.append($0) }
+        let project = projectName(of: file)
+        for upsert in upserts { deliver(upsert, project: project, live: true) }
+        finishRead(of: file, result: result.read)
+        if file.wholeReadAgain {
+            file.wholeReadAgain = false
+            read(file, live: true)
+        }
+        return result.read.bytesRead > 0 || result.read.didReset
     }
 
     private func finishRead(of file: TrackedFile, result: FileTailer.ReadResult) {

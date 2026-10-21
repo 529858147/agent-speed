@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import AgentSpeedCore
 
@@ -91,6 +92,58 @@ struct LiveMonitorTests {
         #expect(completions.first?.project == "atlas")
         #expect(await Self.waitUntil { store.snapshot.agents.contains { $0.id == "opencode:ses_live" } })
         #expect(store.snapshot.sources.first { $0.kind == .opencode }?.sessionCount == 1)
+    }
+
+    @MainActor
+    final class Received {
+        var snapshots: [SpeedSnapshot] = []
+        var completions: [ResponseSummary] = []
+    }
+
+    @Test func aSlowWholeFileReadDoesNotPausePublishing() async throws {
+        let directory = try TempDirectory()
+        try FileManager.default.createDirectory(at: directory.file("codex/sessions"), withIntermediateDirectories: true)
+        let received = Received()
+        let mailbox = SnapshotMailbox { snapshot, events in
+            received.snapshots.append(snapshot)
+            for case .responseCompleted(let summary) in events { received.completions.append(summary) }
+        }
+        let gate = DispatchSemaphore(value: 0)
+        let reading = OSAllocatedUnfairLock(initialState: false)
+        let core = MonitorCore(
+            configuration: MonitorConfiguration(enabledSources: [.codex], codexRoot: directory.file("codex/sessions")),
+            mailbox: mailbox,
+            wholeFileReadHook: { _ in
+                reading.withLock { $0 = true }
+                _ = gate.wait(timeout: .now() + 10)
+            }
+        )
+        core.start()
+        defer {
+            gate.signal()
+            mailbox.close()
+            core.stop()
+        }
+        #expect(await Self.waitUntil { received.snapshots.last?.state == .running })
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let now = Date()
+        try directory.write("codex/sessions/rollout-z.jsonl.zst", bytes: ZstdFrames.raw([
+            #"{"timestamp":"\#(formatter.string(from: now.addingTimeInterval(-3)))","type":"session_meta","payload":{"id":"t-z","cwd":"/w/zip"}}"#,
+            #"{"timestamp":"\#(formatter.string(from: now.addingTimeInterval(-2)))","type":"event_msg","payload":{"type":"user_message","message":"x"}}"#,
+            #"{"timestamp":"\#(formatter.string(from: now))","type":"token_usage_record","payload":{"response_id":"z-live","usage":{"input_tokens":5,"output_tokens":42}}}"#,
+        ].joined(separator: "\n") + "\n"))
+        // FSEvents or, at the latest, the 10-second rediscovery starts the read.
+        #expect(await Self.waitUntil(timeout: 15) { reading.withLock { $0 } })
+        let published = received.snapshots.count
+        try await Task.sleep(for: .milliseconds(1600))
+        #expect(received.snapshots.count >= published + 2, "snapshots keep coming while the read is blocked")
+        #expect(received.completions.isEmpty)
+
+        gate.signal()
+        #expect(await Self.waitUntil { !received.completions.isEmpty })
+        #expect(received.completions.map(\.outputTokens) == [42])
     }
 
     @Test func restartsOnlyWhenRootsOrSourcesChange() throws {

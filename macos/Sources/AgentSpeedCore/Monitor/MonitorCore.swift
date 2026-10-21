@@ -15,6 +15,10 @@ final class MonitorCore: @unchecked Sendable {
     private let configuration: MonitorConfiguration
     private let mailbox: SnapshotMailbox
     private let queue = DispatchQueue(label: "app.agentspeed.monitor", qos: .utility)
+    /// Whole-file reads (METRICS 5.3), one at a time, off the live loop.
+    private let wholeFileQueue = DispatchQueue(label: "app.agentspeed.monitor.whole-file", qos: .utility)
+    /// Runs before each whole-file read on its queue; tests use it to make a read slow.
+    private let wholeFileReadHook: (@Sendable (String) -> Void)?
     private let cancelled = OSAllocatedUnfairLock(initialState: false)
 
     private var session: TranscriptSession?
@@ -26,9 +30,10 @@ final class MonitorCore: @unchecked Sendable {
     private var needsRescan = false
     private var flushScheduled = false
 
-    init(configuration: MonitorConfiguration, mailbox: SnapshotMailbox) {
+    init(configuration: MonitorConfiguration, mailbox: SnapshotMailbox, wholeFileReadHook: (@Sendable (String) -> Void)? = nil) {
         self.configuration = configuration
         self.mailbox = mailbox
+        self.wholeFileReadHook = wholeFileReadHook
     }
 
     /// An abandoned core (its owner released it without `stop()`) still releases its timers and stream.
@@ -54,6 +59,7 @@ final class MonitorCore: @unchecked Sendable {
     private func bootstrap() {
         guard !isCancelled else { return }
         let session = TranscriptSession(configuration: configuration)
+        session.wholeFileReads = { [weak self] job in self?.scheduleWholeFileRead(job) }
         self.session = session
         guard session.hasAvailableRoot else {
             publishPlaceholder(.noSources, session: session)
@@ -143,6 +149,21 @@ final class MonitorCore: @unchecked Sendable {
         dirtyPaths.removeAll()
         changed = session.handleChanges(atCanonicalPaths: paths) || changed
         if changed { publish() }
+    }
+
+    private func scheduleWholeFileRead(_ job: WholeFileRead) {
+        let hook = wholeFileReadHook
+        wholeFileQueue.async { [weak self] in
+            guard let self, !isCancelled else { return }
+            hook?(job.path)
+            let result = job.perform()
+            queue.async { [weak self] in self?.finishWholeFileRead(result) }
+        }
+    }
+
+    private func finishWholeFileRead(_ result: WholeFileResult) {
+        guard let session, isLive else { return }
+        if session.completeWholeFileRead(result) { publish() }
     }
 
     private func poll() {

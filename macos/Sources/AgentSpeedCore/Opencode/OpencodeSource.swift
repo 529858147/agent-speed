@@ -125,6 +125,22 @@ final class OpencodeSource {
         return status != previous || status == .ready
     }
 
+    /// Drops an immutable connection once `opencode.db` changed or a `-wal` appeared and reopens it, normally
+    /// `mode=ro` now (METRICS 4.5). A replaced file is left to `refreshAvailability`, which reads it from the start.
+    private func reopenIfStale() {
+        guard let database, database.isStale else { return }
+        self.database = nil
+        guard let stat = FileStat.stat(databasePath), stat.isRegularFile, stat.identity == databaseStat?.identity else { return }
+        do {
+            self.database = try OpencodeDatabase(path: databasePath)
+            status = .ready
+        } catch .unsupported {
+            status = .unsupported
+        } catch {
+            status = .unreadable
+        }
+    }
+
     private func close(status newStatus: Status) {
         database = nil
         databaseStat = nil
@@ -152,6 +168,7 @@ final class OpencodeSource {
         createdCursor = nil
         sessionCursor = nil
         newestRowUpdate = 0
+        reopenIfStale()
         guard let database else {
             update.removedAgents = removed
             return update
@@ -180,6 +197,7 @@ final class OpencodeSource {
     /// Reads what changed since the last read (METRICS 5.2).
     func refresh(deduper: inout Deduper) -> Update {
         var update = Update()
+        reopenIfStale()
         guard status == .ready, let database else { return update }
         databaseStat = FileStat.stat(databasePath) ?? databaseStat
         walStat = FileStat.stat(databasePath + "-wal")

@@ -11,8 +11,11 @@ struct SQLiteError: Error, Equatable, CustomStringConvertible {
 /// One SQLite connection, used by a single thread or serial queue at a time (`SQLITE_OPEN_NOMUTEX`).
 final class SQLiteConnection {
     enum Mode {
-        /// Never writes; the connection is also marked `query_only`. Never uses the `immutable` flag.
+        /// `mode=ro`: never writes; the connection is also marked `query_only`.
         case readOnly
+        /// `immutable=1`: reads the database file alone (no WAL, no locks) and creates nothing. Only valid while
+        /// nothing writes the file.
+        case immutable
         case readWriteCreate
     }
 
@@ -23,10 +26,12 @@ final class SQLiteConnection {
     init(path: String, mode: Mode, busyTimeoutMs: Int32 = SQLiteConnection.defaultBusyTimeoutMs) throws {
         let flags: Int32 = switch mode {
         case .readOnly: SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        case .immutable: SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
         case .readWriteCreate: SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
         }
+        let name = mode == .immutable ? Self.immutableURI(path) : path
         var db: OpaquePointer?
-        let code = sqlite3_open_v2(path, &db, flags, nil)
+        let code = sqlite3_open_v2(name, &db, flags, nil)
         guard code == SQLITE_OK, let db else {
             let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "cannot open"
             sqlite3_close_v2(db)
@@ -35,12 +40,20 @@ final class SQLiteConnection {
         handle = db
         sqlite3_busy_timeout(db, busyTimeoutMs)
         sqlite3_extended_result_codes(db, 1)
-        if mode == .readOnly {
+        if mode != .readWriteCreate {
             try execute("PRAGMA query_only = 1")
         }
     }
 
     deinit { close() }
+
+    /// `file:<percent-encoded path>?immutable=1`.
+    static func immutableURI(_ path: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "/-._~")
+        let escaped = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+        return "file:" + escaped + "?immutable=1"
+    }
 
     func close() {
         guard let handle else { return }

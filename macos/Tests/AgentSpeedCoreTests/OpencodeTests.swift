@@ -102,7 +102,7 @@ struct OpencodeTests {
     /// A WAL database with OpenCode's tables, written like OpenCode does while the source reads it.
     final class LiveDatabase {
         let directory: TempDirectory
-        let writer: SQLiteConnection
+        private(set) var writer: SQLiteConnection
 
         init() throws {
             directory = try TempDirectory()
@@ -116,6 +116,20 @@ struct OpencodeTests {
                 CREATE INDEX session_message_time_created_idx ON session_message (time_created);
                 CREATE UNIQUE INDEX session_message_session_seq_idx ON session_message (session_id, seq);
                 """)
+        }
+
+        /// Closes like OpenCode does when it quits: the last connection checkpoints and removes `-wal` and `-shm`
+        /// (the system SQLite keeps them, so they are removed here).
+        func closeWriter() throws {
+            try writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            writer.close()
+            for suffix in ["-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: directory.file("opencode.db" + suffix))
+            }
+        }
+
+        func reopenWriter() throws {
+            writer = try SQLiteConnection(path: directory.file("opencode.db").path, mode: .readWriteCreate)
         }
 
         func addSession(_ id: String, at ms: Int64, parent: String? = nil) throws {
@@ -202,6 +216,72 @@ struct OpencodeTests {
 
         try db.upsertRow("i1", session: "ses_a", seq: 3, type: "idle", created: base + 4000, updated: base + 4000, data: #"{"time":{"created":1}}"#)
         #expect(source.refresh(deduper: &deduper).agents["opencode:ses_a"]?.phase == .idle)
+    }
+
+    @Test func cleanlyClosedDatabaseIsReadImmutably() throws {
+        let db = try LiveDatabase()
+        let base: Int64 = 1_792_490_000_000
+        try db.addSession("ses_a", at: base)
+        try db.upsertRow("a1", session: "ses_a", seq: 1, type: "assistant", created: base + 10, updated: base + 900,
+                         data: LiveDatabase.assistant(created: base + 10, streamed: base + 800))
+        try db.closeWriter()
+        let names = { try FileManager.default.contentsOfDirectory(atPath: db.directory.path).sorted() }
+        let closed = try names()
+        #expect(closed == ["opencode.db"], "OpenCode's clean close removes -wal and -shm")
+
+        let path = db.directory.file("opencode.db").path
+        #expect(OpencodeDatabase.headerSaysWAL(path))
+        #expect(try OpencodeDatabase(path: path).isImmutable, "a WAL database without -wal is opened immutably")
+        let afterProbe = try names()
+        #expect(afterProbe == ["opencode.db"])
+        let source = OpencodeSource(root: db.directory.path, fileID: -1)
+        #expect(source.refreshAvailability())
+        #expect(source.status == .ready)
+        var deduper = Deduper()
+        let seeded = source.seed(todayStartMs: base, deduper: &deduper)
+        #expect(seeded.upserts.map(\.upsert.record.key) == ["a1"])
+        let afterRead = try names()
+        #expect(afterRead == ["opencode.db"], "an immutable read creates nothing")
+
+        // OpenCode starts again: a -wal appears, the immutable connection is dropped and `mode=ro` sees the new row.
+        try db.reopenWriter()
+        try db.upsertRow("a2", session: "ses_a", seq: 2, type: "assistant", created: base + 2000, updated: base + 3000,
+                         data: LiveDatabase.assistant(created: base + 2000, streamed: base + 2900))
+        #expect(FileManager.default.fileExists(atPath: db.directory.file("opencode.db-wal").path))
+        #expect(try !OpencodeDatabase(path: path).isImmutable)
+        let refreshed = try #require(source.refreshIfChanged(deduper: &deduper))
+        #expect(refreshed.upserts.map(\.upsert.record.key) == ["a2"])
+        #expect(source.status == .ready)
+
+        let report = try HistoryScan.run(
+            configuration: MonitorConfiguration(enabledSources: [.opencode], opencodeRoot: db.directory.url),
+            timeZone: TimeZone(identifier: "UTC")!
+        )
+        #expect(report.days.map(\.totals.requests) == [2])
+    }
+
+    @Test func rollbackJournalDatabasesOpenReadOnly() throws {
+        let path = Fixtures.root.appendingPathComponent("opencode/opencode.db").path
+        #expect(!OpencodeDatabase.headerSaysWAL(path))
+        #expect(try !OpencodeDatabase(path: path).isImmutable)
+    }
+
+    @Test func historyReadsACleanlyClosedDatabase() throws {
+        let db = try LiveDatabase()
+        let base: Int64 = 1_792_490_000_000
+        try db.addSession("ses_h", at: base)
+        try db.upsertRow("h1", session: "ses_h", seq: 1, type: "assistant", created: base + 10, updated: base + 900,
+                         data: LiveDatabase.assistant(created: base + 10, streamed: base + 800))
+        try db.closeWriter()
+        let before = try FileManager.default.contentsOfDirectory(atPath: db.directory.path).sorted()
+        #expect(before == ["opencode.db"])
+        let report = try HistoryScan.run(
+            configuration: MonitorConfiguration(enabledSources: [.opencode], opencodeRoot: db.directory.url),
+            timeZone: TimeZone(identifier: "UTC")!
+        )
+        #expect(report.days.map(\.totals.requests) == [1])
+        let names = try FileManager.default.contentsOfDirectory(atPath: db.directory.path).sorted()
+        #expect(names == ["opencode.db"])
     }
 
     @Test func concurrentWritesAreReadExactlyOnce() async throws {

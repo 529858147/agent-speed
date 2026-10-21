@@ -250,12 +250,15 @@ final class HistoryAnalyzer {
         var unreadSessions = 0
         if let opencode = plan.opencode, !report.cancelled {
             let fileID = TranscriptSession.opencodeFileID
+            var database = opencode.database
             for session in opencode.sessions {
+                // An immutable connection is only valid while OpenCode does not write (METRICS 4.5).
+                if database.isStale, let reopened = try? OpencodeDatabase(path: database.path) { database = reopened }
                 if isCancelled() {
                     report.cancelled = true
                     break
                 }
-                guard let rows = try? opencode.database.rows(session: session.info.id) else {
+                guard let rows = try? database.rows(session: session.info.id) else {
                     unreadSessions += 1
                     continue
                 }
