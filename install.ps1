@@ -43,7 +43,8 @@ param(
             UpdateHint = 'Run the same command again any time to update.'; Uninstalling = 'Uninstalling Agent Speed'
             Uninstalled = 'Removed'; NotInstalled = 'Agent Speed is not installed'; OldWindows = 'Windows 10 (1809) or later is required'
             DownloadFailed = 'Download failed'; NoChecksum = 'Checksum not found'; BadChecksum = 'Checksum mismatch, installation aborted'
-            BadArchive = 'Unexpected package contents'
+            BadArchive = 'Unexpected package contents'; Retrying = 'The download was incomplete, trying again…'
+            MirrorHint = 'If GitHub is slow on your network, set AGENT_SPEED_DOWNLOAD_BASE to a mirror of the release files.'
         }
         if ($culture -match '^zh-(TW|HK|MO)|^zh-Hant') {
             $t = @{
@@ -52,7 +53,8 @@ param(
                 UpdateHint = '之後重新執行同一行指令即可更新。'; Uninstalling = '移除 Agent Speed'
                 Uninstalled = '已移除'; NotInstalled = '沒有找到已安裝的 Agent Speed'; OldWindows = '需要 Windows 10 (1809) 或更新版本'
                 DownloadFailed = '下載失敗'; NoChecksum = '找不到校驗碼'; BadChecksum = '校驗碼不符，已中止安裝'
-                BadArchive = '安裝包內容不正確'
+                BadArchive = '安裝包內容不正確'; Retrying = '下載不完整，重新下載…'
+                MirrorHint = '若 GitHub 在你的網路很慢，可把 AGENT_SPEED_DOWNLOAD_BASE 設為發佈檔案的鏡像網址。'
             }
         }
         elseif ($culture -match '^zh') {
@@ -62,7 +64,8 @@ param(
                 UpdateHint = '之后重新运行同一行命令即可更新。'; Uninstalling = '卸载 Agent Speed'
                 Uninstalled = '已卸载'; NotInstalled = '没有找到已安装的 Agent Speed'; OldWindows = '需要 Windows 10 (1809) 或更高版本'
                 DownloadFailed = '下载失败'; NoChecksum = '找不到校验码'; BadChecksum = '校验码不匹配，已中止安装'
-                BadArchive = '安装包内容不正确'
+                BadArchive = '安装包内容不正确'; Retrying = '下载不完整，重新下载…'
+                MirrorHint = '若 GitHub 在你的网络很慢，可将 AGENT_SPEED_DOWNLOAD_BASE 设为发布文件的镜像地址。'
             }
         }
         elseif ($culture -match '^ja') {
@@ -73,7 +76,8 @@ param(
                 Uninstalled = '削除しました'; NotInstalled = 'インストールされた Agent Speed が見つかりません'
                 OldWindows = 'Windows 10 (1809) 以降が必要です'; DownloadFailed = 'ダウンロードに失敗しました'
                 NoChecksum = 'チェックサムが見つかりません'; BadChecksum = 'チェックサムが一致しないため中止しました'
-                BadArchive = 'パッケージの内容が正しくありません'
+                BadArchive = 'パッケージの内容が正しくありません'; Retrying = 'ダウンロードが不完全なため再試行します…'
+                MirrorHint = 'GitHub が遅い場合は AGENT_SPEED_DOWNLOAD_BASE にリリースファイルのミラーを設定してください。'
             }
         }
         return $t
@@ -113,15 +117,52 @@ param(
         Start-Sleep -Milliseconds 300
     }
 
-    function Invoke-Download([string]$Url, [string]$Path) {
+    function Invoke-Download([string]$Url, [string]$Path, [switch]$ShowProgress) {
+        Add-Type -AssemblyName System.Net.Http
         for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $client = New-Object System.Net.Http.HttpClient
+            $client.Timeout = [TimeSpan]::FromMinutes(30)
+            $client.DefaultRequestHeaders.UserAgent.ParseAdd('AgentSpeed-Installer')
             try {
-                Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 120
+                $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+                if (-not $response.IsSuccessStatusCode) { throw "HTTP $([int]$response.StatusCode)" }
+                $total = $response.Content.Headers.ContentLength
+                $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                $target = [IO.File]::Create($Path)
+                try {
+                    $buffer = New-Object byte[] 262144
+                    $done = [long]0
+                    $shown = -1
+                    while ($true) {
+                        $read = $source.ReadAsync($buffer, 0, $buffer.Length)
+                        if (-not $read.Wait([TimeSpan]::FromSeconds(60))) { throw 'stalled' }
+                        if ($read.Result -le 0) { break }
+                        $target.Write($buffer, 0, $read.Result)
+                        $done += $read.Result
+                        if ($ShowProgress -and $total) {
+                            $percent = [int](100 * $done / $total)
+                            if ($percent -ne $shown) {
+                                Write-Host -NoNewline ("`r    {0,3}%  {1:N1} / {2:N1} MB" -f $percent, ($done / 1MB), ($total / 1MB)) -ForegroundColor DarkGray
+                                $shown = $percent
+                            }
+                        }
+                    }
+                    if ($total -and $done -ne $total) { throw 'incomplete download' }
+                }
+                finally {
+                    $target.Dispose()
+                    $source.Dispose()
+                    if ($ShowProgress -and $total) { Write-Host '' }
+                }
                 return
             }
             catch {
-                if ($attempt -eq 3) { Stop-WithError "$($T.DownloadFailed): $Url" }
+                if ($attempt -eq 3) { Stop-WithError "$($T.DownloadFailed): $Url`n    $($T.MirrorHint)" }
+                Write-Hint $T.Retrying
                 Start-Sleep -Seconds (2 * $attempt)
+            }
+            finally {
+                $client.Dispose()
             }
         }
     }
@@ -173,18 +214,23 @@ param(
             Write-Step $T.Downloading
             $zip = Join-Path $temp $asset
             $sums = Join-Path $temp 'SHA256SUMS.txt'
-            Invoke-Download "$base/$asset" $zip
             Invoke-Download "$base/SHA256SUMS.txt" $sums
-
-            Write-Step $T.Verifying
             $expected = $null
             foreach ($line in Get-Content -Path $sums) {
                 $parts = $line.Trim() -split '\s+', 2
                 if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $asset) { $expected = $parts[0].ToLowerInvariant(); break }
             }
             if (-not $expected) { Stop-WithError $T.NoChecksum }
-            $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($expected -ne $actual) { Stop-WithError $T.BadChecksum }
+
+            $verifiedOnce = $false
+            for ($attempt = 1; ; $attempt++) {
+                Invoke-Download "$base/$asset" $zip -ShowProgress
+                if (-not $verifiedOnce) { Write-Step $T.Verifying; $verifiedOnce = $true }
+                $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($expected -eq $actual) { break }
+                if ($attempt -ge 3) { Stop-WithError "$($T.BadChecksum)`n    $($T.MirrorHint)" }
+                Write-Hint $T.Retrying
+            }
 
             $unpacked = Join-Path $temp 'unpacked'
             Expand-Archive -Path $zip -DestinationPath $unpacked -Force

@@ -73,14 +73,21 @@ main() {
 
     title
     step "$T_DOWNLOADING"
-    download "$base/$ASSET" "$tmp/$ASSET"
     download "$base/$CHECKSUMS" "$tmp/$CHECKSUMS"
-
-    step "$T_VERIFYING"
     expected="$(awk -v f="$ASSET" '$2 == f || $2 == "*"f { print $1; exit }' "$tmp/$CHECKSUMS")"
     [ -n "$expected" ] || fail "$T_NO_CHECKSUM"
-    actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{ print $1 }')"
-    [ "$expected" = "$actual" ] || fail "$T_BAD_CHECKSUM"
+
+    attempt=1
+    while :; do
+        download "$base/$ASSET" "$tmp/$ASSET" progress
+        [ "$attempt" -eq 1 ] && step "$T_VERIFYING"
+        actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{ print $1 }')"
+        [ "$expected" = "$actual" ] && break
+        [ "$attempt" -lt 3 ] || fail "$T_BAD_CHECKSUM
+    $T_MIRROR_HINT"
+        hint "$T_RETRYING"
+        attempt=$((attempt + 1))
+    done
 
     mkdir -p "$tmp/unpacked"
     ditto -x -k "$tmp/$ASSET" "$tmp/unpacked"
@@ -151,11 +158,21 @@ check_macos_version() {
 }
 
 download() {
+    meter="--silent"
+    if [ "${3:-}" = "progress" ] && [ -t 2 ]; then
+        meter="--progress-bar"
+    fi
     case "$1" in
-        https://*) curl -fL --silent --show-error --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 \
-            --connect-timeout 15 -o "$2" "$1" ;;
-        *) curl -fL --silent --show-error --retry 3 --connect-timeout 15 -o "$2" "$1" ;;
-    esac || fail "$T_DOWNLOAD_FAILED: $1"
+        https://*) set -- "$1" "$2" --proto '=https' --tlsv1.2 ;;
+        *) set -- "$1" "$2" ;;
+    esac
+    url="$1"
+    out="$2"
+    shift 2
+    # shellcheck disable=SC2086
+    curl -fL $meter --show-error --retry 3 --retry-delay 2 --connect-timeout 15 \
+        --speed-limit 1024 --speed-time 60 "$@" -o "$out" "$url" || fail "$T_DOWNLOAD_FAILED: $url
+    $T_MIRROR_HINT"
 }
 
 quit_running() {
@@ -195,7 +212,8 @@ setup_text() {
             T_NOT_MAC="這個腳本只適用於 macOS，Windows 請使用 install.ps1"
             T_OLD_MACOS="需要 macOS 14 或更新版本"; T_DOWNLOAD_FAILED="下載失敗"
             T_NO_CHECKSUM="找不到校驗碼"; T_BAD_CHECKSUM="校驗碼不符，已中止安裝"
-            T_BAD_ARCHIVE="安裝包內容不正確"; T_BAD_SIGNATURE="App 簽章驗證失敗"; T_BAD_ARGS="參數錯誤" ;;
+            T_BAD_ARCHIVE="安裝包內容不正確"; T_BAD_SIGNATURE="App 簽章驗證失敗"; T_BAD_ARGS="參數錯誤"
+            T_RETRYING="下載不完整，重新下載…"; T_MIRROR_HINT="若 GitHub 在你的網路很慢，可把 AGENT_SPEED_DOWNLOAD_BASE 設為發佈檔案的鏡像網址。" ;;
         zh*)
             T_DOWNLOADING="下载最新版本"; T_VERIFYING="验证文件完整性"; T_INSTALLING="安装"
             T_DONE="安装完成"; T_LAUNCHED="Agent Speed 已启动，请查看菜单栏。"
@@ -204,7 +222,8 @@ setup_text() {
             T_NOT_MAC="此脚本仅适用于 macOS，Windows 请使用 install.ps1"
             T_OLD_MACOS="需要 macOS 14 或更高版本"; T_DOWNLOAD_FAILED="下载失败"
             T_NO_CHECKSUM="找不到校验码"; T_BAD_CHECKSUM="校验码不匹配，已中止安装"
-            T_BAD_ARCHIVE="安装包内容不正确"; T_BAD_SIGNATURE="App 签名验证失败"; T_BAD_ARGS="参数错误" ;;
+            T_BAD_ARCHIVE="安装包内容不正确"; T_BAD_SIGNATURE="App 签名验证失败"; T_BAD_ARGS="参数错误"
+            T_RETRYING="下载不完整，重新下载…"; T_MIRROR_HINT="若 GitHub 在你的网络很慢，可将 AGENT_SPEED_DOWNLOAD_BASE 设为发布文件的镜像地址。" ;;
         ja*)
             T_DOWNLOADING="最新バージョンをダウンロード"; T_VERIFYING="ファイルの整合性を確認"; T_INSTALLING="インストール"
             T_DONE="インストール完了"; T_LAUNCHED="Agent Speed を起動しました。メニューバーを確認してください。"
@@ -213,7 +232,8 @@ setup_text() {
             T_NOT_MAC="このスクリプトは macOS 専用です。Windows では install.ps1 を使ってください"
             T_OLD_MACOS="macOS 14 以降が必要です"; T_DOWNLOAD_FAILED="ダウンロードに失敗しました"
             T_NO_CHECKSUM="チェックサムが見つかりません"; T_BAD_CHECKSUM="チェックサムが一致しないため中止しました"
-            T_BAD_ARCHIVE="パッケージの内容が正しくありません"; T_BAD_SIGNATURE="App の署名を検証できません"; T_BAD_ARGS="引数が正しくありません" ;;
+            T_BAD_ARCHIVE="パッケージの内容が正しくありません"; T_BAD_SIGNATURE="App の署名を検証できません"; T_BAD_ARGS="引数が正しくありません"
+            T_RETRYING="ダウンロードが不完全なため再試行します…"; T_MIRROR_HINT="GitHub が遅い場合は AGENT_SPEED_DOWNLOAD_BASE にリリースファイルのミラーを設定してください。" ;;
         *)
             T_DOWNLOADING="Downloading the latest release"; T_VERIFYING="Verifying integrity"; T_INSTALLING="Installing"
             T_DONE="Installed"; T_LAUNCHED="Agent Speed is running — look at your menu bar."
@@ -222,7 +242,8 @@ setup_text() {
             T_NOT_MAC="This script is for macOS. On Windows use install.ps1"
             T_OLD_MACOS="macOS 14 or later is required"; T_DOWNLOAD_FAILED="Download failed"
             T_NO_CHECKSUM="Checksum not found"; T_BAD_CHECKSUM="Checksum mismatch, installation aborted"
-            T_BAD_ARCHIVE="Unexpected package contents"; T_BAD_SIGNATURE="App signature verification failed"; T_BAD_ARGS="Invalid arguments" ;;
+            T_BAD_ARCHIVE="Unexpected package contents"; T_BAD_SIGNATURE="App signature verification failed"; T_BAD_ARGS="Invalid arguments"
+            T_RETRYING="The download was incomplete, trying again…"; T_MIRROR_HINT="If GitHub is slow on your network, set AGENT_SPEED_DOWNLOAD_BASE to a mirror of the release files." ;;
     esac
 }
 
