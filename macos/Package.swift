@@ -18,6 +18,11 @@ let package = Package(
             dependencies: ["AgentSpeedCore"],
             path: "Sources/AgentSpeed"
         ),
+        .executableTarget(
+            name: "AgentSpeedProbe",
+            dependencies: ["AgentSpeedCore"],
+            path: "Sources/AgentSpeedProbe"
+        ),
         .testTarget(
             name: "AgentSpeedCoreTests",
             dependencies: ["AgentSpeedCore"],

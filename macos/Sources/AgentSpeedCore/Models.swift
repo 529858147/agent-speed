@@ -189,6 +189,8 @@ public enum MonitorWarning: Equatable, Sendable {
     case partialHistory
     case unreadableFiles(Int)
     case malformedLines(Int)
+    /// Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.
+    case unfinalizedUsage(Int)
 }
 
 public struct SpeedSnapshot: Equatable, Sendable {

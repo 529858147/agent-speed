@@ -1,0 +1,68 @@
+import Foundation
+import Testing
+@testable import AgentSpeedCore
+
+@Suite("Parser fixtures")
+struct ParserFixtureTests {
+    struct FileResult {
+        var state: AgentState
+        var responses: [ResponseRecord]
+    }
+
+    static func runFixtures() throws -> (expected: [String: Any], results: [String: FileResult]) {
+        let expected = try Fixtures.json("parser-expected.json")
+        let order = try #require(expected["order"] as? [String])
+        var deduper = Deduper()
+        var results: [String: FileResult] = [:]
+        for (index, relative) in order.enumerated() {
+            let url = Fixtures.root.appendingPathComponent(relative)
+            let family: TranscriptFamily = relative.hasPrefix("codex/") ? .codex : .claude
+            var parser = TranscriptParser(family: family, agentId: url.path, fileID: FileID(index))
+            var keys: [String] = []
+            var latest: [String: ResponseRecord] = [:]
+            let data = try Data(contentsOf: url)
+            forEachLine(in: data) { line in
+                parser.consume(rawLine: line, deduper: &deduper) { upsert in
+                    if latest[upsert.record.key] == nil { keys.append(upsert.record.key) }
+                    latest[upsert.record.key] = upsert.record
+                }
+            }
+            results[relative] = FileResult(state: parser.state, responses: keys.compactMap { latest[$0] })
+        }
+        return (expected, results)
+    }
+
+    @Test func everyFileMatchesExpectations() throws {
+        let (expected, results) = try Self.runFixtures()
+        let files = try #require(expected["files"] as? [String: [String: Any]])
+        #expect(files.count == results.count)
+        for (relative, spec) in files {
+            let result = try #require(results[relative], "missing \(relative)")
+            let state = result.state
+            #expect(state.source.rawValue == spec.string("source"), "\(relative) source")
+            #expect(state.project == spec.string("project"), "\(relative) project")
+            #expect(state.model == spec.string("model"), "\(relative) model")
+            #expect(state.isSubagent == (spec["isSubagent"] as? Bool), "\(relative) isSubagent")
+            #expect(state.phase.rawValue == spec.string("phase"), "\(relative) phase")
+            #expect(state.inFlightStartMs == spec.int64("inFlightStartMs"), "\(relative) inFlightStartMs")
+            #expect(state.lastLineMs == spec.int64("lastLineMs"), "\(relative) lastLineMs")
+            #expect(state.malformedLines == spec.int("malformedLines"), "\(relative) malformedLines")
+
+            let expectedResponses = try #require(spec["responses"] as? [[String: Any]])
+            #expect(result.responses.count == expectedResponses.count, "\(relative) response count")
+            for (actual, wanted) in zip(result.responses, expectedResponses) {
+                #expect(actual.key == wanted.string("key"), "\(relative) key")
+                #expect(actual.startMs == wanted.int64("startMs"), "\(relative) \(actual.key) startMs")
+                #expect(actual.endMs == wanted.int64("endMs"), "\(relative) \(actual.key) endMs")
+                #expect(actual.usage.input == wanted.int("input"), "\(relative) \(actual.key) input")
+                #expect(actual.usage.cachedInput == wanted.int("cachedInput"), "\(relative) \(actual.key) cachedInput")
+                #expect(actual.usage.cacheWriteInput == wanted.int("cacheWriteInput"), "\(relative) \(actual.key) cacheWriteInput")
+                #expect(actual.usage.output == wanted.int("output"), "\(relative) \(actual.key) output")
+                #expect(actual.usage.reasoning == wanted.int("reasoning"), "\(relative) \(actual.key) reasoning")
+                #expect(actual.model == wanted.string("model"), "\(relative) \(actual.key) model")
+                #expect(actual.source == state.source, "\(relative) \(actual.key) source")
+                #expect(actual.isFinal == (wanted["final"] as? Bool), "\(relative) \(actual.key) final")
+            }
+        }
+    }
+}

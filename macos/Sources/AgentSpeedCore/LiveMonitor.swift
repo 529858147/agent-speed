@@ -5,33 +5,49 @@ import Foundation
 public final class LiveMonitor {
     public private(set) var configuration: MonitorConfiguration
     private let store: SpeedStore
+    private var core: MonitorCore?
+    private var mailbox: SnapshotMailbox?
 
     public init(store: SpeedStore, configuration: MonitorConfiguration = MonitorConfiguration()) {
         self.store = store
         self.configuration = configuration
     }
 
-    public func start() {}
+    /// True between `start()` and `stop()`.
+    public var isRunning: Bool { core != nil }
 
-    public func stop() {}
+    public func start() {
+        guard core == nil else { return }
+        let mailbox = SnapshotMailbox { [weak store] snapshot, events in
+            store?.publishLive(snapshot, events: events)
+        }
+        let core = MonitorCore(configuration: configuration, mailbox: mailbox)
+        self.mailbox = mailbox
+        self.core = core
+        core.start()
+    }
 
+    public func stop() {
+        mailbox?.close()
+        core?.stop()
+        mailbox = nil
+        core = nil
+    }
+
+    /// Applies new settings; transcripts are read again when the roots or the enabled sources change.
     public func update(configuration: MonitorConfiguration) {
+        let needsRescan = configuration.requiresRescan(comparedTo: self.configuration)
         self.configuration = configuration
+        guard needsRescan, isRunning else { return }
+        stop()
+        start()
     }
 
-    public static var defaultCodexRoot: URL {
-        if let home = ProcessInfo.processInfo.environment["CODEX_HOME"], !home.isEmpty {
-            return URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent("sessions", isDirectory: true)
-        }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/sessions", isDirectory: true)
+    public nonisolated static var defaultCodexRoot: URL {
+        TranscriptLocations.defaultCodexRoot
     }
 
-    public static var defaultClaudeRoot: URL {
-        if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !dir.isEmpty {
-            return URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("projects", isDirectory: true)
-        }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects", isDirectory: true)
+    public nonisolated static var defaultClaudeRoot: URL {
+        TranscriptLocations.defaultClaudeRoot
     }
 }
