@@ -544,7 +544,13 @@ def dsh_header(state, header):
 
 def opencode_states(db_path, dedupe):
     """Parses an OpenCode database (METRICS 4.5); returns one state per session, keyed like agent ids."""
-    db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
+    try:
+        db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
+        db.execute("select 1 from sqlite_master limit 1")
+    except sqlite3.OperationalError:
+        if os.path.exists(db_path + "-wal"):
+            raise
+        db = sqlite3.connect("file:%s?immutable=1" % db_path, uri=True, timeout=2)
     try:
         tables = {r[0] for r in db.execute("select name from sqlite_master where type='table'")}
         if not {"session_v2", "session_message"} <= tables:
