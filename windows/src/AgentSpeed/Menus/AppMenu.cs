@@ -1,7 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Shapes;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Updates;
 using AgentSpeed.Theme;
 
 namespace AgentSpeed.Menus;
@@ -15,17 +17,34 @@ internal interface IAppCommands
 
     void OpenSettings(string? page = null);
 
+    /// <summary>Opens the update window for the available release.</summary>
+    void OpenUpdate();
+
+    /// <summary>Manual check that reports its result in the update window.</summary>
+    void CheckForUpdates();
+
     void Quit();
 }
 
 /// <summary>The shared Fluent context menu for the orb, the tray icon and the taskbar widget (DESIGN section 2).</summary>
 internal static class AppMenu
 {
-    public static ContextMenu Build(IAppCommands commands, AppSettings settings, Localizer loc)
+    /// <param name="update">The available release; adds the "Update to …" item on top (UPDATES section 4).</param>
+    public static ContextMenu Build(IAppCommands commands, AppSettings settings, Localizer loc, ReleaseInfo? update = null)
     {
         var menu = new ContextMenu();
         menu.SetResourceReference(Control.FontFamilyProperty, AppFonts.UiFontKey);
         menu.Language = AppFonts.XmlLanguageFor(loc.LanguageCode);
+
+        if (update is not null)
+        {
+            var dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            dot.SetResourceReference(Shape.FillProperty, "AccentFillColorDefaultBrush");
+            var updateItem = new MenuItem { Header = UpdateText.MenuItem(update, loc), Icon = dot };
+            updateItem.Click += (_, _) => commands.OpenUpdate();
+            menu.Items.Add(updateItem);
+            menu.Items.Add(new Separator());
+        }
 
         var dashboard = Item(loc["menu.dashboard"], "", commands.ToggleDashboardFromMenu);
         dashboard.FontWeight = FontWeights.SemiBold;
@@ -71,6 +90,7 @@ internal static class AppMenu
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(loc["menu.settings"], "", () => commands.OpenSettings()));
         menu.Items.Add(Item(loc["menu.about"], "", () => commands.OpenSettings("about")));
+        menu.Items.Add(Item(loc["update.check"] + "…", "\uE895", commands.CheckForUpdates));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(loc["menu.quit"], "", commands.Quit));
         return menu;

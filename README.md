@@ -73,7 +73,7 @@ Ordinary Claude Desktop chat conversations are not stored on your computer, so t
 
 ## Privacy
 
-Read-only. Local-only. No telemetry, no accounts. The only network request is the update check against GitHub Releases (it can be turned off), which sends nothing about you. Agent Speed never stores or displays conversation content — only token counts, model names and project folder names. Updates are verified against the release's SHA-256 checksums before they are installed.
+Read-only. Local-only. No telemetry, no accounts. The only network request is the update check against GitHub Releases (it can be turned off), which sends nothing about you. Agent Speed never stores or displays conversation content — only token counts, model names and project folder names. Updates are verified against the release's SHA-256 checksums before they are installed; the checksums are published with the release, so they catch corrupted or tampered downloads, not a compromised repository.
 
 ## Build from source
 

@@ -18,12 +18,16 @@ internal sealed class SingleInstance : IDisposable
         _activate = activate;
     }
 
-    public static SingleInstance? TryAcquire()
+    /// <param name="waitForOwner">
+    /// How long to wait for a running instance to release the mutex before treating this launch as a second instance
+    /// (used by the relaunch after an update, so the exiting old instance does not swallow it).
+    /// </param>
+    public static SingleInstance? TryAcquire(TimeSpan waitForOwner = default)
     {
         var suffix = UserSuffix();
         var mutex = new Mutex(initiallyOwned: true, $@"Local\AgentSpeed.Instance.{suffix}", out var created);
         var activate = new EventWaitHandle(false, EventResetMode.AutoReset, $@"Local\AgentSpeed.Activate.{suffix}");
-        if (created)
+        if (created || (waitForOwner > TimeSpan.Zero && WaitForOwnership(mutex, waitForOwner)))
         {
             return new SingleInstance(mutex, activate);
         }
@@ -73,6 +77,19 @@ internal sealed class SingleInstance : IDisposable
 
         _mutex.Dispose();
         _activate.Dispose();
+    }
+
+    private static bool WaitForOwnership(Mutex mutex, TimeSpan timeout)
+    {
+        try
+        {
+            return mutex.WaitOne(timeout);
+        }
+        catch (AbandonedMutexException)
+        {
+            // The previous owner exited without releasing it; ownership passes to this thread.
+            return true;
+        }
     }
 
     private static string UserSuffix()

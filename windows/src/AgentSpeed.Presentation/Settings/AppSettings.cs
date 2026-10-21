@@ -3,6 +3,7 @@ using AgentSpeed.Core;
 using AgentSpeed.Presentation.Chart;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Updates;
 
 namespace AgentSpeed.Presentation.Settings;
 
@@ -113,6 +114,18 @@ public sealed record AppSettings
     public ImmutableDictionary<string, OrbAnchor> OrbAnchors { get; init; } =
         ImmutableDictionary<string, OrbAnchor>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Check GitHub for a new version at launch and every 6 hours (UPDATES section 3).</summary>
+    public bool AutoCheckUpdates { get; init; } = true;
+
+    /// <summary>Time of the last successful update check.</summary>
+    public DateTimeOffset? LastUpdateCheck { get; init; }
+
+    /// <summary>Release tag the user chose to skip; automatic checks never offer it.</summary>
+    public string? SkippedVersion { get; init; }
+
+    /// <summary>Release tag a notification was already shown for (one notification per version).</summary>
+    public string? NotifiedVersion { get; init; }
+
     public bool IsSourceEnabled(SourceKind kind) => kind switch
     {
         SourceKind.Codex => CodexEnabled,
@@ -169,7 +182,16 @@ public sealed record AppSettings
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),
+        LastUpdateCheck = CleanTimestamp(LastUpdateCheck),
+        SkippedVersion = CleanTag(SkippedVersion),
+        NotifiedVersion = CleanTag(NotifiedVersion),
     };
+
+    internal static string? CleanTag(string? tag) =>
+        !string.IsNullOrWhiteSpace(tag) && SemanticVersion.TryParse(tag, out _) ? tag.Trim() : null;
+
+    internal static DateTimeOffset? CleanTimestamp(DateTimeOffset? value) =>
+        value is { } v && v.Year is >= 2000 and <= 9000 ? v.ToUniversalTime() : null;
 
     private static ImmutableDictionary<string, OrbAnchor> CleanAnchors(ImmutableDictionary<string, OrbAnchor> anchors)
     {

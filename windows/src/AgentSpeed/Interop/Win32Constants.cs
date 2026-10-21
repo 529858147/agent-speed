@@ -115,13 +115,26 @@ internal static class NIF
     public const uint ICON = 0x00000002;
     public const uint TIP = 0x00000004;
     public const uint STATE = 0x00000008;
+    public const uint INFO = 0x00000010;
     public const uint SHOWTIP = 0x00000080;
+}
+
+internal static class NIIF
+{
+    public const uint INFO = 0x00000001;
+    public const uint USER = 0x00000004;
+    public const uint LARGE_ICON = 0x00000020;
+    public const uint RESPECT_QUIET_TIME = 0x00000080;
 }
 
 internal static class NIN
 {
     public const uint SELECT = WM.USER + 0;
     public const uint KEYSELECT = WM.USER + 1;
+    public const uint BALLOONSHOW = WM.USER + 2;
+    public const uint BALLOONHIDE = WM.USER + 3;
+    public const uint BALLOONTIMEOUT = WM.USER + 4;
+    public const uint BALLOONUSERCLICK = WM.USER + 5;
     public const uint POPUPOPEN = WM.USER + 6;
     public const uint POPUPCLOSE = WM.USER + 7;
     public const uint NOTIFYICON_VERSION_4 = 4;
@@ -162,6 +175,7 @@ internal static class GA
 
 internal static class SM
 {
+    public const int CXICON = 11;
     public const int CXSMICON = 49;
     public const int CYSMICON = 50;
 }

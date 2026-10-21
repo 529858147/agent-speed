@@ -7,6 +7,7 @@ internal static class AppPaths
     public const string ProductFolder = "AgentSpeed";
     public const string RepositoryUrl = "https://github.com/zoefix/agent-speed";
     public const string LicenseUrl = "https://github.com/zoefix/agent-speed/blob/main/LICENSE";
+    public const string ReleasesUrl = "https://github.com/zoefix/agent-speed/releases/latest";
 
     public static string SettingsFile =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ProductFolder, "settings.json");

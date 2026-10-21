@@ -25,6 +25,8 @@ internal sealed unsafe class TrayIcon : IDisposable
     private TrayVisualState? _applied;
     private int _appliedSize;
     private DateTime _lastApply = DateTime.MinValue;
+    private nint _balloonIcon;
+    private (string Title, string Text)? _pendingBalloon;
 
     public TrayIcon(ShellMessageWindow window, Dispatcher dispatcher)
     {
@@ -42,7 +44,35 @@ internal sealed unsafe class TrayIcon : IDisposable
     /// <summary>Right click or keyboard context menu; coordinates are physical screen pixels.</summary>
     public event EventHandler<(int X, int Y)>? ContextMenuRequested;
 
+    /// <summary>The user clicked the notification shown by <see cref="ShowBalloon"/>.</summary>
+    public event EventHandler? BalloonClicked;
+
     public bool IsVisible => _added;
+
+    /// <summary>
+    /// Shows a notification from the icon (NIF_INFO; Windows presents it as a toast) with the app icon when available.
+    /// If the icon is not in the notification area yet, the notification is shown once it is added.
+    /// </summary>
+    public void ShowBalloon(string title, string text)
+    {
+        if (!_added)
+        {
+            _pendingBalloon = (title, text);
+            return;
+        }
+
+        _pendingBalloon = null;
+        var data = NewData(NIF.INFO | NIF.SHOWTIP);
+        SetText(data.szInfoTitle, 64, title);
+        SetText(data.szInfo, 256, string.IsNullOrEmpty(text) ? " " : text);
+        var icon = BalloonIcon();
+        data.dwInfoFlags = NIIF.RESPECT_QUIET_TIME | (icon != 0 ? NIIF.USER | NIIF.LARGE_ICON : NIIF.INFO);
+        data.hBalloonIcon = icon;
+        if (!Shell32.Shell_NotifyIcon(NIM.MODIFY, ref data))
+        {
+            AppLog.Warn("The notification could not be shown.");
+        }
+    }
 
     public void Show(TrayVisualState state)
     {
@@ -118,6 +148,11 @@ internal sealed unsafe class TrayIcon : IDisposable
         }
 
         DestroyIcon();
+        if (_balloonIcon != 0)
+        {
+            User32.DestroyIcon(_balloonIcon);
+            _balloonIcon = 0;
+        }
     }
 
     private void Recreate()
@@ -172,6 +207,11 @@ internal sealed unsafe class TrayIcon : IDisposable
         _added = true;
         _applied = _pending;
         _lastApply = DateTime.UtcNow;
+        if (_pendingBalloon is { } balloon)
+        {
+            ShowBalloon(balloon.Title, balloon.Text);
+        }
+
         return true;
     }
 
@@ -277,6 +317,9 @@ internal sealed unsafe class TrayIcon : IDisposable
             case WM.CONTEXTMENU:
                 ContextMenuRequested?.Invoke(this, (e.X, e.Y));
                 break;
+            case NIN.BALLOONUSERCLICK:
+                BalloonClicked?.Invoke(this, EventArgs.Empty);
+                break;
         }
     }
 
@@ -290,17 +333,50 @@ internal sealed unsafe class TrayIcon : IDisposable
 
     private static void SetTip(ref NOTIFYICONDATA data, string tip)
     {
-        tip ??= string.Empty;
-        var length = Math.Min(tip.Length, 127);
         fixed (char* destination = data.szTip)
         {
-            for (var i = 0; i < length; i++)
-            {
-                destination[i] = tip[i];
-            }
-
-            destination[length] = '\0';
+            SetText(destination, 128, tip);
         }
+    }
+
+    private static void SetText(char* destination, int capacity, string? text)
+    {
+        text ??= string.Empty;
+        var length = Math.Min(text.Length, capacity - 1);
+        if (length > 0 && char.IsHighSurrogate(text[length - 1]))
+        {
+            length--;
+        }
+
+        for (var i = 0; i < length; i++)
+        {
+            destination[i] = text[i];
+        }
+
+        destination[length] = '\0';
+    }
+
+    /// <summary>The app icon at the large-icon size, extracted once from the executable; 0 when unavailable.</summary>
+    private nint BalloonIcon()
+    {
+        if (_balloonIcon != 0 || AppPaths.ExecutablePath is not { } path)
+        {
+            return _balloonIcon;
+        }
+
+        var taskbar = User32.FindWindow("Shell_TrayWnd", null);
+        var dpi = taskbar != 0 ? User32.GetDpiForWindow(taskbar) : 96u;
+        var size = User32.GetSystemMetricsForDpi(SM.CXICON, dpi == 0 ? 96u : dpi);
+        if (size <= 0)
+        {
+            size = 32;
+        }
+
+        nint icon = 0;
+        uint id = 0;
+        var count = User32.PrivateExtractIcons(path, 0, size, size, &icon, &id, 1, 0);
+        _balloonIcon = count is > 0 and not uint.MaxValue ? icon : 0;
+        return _balloonIcon;
     }
 
     private static int IconSize()

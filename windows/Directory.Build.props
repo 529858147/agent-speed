@@ -5,7 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <AnalysisLevel>latest</AnalysisLevel>
-    <Version>1.0.0</Version>
+    <!-- 0.0.0 marks a local development build (no automatic update checks); the publish scripts stamp the release version. -->
+    <Version>0.0.0</Version>
     <Authors>zoefix</Authors>
     <Company>zoefix</Company>
     <Product>Agent Speed</Product>

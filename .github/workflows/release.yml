@@ -67,4 +67,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sed "s/{{VERSION}}/${GITHUB_REF_NAME}/g" .github/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Agent Speed ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Agent Speed ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag $flags

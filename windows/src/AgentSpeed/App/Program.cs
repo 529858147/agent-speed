@@ -1,11 +1,13 @@
 using System.Windows.Threading;
+using AgentSpeed.Presentation.Updates;
+using AgentSpeed.Updates;
 
 namespace AgentSpeed.App;
 
 internal static class Program
 {
     [STAThread]
-    public static int Main()
+    public static int Main(string[] args)
     {
         StartupPhases.MarkMain();
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -16,13 +18,19 @@ internal static class Program
             e.SetObserved();
         };
 
-        using var instance = SingleInstance.TryAcquire();
+        var launch = LaunchArguments.Parse(args);
+        using var instance = Acquire(launch);
         if (instance is null)
         {
             return 0;
         }
 
         AppLog.Info($"Agent Speed {AppPaths.Version} starting on Windows {Environment.OSVersion.Version}.");
+        if (launch.AfterUpdate)
+        {
+            AppLog.Info($"Relaunched after an update from {launch.PreviousVersion ?? "an unknown version"}.");
+        }
+
         var app = new App();
         var guard = new CrashGuard();
         app.DispatcherUnhandledException += (_, e) =>
@@ -35,7 +43,7 @@ internal static class Program
             }
         };
 
-        using var controller = new AppController(app, instance);
+        using var controller = new AppController(app, instance, launch);
         app.Startup += (_, _) =>
         {
             try
@@ -51,6 +59,23 @@ internal static class Program
         var exitCode = app.Run();
         AppLog.Info("Agent Speed exited.");
         return exitCode;
+    }
+
+    /// <summary>
+    /// The relaunch after an update first waits for the old process to exit, then waits for the mutex, before the
+    /// usual second-instance handling applies (UPDATES section 5).
+    /// </summary>
+    private static SingleInstance? Acquire(LaunchArguments launch)
+    {
+        if (launch.WaitPid is not { } pid)
+        {
+            return SingleInstance.TryAcquire();
+        }
+
+        var exited = UpdateRelaunch.WaitForExit(pid);
+        var instance = SingleInstance.TryAcquire(UpdateRelaunch.MutexWait);
+        AppLog.Info($"Relaunch: previous instance {(exited ? "exited" : "still running")}, single-instance lock {(instance is null ? "not acquired" : "acquired")}.");
+        return instance;
     }
 
     /// <summary>Keeps running after isolated UI errors, but stops a crash loop.</summary>

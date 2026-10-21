@@ -54,6 +54,12 @@
     "en": "Open log folder",
     "ja": "ログフォルダを開く"
   },
+  "win.settings.about.updates": {
+    "zh-Hant": "更新",
+    "zh-Hans": "更新",
+    "en": "Updates",
+    "ja": "アップデート"
+  },
   "win.settings.appearance.description": {
     "zh-Hant": "跟隨 Windows，或固定使用淺色、深色。",
     "zh-Hans": "跟随 Windows，或固定使用浅色、深色。",
@@ -131,5 +137,11 @@
     "zh-Hans": "目前找不到任务栏，速度仍会显示在通知区域图标上。",
     "en": "The taskbar is not available right now; the speed is still shown on the notification area icon.",
     "ja": "タスクバーが見つかりません。速度は通知領域のアイコンに引き続き表示されます。"
+  },
+  "win.update.close": {
+    "zh-Hant": "關閉",
+    "zh-Hans": "关闭",
+    "en": "Close",
+    "ja": "閉じる"
   }
 }

@@ -176,6 +176,10 @@ internal static unsafe partial class User32
     [LibraryImport(Dll, SetLastError = true)]
     internal static partial nint CreateIconIndirect(in ICONINFO piconinfo);
 
+    [LibraryImport(Dll, EntryPoint = "PrivateExtractIconsW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial uint PrivateExtractIcons(
+        string szFileName, int nIconIndex, int cxIcon, int cyIcon, nint* phicon, uint* piconid, uint nIcons, uint flags);
+
     [LibraryImport(Dll, EntryPoint = "LoadCursorW")]
     internal static partial nint LoadCursor(nint hInstance, nint lpCursorName);
 

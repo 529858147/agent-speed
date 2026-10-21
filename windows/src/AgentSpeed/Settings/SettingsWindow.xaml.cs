@@ -1,8 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media.Imaging;
-using AgentSpeed.App;
+using AgentSpeed.Theme;
 
 namespace AgentSpeed.Settings;
 
@@ -65,25 +64,15 @@ internal sealed partial class SettingsWindow : Window
 
     private void LoadIcon()
     {
-        try
+        if (AppIconSource.Frame(64) is { } frame)
         {
-            var uri = new Uri("pack://application:,,,/AgentSpeed;component/Assets/AgentSpeed.ico", UriKind.Absolute);
-            var decoder = BitmapDecoder.Create(uri, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-            var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).FirstOrDefault(f => f.PixelWidth <= 64) ?? decoder.Frames.FirstOrDefault();
-            if (frame is null)
-            {
-                throw new IOException("Icon has no frames.");
-            }
-
             AppIcon.Source = frame;
-            Icon = decoder.Frames.FirstOrDefault(f => f.PixelWidth == 32) ?? frame;
+            Icon = AppIconSource.Frame(32) ?? frame;
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or UriFormatException or InvalidOperationException
-                                       or System.Runtime.InteropServices.COMException or FileFormatException)
+        else
         {
             AppIcon.Visibility = Visibility.Collapsed;
             FallbackIcon.Visibility = Visibility.Visible;
-            AppLog.Info("App icon resource not available; using the drawn gauge.");
         }
     }
 

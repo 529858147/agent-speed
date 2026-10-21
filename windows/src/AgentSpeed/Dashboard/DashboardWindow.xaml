@@ -241,6 +241,22 @@
 
                 <!-- Footer -->
                 <Rectangle Style="{StaticResource Hairline}" Margin="0,14,0,8" />
+                <Button x:Name="UpdatePill" Style="{StaticResource PillButton}" HorizontalAlignment="Left" Margin="0,2,0,8"
+                        Visibility="Collapsed" Click="OnUpdate">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{DynamicResource AccentFillColorDefaultBrush}" />
+                        <TextBlock x:Name="UpdatePillText" Margin="7,0,0,0" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   Typography.NumeralAlignment="Tabular" />
+                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE76C;" FontSize="9" Margin="6,1,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Button>
+                <StackPanel x:Name="UpdateDone" Orientation="Horizontal" Margin="2,4,0,10" Visibility="Collapsed">
+                    <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE73E;" FontSize="12"
+                               Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <TextBlock x:Name="UpdateDoneText" Style="{StaticResource CaptionText}" Margin="8,0,0,0" VerticalAlignment="Center"
+                               AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
                 <Grid>
                     <CheckBox x:Name="OrbToggle" Style="{StaticResource ToggleSwitch}" Content="{loc:Loc settings.orb}"
                               Click="OnOrbToggled" AutomationProperties.Name="{loc:Loc settings.orb.show}" />

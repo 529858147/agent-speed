@@ -30,10 +30,10 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/agentspeed-publish.XXXXXX")"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
-# Single-file compression keeps the exe at ~65 MB instead of ~150 MB; the zip is ~60 MB either way.
-# AGENT_SPEED_COMPRESS=0 trades disk space for faster startup and less memory (no in-memory decompression).
-COMPRESS=true
-[[ "${AGENT_SPEED_COMPRESS:-1}" == "0" ]] && COMPRESS=false
+# Uncompressed single-file starts ~600 ms faster and uses about half the private memory (no in-memory
+# decompression); the zip is ~60 MB either way. AGENT_SPEED_COMPRESS=1 shrinks the exe to ~65 MB instead of ~150 MB.
+COMPRESS=false
+[[ "${AGENT_SPEED_COMPRESS:-0}" == "1" ]] && COMPRESS=true
 
 mkdir -p "$DIST"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1

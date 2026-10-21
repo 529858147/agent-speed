@@ -6,8 +6,10 @@ using AgentSpeed.Core;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Updates;
 using AgentSpeed.Services;
 using AgentSpeed.Taskbar;
+using AgentSpeed.Updates;
 
 namespace AgentSpeed.Settings;
 
@@ -45,6 +47,7 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly SettingsService _settings;
     private readonly PreviewService _preview;
     private readonly Func<string?, string?> _pickFolder;
+    private readonly UpdateService _updates;
     private Localizer _loc;
     private NavItem _selected;
     private bool _syncing;
@@ -53,12 +56,14 @@ internal sealed class SettingsViewModel : ObservableObject
     private TaskbarPresence _taskbarPresence = TaskbarPresence.Hidden;
     private bool _reduceMotion;
 
-    public SettingsViewModel(SettingsService settings, PreviewService preview, Localizer localizer, Func<string?, string?> pickFolder)
+    public SettingsViewModel(SettingsService settings, PreviewService preview, Localizer localizer, Func<string?, string?> pickFolder,
+        UpdateService updates, Action openUpdate)
     {
         _settings = settings;
         _preview = preview;
         _loc = localizer;
         _pickFolder = pickFolder;
+        _updates = updates;
 
         Pages.Add(new NavItem("general", "", "settings.general"));
         Pages.Add(new NavItem("taskbar", "", "settings.taskbar"));
@@ -96,6 +101,9 @@ internal sealed class SettingsViewModel : ObservableObject
         OpenRepositoryCommand = new RelayCommand(() => OpenUrl(AppPaths.RepositoryUrl));
         OpenLicenseCommand = new RelayCommand(() => OpenUrl(AppPaths.LicenseUrl));
         OpenLogsCommand = new RelayCommand(OpenLogs);
+        CheckForUpdatesCommand = new RelayCommand(() => _ = _updates.CheckAsync(manual: true), () => !_updates.Status.IsBusy);
+        OpenUpdateCommand = new RelayCommand(openUpdate);
+        _updates.Changed += (_, _) => OnUpdatesChanged();
 
         _settings.Changed += (_, _) => Sync();
         _preview.StateChanged += (_, _) =>
@@ -146,6 +154,10 @@ internal sealed class SettingsViewModel : ObservableObject
     public RelayCommand OpenLicenseCommand { get; }
 
     public RelayCommand OpenLogsCommand { get; }
+
+    public RelayCommand CheckForUpdatesCommand { get; }
+
+    public RelayCommand OpenUpdateCommand { get; }
 
     private AppSettings S => _settings.Current;
 
@@ -351,6 +363,41 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string VersionText => _loc.Format("settings.about.version", AppPaths.Version);
 
+    public string UpdateCurrentText => UpdateText.Current(_updates.CurrentVersion, _loc);
+
+    /// <summary>Up to date, the available version, checking, progress, or the last error (UPDATES section 4).</summary>
+    public string UpdateStatusText => _updates.Status.Phase == UpdatePhase.Idle && _updates.Available is { } release
+        ? UpdateText.AvailableTitle(release, _loc)
+        : UpdateText.StatusLine(_updates.Status, _loc);
+
+    public bool HasUpdateStatus => UpdateStatusText.Length > 0;
+
+    public bool UpdateStatusIsError => _updates.Status.IsFailed;
+
+    public bool UpdateStatusIsAvailable => !UpdateStatusIsError && IsUpdateAvailable;
+
+    public string UpdateLastCheckedText => UpdateText.LastChecked(S.LastUpdateCheck, DateTimeOffset.UtcNow, _loc);
+
+    public bool HasUpdateLastChecked => S.LastUpdateCheck is not null;
+
+    /// <summary>A release is on offer or being installed: the button opens the update window instead of checking again.</summary>
+    public bool IsUpdateAvailable => UpdateRelease is not null;
+
+    public bool ShowCheckButton => !IsUpdateAvailable;
+
+    public string UpdateButtonText => UpdateRelease is { } release ? UpdateText.MenuItem(release, _loc) : string.Empty;
+
+    public bool AutoCheckUpdates
+    {
+        get => S.AutoCheckUpdates;
+        set => Apply(s => s with { AutoCheckUpdates = value });
+    }
+
+    private ReleaseInfo? UpdateRelease => _updates.Status is { Release: { } release } status
+                                          && (status.IsInstalling || status.Phase is UpdatePhase.Available or UpdatePhase.InstallFailed)
+        ? release
+        : _updates.Available;
+
     public string WindowTitle => $"{_loc["app.name"]} · {_loc["settings.title"]}";
 
     public void Relocalize(Localizer localizer)
@@ -386,6 +433,7 @@ internal sealed class SettingsViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CodexStatus));
         OnPropertyChanged(nameof(ClaudeStatus));
+        OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 
     public void Select(string key)
@@ -394,6 +442,21 @@ internal sealed class SettingsViewModel : ObservableObject
         {
             SelectedPage = page;
         }
+    }
+
+    private void OnUpdatesChanged()
+    {
+        foreach (var name in new[]
+                 {
+                     nameof(UpdateStatusText), nameof(HasUpdateStatus), nameof(UpdateStatusIsError), nameof(UpdateStatusIsAvailable),
+                     nameof(UpdateLastCheckedText), nameof(HasUpdateLastChecked), nameof(IsUpdateAvailable), nameof(ShowCheckButton),
+                     nameof(UpdateButtonText),
+                 })
+        {
+            OnPropertyChanged(name);
+        }
+
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
 
     private string StatusFor(SourceKind kind)

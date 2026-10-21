@@ -54,6 +54,9 @@ internal sealed partial class DashboardWindow : Window
 
     public event EventHandler<int>? RangeChanged;
 
+    /// <summary>The update pill was clicked.</summary>
+    public event EventHandler? UpdateRequested;
+
     public OrbView Hero { get; }
 
     public long LastHiddenTick { get; private set; }
@@ -81,6 +84,21 @@ internal sealed partial class DashboardWindow : Window
         PreviewBadge.Visibility = previewing ? Visibility.Visible : Visibility.Collapsed;
 
     public LiveChart LiveChart => Chart;
+
+    /// <summary>Shows the footer pill (<c>update.available.short</c>) when <paramref name="text"/> is set.</summary>
+    public void SetUpdate(string? text)
+    {
+        UpdatePill.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdatePillText.Text = text ?? string.Empty;
+        System.Windows.Automation.AutomationProperties.SetName(UpdatePill, text ?? string.Empty);
+    }
+
+    /// <summary>The one-time <c>update.done</c> line after an update; null hides it.</summary>
+    public void SetUpdateDone(string? text)
+    {
+        UpdateDone.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateDoneText.Text = text ?? string.Empty;
+    }
 
     /// <summary>Shows the flyout on the monitor containing <paramref name="anchor"/> (physical pixels).</summary>
     public void ShowNear(POINT anchor, bool reduceMotion)
@@ -281,4 +299,10 @@ internal sealed partial class DashboardWindow : Window
     }
 
     private void OnQuit(object sender, RoutedEventArgs e) => QuitRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnUpdate(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        UpdateRequested?.Invoke(this, EventArgs.Empty);
+    }
 }

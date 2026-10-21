@@ -13,11 +13,13 @@ using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Updates;
 using AgentSpeed.Services;
 using AgentSpeed.Settings;
 using AgentSpeed.Taskbar;
 using AgentSpeed.Theme;
 using AgentSpeed.Tray;
+using AgentSpeed.Updates;
 
 namespace AgentSpeed.App;
 
@@ -28,6 +30,7 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     private readonly App _app;
     private readonly SingleInstance _instance;
+    private readonly LaunchArguments _launch;
     private Dispatcher _ui = null!;
     private Localizer _loc = null!;
     private ThemeService _theme = null!;
@@ -46,6 +49,12 @@ internal sealed class AppController : IAppCommands, IDisposable
     private readonly DashboardViewModel _dashboardModel = new();
     private SettingsWindow? _settingsWindow;
     private SettingsViewModel? _settingsModel;
+    private UpdateService _updates = null!;
+    private UpdateWindow? _updateWindow;
+    private UpdateWindowViewModel? _updateWindowModel;
+    private bool _balloonOpensUpdate;
+    private string? _updateDoneText;
+    private bool _updateDoneShown;
     private DispatcherTimer? _dashboardTimer;
     private bool _dashboardDirty;
     private bool _tooltipShown;
@@ -54,10 +63,11 @@ internal sealed class AppController : IAppCommands, IDisposable
     private bool _quitting;
     private bool _disposed;
 
-    public AppController(App app, SingleInstance instance)
+    public AppController(App app, SingleInstance instance, LaunchArguments launch)
     {
         _app = app;
         _instance = instance;
+        _launch = launch;
     }
 
     private AppSettings Settings => _settings.Current;
@@ -97,8 +107,14 @@ internal sealed class AppController : IAppCommands, IDisposable
         _tray = new TrayIcon(_shell, _ui);
         _tray.Invoked += (_, _) => ToggleDashboard(TrayAnchor());
         _tray.ContextMenuRequested += (_, _) => ShowMenu();
+        _tray.BalloonClicked += (_, _) => OnBalloonClicked();
         _tray.Show(TrayState());
         phases.Mark("tray");
+
+        _updates = new UpdateService(_ui, _settings, AppPaths.Version);
+        _updates.Changed += (_, _) => OnUpdatesChanged();
+        _updates.NotificationDue += (_, release) => ShowBalloon(UpdateText.AvailableTitle(release, _loc), _loc["update.notification.body"], opensUpdate: true);
+        _updates.RelaunchRequested += (_, _) => Quit();
 
         _menu = new MenuHost();
         _tooltip = new HoverTooltip();
@@ -141,7 +157,20 @@ internal sealed class AppController : IAppCommands, IDisposable
             _theme.EnableFluent();
             AutoStart.Refresh();
             AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
+            StartUpdates();
         });
+    }
+
+    public void OpenUpdate()
+    {
+        _updates.Present();
+        ShowUpdateWindow();
+    }
+
+    public void CheckForUpdates()
+    {
+        _ = _updates.CheckAsync(manual: true);
+        ShowUpdateWindow();
     }
 
     public void ToggleDashboardFromMenu() => ShowDashboard(CursorAnchor());
@@ -153,7 +182,8 @@ internal sealed class AppController : IAppCommands, IDisposable
         _dashboard?.Dismiss();
         if (_settingsWindow is null)
         {
-            _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial));
+            _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
+                _updates, OpenUpdate);
             _settingsModel.ReduceMotion = _theme.ReduceMotion;
             _settingsModel.UpdateLive(_speed.Snapshot, _taskbar?.Presence ?? TaskbarPresence.Hidden);
             _settingsWindow = new SettingsWindow(_settingsModel) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
@@ -221,6 +251,8 @@ internal sealed class AppController : IAppCommands, IDisposable
         Try(() => _orb?.Close());
         Try(() => _dashboard?.CloseForShutdown());
         Try(() => _settingsWindow?.Close());
+        Try(() => _updateWindow?.Close());
+        Try(() => _updates?.Dispose());
         Try(() => _speed.Dispose());
         Try(() => _theme.Dispose());
         Try(() => _shell?.Dispose());
@@ -447,7 +479,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         HideTooltip();
-        _menu.Show(AppMenu.Build(this, Settings, _loc));
+        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available));
     }
 
     private void ToggleDashboard(POINT anchor)
@@ -488,11 +520,17 @@ internal sealed class AppController : IAppCommands, IDisposable
             _dashboard.QuitRequested += (_, _) => Quit();
             _dashboard.OrbToggled += (_, visible) => _settings.Update(s => s with { ShowOrb = visible });
             _dashboard.RangeChanged += (_, seconds) => _settings.Update(s => s with { ChartSeconds = seconds });
+            _dashboard.UpdateRequested += (_, _) => OpenUpdate();
             _dashboard.IsVisibleChanged += (_, _) =>
             {
                 if (_dashboard?.IsVisible != true)
                 {
                     _dashboardTimer?.Stop();
+                    if (_updateDoneShown)
+                    {
+                        _updateDoneText = null;
+                        _dashboard?.SetUpdateDone(null);
+                    }
                 }
             };
             ConfigureOrb();
@@ -501,6 +539,9 @@ internal sealed class AppController : IAppCommands, IDisposable
         _dashboard.SetRange(Settings.ChartSeconds);
         _dashboard.SetOrbVisible(Settings.ShowOrb);
         _dashboard.SetPreviewing(_preview.IsRunning);
+        _dashboard.SetUpdate(UpdatePillText());
+        _dashboard.SetUpdateDone(_updateDoneText);
+        _updateDoneShown = _updateDoneText is not null;
         _dashboard.ApplyBackground();
         RefreshDashboard();
         _dashboard.ShowNear(anchor, _theme.ReduceMotion);
@@ -540,6 +581,8 @@ internal sealed class AppController : IAppCommands, IDisposable
         {
             _theme.Mode = current.Appearance;
         }
+
+        _updates.OnSettingsChanged(previous, current);
 
         if (previous.Language != current.Language)
         {
@@ -610,6 +653,8 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         _settingsModel?.Relocalize(_loc);
+        _updateWindowModel?.Relocalize(_loc);
+        _dashboard?.SetUpdate(UpdatePillText());
         ConfigureOrb();
         UpdateTaskbar();
         _tray?.Update(TrayState());
@@ -633,6 +678,92 @@ internal sealed class AppController : IAppCommands, IDisposable
         if (area is "WindowMetrics" or "TraySettings")
         {
             _tray?.Refresh();
+        }
+    }
+
+    // ---- Updates ----
+
+    private void StartUpdates()
+    {
+        _updates.Start();
+        _ = Task.Run(UpdateRelaunch.CleanupLeftovers);
+        if (_launch.AfterUpdate && !string.Equals(_launch.PreviousVersion, AppPaths.Version, StringComparison.Ordinal))
+        {
+            _updateDoneText = _loc.Format("update.done", AppPaths.Version);
+            ShowBalloon(_loc["app.name"], _updateDoneText, opensUpdate: false);
+        }
+
+        if (_launch.CheckUpdatesNow)
+        {
+            _ = CheckNowAtStartupAsync();
+        }
+    }
+
+    /// <summary>Development flag <c>--check-updates-now</c>: a manual check that opens the window when something is found.</summary>
+    private async Task CheckNowAtStartupAsync()
+    {
+        AppLog.Info("--check-updates-now: checking for updates.");
+        try
+        {
+            await _updates.CheckAsync(manual: true);
+            if (_updates.Available is not null && !_quitting)
+            {
+                OpenUpdate();
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            AppLog.Warn($"--check-updates-now failed: {UpdateLog.Describe(ex)}");
+        }
+    }
+
+    private void ShowUpdateWindow()
+    {
+        if (_quitting)
+        {
+            return;
+        }
+
+        _dashboard?.Dismiss();
+        if (_updateWindow is null)
+        {
+            _updateWindowModel = new UpdateWindowViewModel(_updates, _loc);
+            _updateWindow = new UpdateWindow(_updateWindowModel) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
+            _updateWindow.Closed += (_, _) =>
+            {
+                _updateWindow = null;
+                _updateWindowModel = null;
+            };
+        }
+
+        if (!_updateWindow.IsVisible)
+        {
+            _updateWindow.Show();
+        }
+
+        if (_updateWindow.WindowState == WindowState.Minimized)
+        {
+            _updateWindow.WindowState = WindowState.Normal;
+        }
+
+        _updateWindow.Activate();
+    }
+
+    private void OnUpdatesChanged() => _dashboard?.SetUpdate(UpdatePillText());
+
+    private string? UpdatePillText() => _updates.Available is { } release ? UpdateText.Pill(release, _loc) : null;
+
+    private void ShowBalloon(string title, string text, bool opensUpdate)
+    {
+        _balloonOpensUpdate = opensUpdate;
+        _tray?.ShowBalloon(title, text);
+    }
+
+    private void OnBalloonClicked()
+    {
+        if (_balloonOpensUpdate && _updates.Available is not null)
+        {
+            OpenUpdate();
         }
     }
 

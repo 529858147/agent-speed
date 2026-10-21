@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using AgentSpeed.Core;
@@ -79,6 +80,13 @@ public static class SettingsSerializer
             w.WriteNumber("chartSeconds", s.ChartSeconds);
             w.WriteEndObject();
 
+            w.WriteStartObject("updates");
+            w.WriteBoolean("autoCheck", s.AutoCheckUpdates);
+            WriteNullableString(w, "lastCheck", s.LastUpdateCheck?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            WriteNullableString(w, "skippedVersion", s.SkippedVersion);
+            WriteNullableString(w, "notifiedVersion", s.NotifiedVersion);
+            w.WriteEndObject();
+
             w.WriteEndObject();
         }
 
@@ -108,6 +116,7 @@ public static class SettingsSerializer
         var effects = Child(root, "effects");
         var sources = Child(root, "sources");
         var dashboard = Child(root, "dashboard");
+        var updates = Child(root, "updates");
 
         var settings = new AppSettings
         {
@@ -137,6 +146,10 @@ public static class SettingsSerializer
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
+            AutoCheckUpdates = ReadBool(updates, "autoCheck", d.AutoCheckUpdates),
+            LastUpdateCheck = ReadTimestamp(updates, "lastCheck"),
+            SkippedVersion = ReadString(updates, "skippedVersion"),
+            NotifiedVersion = ReadString(updates, "notifiedVersion"),
         };
 
         return settings.Validated();
@@ -190,6 +203,19 @@ public static class SettingsSerializer
         }
 
         return value.GetString();
+    }
+
+    private static DateTimeOffset? ReadTimestamp(JsonElement? parent, string name)
+    {
+        var text = ReadString(parent, name);
+        if (string.IsNullOrWhiteSpace(text) || text.Length > 64)
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var value)
+            ? value.ToUniversalTime()
+            : null;
     }
 
     private static T ReadEnum<T>(JsonElement? parent, string name, T fallback)

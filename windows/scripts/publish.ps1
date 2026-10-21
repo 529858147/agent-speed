@@ -30,9 +30,9 @@ $fileVersion = ($Version -split '[-+]')[0]
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET 10 SDK (dotnet) is required.' }
 
-# Single-file compression keeps the exe at ~65 MB instead of ~150 MB; the zip is ~60 MB either way.
-# AGENT_SPEED_COMPRESS=0 trades disk space for faster startup and less memory (no in-memory decompression).
-$compress = if ($env:AGENT_SPEED_COMPRESS -eq '0') { 'false' } else { 'true' }
+# Uncompressed single-file starts ~600 ms faster and uses about half the private memory (no in-memory
+# decompression); the zip is ~60 MB either way. AGENT_SPEED_COMPRESS=1 shrinks the exe to ~65 MB instead of ~150 MB.
+$compress = if ($env:AGENT_SPEED_COMPRESS -eq '1') { 'true' } else { 'false' }
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
