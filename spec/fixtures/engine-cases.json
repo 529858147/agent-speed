@@ -10,7 +10,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -56,7 +57,8 @@
           "model": "m1",
           "phase": "generating",
           "inFlightStartMs": 1000000004500,
-          "lastLineMs": 1000000004500
+          "lastLineMs": 1000000004500,
+          "parentId": null
         }
       ],
       "responses": [
@@ -90,7 +92,8 @@
           "model": "m1",
           "phase": "generating",
           "inFlightStartMs": 1000000004500,
-          "lastLineMs": 1000000004500
+          "lastLineMs": 1000000004500,
+          "parentId": null
         }
       ],
       "responses": [
@@ -124,7 +127,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         },
         {
           "id": "a2",
@@ -132,7 +136,8 @@
           "model": "m2",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000003000
+          "lastLineMs": 1000000003000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -177,7 +182,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000001100
+          "lastLineMs": 1000000001100,
+          "parentId": null
         }
       ],
       "responses": [
@@ -217,7 +223,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000960000
+          "lastLineMs": 1000000960000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -268,7 +275,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         },
         {
           "id": "a3",
@@ -276,7 +284,8 @@
           "model": "m1",
           "phase": "generating",
           "inFlightStartMs": 1000000005000,
-          "lastLineMs": 1000000005000
+          "lastLineMs": 1000000005000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -310,7 +319,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         },
         {
           "id": "a4",
@@ -318,7 +328,8 @@
           "model": "m9",
           "phase": "generating",
           "inFlightStartMs": 1000000005000,
-          "lastLineMs": 1000000005000
+          "lastLineMs": 1000000005000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -352,7 +363,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         },
         {
           "id": "a5",
@@ -360,7 +372,8 @@
           "model": "m7",
           "phase": "generating",
           "inFlightStartMs": 1000000005000,
-          "lastLineMs": 1000000005000
+          "lastLineMs": 1000000005000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -394,7 +407,8 @@
           "model": "m1",
           "phase": "generating",
           "inFlightStartMs": 1000000007000,
-          "lastLineMs": 1000000007000
+          "lastLineMs": 1000000007000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -461,7 +475,8 @@
           "model": "m1",
           "phase": "generating",
           "inFlightStartMs": 1000000000000,
-          "lastLineMs": 1000000002000
+          "lastLineMs": 1000000002000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -495,7 +510,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         },
         {
           "id": "a2",
@@ -503,7 +519,8 @@
           "model": "m1",
           "phase": "tools",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000003000
+          "lastLineMs": 1000000003000,
+          "parentId": null
         }
       ],
       "responses": [
@@ -540,6 +557,140 @@
       ]
     },
     {
+      "name": "agents are listed in parent groups",
+      "agents": [
+        {
+          "id": "P1",
+          "source": "claudeDesktop",
+          "model": "m1",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000000000,
+          "parentId": null
+        },
+        {
+          "id": "C1",
+          "source": "claudeDesktop",
+          "model": "m1",
+          "phase": "generating",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": "P1"
+        },
+        {
+          "id": "C2",
+          "source": "claudeDesktop",
+          "model": "m1",
+          "phase": "generating",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": "P1"
+        },
+        {
+          "id": "P2",
+          "source": "codex",
+          "model": "m2",
+          "phase": "generating",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": null
+        },
+        {
+          "id": "R",
+          "source": "codex",
+          "model": "m2",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 999999100000,
+          "parentId": null
+        },
+        {
+          "id": "C3",
+          "source": "codex",
+          "model": "m2",
+          "phase": "generating",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000002000,
+          "parentId": "R"
+        },
+        {
+          "id": "D",
+          "source": "claudeCode",
+          "model": "m3",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 999999999000,
+          "parentId": null
+        },
+        {
+          "id": "Q",
+          "source": "codex",
+          "model": "m2",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 999999300000,
+          "parentId": null
+        }
+      ],
+      "responses": [
+        {
+          "key": "r1",
+          "agentId": "P2",
+          "source": "codex",
+          "model": "m2",
+          "startMs": 1000000000000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 300,
+          "final": true
+        },
+        {
+          "key": "r2",
+          "agentId": "C1",
+          "source": "claudeDesktop",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 150,
+          "final": true
+        },
+        {
+          "key": "r3",
+          "agentId": "C2",
+          "source": "claudeDesktop",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 90,
+          "final": true
+        }
+      ],
+      "queries": [
+        {
+          "nowMs": 1000000003000,
+          "liveOutput": 180.0,
+          "liveTotal": 180.0,
+          "estimatedShare": 0.0,
+          "agentsOrder": [
+            "P2",
+            "P1",
+            "C1",
+            "C2",
+            "R",
+            "C3",
+            "D"
+          ],
+          "agentParents": {
+            "C1": "P1",
+            "C2": "P1",
+            "C3": "R"
+          }
+        }
+      ]
+    },
+    {
       "name": "today totals, average, peak and history",
       "todayStartMs": 999996400000,
       "agents": [
@@ -549,7 +700,8 @@
           "model": "m1",
           "phase": "idle",
           "inFlightStartMs": null,
-          "lastLineMs": 1000000004000
+          "lastLineMs": 1000000004000,
+          "parentId": null
         }
       ],
       "responses": [

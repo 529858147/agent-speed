@@ -163,7 +163,8 @@ public final class DemoDriver {
                 isSubagent: agent.isSubagent,
                 live: Rate(output: share, total: share * 24),
                 recentSpeed: active ? share : nil,
-                lastActivity: now
+                lastActivity: now,
+                parentId: agent.isSubagent ? "demo-nova" : nil
             )
         }
         let sources: [SourceStatus] = SourceKind.allCases.map { kind in

@@ -88,6 +88,7 @@ class FileState:
         self.file_created = None
         self.my_agent_path = "/root"
         self.thread_id = None
+        self.parent_thread_id = None
         self.streaming = False
         self.saw_modern = False
         self.prev_legacy = None
@@ -123,6 +124,9 @@ def codex_line(state, obj, dedupe):
         state.is_subagent = state.is_subagent or payload.get("thread_source") == "subagent" or (
             isinstance(source, dict) and "subagent" in source)
         state.thread_id = payload.get("id") or state.thread_id
+        spawn = source.get("subagent", {}).get("thread_spawn", {}) if isinstance(source, dict) else {}
+        state.parent_thread_id = payload.get("parent_thread_id") or (
+            spawn.get("parent_thread_id") if isinstance(spawn, dict) else None)
         return
     if state.file_created is not None and ts < state.file_created - 2000:
         return
@@ -312,6 +316,34 @@ def process_file(state, dedupe, start_offset=0):
         handler(state, obj, dedupe)
 
 
+def resolve_parents(states):
+    """Maps agent id (path) to its parent agent id per METRICS 6.7."""
+    by_path = {s.path: s for s in states}
+    by_thread = {}
+    for s in states:
+        if s.source == "codex" and s.thread_id and s.thread_id not in by_thread:
+            by_thread[s.thread_id] = s.path
+    parents = {}
+    for s in states:
+        parent = None
+        if s.source == "codex":
+            parent = by_thread.get(s.parent_thread_id) if s.parent_thread_id else None
+        else:
+            parts = re.split(r"[\\/]", s.path)
+            if len(parts) >= 3 and parts[-2] == "subagents":
+                candidate = s.path[:len(s.path) - len(parts[-1]) - len(parts[-2]) - 2] + ".jsonl"
+                parent = candidate if candidate in by_path else None
+        parents[s.path] = parent if parent != s.path else None
+    for path in list(parents):
+        seen, cur = set(), path
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            cur = parents.get(cur)
+        if cur is not None:
+            parents[path] = None
+    return parents
+
+
 # ----------------------------------------------------------------------------- engine
 
 def interval(resp):
@@ -391,6 +423,53 @@ def live_rate(responses, agents, now):
     return out, tot, (estimated[0] / denom if denom > 0 else 0.0)
 
 
+def agent_list(responses, agents, now):
+    by_id = {a["id"]: dict(a) for a in agents}
+    for a in by_id.values():
+        if a["phase"] == "generating" and a.get("lastLineMs") is not None and now - a["lastLineMs"] > 300_000:
+            a["phase"] = "idle"
+    live = {aid: live_rate([r for r in responses if r["agentId"] == aid], [a], now)[0] for aid, a in by_id.items()}
+    chosen = {aid for aid, a in by_id.items()
+              if a["phase"] == "generating" or (a.get("lastLineMs") is not None and now - a["lastLineMs"] <= 600_000)}
+    for aid in list(chosen):
+        cur = by_id[aid].get("parentId")
+        while cur in by_id and cur not in chosen:
+            chosen.add(cur)
+            cur = by_id[cur].get("parentId")
+    parent = {aid: (by_id[aid].get("parentId") if by_id[aid].get("parentId") in chosen else None) for aid in chosen}
+    children = {}
+    for aid in chosen:
+        children.setdefault(parent[aid], []).append(aid)
+
+    def members(aid):
+        out = [aid]
+        for c in children.get(aid, []):
+            out += members(c)
+        return out
+
+    def last(aid):
+        return by_id[aid].get("lastLineMs") or 0
+
+    def sibling_key(aid):
+        return (0 if by_id[aid]["phase"] == "generating" else 1, -live[aid], -last(aid), aid)
+
+    def group_key(root):
+        m = members(root)
+        return (0 if any(by_id[x]["phase"] == "generating" for x in m) else 1, -sum(live[x] for x in m),
+                -max(last(x) for x in m), root)
+
+    order = []
+
+    def walk(aid):
+        order.append(aid)
+        for c in sorted(children.get(aid, []), key=sibling_key):
+            walk(c)
+
+    for root in sorted(children.get(None, []), key=group_key):
+        walk(root)
+    return order, {aid: p for aid, p in parent.items() if p is not None}
+
+
 def buckets(responses, first, last):
     values = {}
     for r in responses:
@@ -426,17 +505,25 @@ def check_fixtures():
     expected = json.load(open(os.path.join(root, "parser-expected.json"), encoding="utf-8"))
     dedupe = Deduper()
     failures = []
+    states = []
     for rel in expected["order"]:
         exp = expected["files"][rel]
         source = "codex" if rel.startswith("codex/") else "claudeCode"
         state = FileState(os.path.join(root, rel), source)
         process_file(state, dedupe)
+        states.append(state)
         got = dict(source=state.source, project=state.project, model=state.model, isSubagent=state.is_subagent,
                    phase=state.phase, inFlightStartMs=state.in_flight, lastLineMs=state.last_line,
                    malformedLines=state.malformed, responses=list(state.responses.values()))
         for k, v in exp.items():
-            if got[k] != v:
+            if k != "parentFile" and got[k] != v:
                 failures.append("%s: %s expected %r got %r" % (rel, k, v, got[k]))
+    parents = resolve_parents(states)
+    for rel in expected["order"]:
+        parent = parents[os.path.join(root, rel)]
+        got = os.path.relpath(parent, root) if parent else None
+        if got != expected["files"][rel]["parentFile"]:
+            failures.append("%s: parentFile expected %r got %r" % (rel, expected["files"][rel]["parentFile"], got))
     cases = json.load(open(os.path.join(root, "engine-cases.json"), encoding="utf-8"))["cases"]
     for case in cases:
         for q in case["queries"]:
@@ -444,6 +531,10 @@ def check_fixtures():
             for name, val in (("liveOutput", out), ("liveTotal", tot), ("estimatedShare", share)):
                 if abs(val - q[name]) > 1e-6:
                     failures.append("%s @%d: %s expected %r got %r" % (case["name"], q["nowMs"], name, q[name], val))
+            if "agentsOrder" in q:
+                order, parent_map = agent_list(case["responses"], case["agents"], q["nowMs"])
+                if order != q["agentsOrder"] or parent_map != q["agentParents"]:
+                    failures.append("%s: agents %r %r" % (case["name"], order, parent_map))
             if "todayRequests" in q:
                 st = today_stats(case["responses"], case.get("todayStartMs", 0), q["nowMs"])
                 checks = (("todayRequests", st["requests"]), ("todayOutput", st["output"]),

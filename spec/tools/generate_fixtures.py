@@ -89,7 +89,7 @@ write_jsonl(rel, [
     "this line is not json",
     codex(at(0, 10, 700), "event_msg", {"type": "task_complete", "turn_id": "turn-1"}),
 ])
-expect(rel, source="codex", project="rocket", model="gpt-6.1-sol", isSubagent=False,
+expect(rel, source="codex", project="rocket", model="gpt-6.1-sol", isSubagent=False, parentFile=None,
        phase="idle", inFlightStartMs=None, lastLineMs=at(0, 10, 700), malformedLines=1,
        responses=[
            resp("resp-1", at(0, 1, 10), at(0, 5, 10), 10000, 8000, 0, 200, 50, "gpt-6.1-sol"),
@@ -135,7 +135,7 @@ write_jsonl(rel, [
                                             "response_id": "resp-4", "usage": cx(5200, 5000, 60, 10)}),
 ])
 expect(rel, source="codex", project="rocket", model="gpt-6.1-sol", isSubagent=True,
-       phase="tools", inFlightStartMs=None, lastLineMs=at(0, 47), malformedLines=0,
+       parentFile="codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl", phase="tools", inFlightStartMs=None, lastLineMs=at(0, 47), malformedLines=0,
        responses=[resp("resp-3", at(0, 21), at(0, 24), 5000, 0, 0, 120, 40, "gpt-6.1-sol"),
                   resp("resp-4", at(0, 40), at(0, 47), 5200, 5000, 0, 60, 10, "gpt-6.1-sol")])
 
@@ -158,7 +158,7 @@ write_jsonl(rel, [
     codex(at(1, 9), "event_msg", {"type": "token_count", "info": {"total_token_usage": tB, "last_token_usage": lastB}}),
     codex(at(1, 9, 100), "event_msg", {"type": "task_complete", "turn_id": "t-1"}),
 ])
-expect(rel, source="codex", project="legacy-app", model="gpt-5.5", isSubagent=False,
+expect(rel, source="codex", project="legacy-app", model="gpt-5.5", isSubagent=False, parentFile=None,
        phase="idle", inFlightStartMs=None, lastLineMs=at(1, 9, 100), malformedLines=0,
        responses=[
            resp("codex-legacy:thread-legacy:20213", at(1, 0, 500), at(1, 4), 19515, 7040, 0, 698, 368, "gpt-5.5"),
@@ -208,7 +208,7 @@ write_jsonl(rel, [
     user(at(2, 20), "Now polish it"),
     user(at(2, 25), [{"type": "text", "text": "[Request interrupted by user]"}]),
 ])
-expect(rel, source="claudeCode", project="nova", model="claude-opus-5-5", isSubagent=False,
+expect(rel, source="claudeCode", project="nova", model="claude-opus-5-5", isSubagent=False, parentFile=None,
        phase="idle", inFlightStartMs=None, lastLineMs=at(2, 25), malformedLines=0,
        responses=[
            resp("msg_A", at(2, 0, 50), at(2, 6, 50), 21002, 20000, 1000, 300, 60, "claude-opus-5-5"),
@@ -228,6 +228,7 @@ write_jsonl(rel, [
          agentId="abc"),
 ])
 expect(rel, source="claudeCode", project="nova", model="claude-opus-5-5", isSubagent=True,
+       parentFile="claude/projects/-Users-dev-projects-nova/s-cli.jsonl",
        phase="generating", inFlightStartMs=at(2, 16), lastLineMs=at(2, 16), malformedLines=0,
        responses=[resp("msg_D", at(2, 7), at(2, 10), 504, 0, 500, 90, 0, "claude-opus-5-5"),
                   resp("msg_E", at(2, 11), at(2, 15), 602, 600, 0, 8, 0, "claude-opus-5-5", final=False)])
@@ -243,7 +244,7 @@ write_jsonl(rel, [
     user(at(3, 0), "Plan the orbit", **d),
     assistant(at(3, 5), "msg_C", ["tool_use"], cl_usage(3, 0, 30000, 500), "tool_use", **d),
 ])
-expect(rel, source="claudeDesktop", project="orbit", model="claude-opus-5-5", isSubagent=False,
+expect(rel, source="claudeDesktop", project="orbit", model="claude-opus-5-5", isSubagent=False, parentFile=None,
        phase="tools", inFlightStartMs=None, lastLineMs=at(3, 5), malformedLines=0,
        responses=[resp("msg_C", at(3, 0), at(3, 5), 30003, 30000, 0, 500, 0, "claude-opus-5-5")])
 
@@ -262,9 +263,9 @@ def er(key, agent, source, model, start, end, out, inp=0, final=True):
             "input": inp, "output": out, "final": final}
 
 
-def agent(aid, source, model, phase="idle", in_flight=None, last=None):
+def agent(aid, source, model, phase="idle", in_flight=None, last=None, parent=None):
     return {"id": aid, "source": source, "model": model, "phase": phase, "inFlightStartMs": in_flight,
-            "lastLineMs": last}
+            "lastLineMs": last, "parentId": parent}
 
 
 r1 = er("r1", "a1", "codex", "m1", B, B + 4000, 200, 10000)
@@ -327,6 +328,21 @@ cases = [
      "responses": [er("r1", "a1", "claudeCode", "m1", B, B + 4000, 200),
                    er("r2", "a2", "claudeCode", "m1", B + 1000, B + 3000, 8, final=False)],
      "queries": [{"nowMs": B + 3000, "liveOutput": 250 / 3, "liveTotal": 250 / 3, "estimatedShare": 0.4}]},
+    {"name": "agents are listed in parent groups",
+     "agents": [agent("P1", "claudeDesktop", "m1", "idle", None, B),
+                agent("C1", "claudeDesktop", "m1", "generating", None, B + 3000, "P1"),
+                agent("C2", "claudeDesktop", "m1", "generating", None, B + 3000, "P1"),
+                agent("P2", "codex", "m2", "generating", None, B + 3000),
+                agent("R", "codex", "m2", "idle", None, B - 900_000),
+                agent("C3", "codex", "m2", "generating", None, B + 2000, "R"),
+                agent("D", "claudeCode", "m3", "idle", None, B - 1000),
+                agent("Q", "codex", "m2", "idle", None, B - 700_000)],
+     "responses": [er("r1", "P2", "codex", "m2", B, B + 3000, 300),
+                   er("r2", "C1", "claudeDesktop", "m1", B, B + 3000, 150),
+                   er("r3", "C2", "claudeDesktop", "m1", B, B + 3000, 90)],
+     "queries": [{"nowMs": B + 3000, "liveOutput": 180.0, "liveTotal": 180.0, "estimatedShare": 0.0,
+                  "agentsOrder": ["P2", "P1", "C1", "C2", "R", "C3", "D"],
+                  "agentParents": {"C1": "P1", "C2": "P1", "C3": "R"}}]},
     {"name": "today totals, average, peak and history",
      "todayStartMs": DAY,
      "agents": [agent("a1", "codex", "m1", last=B + 4000)],

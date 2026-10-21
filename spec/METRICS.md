@@ -239,9 +239,27 @@ output and total.
 - On day change everything for "today" restarts at zero.
 
 ### 6.7 Agents list
-First apply staleness: a phase older than 300 seconds without a new line is reported as `idle`. Then list agents
-whose `lastLineMs` is within the last 10 minutes, or whose (post-staleness) phase is `generating`. Sort: generating first, then by live output desc, then most
-recent activity.
+
+Parent links (`parentId`, an agent id or null):
+- Claude: a file at `<dir>/<session>/subagents/<name>.jsonl` has the parent `<dir>/<session>.jsonl` when that file is
+  a tracked agent.
+- Codex: from the first `session_meta`, `parentThreadId = payload.parent_thread_id ??
+  payload.source.subagent.thread_spawn.parent_thread_id`. The parent is the tracked file whose first `session_meta`
+  has `payload.id == parentThreadId` (the earliest created one if several). `forked_from_id` alone is not a parent.
+- Self references and cycles resolve to null.
+
+List:
+1. Staleness first: a phase older than 300 seconds without a new line is reported as `idle`.
+2. Base set: agents whose `lastLineMs` is within the last 10 minutes, or whose phase is `generating`.
+3. Closure: add every ancestor (following `parentId`) of an agent in the set, even if it is inactive.
+4. Tree: an agent's tree parent is its `parentId` when that agent is in the list; otherwise it is a root, and the
+   reported `parentId` is null.
+5. Order groups (roots with all their descendants) by: any member `generating` first; then the sum of the members'
+   live output, descending; then the latest member activity, descending; then root id (ordinal). Inside a group, list
+   depth-first with every agent immediately followed by its children; siblings ordered by `generating` first, live
+   output descending, latest activity descending, id (ordinal).
+
+UIs indent an agent by its depth in this tree and draw connectors from parent to children; they never reorder.
 
 ## 7. Number formatting (both platforms)
 

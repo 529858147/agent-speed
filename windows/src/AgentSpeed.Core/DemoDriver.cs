@@ -185,7 +185,7 @@ public sealed class DemoDriver : IDisposable
             var share = active ? speed * agent.Weight / activeWeight : 0;
             var phase = active ? AgentPhase.Generating : speed > 0.5 ? AgentPhase.Tools : AgentPhase.Idle;
             return new AgentStatus(agent.Id, agent.Source, agent.Project, agent.Model, phase, agent.IsSubagent,
-                new Rate(share, share * 24), active ? share : null, now);
+                new Rate(share, share * 24), active ? share : null, now, agent.IsSubagent ? "demo-nova" : null);
         }).ToList();
 
         var sources = Enum.GetValues<SourceKind>().Select(kind =>

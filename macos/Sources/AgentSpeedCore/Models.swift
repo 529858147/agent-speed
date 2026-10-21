@@ -89,6 +89,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     /// Output tok/s of the agent's recent responses (METRICS 6.2).
     public var recentSpeed: Double?
     public var lastActivity: Date
+    /// The parent agent's id when the parent is also in the list (METRICS 6.7).
+    public var parentId: String?
 
     public init(
         id: String,
@@ -99,7 +101,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         isSubagent: Bool,
         live: Rate,
         recentSpeed: Double?,
-        lastActivity: Date
+        lastActivity: Date,
+        parentId: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -110,6 +113,7 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         self.live = live
         self.recentSpeed = recentSpeed
         self.lastActivity = lastActivity
+        self.parentId = parentId
     }
 }
 

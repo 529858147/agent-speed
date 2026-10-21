@@ -45,6 +45,7 @@ public sealed record HistoryPoint(DateTimeOffset Time, Rate Measured, Rate Estim
 
 /// <param name="Id">Absolute transcript path.</param>
 /// <param name="RecentSpeed">Output tok/s of the agent's recent responses (METRICS 6.2).</param>
+/// <param name="ParentId">The parent agent's id when the parent is also in the list (METRICS 6.7).</param>
 public sealed record AgentStatus(
     string Id,
     SourceKind Source,
@@ -54,7 +55,8 @@ public sealed record AgentStatus(
     bool IsSubagent,
     Rate Live,
     double? RecentSpeed,
-    DateTimeOffset LastActivity);
+    DateTimeOffset LastActivity,
+    string? ParentId = null);
 
 /// <param name="Available">The root folder exists and is readable.</param>
 public sealed record SourceStatus(
