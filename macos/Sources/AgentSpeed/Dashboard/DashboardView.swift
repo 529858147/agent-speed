@@ -1,5 +1,4 @@
 import AgentSpeedCore
-import AppKit
 import SwiftUI
 
 /// The menu bar dashboard (DESIGN section 4): hero, live chart, sources, agents, today and footer.
@@ -77,8 +76,9 @@ private struct DashboardContent: View {
 private struct DashboardSections: View {
     let model: AppModel
 
-    @State private var contentHeight: CGFloat = 0
-    @State private var viewportHeight: CGFloat = 0
+    @State private var contentFrame: CGRect = .zero
+
+    private nonisolated static let space = "dashboardDetails"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -86,22 +86,24 @@ private struct DashboardSections: View {
             SectionDivider()
             ScrollView(.vertical) {
                 DashboardDetails(model: model)
-                    .padding(.leading, DashboardLayout.padding)
-                    .padding(.trailing, trailingInset)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+                    .padding(.horizontal, DashboardLayout.padding)
+                    .onGeometryChange(for: CGRect.self, of: Self.overflowingFrame) { contentFrame = $0 }
             }
+            .coordinateSpace(.named(Self.space))
+            // A legacy system scroller would take width and shift the columns away from the hero; the knob floats.
+            .scrollIndicators(.never)
             .scrollBounceBehavior(.basedOnSize)
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { viewportHeight = $0 }
+            .overlay { OverlayScrollIndicator(content: contentFrame) }
             .padding(.horizontal, -DashboardLayout.padding)
         }
     }
 
-    /// Legacy scroll bars take layout width; give it back from the margin so columns stay aligned with the hero.
-    private var trailingInset: CGFloat {
-        let overflows = contentHeight > viewportHeight + 0.5
-        guard overflows, NSScroller.preferredScrollerStyle == .legacy else { return DashboardLayout.padding }
-        let scroller = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
-        return max(Spacing.xxs, DashboardLayout.padding - scroller)
+    /// The content's frame while it overflows, else zero, so a layout that animates within the screen does not
+    /// update this view on every frame.
+    private nonisolated static func overflowingFrame(_ proxy: GeometryProxy) -> CGRect {
+        let frame = proxy.frame(in: .named(space))
+        guard let viewport = proxy.bounds(of: .named(space)), frame.height > viewport.height + 0.5 else { return .zero }
+        return frame
     }
 }
 

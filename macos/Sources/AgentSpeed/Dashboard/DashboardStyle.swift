@@ -99,5 +99,9 @@ extension AppModel {
     /// Layout spring, or a crossfade under Reduce Motion.
     var dashboardMotion: Animation { accessibility.reduceMotion ? Motion.fade : Motion.layout }
 
+    /// Layout spring for sizes and positions; nil under Reduce Motion, where the layout changes at once and only
+    /// opacity fades.
+    var dashboardResizeMotion: Animation? { accessibility.reduceMotion ? nil : Motion.layout }
+
     var dashboardLatinCaps: Bool { l10n.language.usesLatinCase }
 }

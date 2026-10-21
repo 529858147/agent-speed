@@ -22,6 +22,13 @@ final class AccessibilityState {
         }
     }
 
+    #if DEBUG
+    /// `AGENT_SPEED_REDUCE_MOTION=1` (debug builds): behave as if Reduce Motion were on, for the motion harness.
+    private static let forcesReduceMotion = ProcessInfo.processInfo.environment["AGENT_SPEED_REDUCE_MOTION"] == "1"
+    #else
+    private static let forcesReduceMotion = false
+    #endif
+
     /// Effects level after applying Reduce Motion (caps at Soft).
     func effectiveLevel(_ level: EffectsLevel) -> EffectsLevel {
         reduceMotion ? min(level, .soft) : level
@@ -29,8 +36,9 @@ final class AccessibilityState {
 
     private func refresh() {
         let workspace = NSWorkspace.shared
-        if reduceMotion != workspace.accessibilityDisplayShouldReduceMotion {
-            reduceMotion = workspace.accessibilityDisplayShouldReduceMotion
+        let shouldReduceMotion = workspace.accessibilityDisplayShouldReduceMotion || Self.forcesReduceMotion
+        if reduceMotion != shouldReduceMotion {
+            reduceMotion = shouldReduceMotion
         }
         if reduceTransparency != workspace.accessibilityDisplayShouldReduceTransparency {
             reduceTransparency = workspace.accessibilityDisplayShouldReduceTransparency

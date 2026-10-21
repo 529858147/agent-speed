@@ -41,7 +41,7 @@ struct AgentsSection: View {
                 AgentsListRegion(
                     height: DashboardLayout.agentListHeight(rows: visible),
                     scrolls: expanded && rows.count > DashboardLayout.maxExpandedAgents,
-                    motion: model.dashboardMotion
+                    motion: model.dashboardResizeMotion
                 ) {
                     VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, agent in
@@ -52,7 +52,7 @@ struct AgentsSection: View {
                                 depth: min(depths[index], DashboardLayout.maxAgentDepth),
                                 now: snapshot.timestamp
                             )
-                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                            .transition(.asymmetric(insertion: fadeIn, removal: .identity))
                             .zIndex(Double(rows.count - index))
                         }
                     }
@@ -76,22 +76,31 @@ struct AgentsSection: View {
                         reduceMotion: model.accessibility.reduceMotion,
                         action: toggle
                     )
-                    .transition(.opacity)
+                    .transition(fadeIn)
                 }
             }
         }
-        .animation(model.dashboardMotion, value: rows.map(\.id))
+        .animation(model.dashboardResizeMotion, value: rows.map(\.id))
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: MotionHarness.toggleAgents)) { _ in toggle() }
+        #endif
+    }
+
+    /// Under Reduce Motion nothing moves, so appearing rows carry their own fade.
+    private var fadeIn: AnyTransition {
+        model.accessibility.reduceMotion ? .opacity.animation(Motion.fade) : .opacity
     }
 
     private func toggle() {
         let settings = model.settings
+        let motion = model.dashboardResizeMotion
         guard settings.agentsExpanded else {
             isCollapsing = false
-            withAnimation(model.dashboardMotion) { settings.agentsExpanded = true }
+            withAnimation(motion) { settings.agentsExpanded = true }
             return
         }
         isCollapsing = true
-        withAnimation(model.dashboardMotion) {
+        withAnimation(motion) {
             settings.agentsExpanded = false
         } completion: {
             if !settings.agentsExpanded { isCollapsing = false }

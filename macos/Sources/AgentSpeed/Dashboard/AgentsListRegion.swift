@@ -1,12 +1,16 @@
-import AppKit
 import SwiftUI
 
 /// The agent rows, clipped to `height` so the list opens and closes like a drawer. Once the rows outgrow it the region
 /// scrolls, with soft fades on the edges that have more rows behind them (DESIGN section 4.4).
+///
+/// The region is the same scroll view in every state, and its height comes from the row count alone. SwiftUI
+/// interpolates that height on every frame, so the sections below and the popover itself follow the drawer as one
+/// motion instead of jumping to the final layout.
 struct AgentsListRegion<Content: View>: View {
     let height: CGFloat
     let scrolls: Bool
-    let motion: Animation
+    /// Nil under Reduce Motion: the height then changes at once and the rows only fade.
+    let motion: Animation?
     @ViewBuilder let content: Content
 
     @State private var contentFrame: CGRect = .zero
@@ -24,12 +28,18 @@ struct AgentsListRegion<Content: View>: View {
             }
             .coordinateSpace(.named(RegionMetrics.space))
             .scrollDisabled(!scrolls)
-            // Legacy scroll bars would take width from the tok/s column; the edge fades still show there is more.
-            .scrollIndicators(NSScroller.preferredScrollerStyle == .legacy ? .never : .automatic)
-            .scrollIndicatorsFlash(trigger: scrolls)
-            .frame(height: height, alignment: .top)
+            // A system scroller would take width from the tok/s column in the legacy style; the overlay knob never does.
+            .scrollIndicators(.never)
+            .animation(motion) { $0.modifier(AnimatedHeight(height: height)) }
             .mask {
                 EdgeFadeMask(fadesTop: fadesTop, fadesBottom: fadesBottom, fade: RegionMetrics.fade)
+            }
+            .overlay {
+                OverlayScrollIndicator(
+                    content: contentFrame,
+                    trailingInset: Spacing.xxs - DashboardLayout.padding,
+                    isActive: scrolls
+                )
             }
             .onChange(of: scrolls) { _, scrolls in
                 guard !scrolls else { return }
@@ -41,6 +51,20 @@ struct AgentsListRegion<Content: View>: View {
     private var fadesTop: Bool { scrolls && contentFrame.minY < -0.5 }
     /// Before the first measurement the rows sit at the top, so a scrolling region has more below.
     private var fadesBottom: Bool { scrolls && (contentFrame.isEmpty || contentFrame.maxY > height + 0.5) }
+}
+
+/// A frame height that SwiftUI interpolates frame by frame, so the layout runs at every step of the animation.
+private struct AnimatedHeight: ViewModifier, Animatable {
+    var height: CGFloat
+
+    nonisolated var animatableData: CGFloat {
+        get { height }
+        set { height = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.frame(height: height, alignment: .top)
+    }
 }
 
 private enum RegionMetrics {

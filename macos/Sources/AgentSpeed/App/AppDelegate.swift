@@ -23,6 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             NSApp.terminate(nil)
             return
         }
+        #if DEBUG
+        if let directory = options.motionHarnessDirectory {
+            MotionHarness.start(into: directory)
+            return
+        }
+        #endif
         let model = AppModel()
         model.commands = self
         self.model = model

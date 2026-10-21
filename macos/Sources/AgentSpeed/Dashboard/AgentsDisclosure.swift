@@ -24,6 +24,7 @@ struct AgentsDisclosure: View {
                 Text(title)
                     .font(DashboardFont.detail)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 Spacer(minLength: 0)
             }
         }

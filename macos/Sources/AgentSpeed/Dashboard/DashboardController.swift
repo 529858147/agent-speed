@@ -20,6 +20,10 @@ final class DashboardController: NSObject, NSPopoverDelegate {
 
     var isShown: Bool { popover?.isShown ?? false }
 
+    #if DEBUG
+    var debugPopover: NSPopover? { popover }
+    #endif
+
     func toggle(relativeTo view: NSView) {
         if isShown {
             close()
@@ -34,7 +38,11 @@ final class DashboardController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = !model.accessibility.reduceMotion
         popover.delegate = self
+        // The content keeps its ideal height, which the popover follows frame by frame through the preferred content
+        // size, and stays pinned to the top, so a window a point off never squeezes, shifts or re-centres it.
         let root = DashboardView(model: model, maxHeight: Self.maxHeight(below: view))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
             .appEnvironment(model)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = [.preferredContentSize]

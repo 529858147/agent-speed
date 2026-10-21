@@ -7,7 +7,7 @@ enum PreviewData {
         case standard
         /// Nested groups, a sub-agent whose parent is not listed, and a group cut by the row limit.
         case grouped
-        /// The first `count` (up to 16) agents of a busy machine, for the expandable list.
+        /// The first `count` (up to 24) agents of a busy machine, for the expandable list.
         case crowd(Int)
     }
 
@@ -69,7 +69,7 @@ enum PreviewData {
         ]
     }
 
-    /// Sixteen agents in engine order: groups of every source, then tools and idle stragglers.
+    /// Twenty-four agents in engine order: groups of every source, then tools and idle stragglers.
     private static func crowdAgents(speed: Double, now: Date) -> [AgentStatus] {
         [
             agent("orbit", .claudeDesktop, "orbit", "claude-opus-5-5", .generating, false, speed * 0.16, now),
@@ -88,6 +88,14 @@ enum PreviewData {
             agent("pulse", .claudeDesktop, "pulse", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-95)),
             agent("ember", .codex, "ember", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-240)),
             agent("cinder", .claudeCode, "cinder", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-420)),
+            agent("delta", .deepseek, "delta", "deepseek-v4-pro", .idle, false, 0, now.addingTimeInterval(-480)),
+            agent("helix", .codex, "helix", "gpt-6.1-sol", .idle, false, 0, now.addingTimeInterval(-540)),
+            agent("prism", .claudeDesktop, "prism", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-600)),
+            agent("zenith", .claudeCode, "zenith", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-660)),
+            agent("cobalt", .codex, "cobalt", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-720)),
+            agent("aurora", .deepseek, "aurora", "deepseek-v4-flash", .idle, false, 0, now.addingTimeInterval(-780)),
+            agent("ion", .claudeCode, "ion", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-840)),
+            agent("tide", .claudeDesktop, "tide", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-900)),
         ]
     }
 
@@ -131,7 +139,7 @@ enum PreviewData {
             switch source.kind {
             case .deepseek: source.available = false
             case .claudeDesktop: source.enabled = false
-            case .codex, .claudeCode: return source
+            case .codex, .claudeCode, .opencode, .gemini: return source
             }
             source.sessionCount = 0
             source.live = .zero
@@ -149,9 +157,9 @@ enum PreviewData {
         SourceStatus(
             kind: kind,
             enabled: true,
-            rootPath: kind.transcriptFolder.defaultURL.path,
+            rootPath: kind.transcriptFolder?.defaultURL.path ?? "",
             available: true,
-            sessionCount: sessionCount(kind.transcriptFolder),
+            sessionCount: kind.transcriptFolder.map(sessionCount) ?? 0,
             live: Rate(output: live, total: live * 26),
             today: today,
             activeAgents: active

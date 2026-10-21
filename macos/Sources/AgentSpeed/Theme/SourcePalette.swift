@@ -8,6 +8,8 @@ extension SourceKind {
         case .claudeCode: RGBColor(hex: 0xFF8A65)
         case .claudeDesktop: RGBColor(hex: 0xB39DFF)
         case .deepseek: RGBColor(hex: 0x4D6BFE)
+        case .opencode: RGBColor(hex: 0xF4B13E)
+        case .gemini: RGBColor(hex: 0x34B8F0)
         }
     }
 

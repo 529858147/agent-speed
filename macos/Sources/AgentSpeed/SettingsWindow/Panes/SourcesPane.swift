@@ -27,11 +27,13 @@ struct SourcesPane: View {
 }
 
 extension SourceKind {
-    var transcriptFolder: TranscriptFolder {
+    /// Nil for sources that are not read from a transcript folder.
+    var transcriptFolder: TranscriptFolder? {
         switch self {
         case .codex: .codex
         case .claudeCode, .claudeDesktop: .claude
         case .deepseek: .dsh
+        case .opencode, .gemini: nil
         }
     }
 }
