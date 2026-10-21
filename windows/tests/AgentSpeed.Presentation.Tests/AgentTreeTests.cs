@@ -79,22 +79,23 @@ public class AgentTreeTests
     }
 
     [Fact]
-    public void AGroupThatDoesNotFitIsLeftOutWhole()
+    public void RowLimitMayShowAParentWithoutItsChildren()
     {
         var layout = AgentTree.Arrange([Agent("a"), Agent("b"), Agent("p"), Agent("c", "p")], 3);
 
-        Assert.Equal(["a", "b"], layout.Rows.Select(r => r.Agent.Id));
-        Assert.Equal(2, layout.Hidden);
+        Assert.Equal(["a", "b", "p"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(1, layout.Hidden);
     }
 
     [Fact]
-    public void TruncationStopsAtTheFirstGroupThatDoesNotFit()
+    public void RowLimitCutsTheDepthFirstOrderInsideAGroup()
     {
         var layout = AgentTree.Arrange(
             [Agent("a"), Agent("p"), Agent("c1", "p"), Agent("c2", "p"), Agent("c3", "p"), Agent("b"), Agent("q")], 4);
 
-        Assert.Equal(["a"], layout.Rows.Select(r => r.Agent.Id));
-        Assert.Equal(6, layout.Hidden);
+        Assert.Equal(["a", "p", "c1", "c2"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(3, layout.Hidden);
+        Assert.Equal(new TreeGuides(Last, None, None), layout.Rows[3].Guides);
     }
 
     [Fact]
@@ -129,8 +130,7 @@ public class AgentTreeTests
             var shown = layout.Rows.Select(r => r.Agent.Id).ToHashSet();
             Assert.All(layout.Rows, row => Assert.True(row.Depth == 0 || shown.Contains(row.Agent.ParentId!)));
             Assert.Equal(agents.Count - layout.Rows.Count, layout.Hidden);
-            Assert.True(layout.Rows.Count <= limit);
-            Assert.True(limit == 0 || layout.Rows.Count > 0);
+            Assert.Equal(Math.Min(limit, agents.Count), layout.Rows.Count);
         }
     }
 

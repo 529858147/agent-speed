@@ -119,7 +119,7 @@
                     <ItemsControl ItemsSource="{Binding Sources}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type dash:SourceRow}">
-                                <Grid Height="30">
+                                <Grid Height="30" Visibility="{Binding IsListed, Converter={StaticResource Visible}}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="18" />
                                         <ColumnDefinition Width="*" />

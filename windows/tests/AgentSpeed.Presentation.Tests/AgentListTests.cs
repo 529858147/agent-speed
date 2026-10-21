@@ -43,12 +43,12 @@ public class AgentListTests
     [Fact]
     public void HiddenCountCountsAgentsNotGroups()
     {
-        // Groups of 4 and 3 rows: only the first fits in six rows, and its three agents stay hidden as one group.
+        // Groups of 4 and 3 rows: six rows end inside the second group, leaving one of its agents hidden.
         var list = AgentList.Arrange(
             [Agent("p"), Agent("p1", "p"), Agent("p2", "p"), Agent("p3", "p"), Agent("q"), Agent("q1", "q"), Agent("q2", "q")]);
 
-        Assert.Equal(["p", "p1", "p2", "p3"], list.Collapsed.Rows.Select(r => r.Agent.Id));
-        Assert.Equal(3, list.Collapsed.Hidden);
+        Assert.Equal(["p", "p1", "p2", "p3", "q", "q1"], list.Collapsed.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(1, list.Collapsed.Hidden);
         Assert.True(list.CanExpand);
         Assert.Equal(7, list.Expanded.Rows.Count);
     }
@@ -97,8 +97,8 @@ public class AgentListTests
         Assert.Equal(
             list.Expanded.Rows.Take(list.Collapsed.Rows.Count).Select(r => r.Agent.Id),
             list.Collapsed.Rows.Select(r => r.Agent.Id));
-        Assert.Equal(4, list.Collapsed.Rows.Count);
-        Assert.Equal(21, list.Collapsed.Hidden);
+        Assert.Equal(6, list.Collapsed.Rows.Count);
+        Assert.Equal(19, list.Collapsed.Hidden);
     }
 
     [Fact]

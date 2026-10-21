@@ -3,8 +3,8 @@ using AgentSpeed.Core;
 namespace AgentSpeed.Presentation.Layout;
 
 /// <summary>
-/// The dashboard agents list (DESIGN section 4, item 4): collapsed to whole groups within <see cref="CollapsedRows"/>
-/// rows, or every agent in a viewport of at most <see cref="ViewportRows"/> rows that scrolls beyond that.
+/// The dashboard agents list (DESIGN section 4, item 4): collapsed to the first <see cref="CollapsedRows"/> rows of the
+/// depth-first order, or every agent in a viewport of at most <see cref="ViewportRows"/> rows that scrolls beyond that.
 /// </summary>
 /// <param name="Total">Agents in the snapshot, including any that cannot be placed.</param>
 public sealed record AgentList(AgentTreeLayout Collapsed, AgentTreeLayout Expanded, int Total)

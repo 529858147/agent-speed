@@ -53,8 +53,8 @@ public static class AgentTree
     public const int MaxIndent = 2;
 
     /// <summary>
-    /// Takes whole groups while they fit in <paramref name="maxRows"/> and stops at the first one that does not; when
-    /// even the first group is too long, shows its first rows so the list is never empty.
+    /// Shows the first <paramref name="maxRows"/> rows of the depth-first order; parents come before their children,
+    /// so a child is never shown without its parent.
     /// </summary>
     public static AgentTreeLayout Arrange(IReadOnlyList<AgentStatus> agents, int maxRows)
     {
@@ -121,34 +121,8 @@ public static class AgentTree
         return nodes;
     }
 
-    /// <summary>How many leading rows to show under the group rule.</summary>
-    internal static int Fit(List<Node> nodes, int maxRows)
-    {
-        maxRows = Math.Max(0, maxRows);
-        if (nodes.Count <= maxRows)
-        {
-            return nodes.Count;
-        }
-
-        var shown = 0;
-        while (shown < nodes.Count)
-        {
-            var end = shown + 1;
-            while (end < nodes.Count && nodes[end].Depth > 0)
-            {
-                end++;
-            }
-
-            if (end > maxRows)
-            {
-                break;
-            }
-
-            shown = end;
-        }
-
-        return shown == 0 ? maxRows : shown;
-    }
+    /// <summary>How many leading depth-first rows to show.</summary>
+    internal static int Fit(List<Node> nodes, int maxRows) => Math.Clamp(maxRows, 0, nodes.Count);
 
     /// <summary>Rows and connector guides for the first <paramref name="count"/> nodes (a depth-first prefix).</summary>
     internal static AgentTreeLayout Layout(List<Node> nodes, int count, int total)

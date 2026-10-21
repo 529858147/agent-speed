@@ -111,6 +111,41 @@ public sealed class ZstdFrameTailerTests : IDisposable
         Assert.Equal(1, lines.Malformed);
     }
 
+    [Theory]
+    [InlineData((byte)0x0)]
+    [InlineData((byte)0xF)]
+    public void ResynchronizationAlsoStopsAtASkippableFrame(byte variant)
+    {
+        var path = Write(_temp.Combine("s.jsonl.zstd"), "not a frame"u8.ToArray(), Skippable(12, variant), Lines("after"));
+        var lines = new LineCollector();
+
+        new ZstdFrameTailer(path).ReadAppended(lines);
+
+        Assert.Equal(["after"], lines.Take());
+        Assert.Equal(1, lines.Malformed);
+    }
+
+    [Fact]
+    public void WithoutAMagicYetTheReaderWaitsAndCountsOnlyOnce()
+    {
+        var path = Write(_temp.Combine("s.jsonl.zstd"), "no magic here"u8.ToArray());
+        var tailer = new ZstdFrameTailer(path);
+        var lines = new LineCollector();
+
+        tailer.ReadAppended(lines);
+        Append(path, "still nothing"u8.ToArray());
+        tailer.ReadAppended(lines);
+        Assert.Empty(lines.Take());
+        Assert.Equal(1, lines.Malformed);
+        Assert.True(tailer.Offset < new FileInfo(path).Length);
+
+        Append(path, Lines("found"));
+        tailer.ReadAppended(lines);
+        Assert.Equal(["found"], lines.Take());
+        Assert.Equal(1, lines.Malformed);
+        Assert.Equal(new FileInfo(path).Length, tailer.Offset);
+    }
+
     [Fact]
     public void ResynchronizationKeepsAMagicNumberSplitAcrossAppends()
     {

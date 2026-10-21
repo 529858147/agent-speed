@@ -21,6 +21,7 @@ internal sealed class SourceRow : ObservableObject
     private string _status = string.Empty;
     private bool _dimmed;
     private bool _showSettingsLink;
+    private bool _isListed;
 
     public SourceRow(SourceKind kind)
     {
@@ -43,6 +44,9 @@ internal sealed class SourceRow : ObservableObject
     public bool IsDimmed { get => _dimmed; set => Set(ref _dimmed, value); }
 
     public bool ShowSettingsLink { get => _showSettingsLink; set => Set(ref _showSettingsLink, value); }
+
+    /// <summary>Only detected sources are listed on the dashboard.</summary>
+    public bool IsListed { get => _isListed; set => Set(ref _isListed, value); }
 }
 
 internal sealed class AgentRow : ObservableObject
@@ -272,8 +276,11 @@ internal sealed class DashboardViewModel : ObservableObject
                 row.Status = string.Empty;
                 row.IsDimmed = false;
                 row.ShowSettingsLink = false;
+                row.IsListed = false;
                 continue;
             }
+
+            row.IsListed = SourceDetection.IsDetected(status);
 
             row.LiveText = $"{SpeedFormat.Speed(status.Live.ValueFor(metric))} {unit}";
             row.TodayText = SpeedFormat.Tokens(status.Today.Output);
