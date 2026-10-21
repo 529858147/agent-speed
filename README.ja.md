@@ -49,6 +49,9 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **ダッシュボード**——ライブグラフ、ソース別の速度、作業中のすべての agent（サブ agent を含む）とその状態、今日の集計。
 - **完全ネイティブ**——macOS は SwiftUI + AppKit、Windows は WPF と Fluent／Mica。ライト・ダーク・自動テーマ。English、繁體中文、简体中文、日本語。
 - **人にやさしい**——エフェクトの強さは「オフ」から「全開」まで。「視差効果を減らす」やハイコントラストに対応し、クリック透過、画面端へのスナップ、ディスプレイごとの位置記憶、ログイン時の自動起動を備えています。
+- **常に最新**——バックグラウンドで GitHub Releases を確認し、ワンクリックでアップデート。SHA-256 で検証します。
+
+<p align="center"><img src="docs/images/dashboards.png" width="560" alt="ダークとライトのダッシュボード"></p>
 
 ## 速度の測り方
 

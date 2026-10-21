@@ -49,6 +49,9 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **面板**——实时曲线、各来源速度、所有正在工作的 agent（含子 agent）及其状态、今日统计。
 - **全原生**——macOS 使用 SwiftUI + AppKit，Windows 使用 WPF 与 Fluent／Mica。浅色、深色、自动主题；繁體中文、简体中文、English、日本語。
 - **人性化**——特效强度从「关闭」到「热血全开」，遵循「减弱动态效果」与高对比度设置，支持鼠标穿透、边缘磁吸、记住每块屏幕上的位置、登录时自动启动。
+- **永远最新**——后台检查 GitHub Releases，有新版一键更新，并以 SHA-256 验证。
+
+<p align="center"><img src="docs/images/dashboards.png" width="560" alt="深色与浅色面板"></p>
 
 ## 速度怎么算
 

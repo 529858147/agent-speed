@@ -54,6 +54,9 @@ Add `--purge` / `-Purge` to remove settings as well. On Windows you can also uni
 - **Dashboard** — live chart, per-source speed, every active agent (including sub-agents) with its phase, and today's totals.
 - **Native everywhere** — SwiftUI + AppKit on macOS, WPF with Fluent/Mica on Windows. Light, dark or automatic theme. English, 繁體中文, 简体中文, 日本語.
 - **Humane** — effects intensity from *Off* to *Max*, respects Reduce Motion and high contrast, click-through mode, magnetic edges, remembers its place on every display, launches at login.
+- **Always current** — checks GitHub Releases in the background and updates with one click, verified by SHA-256.
+
+<p align="center"><img src="docs/images/dashboards.png" width="560" alt="Dashboard in dark and light"></p>
 
 ## How speed is measured
 
