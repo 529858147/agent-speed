@@ -287,8 +287,12 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 
 - **一般 General** — Appearance (Auto / Light / Dark), Language (System / 繁體中文 / 简体中文 / English / 日本語),
   Launch at login, Speed metric
-  (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50, shows the tier thresholds; a `title.ladder` disclosure lists every
-  speed title with its tok/s threshold at the current redline).
+  (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50). Under the slider the heat
+  strip carries one thin tick per speed title (positions `(t / R)^0.6`, so they stay put while the values move); below
+  it `settings.redline.hint` and the `title.ladder` list: every title followed by its threshold at the current
+  redline (`自行車 8 · 電動自行車 12 · … · 火箭 400`), title in secondary color, value semibold tabular in the heat color
+  of that threshold, wrapping across lines. The values update live while the slider is dragged; hovering or focusing a
+  title highlights its tick. With Total throughput the same list shows that metric's values (compact `k`/`M`).
 - **選單列 / 工作列 Menu bar / Taskbar** — Display mode, Colored glyph, Show unit.
 - **懸浮窗 Floating orb** — Show, Size (slider + presets), Opacity (40–100 %), Always on top, Click-through,
   Fade when idle, Show on all Spaces (macOS).

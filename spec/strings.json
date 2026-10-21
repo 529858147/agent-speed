@@ -126,12 +126,6 @@
     "en": "Speed titles",
     "ja": "スピード称号"
   },
-  "title.ladder.row": {
-    "zh-Hant": "%@ 起",
-    "zh-Hans": "%@ 起",
-    "en": "from %@",
-    "ja": "%@ から"
-  },
   "peak.new": {
     "zh-Hant": "新紀錄",
     "zh-Hans": "新纪录",
@@ -481,10 +475,10 @@
     "ja": "レッドライン"
   },
   "settings.redline.hint": {
-    "zh-Hant": "達到紅線時特效全開。加速 %@ · 狂飆 %@ · 極限 %@",
-    "zh-Hans": "达到红线时特效全开。加速 %@ · 狂飙 %@ · 极限 %@",
-    "en": "Effects peak at the redline. Boost %@ · Overdrive %@ · Redline %@",
-    "ja": "レッドラインでエフェクトが最大になります。加速 %@ · 爆速 %@ · 限界 %@"
+    "zh-Hant": "達到紅線時特效全開；速度稱號會隨紅線等比例調整。",
+    "zh-Hans": "达到红线时特效全开；速度称号会随红线等比例调整。",
+    "en": "Effects peak at the redline; speed titles scale with it.",
+    "ja": "レッドラインでエフェクトが最大になり、スピード称号もそれに合わせて変わります。"
   },
   "settings.bar": {
     "zh-Hant": "選單列",
