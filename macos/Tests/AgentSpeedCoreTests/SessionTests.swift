@@ -25,7 +25,8 @@ struct SessionTests {
     @Test func seedsFixturesWithoutLiveEvents() throws {
         let (directory, configuration) = try Self.makeFixtureRoots()
         let session = TranscriptSession(configuration: configuration)
-        let summary = session.seed(todayStartMs: Self.startOfToday())
+        let fixtureDay = Clock.milliseconds(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_792_490_400)))
+        let summary = session.seed(todayStartMs: fixtureDay)
         #expect(summary.filesRead == 6)
         #expect(summary.filesDiscovered == 6)
         #expect(Set(session.responses.map(\.key)) == [
@@ -35,9 +36,9 @@ struct SessionTests {
         #expect(session.responses.first { $0.key == "msg_B" }?.agentId.hasSuffix("s-cli.jsonl") == true)
         #expect(session.malformedLines == 1)
         #expect(session.responses.first { $0.key == "msg_E" }?.isFinal == false)
-        let (output, events) = session.advance(nowMs: Clock.milliseconds(Date()), todayStartMs: Self.startOfToday(), emitsEvents: true)
+        let (output, events) = session.advance(nowMs: 1_792_491_000_000, todayStartMs: fixtureDay, emitsEvents: true)
         #expect(events.isEmpty)
-        let context = SnapshotContext(session: session, todayStartMs: Self.startOfToday())
+        let context = SnapshotContext(session: session, todayStartMs: fixtureDay)
         #expect(context.warnings(for: output) == [.malformedLines(1), .unfinalizedUsage(1)])
         _ = directory
     }

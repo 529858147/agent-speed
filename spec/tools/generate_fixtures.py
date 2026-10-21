@@ -237,7 +237,8 @@ rel = "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl"
 d = dict(entry="claude-desktop", cwd="/Users/dev/projects/orbit", session="s-desk")
 write_jsonl(rel, [
     {"type": "custom-title", "customTitle": "Orbit", "sessionId": "s-desk"},
-    user(at(2, 9), [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}], **d),
+    user(at(2, 9), [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
+         **dict(d, entry="claude-desktop-3p")),
     assistant(at(2, 12), "msg_B", ["text"], cl_usage(5, 200, 21000, 240), "end_turn", **d),
     user(at(3, 0), "Plan the orbit", **d),
     assistant(at(3, 5), "msg_C", ["tool_use"], cl_usage(3, 0, 30000, 500), "tool_use", **d),

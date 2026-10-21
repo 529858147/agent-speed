@@ -232,7 +232,7 @@ def claude_line(state, obj, dedupe):
         return
     state.last_line = ts if state.last_line is None else max(state.last_line, ts)
     if not state.source_decided and isinstance(obj.get("entrypoint"), str):
-        state.source = "claudeDesktop" if obj["entrypoint"] == "claude-desktop" else "claudeCode"
+        state.source = "claudeDesktop" if obj["entrypoint"].startswith("claude-desktop") else "claudeCode"
         state.source_decided = True
     state.project = basename(obj.get("cwd")) or state.project
     if obj.get("isSidechain") is True:

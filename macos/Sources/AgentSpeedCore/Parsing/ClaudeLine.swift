@@ -57,9 +57,9 @@ enum ClaudeLineExtractor {
                 } else if scanner.key(key, is: "timestamp") {
                     line.timestampMs = try scanner.readTimestamp()
                 } else if scanner.key(key, is: "entrypoint") {
-                    switch try scanner.readStringMatch(["claude-desktop"]) {
-                    case 0: line.entrypointSource = .claudeDesktop
-                    case .some: line.entrypointSource = .claudeCode
+                    switch try scanner.readStringHasPrefix("claude-desktop") {
+                    case true?: line.entrypointSource = .claudeDesktop
+                    case false?: line.entrypointSource = .claudeCode
                     case nil: line.entrypointSource = nil
                     }
                 } else if scanner.key(key, is: "cwd") {

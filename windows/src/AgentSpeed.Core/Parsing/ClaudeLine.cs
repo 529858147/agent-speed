@@ -93,6 +93,16 @@ internal static class ClaudeLineReader
 
     private static ClaudeLine Malformed() => new() { Status = LineStatus.Malformed };
 
+    private static bool IsDesktopEntrypoint(ref Utf8JsonReader reader)
+    {
+        if (reader.ValueIsEscaped || reader.HasValueSequence)
+        {
+            return reader.GetString()!.StartsWith("claude-desktop", StringComparison.Ordinal);
+        }
+
+        return reader.ValueSpan.StartsWith("claude-desktop"u8);
+    }
+
     private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref ClaudeLine result, Hints hints)
     {
         if (reader.ValueTextEquals("type"u8))
@@ -127,7 +137,7 @@ internal static class ClaudeLineReader
             reader.Read();
             if (reader.TokenType == JsonTokenType.String)
             {
-                result.Entrypoint = reader.ValueTextEquals("claude-desktop"u8) ? EntrypointKind.Desktop : EntrypointKind.Other;
+                result.Entrypoint = IsDesktopEntrypoint(ref reader) ? EntrypointKind.Desktop : EntrypointKind.Other;
             }
             else
             {

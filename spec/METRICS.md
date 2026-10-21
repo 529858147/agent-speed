@@ -81,7 +81,8 @@ Lines that are not valid JSON objects are skipped and counted as malformed. Line
 
 ### 4.1 Claude (Claude Code and Claude Desktop)
 
-Source: the first line that has `entrypoint` decides: `"claude-desktop"` → `claudeDesktop`, anything else →
+Source: the first line that has `entrypoint` decides: a value starting with `claude-desktop` (`claude-desktop`,
+`claude-desktop-3p` on Windows) → `claudeDesktop`, anything else →
 `claudeCode`. Before that, the file is `claudeCode`.
 
 `isSubagent` = path contains a `subagents` directory component, or any line has `"isSidechain": true`.
