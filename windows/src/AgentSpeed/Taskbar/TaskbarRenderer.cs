@@ -18,12 +18,10 @@ internal sealed class TaskbarRenderer
 {
     private const double ValueSize = 15;
     private const double UnitSize = 11;
-    private const double GlyphSize = 16;
+    private const double GlyphStroke = 1.75;
     private const double Padding = 8;
-    private const double GlyphGap = 6;
+    private const double GlyphGap = 4.5;
     private const double UnitGap = 3;
-
-    private static readonly string[] WidestValues = ["8888", "8.88k", "88.8k", "888k", "8.88M", "88.8M"];
 
     private readonly Typeface _valueFace = new(new FontFamily("Segoe UI Variable Display, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
     private readonly Typeface _unitFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
@@ -34,7 +32,6 @@ internal sealed class TaskbarRenderer
     private Color _cachePrimary;
     private Color _cacheSecondary;
     private double _digitWidth;
-    private double _valueBoxWidth;
     private FormattedText? _unit;
     private string _unitText = string.Empty;
 
@@ -44,7 +41,7 @@ internal sealed class TaskbarRenderer
         TextOptions.SetTextHintingMode(_visual, TextHintingMode.Fixed);
     }
 
-    /// <summary>Widget length along the taskbar in physical pixels (fixed for a given layout, never jitters).</summary>
+    /// <summary>Widget length along the taskbar in physical pixels: the content width.</summary>
     public int MeasureLength(TaskbarState state, double scale, bool vertical)
     {
         var colors = Palette(state);
@@ -56,6 +53,15 @@ internal sealed class TaskbarRenderer
             return (int)Math.Ceiling(height * scale);
         }
 
+        return (int)Math.Ceiling(ContentWidth(state) * scale);
+    }
+
+    /// <summary>
+    /// Width (DIP) of glyph + value + unit with padding. Digits are tabular, so this only changes when the number of
+    /// characters changes; the host delays shrinking so the widget never flickers.
+    /// </summary>
+    private double ContentWidth(TaskbarState state)
+    {
         var width = Padding * 2;
         if (state.Mode != BarDisplayMode.ValueOnly)
         {
@@ -69,14 +75,14 @@ internal sealed class TaskbarRenderer
                 width += GlyphGap;
             }
 
-            width += _valueBoxWidth;
+            width += TabularWidth(SpeedFormat.Speed(state.Value), 0);
             if (state.ShowUnit && _unit is not null)
             {
                 width += UnitGap + _unit.WidthIncludingTrailingWhitespace;
             }
         }
 
-        return (int)Math.Ceiling(width * scale);
+        return width;
     }
 
     /// <summary>Renders into <paramref name="destination"/> (top-down, premultiplied BGRA, stride = width * 4).</summary>
@@ -94,10 +100,14 @@ internal sealed class TaskbarRenderer
             // Alpha 1/255 everywhere keeps the whole rectangle hit-testable without being visible.
             dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), null, new Rect(0, 0, width, height));
 
+            // While a shorter value waits out the shrink delay, the content stays anchored to the notification area.
+            var contentLeft = vertical ? 0 : Math.Max(0, Snap(width - ContentWidth(state), scale));
             if (hovered || pressed)
             {
                 var fill = Color.FromArgb((byte)(pressed ? 0x0A : 0x12), colors.Primary.R, colors.Primary.G, colors.Primary.B);
-                var inset = vertical ? new Rect(3, 2, width - 6, height - 4) : new Rect(2, Math.Max(2, (height - 40) / 2), width - 4, Math.Min(height - 4, 40));
+                var inset = vertical
+                    ? new Rect(3, 2, width - 6, height - 4)
+                    : new Rect(contentLeft + 2, Math.Max(2, (height - 40) / 2), width - contentLeft - 4, Math.Min(height - 4, 40));
                 dc.DrawRoundedRectangle(new SolidColorBrush(fill), null, inset, 4, 4);
             }
 
@@ -107,7 +117,7 @@ internal sealed class TaskbarRenderer
             }
             else
             {
-                DrawHorizontal(dc, state, scene, colors, width, height, scale);
+                DrawHorizontal(dc, state, scene, colors, contentLeft, height, scale);
             }
         }
 
@@ -125,14 +135,15 @@ internal sealed class TaskbarRenderer
     }
 
     private void DrawHorizontal(DrawingContext dc, TaskbarState state, BarScene scene, (Color Primary, Color Secondary) colors,
-        double width, double height, double scale)
+        double left, double height, double scale)
     {
-        var x = Padding;
+        var x = left + Padding;
         var centerY = height / 2;
 
         if (state.Mode != BarDisplayMode.ValueOnly)
         {
-            var glyphRect = new Rect(Snap(x, scale), Snap(centerY - GlyphSize / 2, scale), GlyphSize, GlyphSize);
+            // Optically centered on the digits' cap height, not on the line box.
+            var glyphRect = new Rect(Snap(x, scale), centerY - GlyphSize / 2, GlyphSize, GlyphSize);
             DrawGlyph(dc, state, scene, colors.Primary, glyphRect, scale);
             x += GlyphSize + (state.Mode == BarDisplayMode.GlyphAndValue ? GlyphGap : 0);
         }
@@ -146,8 +157,9 @@ internal sealed class TaskbarRenderer
         var idle = state.Tier == SpeedTier.Idle || state.Value <= 0;
         var role = idle ? 1 : 0;
         var baseline = Snap(centerY + CapHeight / 2, scale);
-        DrawTabular(dc, valueText, x + _valueBoxWidth, baseline, role, scale);
-        x += _valueBoxWidth;
+        var valueWidth = TabularWidth(valueText, role);
+        DrawTabular(dc, valueText, x + valueWidth, baseline, role, scale);
+        x += valueWidth;
 
         if (state.ShowUnit && _unit is not null)
         {
@@ -187,7 +199,7 @@ internal sealed class TaskbarRenderer
     private static void DrawGlyph(DrawingContext dc, TaskbarState state, BarScene scene, Color label, Rect rect, double scale)
     {
         var monochrome = !state.ColoredGlyph || state.HighContrast;
-        var stroke = Math.Max(2, Math.Round(2 * scale)) / scale;
+        var stroke = Math.Max(1.5, GlyphStroke * scale) / scale;
         GaugeGlyphPainter.Draw(dc, rect, scene.Heat, label, monochrome, scene.FillOpacity,
             state.HighContrast ? 0 : scene.Glow, stroke);
     }
@@ -248,8 +260,6 @@ internal sealed class TaskbarRenderer
             _digitWidth = Math.Max(_digitWidth, Glyph(c, 0).WidthIncludingTrailingWhitespace);
         }
 
-        _valueBoxWidth = WidestValues.Max(v => TabularWidth(v, 0));
-        _valueBoxWidth = Math.Ceiling(_valueBoxWidth);
         _unit = string.IsNullOrEmpty(unitText)
             ? null
             : new FormattedText(unitText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _unitFace, UnitSize,
@@ -257,6 +267,9 @@ internal sealed class TaskbarRenderer
     }
 
     private double CapHeight => (_valueFace.CapsHeight > 0 ? _valueFace.CapsHeight : 0.7) * ValueSize;
+
+    /// <summary>Gauge diameter ≈ cap height × 1.2 of the 15 px value: 14 DIP (DESIGN section 3).</summary>
+    private const double GlyphSize = 14;
 
     private static (Color Primary, Color Secondary) Palette(TaskbarState state)
     {

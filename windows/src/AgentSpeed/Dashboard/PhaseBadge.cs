@@ -26,6 +26,8 @@ internal sealed class PhaseBadge : Grid
     {
         Width = 26;
         Height = 16;
+        // A repeating animation keeps WPF rendering at 60 fps even in a hidden window, so it runs only while visible.
+        IsVisibleChanged += (_, _) => Rebuild();
         Rebuild();
     }
 
@@ -49,6 +51,14 @@ internal sealed class PhaseBadge : Grid
 
     private void Rebuild()
     {
+        foreach (var panel in Children.OfType<StackPanel>())
+        {
+            foreach (var dot in panel.Children.OfType<UIElement>())
+            {
+                dot.BeginAnimation(OpacityProperty, null);
+            }
+        }
+
         Children.Clear();
         switch (Phase)
         {
@@ -59,7 +69,7 @@ internal sealed class PhaseBadge : Grid
                 for (var i = 0; i < 3; i++)
                 {
                     var dot = new Ellipse { Width = 4, Height = 4, Fill = brush, Margin = new Thickness(1.5, 0, 1.5, 0) };
-                    if (!ReduceMotion)
+                    if (!ReduceMotion && IsVisible)
                     {
                         var animation = new DoubleAnimationUsingKeyFrames
                         {

@@ -89,6 +89,8 @@ final class MonitorCore: @unchecked Sendable {
             isCancelled: { cancelled.withLock { $0 } }
         )
         guard !isCancelled else { return }
+        // Seeding decodes hundreds of megabytes in parallel; hand the freed pages back instead of keeping them dirty.
+        malloc_zone_pressure_relief(nil, 0)
 
         // Establish today's peak from the backlog so the first live tick cannot announce a stale record.
         let seededNow = Date()

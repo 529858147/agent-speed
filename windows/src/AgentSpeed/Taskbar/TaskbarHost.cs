@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using AgentSpeed.App;
 using AgentSpeed.Core;
 using AgentSpeed.Interop;
+using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Orb;
 
 namespace AgentSpeed.Taskbar;
@@ -28,6 +29,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
 {
     private const string ClassName = "AgentSpeed.TaskbarWidget";
     private const int MaxPresentFailures = 3;
+    private const long ShrinkDelayMs = 6000;
 
     private static TaskbarHost? s_current;
     private static bool s_classRegistered;
@@ -64,6 +66,8 @@ internal sealed unsafe class TaskbarHost : IDisposable
     private bool _ensureQueued;
     private int _embedAttempts;
     private long _embedRetryAt;
+    private readonly WidthHold _width = new(ShrinkDelayMs);
+    private readonly DispatcherTimer _shrinkTimer;
 
     public TaskbarHost(Action<TaskbarSignal> signal)
     {
@@ -74,6 +78,12 @@ internal sealed unsafe class TaskbarHost : IDisposable
         _animation.Stop();
         _safety = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, (_, _) => SafetyCheck(), _dispatcher);
         _safety.Stop();
+        _shrinkTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(ShrinkDelayMs + 50), DispatcherPriority.Background, (_, _) =>
+        {
+            _shrinkTimer!.Stop();
+            Ensure();
+        }, _dispatcher);
+        _shrinkTimer.Stop();
         s_current = this;
     }
 
@@ -97,11 +107,20 @@ internal sealed unsafe class TaskbarHost : IDisposable
         _safety.Start();
         if (_hwnd == 0 || layoutChanged)
         {
-            Ensure();
+            Ensure(forceLength: true);
         }
         else
         {
-            Render();
+            var desired = _renderer.MeasureLength(_state, _scale, _vertical);
+            if (desired > _width.Applied)
+            {
+                Ensure();
+            }
+            else
+            {
+                ResolveLength(desired, force: false);
+                Render();
+            }
         }
 
         UpdateAnimation();
@@ -115,7 +134,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         _embedAttempts = 0;
         _presentFailures = 0;
         Teardown();
-        Ensure();
+        Ensure(forceLength: true);
     }
 
     public void QueueEnsure()
@@ -137,6 +156,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
     {
         _animation.Stop();
         _safety.Stop();
+        _shrinkTimer.Stop();
         Teardown();
         UnwatchTaskbar();
         _surface.Dispose();
@@ -152,7 +172,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         }
     }
 
-    private void Ensure()
+    private void Ensure(bool forceLength = false)
     {
         if (!_state.Enabled)
         {
@@ -167,7 +187,8 @@ internal sealed unsafe class TaskbarHost : IDisposable
             return;
         }
 
-        var length = _renderer.MeasureLength(_state, geo.Scale, geo.Vertical);
+        var scaleChanged = Math.Abs(geo.Scale - _scale) > 0.001 || geo.Vertical != _vertical;
+        var length = ResolveLength(_renderer.MeasureLength(_state, geo.Scale, geo.Vertical), forceLength || scaleChanged || _hwnd == 0);
         if (TaskbarLocator.WidgetRect(geo, length) is not { } rect)
         {
             Teardown();
@@ -228,7 +249,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
         var client = ToClient(taskbar, screen);
         var hwnd = User32.CreateWindowEx(
-            WS_EX.LAYERED | WS_EX.TOOLWINDOW | WS_EX.NOACTIVATE,
+            WS_EX.LAYERED | WS_EX.TOOLWINDOW | WS_EX.NOACTIVATE | WS_EX.NOPARENTNOTIFY,
             ClassName, "Agent Speed",
             WS.CHILD | WS.VISIBLE | WS.CLIPSIBLINGS,
             client.Left, client.Top, screen.Width, screen.Height,
@@ -306,9 +327,20 @@ internal sealed unsafe class TaskbarHost : IDisposable
         var client = ToClient(taskbar, screen);
         var sizeChanged = screen.Width != _screenRect.Width || screen.Height != _screenRect.Height;
         _screenRect = screen;
-        User32.SetWindowPos(_hwnd, HWND.TOP, client.Left, client.Top, screen.Width, screen.Height,
-            SWP.NOACTIVATE | SWP.SHOWWINDOW);
-        RenderAndPresent(force: sizeChanged);
+        void Move() => User32.SetWindowPos(_hwnd, HWND.TOP, client.Left, client.Top, screen.Width, screen.Height,
+            SWP.NOACTIVATE | SWP.SHOWWINDOW | (sizeChanged ? SWP.NOREDRAW : 0));
+
+        if (sizeChanged)
+        {
+            // New content is ready before the window moves, so the resize and the new pixels land together.
+            RenderAndPresent(force: true, beforePresent: Move);
+        }
+        else
+        {
+            Move();
+            RenderAndPresent(force: false);
+        }
+
         SignalBounds();
     }
 
@@ -330,9 +362,18 @@ internal sealed unsafe class TaskbarHost : IDisposable
         }
 
         _hiddenForFullscreen = false;
-        User32.SetWindowPos(_hwnd, HWND.TOPMOST, screen.Left, screen.Top, screen.Width, screen.Height,
-            SWP.NOACTIVATE | SWP.SHOWWINDOW);
-        RenderAndPresent(force: sizeChanged);
+        void Move() => User32.SetWindowPos(_hwnd, HWND.TOPMOST, screen.Left, screen.Top, screen.Width, screen.Height,
+            SWP.NOACTIVATE | SWP.SHOWWINDOW | (sizeChanged ? SWP.NOREDRAW : 0));
+        if (sizeChanged)
+        {
+            RenderAndPresent(force: true, beforePresent: Move);
+        }
+        else
+        {
+            Move();
+            RenderAndPresent(force: false);
+        }
+
         SignalBounds();
     }
 
@@ -361,7 +402,8 @@ internal sealed unsafe class TaskbarHost : IDisposable
                     return;
                 }
 
-                var length = _renderer.MeasureLength(_state, geometry.Value.Scale, geometry.Value.Vertical);
+                var desired = _renderer.MeasureLength(_state, geometry.Value.Scale, geometry.Value.Vertical);
+                var length = Math.Abs(geometry.Value.Scale - _scale) > 0.001 ? desired : _width.Peek(desired, Environment.TickCount64);
                 var rect = TaskbarLocator.WidgetRect(geometry.Value, length);
                 if (rect is not { } r || !RectEquals(r, _screenRect) || Math.Abs(geometry.Value.Scale - _scale) > 0.001)
                 {
@@ -422,7 +464,25 @@ internal sealed unsafe class TaskbarHost : IDisposable
         RenderAndPresent(force: false);
     }
 
-    private bool RenderAndPresent(bool force)
+    /// <summary>The widget grows at once but shrinks only after the shorter width has held for 6 s.</summary>
+    private int ResolveLength(int desired, bool force)
+    {
+        var length = _width.Resolve(desired, Environment.TickCount64, force);
+        if (_width.PendingSince is null)
+        {
+            _shrinkTimer.Stop();
+        }
+        else if (!_shrinkTimer.IsEnabled)
+        {
+            var wait = Math.Max(50, (_width.DueAt ?? 0) - Environment.TickCount64 + 50);
+            _shrinkTimer.Interval = TimeSpan.FromMilliseconds(wait);
+            _shrinkTimer.Start();
+        }
+
+        return length;
+    }
+
+    private bool RenderAndPresent(bool force, Action? beforePresent = null)
     {
         var width = Math.Max(1, _screenRect.Width);
         var height = Math.Max(1, _screenRect.Height);
@@ -430,6 +490,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
             $"{width}x{height}|{_scale:F3}|{SpeedFormat.Speed(_state.Value)}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}");
         if (!force && key == _renderKey)
         {
+            beforePresent?.Invoke();
             return true;
         }
 
@@ -449,6 +510,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
             return false;
         }
 
+        beforePresent?.Invoke();
         if (!_surface.Present(_hwnd, out var error))
         {
             AppLog.Warn($"UpdateLayeredWindow failed with error {error}.");

@@ -56,6 +56,11 @@ internal sealed unsafe class TrayIcon : IDisposable
 
     public void Update(TrayVisualState state)
     {
+        if (_added && state == _pending && _applied == state && !_throttle.IsEnabled)
+        {
+            return;
+        }
+
         _pending = state;
         if (!_added)
         {
@@ -70,6 +75,16 @@ internal sealed unsafe class TrayIcon : IDisposable
         else if (!_throttle.IsEnabled)
         {
             _throttle.Start();
+        }
+    }
+
+    /// <summary>Re-renders if the taskbar DPI changed (display or setting change).</summary>
+    public void Refresh()
+    {
+        if (_added && IconSize() != _appliedSize)
+        {
+            _applied = null;
+            ApplyPending();
         }
     }
 

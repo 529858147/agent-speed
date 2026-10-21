@@ -51,7 +51,7 @@ public sealed record OrbTokens(
         OrbAppearance.Light,
         Rgba.FromHex("#FFFFFF"),
         Rgba.FromHex("#E7EBF3"),
-        0.86,
+        0.94,
         Rgba.White.WithAlpha(0.95),
         Rgba.Black.WithAlpha(0.08),
         Rgba.Black.WithAlpha(0.16),

@@ -163,18 +163,33 @@
                                 <ColumnDefinition Width="*" MinWidth="120" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <TextBlock x:Name="Icon" Grid.Column="0" Margin="2,0,18,0" FontSize="20" Style="{StaticResource SymbolIcon}"
                                        Text="{TemplateBinding Icon}" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                            <StackPanel x:Name="Texts" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                 <TextBlock Style="{StaticResource BodyText}" Text="{TemplateBinding Header}" />
                                 <TextBlock x:Name="Description" Style="{StaticResource CaptionText}" Margin="0,1,0,0"
                                            Text="{TemplateBinding Description}" />
                             </StackPanel>
-                            <ContentPresenter Grid.Column="2" VerticalAlignment="Center"
+                            <ContentPresenter x:Name="Presenter" Grid.Column="2" VerticalAlignment="Center"
                                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="ContentBelow" Value="True">
+                            <Setter TargetName="Texts" Property="Grid.ColumnSpan" Value="2" />
+                            <Setter TargetName="Texts" Property="Margin" Value="0" />
+                            <Setter TargetName="Presenter" Property="Grid.Row" Value="1" />
+                            <Setter TargetName="Presenter" Property="Grid.Column" Value="1" />
+                            <Setter TargetName="Presenter" Property="Grid.ColumnSpan" Value="2" />
+                            <Setter TargetName="Presenter" Property="HorizontalAlignment" Value="Stretch" />
+                            <Setter TargetName="Presenter" Property="Margin" Value="0,10,0,0" />
+                            <Setter TargetName="Icon" Property="VerticalAlignment" Value="Top" />
+                            <Setter TargetName="Icon" Property="Margin" Value="2,2,18,0" />
+                        </Trigger>
                         <Trigger Property="Icon" Value="{x:Null}">
                             <Setter TargetName="Icon" Property="Visibility" Value="Collapsed" />
                         </Trigger>

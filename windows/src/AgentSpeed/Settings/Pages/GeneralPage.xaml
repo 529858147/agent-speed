@@ -34,22 +34,25 @@
                 <ComboBoxItem Content="{loc:Loc metric.total}" />
             </ComboBox>
         </controls:SettingsCard>
-        <controls:SettingsCard Header="{loc:Loc settings.redline}" Icon="&#xE945;" Description="{Binding RedlineHint}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding RedlineText}" MinWidth="86" TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
-                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                <Grid Width="220" VerticalAlignment="Center">
-                    <Slider Minimum="100" Maximum="2000" SmallChange="50" LargeChange="200" TickFrequency="50" IsSnapToTickEnabled="True"
-                            Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
-                            AutomationProperties.HelpText="{Binding RedlineText}"
-                            Visibility="{Binding IsOutputMetric, Converter={StaticResource Visible}}" />
-                    <Slider Minimum="4.30103" Maximum="6.30103"
-                            SmallChange="0.025" LargeChange="0.1" TickFrequency="0.025" IsSnapToTickEnabled="True"
-                            Value="{Binding RedlineTotalLog, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
-                            AutomationProperties.HelpText="{Binding RedlineText}"
-                            Visibility="{Binding IsTotalMetric, Converter={StaticResource Visible}}" />
-                </Grid>
-            </StackPanel>
+        <controls:SettingsCard Header="{loc:Loc settings.redline}" Icon="&#xE945;" Description="{Binding RedlineHint}" ContentBelow="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Slider Grid.Column="0" VerticalAlignment="Center" MaxWidth="520" HorizontalAlignment="Stretch"
+                        Minimum="100" Maximum="2000" SmallChange="50" LargeChange="200" TickFrequency="50" IsSnapToTickEnabled="True"
+                        Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
+                        AutomationProperties.HelpText="{Binding RedlineText}"
+                        Visibility="{Binding IsOutputMetric, Converter={StaticResource Visible}}" />
+                <Slider Grid.Column="0" VerticalAlignment="Center" MaxWidth="520" HorizontalAlignment="Stretch"
+                        Minimum="4.30103" Maximum="6.30103" SmallChange="0.025" LargeChange="0.1" TickFrequency="0.025" IsSnapToTickEnabled="True"
+                        Value="{Binding RedlineTotalLog, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
+                        AutomationProperties.HelpText="{Binding RedlineText}"
+                        Visibility="{Binding IsTotalMetric, Converter={StaticResource Visible}}" />
+                <TextBlock Grid.Column="1" Text="{Binding RedlineText}" MinWidth="96" TextAlignment="Right" VerticalAlignment="Center"
+                           Margin="16,0,0,0" Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </Grid>
         </controls:SettingsCard>
     </StackPanel>
 </UserControl>

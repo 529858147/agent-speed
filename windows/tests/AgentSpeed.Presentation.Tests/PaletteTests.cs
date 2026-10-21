@@ -214,7 +214,7 @@ public class PaletteTests
 
         Assert.Equal("#FFFFFF", light.BodyTop.ToHex());
         Assert.Equal("#E7EBF3", light.BodyBottom.ToHex());
-        Assert.Equal(0.86, light.BodyAlpha);
+        Assert.Equal(0.94, light.BodyAlpha);
         Assert.Equal(0.32, light.AuraOpacityScale);
         Assert.False(light.AdditiveParticles);
         Assert.Equal(1.2, light.ParticleSizeScale);

@@ -15,10 +15,14 @@ internal sealed class ThemeService : IDisposable
     private bool _refreshQueued;
     private AppearanceMode _mode = AppearanceMode.Auto;
 
-    public ThemeService(Dispatcher dispatcher)
+    private bool _fluentEnabled;
+
+    public ThemeService(Dispatcher dispatcher, AppearanceMode mode)
     {
         _dispatcher = dispatcher;
+        _mode = mode;
         ReadSystem();
+        IsDark = Resolve(_mode);
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
@@ -53,7 +57,15 @@ internal sealed class ThemeService : IDisposable
 
     private bool SystemAppsDark { get; set; }
 
-    public void Start() => Apply(force: true);
+    /// <summary>
+    /// Loads the Fluent theme. Parsing its dictionaries is the most expensive part of startup, so the app calls this
+    /// right after its first surfaces are up (the orb and the taskbar widget do not depend on it).
+    /// </summary>
+    public void EnableFluent()
+    {
+        _fluentEnabled = true;
+        Apply(force: true);
+    }
 
     /// <summary>Coalesces bursts of WM_SETTINGCHANGE into one refresh.</summary>
     public void QueueRefresh()
@@ -92,12 +104,7 @@ internal sealed class ThemeService : IDisposable
     {
         var before = (IsDark, TaskbarIsDark, HighContrast, ReduceMotion, TransparencyEnabled);
         ReadSystem();
-        IsDark = _mode switch
-        {
-            AppearanceMode.Dark => true,
-            AppearanceMode.Light => false,
-            _ => SystemAppsDark,
-        };
+        IsDark = Resolve(_mode);
 
         var after = (IsDark, TaskbarIsDark, HighContrast, ReduceMotion, TransparencyEnabled);
         if (!force && before == after)
@@ -109,10 +116,17 @@ internal sealed class ThemeService : IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    private bool Resolve(AppearanceMode mode) => mode switch
+    {
+        AppearanceMode.Dark => true,
+        AppearanceMode.Light => false,
+        _ => SystemAppsDark,
+    };
+
     private void ApplyFluentTheme()
     {
         var application = Application.Current;
-        if (application is null)
+        if (application is null || !_fluentEnabled)
         {
             return;
         }

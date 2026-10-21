@@ -11,6 +11,7 @@ internal static class WS
 
 internal static class WS_EX
 {
+    public const int NOPARENTNOTIFY = 0x00000004;
     public const int TOPMOST = 0x00000008;
     public const int TRANSPARENT = 0x00000020;
     public const int TOOLWINDOW = 0x00000080;

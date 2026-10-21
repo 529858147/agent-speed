@@ -59,6 +59,12 @@ internal sealed class TaskbarWidget : IDisposable
 
     public void Update(TaskbarState state)
     {
+        // Idle snapshots repeat the same state; do not wake the taskbar thread for them.
+        if (state == _latest && _dispatcher is not null)
+        {
+            return;
+        }
+
         _latest = state;
         if (_updateQueued || _dispatcher is null)
         {

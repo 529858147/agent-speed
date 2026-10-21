@@ -7,6 +7,7 @@ internal static class Program
     [STAThread]
     public static int Main()
     {
+        StartupPhases.MarkMain();
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             AppLog.Error($"Unhandled exception (terminating: {e.IsTerminating}).", e.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, e) =>

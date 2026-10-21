@@ -519,7 +519,8 @@ public class OrbSceneTests
         rig.Run(0.5);
         rig.Scene.SetTarget(20, SpeedTier.Cruise);
         rig.Frames(1);
-        Assert.Equal(-1, rig.Scene.Readout.Slot(0, rig.Scene.Time).Direction);
+        Assert.False(rig.Scene.Readout.Slot(0, rig.Scene.Time).IsChanging);
+        Assert.Equal(-1, rig.Scene.Readout.Slot(1, rig.Scene.Time).Direction);
     }
 
     [Theory]

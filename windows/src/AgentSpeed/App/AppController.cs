@@ -65,20 +65,22 @@ internal sealed class AppController : IAppCommands, IDisposable
     public void Start()
     {
         _ui = Dispatcher.CurrentDispatcher;
+        var phases = new StartupPhases();
 
         _settings = new SettingsService(_ui);
         _settings.Load();
 
         _loc = new Localizer(Localizer.LoadEmbeddedTable(), ResolveLanguage(Settings.Language));
         LocalizationSource.Instance.Attach(_loc);
+        phases.Mark("settings+strings");
 
-        _theme = new ThemeService(_ui) { Mode = Settings.Appearance };
-        _theme.Start();
+        _theme = new ThemeService(_ui, Settings.Appearance);
         _app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
             Source = new Uri("pack://application:,,,/AgentSpeed;component/Theme/Styles.xaml", UriKind.Absolute),
         });
         AppFonts.Apply(_app.Resources, _loc.LanguageCode);
+        phases.Mark("styles");
 
         _hub = new SpeedHub(new DispatcherSynchronizationContext(_ui));
         _speed = new SpeedModel(_hub, _ui);
@@ -96,6 +98,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         _tray.Invoked += (_, _) => ToggleDashboard(TrayAnchor());
         _tray.ContextMenuRequested += (_, _) => ShowMenu();
         _tray.Show(TrayState());
+        phases.Mark("tray");
 
         _menu = new MenuHost();
         _tooltip = new HoverTooltip();
@@ -106,6 +109,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         _taskbar.HoverChanged += (_, hover) => OnTaskbarHover(hover.IsOver, hover.Bounds);
         _taskbar.PresenceChanged += (_, _) => _settingsModel?.UpdateLive(_speed.Snapshot, _taskbar.Presence);
         _taskbar.Start();
+        phases.Mark("taskbar");
 
         _speed.Changed += (_, _) => OnSpeedChanged();
         _speed.EventRaised += (_, e) => OnSpeedEvent(e);
@@ -122,12 +126,22 @@ internal sealed class AppController : IAppCommands, IDisposable
             ShowOrb();
         }
 
+        phases.Mark("orb");
         UpdateTaskbar();
         StartMonitor();
-        AutoStart.Refresh();
+        phases.Mark("monitor");
         _instance.Listen(() => _ui.BeginInvoke(() => ShowDashboard(CursorAnchor())));
         _started = true;
-        AppLog.Info($"Started (language {_loc.LanguageCode}, {(_theme.IsDark ? "dark" : "light")} theme).");
+        AppLog.Info($"Started (language {_loc.LanguageCode}, {(_theme.IsDark ? "dark" : "light")} theme). {phases}");
+
+        // Off the critical path: the Fluent dictionaries (only needed by menus, the flyout and settings) and housekeeping.
+        _ui.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            var fluent = System.Diagnostics.Stopwatch.StartNew();
+            _theme.EnableFluent();
+            AutoStart.Refresh();
+            AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
+        });
     }
 
     public void ToggleDashboardFromMenu() => ShowDashboard(CursorAnchor());
@@ -608,7 +622,7 @@ internal sealed class AppController : IAppCommands, IDisposable
     {
         _orb?.Revalidate();
         _taskbar?.Reposition();
-        _tray?.Update(TrayState());
+        _tray?.Refresh();
         _dashboard?.Dismiss();
     }
 
@@ -618,7 +632,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         _taskbar?.Reposition();
         if (area is "WindowMetrics" or "TraySettings")
         {
-            _tray?.Update(TrayState());
+            _tray?.Refresh();
         }
     }
 

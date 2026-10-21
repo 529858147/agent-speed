@@ -5,7 +5,7 @@ using AgentSpeed.Presentation.Orb;
 namespace AgentSpeed.Orb;
 
 /// <summary>
-/// Drives animation frames: display-synced (CompositionTarget.Rendering) while something animates, a ≤ 10 fps
+/// Drives animation frames: display-synced (CompositionTarget.Rendering) while something animates, an 8 fps
 /// timer for slow ambient effects, a single wake-up for scheduled ones, and nothing at all otherwise.
 /// </summary>
 internal sealed class FrameDriver
@@ -26,7 +26,7 @@ internal sealed class FrameDriver
         _demand = demand;
         _nextWake = nextWake;
         _now = now;
-        _slow = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Render, (_, _) => Step(), dispatcher);
+        _slow = new DispatcherTimer(TimeSpan.FromMilliseconds(125), DispatcherPriority.Render, (_, _) => Step(), dispatcher);
         _slow.Stop();
         _wake = new DispatcherTimer(DispatcherPriority.Render, dispatcher);
         _wake.Tick += (_, _) =>

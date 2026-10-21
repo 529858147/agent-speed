@@ -232,6 +232,8 @@ public sealed class LiveMonitor : IDisposable
                         PublishSafely(core.BuildStartingSnapshot(NowMs(), LocalDay.StartMs(NowMs(), zone), progress));
                     }
                 });
+                // Seeding decodes hundreds of megabytes; return the freed memory instead of keeping it committed.
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
                 Publish(core, StateOf(core), zone, observeLive: true);
             }
 

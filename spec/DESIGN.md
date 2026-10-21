@@ -68,7 +68,7 @@ light variant ("porcelain") changes only these tokens:
 
 | Token | Dark | Light |
 | --- | --- | --- |
-| Body gradient | `#1B2030 → #090B10` at 88 % | `#FFFFFF → #E7EBF3` at 86 % |
+| Body gradient | `#1B2030 → #090B10` at 88 % | `#FFFFFF → #E7EBF3` at 94 % |
 | Blur material | macOS `.hudWindow` | macOS `.popover` (light) |
 | Rim | white 14 % top → 0 % | white 95 % top highlight + 1 px outer stroke black 8 % |
 | Drop shadow | black 45 %, y `0.03 S`, blur `0.10 S` | black 16 %, y `0.04 S`, blur `0.12 S` |

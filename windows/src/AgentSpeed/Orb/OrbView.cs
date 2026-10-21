@@ -49,6 +49,19 @@ internal sealed class OrbView : FrameworkElement
     private bool _hasDrawnStatic;
     private bool _isActive = true;
     private double _lastReadoutTime;
+    private bool _hovering;
+    private SpeedTier _lastTier = (SpeedTier)(-1);
+    private string _lastText = string.Empty;
+    private double _lastValue = double.NaN;
+    private SourceKind[] _lastAgents = [];
+    private long _auraKey = long.MinValue;
+    private long _gaugeKey = long.MinValue;
+    private long _readoutKey = long.MinValue;
+    private bool _cometEmpty;
+    private bool _particlesEmpty;
+    private bool _overlayEmpty;
+    private double _lastScale = double.NaN;
+    private double _valueWidthTarget;
 
     public OrbView(Func<double> clock)
     {
@@ -68,7 +81,7 @@ internal sealed class OrbView : FrameworkElement
         TextOptions.SetTextRenderingMode(_readout, TextRenderingMode.Grayscale);
         TextOptions.SetTextRenderingMode(_overlay, TextRenderingMode.Grayscale);
 
-        _driver = new FrameDriver(Dispatcher, RenderFrame, () => Scene.Demand, () => Scene.NextWake, _clock);
+        _driver = new FrameDriver(Dispatcher, RenderFrame, Demand, () => Scene.NextWake, _clock);
         _accessibilityTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => FlushAccessibleName(), Dispatcher);
         _accessibilityTimer.Stop();
 
@@ -117,35 +130,72 @@ internal sealed class OrbView : FrameworkElement
         _text.Clear();
         _bodyDirty = true;
         _hasDrawnStatic = false;
+        InvalidateLayers();
         _driver.Kick();
+    }
+
+    private void InvalidateLayers()
+    {
+        _auraKey = long.MinValue;
+        _gaugeKey = long.MinValue;
+        _readoutKey = long.MinValue;
+        _cometEmpty = false;
+        _particlesEmpty = false;
+        _overlayEmpty = false;
     }
 
     public void SetData(double value, SpeedTier tier, IEnumerable<SourceKind> generating, string accessibleName)
     {
-        Scene.Update(_clock());
-        Scene.SetTarget(value, tier);
-        Scene.SetAgents(generating);
         _pendingAccessibleName = accessibleName;
-        if (!_accessibilityTimer.IsEnabled)
+        if (_pendingAccessibleName != _accessibleName && !_accessibilityTimer.IsEnabled)
         {
             FlushAccessibleName();
             _accessibilityTimer.Start();
         }
 
+        // Idle snapshots arrive twice a second; when nothing visible changed, do not wake the renderer.
+        var agents = generating as IReadOnlyCollection<SourceKind> ?? generating.ToArray();
+        var target = double.IsFinite(value) && value > 0 ? value : 0;
+        var text = SpeedFormat.Speed(target);
+        if (tier == _lastTier && text == _lastText && Math.Abs(target - _lastValue) <= 1e-6 * Math.Max(1, target)
+            && agents.SequenceEqual(_lastAgents))
+        {
+            return;
+        }
+
+        _lastTier = tier;
+        _lastText = text;
+        _lastValue = target;
+        _lastAgents = agents.ToArray();
+        Scene.Update(_clock());
+        Scene.SetTarget(value, tier);
+        Scene.SetAgents(_lastAgents);
         _driver.Kick();
     }
 
     public void SetInfoLine(string text)
     {
-        if (_infoLine != text)
+        if (_infoLine == text)
         {
-            _infoLine = text;
+            return;
+        }
+
+        _infoLine = text;
+        if (Scene.HoverBlend > 0.001 || _hovering)
+        {
             _driver.Kick();
         }
     }
 
     public void SetHover(bool hovering)
     {
+        if (_hovering == hovering)
+        {
+            return;
+        }
+
+        _hovering = hovering;
+        Scene.Update(_clock());
         Scene.SetHover(hovering);
         _driver.Kick();
     }
@@ -210,26 +260,131 @@ internal sealed class OrbView : FrameworkElement
         Scene.Update(_clock());
 
         var hover = Scene.Hover;
-        var scale = 1 + 0.03 * hover;
-        var c = _brushes.Center;
-        _hoverScale.CenterX = c.X;
-        _hoverScale.CenterY = c.Y;
-        _hoverScale.ScaleX = scale;
-        _hoverScale.ScaleY = scale;
+        var scale = Math.Round((1 + 0.03 * hover) * 2000) / 2000;
+        if (scale != _lastScale)
+        {
+            var c = _brushes.Center;
+            _hoverScale.CenterX = c.X;
+            _hoverScale.CenterY = c.Y;
+            _hoverScale.ScaleX = scale;
+            _hoverScale.ScaleY = scale;
+            _lastScale = scale;
+        }
 
         if (_bodyDirty || !_hasDrawnStatic)
         {
             DrawBody();
             _bodyDirty = false;
             _hasDrawnStatic = true;
+            InvalidateLayers();
         }
 
-        DrawAura();
-        DrawGauge();
-        DrawComet();
-        DrawParticles();
-        DrawReadout();
-        DrawOverlay();
+        // Each layer is re-recorded only when its inputs changed, so an idle frame touches (and dirties) nothing.
+        var auraKey = AuraKey();
+        if (auraKey != _auraKey)
+        {
+            _auraKey = auraKey;
+            DrawAura();
+        }
+
+        var gaugeKey = GaugeKey();
+        if (gaugeKey == long.MaxValue || gaugeKey != _gaugeKey)
+        {
+            _gaugeKey = gaugeKey;
+            DrawGauge();
+        }
+
+        var cometEmpty = Scene.CometOpacity <= 0.005 || _config.HighContrast;
+        if (!(cometEmpty && _cometEmpty))
+        {
+            _cometEmpty = cometEmpty;
+            DrawComet();
+        }
+
+        var particlesEmpty = Scene.Particles.Count == 0;
+        if (!(particlesEmpty && _particlesEmpty))
+        {
+            _particlesEmpty = particlesEmpty;
+            DrawParticles();
+        }
+
+        var readoutKey = ReadoutKey();
+        if (readoutKey == long.MaxValue || readoutKey != _readoutKey)
+        {
+            _readoutKey = readoutKey;
+            DrawReadout();
+        }
+
+        var overlayEmpty = _config.HighContrast || (Scene.PulseCount == 0 && Scene.PeakRays is null);
+        if (!(overlayEmpty && _overlayEmpty))
+        {
+            _overlayEmpty = overlayEmpty;
+            DrawOverlay();
+        }
+    }
+
+    private FrameDemand Demand() =>
+        !_valueWidth.IsSettled(_valueWidthTarget, 0.05) ? FrameDemand.Full : Scene.Demand;
+
+    private long AuraKey()
+    {
+        var intensity = Scene.AuraIntensity * _tokens.AuraOpacityScale;
+        if (intensity <= 0.004 || _config.HighContrast)
+        {
+            return -1;
+        }
+
+        return HeatPalette.Bucket(Scene.Heat, 48) * 100_000L + (long)Math.Round(intensity * 1000);
+    }
+
+    /// <summary>Change key of the gauge layer; <see cref="long.MaxValue"/> means it animates every frame.</summary>
+    private long GaugeKey()
+    {
+        var animated = (Scene.Effects.Shimmer && Scene.Tier == SpeedTier.Redline)
+            || (Scene.Effects.HeatDistortion && Scene.Tier == SpeedTier.Redline)
+            || Scene.Flash > 0
+            || Scene.EdgeGlow > 0.01;
+        if (animated)
+        {
+            return long.MaxValue;
+        }
+
+        var sweep = Scene.IdleSweep is { } p ? (long)Math.Round(p * 1000) + 1 : 0;
+        return (long)Math.Round(Scene.GaugeHeat * 100_000) * 10_000 + sweep;
+    }
+
+    /// <summary>Change key of the readout layer; <see cref="long.MaxValue"/> means it animates every frame.</summary>
+    private long ReadoutKey()
+    {
+        var now = Scene.Time;
+        var animated = Scene.Readout.IsAnimating(now)
+            || Scene.Transition.Progress < 1
+            || Scene.PeakPillAge is not null
+            || Scene.JitterX != 0 || Scene.JitterY != 0
+            || (Scene.AgentDots.Count > 0 && Scene.Effects.AuraBreathing)
+            || (Scene.HoverBlend > 0.001 && Scene.HoverBlend < 0.999)
+            || !_valueWidth.IsSettled(_valueWidthTarget, 0.05);
+        if (animated)
+        {
+            return long.MaxValue;
+        }
+
+        var hash = new HashCode();
+        hash.Add(Scene.Readout.Current);
+        hash.Add(Scene.Tier);
+        hash.Add(Math.Round(Scene.Heat * 63));
+        hash.Add(Math.Round(Scene.Overdrive * 63));
+        hash.Add(Math.Round(Scene.SkewDegrees * 20));
+        hash.Add(Scene.HoverBlend > 0.5);
+        hash.Add(_infoLine);
+        hash.Add(Scene.AgentDots.Count);
+        hash.Add(Scene.AgentOverflow);
+        foreach (var agent in Scene.AgentDots)
+        {
+            hash.Add(agent);
+        }
+
+        return hash.ToHashCode() & 0x7FFF_FFFFL;
     }
 
     private void DrawAura()
@@ -549,6 +704,7 @@ internal sealed class OrbView : FrameworkElement
             targetWidth += char.IsDigit(ch) ? digitCell : _text.Get(ch.ToString(), valueStyle).WidthIncludingTrailingWhitespace;
         }
 
+        _valueWidthTarget = targetWidth;
         var dt = Math.Clamp(now - _lastReadoutTime, 0, 0.1);
         _lastReadoutTime = now;
         if (Scene.Effects.SlideTransitions && _valueWidth.Value > 0)
@@ -567,9 +723,11 @@ internal sealed class OrbView : FrameworkElement
 
         var glow = !hc && Scene.Effects.ValueGlow && Scene.Tier >= SpeedTier.Boost;
         var glowColor = HeatPalette.Highlight(Q(Scene.Heat), Q(Scene.Overdrive));
-        var lineTop = baseline - capHeight * 1.25;
-        var lineHeight = capHeight * 1.6;
-        dc.PushClip(new RectangleGeometry(new Rect(c.X - 0.42 * s, lineTop - 0.02 * s, 0.84 * s, lineHeight + 0.04 * s)));
+        // The roll is clipped to the digits' own line box so nothing ever crosses the unit or the pill.
+        var clip = new RectangleGeometry(new Rect(c.X - 0.46 * s, baseline - capHeight - 0.02 * s, 0.92 * s, capHeight + 0.034 * s));
+        clip.Freeze();
+        var travel = capHeight * 1.12;
+        var glowTint = glow ? glowColor : (Rgba?)null;
 
         var x = right;
         for (var slot = 0; slot < readout.SlotCount; slot++)
@@ -580,23 +738,34 @@ internal sealed class OrbView : FrameworkElement
                 ? char.IsDigit(cc) ? digitCell : _text.Get(cc.ToString(), valueStyle).WidthIncludingTrailingWhitespace
                 : info.Previous is { } pc2 && char.IsDigit(pc2) ? digitCell : 0;
             x -= cell;
-            var travel = capHeight * 1.15 * info.Direction;
-            var eased = Easing.OutCubic(info.Progress);
 
-            if (info.IsChanging && info.Previous is { } previous)
+            if (!info.IsChanging)
             {
-                DrawChar(dc, previous, valueStyle, x, cell, baseline - travel * eased, 1 - eased, digitCell, glow ? glowColor : null, s);
+                if (currentChar is { } resting)
+                {
+                    DrawChar(dc, resting, valueStyle, x, cell, baseline, 1, digitCell, glowTint, s);
+                }
+
+                continue;
+            }
+
+            var eased = RollingText.Ease(info.Progress);
+            dc.PushClip(clip);
+            if (info.Previous is { } previous)
+            {
+                DrawChar(dc, previous, valueStyle, x, cell, baseline + travel * info.PreviousPosition(eased),
+                    info.PreviousOpacity(eased), digitCell, glowTint, s);
             }
 
             if (currentChar is { } current)
             {
-                var offset = info.IsChanging ? travel * (1 - eased) : 0;
-                var alpha = info.IsChanging ? eased : 1;
-                DrawChar(dc, current, valueStyle, x, cell, baseline + offset, alpha, digitCell, glow ? glowColor : null, s);
+                DrawChar(dc, current, valueStyle, x, cell, baseline + travel * info.CurrentPosition(eased),
+                    info.CurrentOpacity(eased), digitCell, glowTint, s);
             }
+
+            dc.Pop();
         }
 
-        dc.Pop();
         dc.Pop();
         dc.Pop();
 

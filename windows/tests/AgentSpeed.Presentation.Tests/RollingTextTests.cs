@@ -68,15 +68,88 @@ public class RollingTextTests
     }
 
     [Fact]
-    public void IsAnimatingCoversDurationPlusStagger()
+    public void IsAnimatingCoversTheLastStaggeredSlot()
     {
         var text = new RollingText();
         text.Set("1", 1, 0, animate: false);
         text.Set("1.5", 1, 2, animate: true);
 
         Assert.True(text.IsAnimating(2));
-        Assert.True(text.IsAnimating(2 + RollingText.Duration + 2 * RollingText.Stagger));
-        Assert.False(text.IsAnimating(2 + RollingText.Duration + 3 * RollingText.Stagger + 1e-9));
+        Assert.True(text.IsAnimating(2 + RollingText.Duration + 2 * RollingText.Stagger - 1e-6));
+        Assert.False(text.IsAnimating(2 + RollingText.Duration + 2 * RollingText.Stagger + 1e-9));
+    }
+
+    [Fact]
+    public void RollsAreShortForTwoHertzUpdates()
+    {
+        Assert.InRange(RollingText.Duration, 0.18, 0.22);
+        Assert.Equal(1, RollingText.Ease(1), 9);
+        Assert.True(RollingText.Ease(0.5) > 0.5);
+    }
+
+    [Fact]
+    public void OnlyChangedDigitsRollAndRightMostStartsFirst()
+    {
+        var text = new RollingText();
+        text.Set("596", 1, 0, animate: false);
+        text.Set("601", 1, 10, animate: true);
+
+        Assert.True(text.Slot(0, 10).IsChanging);
+        Assert.True(text.Slot(1, 10).IsChanging);
+        Assert.True(text.Slot(2, 10).IsChanging);
+        Assert.True(text.Slot(2, 10.05).Progress < text.Slot(0, 10.05).Progress);
+
+        text.Set("611", 1, 11, animate: true);
+        Assert.False(text.Slot(0, 11).IsChanging);
+        Assert.True(text.Slot(1, 11).IsChanging);
+        Assert.False(text.Slot(2, 11).IsChanging);
+        Assert.Equal(0, text.Slot(1, 11).Progress);
+    }
+
+    [Fact]
+    public void RetargetMidRollContinuesFromTheCurrentPosition()
+    {
+        var text = new RollingText();
+        text.Set("10", 1, 0, animate: false);
+        text.Set("20", 1, 1, animate: true);
+
+        var late = 1 + RollingText.Duration * 0.8;
+        var before = text.Slot(1, late);
+        var eased = RollingText.Ease(before.Progress);
+        var incomingY = before.CurrentPosition(eased);
+        var incomingAlpha = before.CurrentOpacity(eased);
+
+        text.Set("30", 1, late, animate: true);
+        var after = text.Slot(1, late);
+        Assert.Equal('3', after.Current);
+        Assert.Equal('2', after.Previous);
+        Assert.Equal(incomingY, after.PreviousPosition(0), 9);
+        Assert.Equal(incomingAlpha, after.PreviousOpacity(0), 9);
+
+        var early = late + RollingText.Duration * 0.1;
+        var midway = text.Slot(1, early);
+        var e2 = RollingText.Ease(midway.Progress);
+        var outgoingY = midway.PreviousPosition(e2);
+        var outgoingAlpha = midway.PreviousOpacity(e2);
+        text.Set("40", 1, early, animate: true);
+        var retargeted = text.Slot(1, early);
+        Assert.Equal('2', retargeted.Previous);
+        Assert.Equal('4', retargeted.Current);
+        Assert.Equal(outgoingY, retargeted.PreviousPosition(0), 9);
+        Assert.Equal(outgoingAlpha, retargeted.PreviousOpacity(0), 9);
+    }
+
+    [Fact]
+    public void FinishedRollRestsAtZeroOffset()
+    {
+        var text = new RollingText();
+        text.Set("1", 1, 0, animate: false);
+        text.Set("2", -1, 0, animate: true);
+        var slot = text.Slot(0, 5);
+        Assert.False(slot.IsChanging);
+        Assert.Equal(0, slot.CurrentPosition(1));
+        Assert.Equal(1, slot.CurrentOpacity(1));
+        Assert.Equal(1, slot.PreviousPosition(1));
     }
 
     [Fact]
