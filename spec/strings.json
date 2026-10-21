@@ -571,16 +571,16 @@
     "ja": "GitHub で見る"
   },
   "settings.about.privacy": {
-    "zh-Hant": "Agent Speed 只讀取本機紀錄，不連網、不收集任何資料，也不會儲存或顯示對話內容。",
-    "zh-Hans": "Agent Speed 只读取本机记录，不联网、不收集任何数据，也不会保存或显示对话内容。",
-    "en": "Agent Speed only reads local transcripts. It never connects to the network, collects nothing, and never stores or shows conversation content.",
-    "ja": "Agent Speed はローカルの記録のみを読み取ります。ネットワークに接続せず、データを収集せず、会話の内容を保存・表示することもありません。"
+    "zh-Hant": "Agent Speed 只讀取本機紀錄，不收集任何資料，也不會儲存或顯示對話內容。只有檢查更新時會連線到 GitHub，且不傳送任何個人資料。",
+    "zh-Hans": "Agent Speed 只读取本机记录，不收集任何数据，也不会保存或显示对话内容。只有检查更新时会连接 GitHub，且不发送任何个人数据。",
+    "en": "Agent Speed only reads local transcripts. It collects nothing and never stores or shows conversation content. It connects to GitHub only to check for updates, and sends no personal data.",
+    "ja": "Agent Speed はローカルの記録のみを読み取ります。データを収集せず、会話の内容を保存・表示することもありません。ネットワーク接続はアップデートの確認時に GitHub へ行うだけで、個人データは送信しません。"
   },
   "settings.about.update": {
-    "zh-Hant": "重新執行安裝指令即可更新到最新版。",
-    "zh-Hans": "重新运行安装命令即可更新到最新版。",
-    "en": "Run the install command again to update to the latest version.",
-    "ja": "インストールコマンドを再実行すると最新版に更新されます。"
+    "zh-Hant": "有新版本時會提醒你，一鍵即可更新。",
+    "zh-Hans": "有新版本时会提醒你，一键即可更新。",
+    "en": "You'll be told when a new version is out and can update with one click.",
+    "ja": "新しいバージョンが出るとお知らせし、ワンクリックで更新できます。"
   },
   "time.justNow": {
     "zh-Hant": "剛剛",
@@ -659,5 +659,161 @@
     "zh-Hans": "%d 个 Claude 子 agent 回应没有写入最终用量：输出量为下限，速度按同模型实测值估算",
     "en": "%d Claude sub-agent responses have no final usage: output is a lower bound and speed is estimated from the same model",
     "ja": "%d 件の Claude サブ agent の応答に最終使用量がありません：出力は下限値で、速度は同じモデルの実測値から推定しています"
+  },
+  "update.available.title": {
+    "zh-Hant": "Agent Speed %@ 已推出",
+    "zh-Hans": "Agent Speed %@ 已发布",
+    "en": "Agent Speed %@ is available",
+    "ja": "Agent Speed %@ が利用可能です"
+  },
+  "update.available.short": {
+    "zh-Hant": "有新版本 %@",
+    "zh-Hans": "有新版本 %@",
+    "en": "Update %@",
+    "ja": "新バージョン %@"
+  },
+  "update.menu": {
+    "zh-Hant": "更新至 %@…",
+    "zh-Hans": "更新至 %@…",
+    "en": "Update to %@…",
+    "ja": "%@ にアップデート…"
+  },
+  "update.current": {
+    "zh-Hant": "目前版本 %@",
+    "zh-Hans": "当前版本 %@",
+    "en": "Current version %@",
+    "ja": "現在のバージョン %@"
+  },
+  "update.upToDate": {
+    "zh-Hant": "已是最新版本",
+    "zh-Hans": "已是最新版本",
+    "en": "You're up to date",
+    "ja": "最新バージョンです"
+  },
+  "update.check": {
+    "zh-Hant": "檢查更新",
+    "zh-Hans": "检查更新",
+    "en": "Check for Updates",
+    "ja": "アップデートを確認"
+  },
+  "update.checking": {
+    "zh-Hant": "正在檢查更新…",
+    "zh-Hans": "正在检查更新…",
+    "en": "Checking for updates…",
+    "ja": "アップデートを確認中…"
+  },
+  "update.lastChecked": {
+    "zh-Hant": "上次檢查：%@",
+    "zh-Hans": "上次检查：%@",
+    "en": "Last checked %@",
+    "ja": "最終確認：%@"
+  },
+  "update.auto": {
+    "zh-Hant": "自動檢查更新",
+    "zh-Hans": "自动检查更新",
+    "en": "Check for updates automatically",
+    "ja": "アップデートを自動で確認"
+  },
+  "update.auto.hint": {
+    "zh-Hant": "啟動時與每 6 小時檢查一次 GitHub 上的新版本。",
+    "zh-Hans": "启动时与每 6 小时检查一次 GitHub 上的新版本。",
+    "en": "Checks GitHub for a new version at launch and every 6 hours.",
+    "ja": "起動時と 6 時間ごとに GitHub で新しいバージョンを確認します。"
+  },
+  "update.install": {
+    "zh-Hant": "更新並重新啟動",
+    "zh-Hans": "更新并重新启动",
+    "en": "Update and Relaunch",
+    "ja": "アップデートして再起動"
+  },
+  "update.later": {
+    "zh-Hant": "稍後",
+    "zh-Hans": "稍后",
+    "en": "Later",
+    "ja": "後で"
+  },
+  "update.skip": {
+    "zh-Hant": "略過此版本",
+    "zh-Hans": "跳过此版本",
+    "en": "Skip This Version",
+    "ja": "このバージョンをスキップ"
+  },
+  "update.downloading": {
+    "zh-Hant": "正在下載… %@",
+    "zh-Hans": "正在下载… %@",
+    "en": "Downloading… %@",
+    "ja": "ダウンロード中… %@"
+  },
+  "update.verifying": {
+    "zh-Hant": "正在驗證…",
+    "zh-Hans": "正在验证…",
+    "en": "Verifying…",
+    "ja": "検証中…"
+  },
+  "update.installing": {
+    "zh-Hant": "正在安裝…",
+    "zh-Hans": "正在安装…",
+    "en": "Installing…",
+    "ja": "インストール中…"
+  },
+  "update.failed": {
+    "zh-Hant": "更新失敗：%@",
+    "zh-Hans": "更新失败：%@",
+    "en": "Update failed: %@",
+    "ja": "アップデートに失敗しました：%@"
+  },
+  "update.failed.network": {
+    "zh-Hant": "無法連線到 GitHub",
+    "zh-Hans": "无法连接到 GitHub",
+    "en": "Couldn't reach GitHub",
+    "ja": "GitHub に接続できません"
+  },
+  "update.failed.checksum": {
+    "zh-Hant": "檔案校驗失敗，已取消更新",
+    "zh-Hans": "文件校验失败，已取消更新",
+    "en": "The download didn't pass verification, so nothing was changed",
+    "ja": "ファイルの検証に失敗したため、アップデートを中止しました"
+  },
+  "update.failed.permission": {
+    "zh-Hant": "沒有權限寫入安裝位置",
+    "zh-Hans": "没有权限写入安装位置",
+    "en": "No permission to write to the install location",
+    "ja": "インストール先に書き込む権限がありません"
+  },
+  "update.failed.invalid": {
+    "zh-Hant": "下載的安裝包內容不正確",
+    "zh-Hans": "下载的安装包内容不正确",
+    "en": "The downloaded package is not valid",
+    "ja": "ダウンロードしたパッケージが正しくありません"
+  },
+  "update.retry": {
+    "zh-Hant": "重試",
+    "zh-Hans": "重试",
+    "en": "Try Again",
+    "ja": "再試行"
+  },
+  "update.openRelease": {
+    "zh-Hant": "在 GitHub 上查看",
+    "zh-Hans": "在 GitHub 上查看",
+    "en": "View on GitHub",
+    "ja": "GitHub で見る"
+  },
+  "update.notes": {
+    "zh-Hant": "更新內容",
+    "zh-Hans": "更新内容",
+    "en": "What's New",
+    "ja": "新機能"
+  },
+  "update.done": {
+    "zh-Hant": "已更新到 %@",
+    "zh-Hans": "已更新到 %@",
+    "en": "Updated to %@",
+    "ja": "%@ にアップデートしました"
+  },
+  "update.notification.body": {
+    "zh-Hant": "點一下即可更新。",
+    "zh-Hans": "点一下即可更新。",
+    "en": "Click to update.",
+    "ja": "クリックしてアップデート。"
   }
 }
