@@ -6,6 +6,8 @@ public enum SourceKind
     ClaudeCode,
     ClaudeDesktop,
     DeepSeek,
+    OpenCode,
+    Gemini,
 }
 
 public enum AgentPhase
@@ -158,11 +160,15 @@ public abstract record SpeedEvent
 /// <param name="CodexRoot">Null uses the default Codex sessions folder.</param>
 /// <param name="ClaudeRoot">Null uses the default Claude projects folder (shared by Claude Code and Claude Desktop).</param>
 /// <param name="DshRoot">Null uses the default DeepSeek Harness sessions folder.</param>
+/// <param name="OpenCodeRoot">Null uses the default OpenCode data folder (the one that contains opencode.db).</param>
+/// <param name="GeminiRoot">Null uses the default Gemini CLI home folder.</param>
 public sealed record MonitorConfiguration(
     IReadOnlySet<SourceKind> EnabledSources,
     string? CodexRoot = null,
     string? ClaudeRoot = null,
-    string? DshRoot = null)
+    string? DshRoot = null,
+    string? OpenCodeRoot = null,
+    string? GeminiRoot = null)
 {
     public static MonitorConfiguration Default { get; } =
         new(new HashSet<SourceKind>(Enum.GetValues<SourceKind>()));
@@ -172,8 +178,10 @@ public sealed record MonitorConfiguration(
         && EnabledSources.SetEquals(other.EnabledSources)
         && CodexRoot == other.CodexRoot
         && ClaudeRoot == other.ClaudeRoot
-        && DshRoot == other.DshRoot;
+        && DshRoot == other.DshRoot
+        && OpenCodeRoot == other.OpenCodeRoot
+        && GeminiRoot == other.GeminiRoot;
 
     public override int GetHashCode() =>
-        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot);
+        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot);
 }

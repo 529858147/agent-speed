@@ -16,7 +16,11 @@ struct SnapshotContext: Sendable {
         let counts = session.sessionCounts(todayStartMs: todayStartMs)
         var sources: [SourceKind: SourceInfo] = [:]
         for kind in SourceKind.allCases {
-            let root = session.root(for: TranscriptFamily(kind))
+            guard let family = TranscriptFamily(kind) else {
+                sources[kind] = SourceInfo(enabled: session.enabledSources.contains(kind), rootPath: "", available: false, sessionCount: 0)
+                continue
+            }
+            let root = session.root(for: family)
             sources[kind] = SourceInfo(
                 enabled: session.enabledSources.contains(kind),
                 rootPath: root.path,

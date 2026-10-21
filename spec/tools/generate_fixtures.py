@@ -331,9 +331,82 @@ expect(rel, source="deepseek", project="quasar", model="deepseek-pro", isSubagen
        phase="generating", inFlightStartMs=at(4, 15, 10), lastLineMs=at(4, 15, 10), malformedLines=0,
        responses=[resp("dss-1", at(4, 11), at(4, 14), 4500, 4000, 0, 240, 0, "deepseek-pro")])
 
+
+# --- OpenCode: SQLite database -------------------------------------------------
+import sqlite3
+
+opencode_rel = "opencode/opencode.db"
+oc_path = os.path.join(ROOT, opencode_rel)
+os.makedirs(os.path.dirname(oc_path), exist_ok=True)
+if os.path.exists(oc_path):
+    os.remove(oc_path)
+oc = sqlite3.connect(oc_path)
+oc.executescript("""
+CREATE TABLE session_v2 (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL,
+  directory text NOT NULL, version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL);
+CREATE TABLE session_message (id text PRIMARY KEY, session_id text NOT NULL, type text NOT NULL, seq integer NOT NULL,
+  time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL);
+CREATE INDEX session_message_time_created_idx ON session_message (time_created);
+""")
+
+
+def oc_tokens(i, o, r, cr, cw):
+    return {"input": i, "output": o, "reasoning": r, "cache": {"read": cr, "write": cw}}
+
+
+def oc_row(rid, sid, kind, seq, created, updated, data):
+    oc.execute("INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
+               (rid, sid, kind, seq, created, updated, json.dumps(data, separators=(",", ":"))))
+
+
+oc.execute("INSERT INTO session_v2 VALUES (?,?,?,?,?,?,?,?)",
+           ("ses_main", "prj", None, "main", "/Users/dev/projects/nebula", "2.0.32", at(5, 0), at(5, 48)))
+oc.execute("INSERT INTO session_v2 VALUES (?,?,?,?,?,?,?,?)",
+           ("ses_sub", "prj", "ses_main", "sub", "/Users/dev/projects/nebula", "2.0.32", at(5, 20), at(5, 30)))
+opus = {"id": "claude-opus-5-5", "providerID": "anthropic"}
+sonnet = {"id": "claude-sonnet-5-5", "providerID": "anthropic"}
+oc_row("u1", "ses_main", "user", 1, at(5, 1), at(5, 1), {"text": "Plan it", "time": {"created": at(5, 1)}})
+oc_row("msg_oc1", "ses_main", "assistant", 2, at(5, 1, 10), at(5, 5, 20),
+       {"time": {"created": at(5, 1, 10), "streamed": at(5, 5, 10), "completed": at(5, 5, 20)}, "model": opus,
+        "finish": "tool-calls", "tokens": oc_tokens(4, 300, 100, 1000, 200), "content": [{"type": "tool"}]})
+oc_row("msg_oc2", "ses_main", "assistant", 3, at(5, 40), at(5, 42, 10),
+       {"time": {"created": at(5, 40), "streamed": at(5, 42), "completed": at(5, 42, 10)}, "model": opus,
+        "finish": "stop", "tokens": oc_tokens(2, 150, 0, 1200, 0), "content": [{"type": "text"}]})
+oc_row("cmp_1", "ses_main", "compaction", 4, at(5, 43), at(5, 47),
+       {"time": {"created": at(5, 43), "completed": at(5, 47)}, "model": {"id": "claude-haiku-5"},
+        "tokens": oc_tokens(5000, 800, 0, 0, 0), "status": "done"})
+oc_row("idle1", "ses_main", "idle", 5, at(5, 48), at(5, 48), {"outcome": "completed", "time": {"created": at(5, 48)}})
+oc_row("msg_copy", "ses_sub", "assistant", 1, at(5, 20), at(5, 20),
+       {"time": {"created": at(5, 1, 10), "streamed": at(5, 5, 10), "completed": at(5, 5, 20)}, "model": opus,
+        "finish": "tool-calls", "tokens": oc_tokens(4, 300, 100, 1000, 200)})
+oc_row("msg_oc3", "ses_sub", "assistant", 2, at(5, 21), at(5, 24, 5),
+       {"time": {"created": at(5, 21), "streamed": at(5, 24), "completed": at(5, 24, 5)}, "model": sonnet,
+        "finish": "tool-calls", "tokens": oc_tokens(3, 90, 30, 0, 500)})
+oc_row("msg_oc4", "ses_sub", "assistant", 3, at(5, 30), at(5, 30),
+       {"time": {"created": at(5, 30)}, "model": sonnet, "content": []})
+oc.commit()
+oc.close()
+opencode_expected = {
+    "opencode:ses_main": dict(source="opencode", project="nebula", model="claude-opus-5-5", isSubagent=False,
+                              parentId=None, phase="idle", inFlightStartMs=None, lastLineMs=at(5, 48),
+                              responses=[
+                                  resp("msg_oc1", at(5, 1, 10), at(5, 5, 10), 1204, 1000, 200, 400, 100,
+                                       "claude-opus-5-5"),
+                                  resp("msg_oc2", at(5, 40), at(5, 42), 1202, 1200, 0, 150, 0, "claude-opus-5-5"),
+                                  resp("cmp_1", at(5, 43), at(5, 47), 5000, 0, 0, 800, 0, "claude-haiku-5"),
+                              ]),
+    "opencode:ses_sub": dict(source="opencode", project="nebula", model="claude-sonnet-5-5", isSubagent=True,
+                             parentId="opencode:ses_main", phase="generating", inFlightStartMs=at(5, 30),
+                             lastLineMs=at(5, 30),
+                             responses=[resp("msg_oc3", at(5, 21), at(5, 24), 503, 0, 500, 120, 30,
+                                             "claude-sonnet-5-5")]),
+}
+
 with open(os.path.join(ROOT, "parser-expected.json"), "w", encoding="utf-8") as f:
-    json.dump({"_comment": "Process files in `order` with one shared dedupe set. Paths are relative to this folder.",
-               "order": order, "files": files}, f, indent=2, ensure_ascii=False)
+    json.dump({"_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are "
+                           "relative to this folder.",
+               "order": order, "files": files,
+               "opencode": {"database": opencode_rel, "agents": opencode_expected}}, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
 # --- Engine cases -------------------------------------------------------------

@@ -205,10 +205,10 @@
     "ja": "今日の履歴を読み込み中…"
   },
   "state.noSources": {
-    "zh-Hant": "找不到 Codex、Claude 或 DeepSeek 的紀錄資料夾",
-    "zh-Hans": "找不到 Codex、Claude 或 DeepSeek 的记录文件夹",
-    "en": "No Codex, Claude or DeepSeek history folder found",
-    "ja": "Codex、Claude、DeepSeek の履歴フォルダが見つかりません"
+    "zh-Hant": "找不到任何 AI 工具的紀錄資料夾",
+    "zh-Hans": "找不到任何 AI 工具的记录文件夹",
+    "en": "No AI tool history folder found",
+    "ja": "AI ツールの履歴フォルダが見つかりません"
   },
   "warning.partialHistory": {
     "zh-Hant": "部分歷史過大，已略過最早的內容",
@@ -845,5 +845,317 @@
     "zh-Hans": "显示全部 %d 个 agent",
     "en": "Show all %d agents",
     "ja": "%d 個の agent をすべて表示"
+  },
+  "source.opencode": {
+    "zh-Hant": "OpenCode",
+    "zh-Hans": "OpenCode",
+    "en": "OpenCode",
+    "ja": "OpenCode"
+  },
+  "source.gemini": {
+    "zh-Hant": "Gemini CLI",
+    "zh-Hans": "Gemini CLI",
+    "en": "Gemini CLI",
+    "ja": "Gemini CLI"
+  },
+  "settings.sources.opencodeHint": {
+    "zh-Hant": "OpenCode 命令列與桌面版共用這個資料庫，只會以唯讀方式讀取。",
+    "zh-Hans": "OpenCode 命令行与桌面版共用这个数据库，只会以只读方式读取。",
+    "en": "The OpenCode CLI and desktop app share this database; it is only ever read.",
+    "ja": "OpenCode の CLI とデスクトップ版はこのデータベースを共有します。読み取り専用で開きます。"
+  },
+  "settings.sources.geminiHint": {
+    "zh-Hant": "Gemini CLI 的對話紀錄資料夾。",
+    "zh-Hans": "Gemini CLI 的对话记录文件夹。",
+    "en": "The Gemini CLI conversation folder.",
+    "ja": "Gemini CLI の会話記録フォルダです。"
+  },
+  "warning.unsupportedFormat": {
+    "zh-Hant": "%@ 的紀錄格式太舊，請更新該工具",
+    "zh-Hans": "%@ 的记录格式太旧，请更新该工具",
+    "en": "%@ uses a log format that is too old; please update it",
+    "ja": "%@ の記録形式が古すぎます。ツールを更新してください"
+  },
+  "history.title": {
+    "zh-Hant": "用量歷史",
+    "zh-Hans": "用量历史",
+    "en": "Usage History",
+    "ja": "使用履歴"
+  },
+  "history.open": {
+    "zh-Hant": "用量歷史…",
+    "zh-Hans": "用量历史…",
+    "en": "Usage History…",
+    "ja": "使用履歴…"
+  },
+  "history.allSources": {
+    "zh-Hant": "全部來源",
+    "zh-Hans": "全部来源",
+    "en": "All Sources",
+    "ja": "すべてのソース"
+  },
+  "history.range.7d": {
+    "zh-Hant": "7 天",
+    "zh-Hans": "7 天",
+    "en": "7 days",
+    "ja": "7 日"
+  },
+  "history.range.30d": {
+    "zh-Hant": "30 天",
+    "zh-Hans": "30 天",
+    "en": "30 days",
+    "ja": "30 日"
+  },
+  "history.range.90d": {
+    "zh-Hant": "90 天",
+    "zh-Hans": "90 天",
+    "en": "90 days",
+    "ja": "90 日"
+  },
+  "history.range.year": {
+    "zh-Hant": "今年",
+    "zh-Hans": "今年",
+    "en": "This year",
+    "ja": "今年"
+  },
+  "history.range.all": {
+    "zh-Hant": "全部",
+    "zh-Hans": "全部",
+    "en": "All",
+    "ja": "すべて"
+  },
+  "history.range.custom": {
+    "zh-Hant": "自訂…",
+    "zh-Hans": "自定义…",
+    "en": "Custom…",
+    "ja": "カスタム…"
+  },
+  "history.range.from": {
+    "zh-Hant": "從",
+    "zh-Hans": "从",
+    "en": "From",
+    "ja": "開始"
+  },
+  "history.range.to": {
+    "zh-Hant": "到",
+    "zh-Hans": "到",
+    "en": "To",
+    "ja": "終了"
+  },
+  "history.range.apply": {
+    "zh-Hant": "套用",
+    "zh-Hans": "应用",
+    "en": "Apply",
+    "ja": "適用"
+  },
+  "history.summary.output": {
+    "zh-Hant": "輸出 token",
+    "zh-Hans": "输出 token",
+    "en": "Output tokens",
+    "ja": "出力トークン"
+  },
+  "history.summary.input": {
+    "zh-Hant": "輸入 token（含快取）",
+    "zh-Hans": "输入 token（含缓存）",
+    "en": "Input tokens (incl. cache)",
+    "ja": "入力トークン（キャッシュ含む）"
+  },
+  "history.summary.requests": {
+    "zh-Hant": "請求",
+    "zh-Hans": "请求",
+    "en": "Requests",
+    "ja": "リクエスト"
+  },
+  "history.summary.speed": {
+    "zh-Hant": "平均速度",
+    "zh-Hans": "平均速度",
+    "en": "Average speed",
+    "ja": "平均速度"
+  },
+  "history.summary.activeDays": {
+    "zh-Hant": "活躍 %d 天",
+    "zh-Hans": "活跃 %d 天",
+    "en": "Active on %d days",
+    "ja": "%d 日間アクティブ"
+  },
+  "history.summary.bestDay": {
+    "zh-Hant": "單日最高 %@",
+    "zh-Hans": "单日最高 %@",
+    "en": "Busiest day %@",
+    "ja": "最多の日 %@"
+  },
+  "history.summary.vsPrevious": {
+    "zh-Hant": "比前一段期間 %@",
+    "zh-Hans": "比上一段期间 %@",
+    "en": "%@ vs previous period",
+    "ja": "前の期間比 %@"
+  },
+  "history.chart.output": {
+    "zh-Hant": "每日輸出",
+    "zh-Hans": "每日输出",
+    "en": "Daily output",
+    "ja": "日別の出力"
+  },
+  "history.chart.speed": {
+    "zh-Hant": "平均速度",
+    "zh-Hans": "平均速度",
+    "en": "Average speed",
+    "ja": "平均速度"
+  },
+  "history.table.date": {
+    "zh-Hant": "日期",
+    "zh-Hans": "日期",
+    "en": "Date",
+    "ja": "日付"
+  },
+  "history.table.requests": {
+    "zh-Hant": "請求",
+    "zh-Hans": "请求",
+    "en": "Requests",
+    "ja": "リクエスト"
+  },
+  "history.table.output": {
+    "zh-Hant": "輸出",
+    "zh-Hans": "输出",
+    "en": "Output",
+    "ja": "出力"
+  },
+  "history.table.input": {
+    "zh-Hant": "輸入（含快取）",
+    "zh-Hans": "输入（含缓存）",
+    "en": "Input (incl. cache)",
+    "ja": "入力（キャッシュ含む）"
+  },
+  "history.table.cacheHit": {
+    "zh-Hant": "快取命中",
+    "zh-Hans": "缓存命中",
+    "en": "Cache hit",
+    "ja": "キャッシュヒット"
+  },
+  "history.table.speed": {
+    "zh-Hant": "平均速度",
+    "zh-Hans": "平均速度",
+    "en": "Avg speed",
+    "ja": "平均速度"
+  },
+  "history.table.peak": {
+    "zh-Hant": "峰值",
+    "zh-Hans": "峰值",
+    "en": "Peak",
+    "ja": "ピーク"
+  },
+  "history.table.agents": {
+    "zh-Hant": "Agent",
+    "zh-Hans": "Agent",
+    "en": "Agents",
+    "ja": "Agent"
+  },
+  "history.table.models": {
+    "zh-Hant": "主要模型",
+    "zh-Hans": "主要模型",
+    "en": "Top models",
+    "ja": "主なモデル"
+  },
+  "history.today": {
+    "zh-Hant": "今天",
+    "zh-Hans": "今天",
+    "en": "Today",
+    "ja": "今日"
+  },
+  "history.yesterday": {
+    "zh-Hant": "昨天",
+    "zh-Hans": "昨天",
+    "en": "Yesterday",
+    "ja": "昨日"
+  },
+  "history.inProgress": {
+    "zh-Hant": "進行中",
+    "zh-Hans": "进行中",
+    "en": "In progress",
+    "ja": "進行中"
+  },
+  "history.analyzing": {
+    "zh-Hant": "正在分析歷史紀錄… %d%%",
+    "zh-Hans": "正在分析历史记录… %d%%",
+    "en": "Analyzing history… %d%%",
+    "ja": "履歴を分析中… %d%%"
+  },
+  "history.analyzingFiles": {
+    "zh-Hant": "%d / %d 個檔案",
+    "zh-Hans": "%d / %d 个文件",
+    "en": "%d of %d files",
+    "ja": "%d / %d ファイル"
+  },
+  "history.updated": {
+    "zh-Hant": "更新於 %@",
+    "zh-Hans": "更新于 %@",
+    "en": "Updated %@",
+    "ja": "%@ に更新"
+  },
+  "history.empty": {
+    "zh-Hant": "這段期間沒有用量",
+    "zh-Hans": "这段期间没有用量",
+    "en": "No usage in this period",
+    "ja": "この期間の使用はありません"
+  },
+  "history.empty.hint": {
+    "zh-Hant": "試試擴大日期範圍，或切換到其他來源。",
+    "zh-Hans": "试试扩大日期范围，或切换到其他来源。",
+    "en": "Try a wider date range or another source.",
+    "ja": "期間を広げるか、別のソースを選んでください。"
+  },
+  "history.export": {
+    "zh-Hant": "匯出 CSV…",
+    "zh-Hans": "导出 CSV…",
+    "en": "Export CSV…",
+    "ja": "CSV を書き出す…"
+  },
+  "history.privacy": {
+    "zh-Hant": "只保存每日彙總數字，不含任何請求或對話內容。",
+    "zh-Hans": "只保存每日汇总数字，不含任何请求或对话内容。",
+    "en": "Only daily totals are kept — never requests or conversation content.",
+    "ja": "保存するのは日別の集計だけで、リクエストや会話の内容は含みません。"
+  },
+  "history.clear": {
+    "zh-Hant": "清除歷史統計…",
+    "zh-Hans": "清除历史统计…",
+    "en": "Clear History…",
+    "ja": "履歴をクリア…"
+  },
+  "history.clear.confirm": {
+    "zh-Hant": "要清除所有歷史統計嗎？之後會依現有日誌重新計算，工具已刪除的舊日誌將無法恢復。",
+    "zh-Hans": "要清除所有历史统计吗？之后会按现有日志重新计算，工具已删除的旧日志将无法恢复。",
+    "en": "Clear all history? It will be recomputed from the logs that still exist; days whose logs were deleted cannot be recovered.",
+    "ja": "すべての履歴をクリアしますか？残っているログから再計算され、削除済みのログの日は復元できません。"
+  },
+  "history.clear.action": {
+    "zh-Hant": "清除",
+    "zh-Hans": "清除",
+    "en": "Clear",
+    "ja": "クリア"
+  },
+  "history.cancel": {
+    "zh-Hant": "取消",
+    "zh-Hans": "取消",
+    "en": "Cancel",
+    "ja": "キャンセル"
+  },
+  "history.noSpeed": {
+    "zh-Hant": "無實測",
+    "zh-Hans": "无实测",
+    "en": "No measurement",
+    "ja": "実測なし"
+  },
+  "history.unfinalized": {
+    "zh-Hant": "含 %d 筆未定案用量",
+    "zh-Hans": "含 %d 条未定案用量",
+    "en": "%d responses without final usage",
+    "ja": "最終使用量のない応答 %d 件"
+  },
+  "history.weekdayDate": {
+    "zh-Hant": "%@（%@）",
+    "zh-Hans": "%@（%@）",
+    "en": "%@, %@",
+    "ja": "%@（%@）"
   }
 }

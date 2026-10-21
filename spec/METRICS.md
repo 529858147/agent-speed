@@ -8,7 +8,7 @@ shared fixtures in `spec/fixtures/`.
 
 | Term | Meaning |
 | --- | --- |
-| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`) |
+| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`), `opencode`, `gemini` (Gemini CLI) |
 | Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. |
 | Response | One model API call that produced a usage record. |
 | Phase | `generating` (a request is in flight), `tools` (model finished, waiting for tool results), `idle` |
@@ -20,6 +20,8 @@ shared fixtures in `spec/fixtures/`.
 | Codex | `$CODEX_HOME/sessions`, else `~/.codex/sessions` | user setting |
 | Claude Code + Claude Desktop | `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects` | user setting |
 | DeepSeek Harness (`dsh`, desktop app and CLI) | `$DSH_HOME/sessions`, else `~/.dsh/sessions` | user setting |
+| OpenCode (CLI and desktop app) | `$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/opencode/opencode.db` (same form on Windows under `%USERPROFILE%`) | user setting (folder that contains `opencode.db`) |
+| Gemini CLI | see section 4.6 | user setting |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
@@ -194,18 +196,31 @@ statistics: the sum of `step/start → assistant/message` intervals equals dsh's
 A response is identified by its key. The first emission is a *completion* (used for live events, 6.4). Later
 emissions with the same key in the same file are *updates*: the engine replaces the stored response.
 
-## 5. Reading files
+### 4.5 OpenCode
 
-### 5.1 zstd frame streams (DeepSeek Harness)
-`.zstd` files are read frame by frame: from the current offset, determine the compressed size of the next frame
-(zstd `findFrameCompressedSize`); if the frame is not complete yet, stop and wait for more bytes. Decode each complete
-frame (at most 64 MiB of output per frame, else the frame counts as malformed and is skipped), feed the decoded bytes
-to the line reader, and advance the offset past the frame. A frame that fails to decode is skipped and counted as one
-malformed line. Skippable frames are skipped. When the bytes at the offset are not a frame at all (unknown magic or
-an invalid block header), count one malformed line and resynchronize at the next zstd frame or skippable-frame magic
-after the offset; if none is present yet, keep the offset and retry when the file grows. Files that start at their end (older files) start at the current size;
-files over 256 MiB are not seeded at all (they start at their end with the `partialHistory` warning), because a frame
-stream cannot be entered in the middle.
+OpenCode (2.x) stores everything in one SQLite database in WAL mode. It is opened read-only (never written, no
+`immutable` flag), with a busy timeout of 2 s, and every read is a short transaction so OpenCode's checkpoints are
+never blocked. A database without the tables `session_v2` and `session_message` is reported as unsupported (warning
+`unsupportedFormat`) and contributes nothing.
+
+Agents: one per session row. Agent id `opencode:<session_v2.id>`; `project` = basename of `session_v2.directory`;
+`isSubagent = session_v2.parent_id IS NOT NULL`; parent link `opencode:<parent_id>` when that session is tracked;
+`model` = the latest assistant `data.model.id`; `lastLineMs` = the latest `session_message.time_updated` of the
+session.
+
+Rows of `session_message` are processed per session in `seq` order; `data` is JSON:
+
+| `type` | Action |
+| --- | --- |
+| `assistant` | Fork copies are ignored: skip rows whose `data.time.created < session_v2.time_created - 2000`. If `data.time.streamed` is absent the request is in flight: phase `generating`, `inFlightStartMs = data.time.created`, no response yet. Otherwise emit a response (key = row `id`) when `data.tokens` is an object: `startMs = data.time.created`, `endMs = data.time.streamed` (the stream end; tool execution between `streamed` and `completed` is not generation), `final = true`, `model = data.model.id`, tokens `input = tokens.input + tokens.cache.read + tokens.cache.write`, `cachedInput = tokens.cache.read`, `cacheWriteInput = tokens.cache.write`, `output = tokens.output + tokens.reasoning` (OpenCode reports reasoning separately), `reasoning = tokens.reasoning`. Phase afterwards: `tools` when `data.finish == "tool-calls"`, else `idle`. A later update of the same row replaces the response (4.4). |
+| `compaction` | When `data.tokens` is an object: a response with the same token mapping, `startMs = data.time.created ?? null`, `endMs = data.time.completed ?? time_updated`, `model = data.model.id`. No phase change. |
+| `idle` | phase `idle` |
+| anything else | no change |
+
+Verified on real data: per-session sums of these responses equal OpenCode's own `session_v2.tokens_*` totals except
+for small background calls (titles) that OpenCode never stores as messages.
+
+## 5. Reading files
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
   ties broken by ordinal path comparison. Each file is read to its end before the next one starts.
@@ -223,6 +238,23 @@ stream cannot be entered in the middle.
 
 Responses produced while reading the startup backlog are *seeded*: they count toward totals, peaks and agent speed
 history but never produce live events.
+
+### 5.1 zstd frame streams (DeepSeek Harness)
+`.zstd` files are read frame by frame: from the current offset, determine the compressed size of the next frame
+(zstd `findFrameCompressedSize`); if the frame is not complete yet, stop and wait for more bytes. Decode each complete
+frame (at most 64 MiB of output per frame, else the frame counts as malformed and is skipped), feed the decoded bytes
+to the line reader, and advance the offset past the frame. A frame that fails to decode is skipped and counted as one
+malformed line. Skippable frames are skipped. When the bytes at the offset are not a frame at all (unknown magic or
+an invalid block header), count one malformed line and resynchronize at the next zstd frame or skippable-frame magic
+after the offset; if none is present yet, keep the offset and retry when the file grows. Files that start at their
+end (older files) start at the current size; files over 256 MiB are not seeded at all (they start at their end with the `partialHistory` warning), because a frame
+stream cannot be entered in the middle.
+
+### 5.2 SQLite sources (OpenCode)
+Change detection watches `opencode.db` and `opencode.db-wal` (file watcher plus the 1 s fallback). On a change, read
+new rows with `time_created > cursor` (indexed) plus the current versions of rows that are still in flight or were
+updated recently (`id IN (...)`), and sessions whose `time_updated` advanced. Startup reads sessions with
+`time_updated >= todayStartMs - 15 min` completely. The source counts as one "file" for discovery statistics.
 
 ## 6. Engine
 
@@ -320,3 +352,26 @@ group or shows a child without its parent.
 | else | `1.28M` |
 
 Token counts in summaries use the same compact form (`1.2M`, `384k`).
+## 8. Daily history
+
+Daily statistics are computed from the complete logs and kept permanently, so they survive tools deleting their own
+logs (Claude Code removes transcripts after 30 days by default). Only aggregates are stored — never requests, keys in
+plain text, prompts or content.
+
+Scope: every discovered file of every enabled source with no date filter, plus Codex `archived_sessions` (the sibling
+of the sessions root) and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
+machines, dedupe, copied-history rules) over whole files, in startup order (5).
+
+Per local calendar day (date of `endMs`, `YYYY-MM-DD` in the computer's time zone at computation time) and source:
+`requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning`, `measuredOutput` and `measuredMs`
+(sum of output and widened duration of measured responses, 3.3), `unfinalized` (count), `agents` (distinct agent ids
+with at least one response), and per model `requests` and `output`. The day's average speed is
+`measuredOutput / (measuredMs / 1000)`; `peak` is stored only for days observed live (the day's `peakToday`).
+
+Incremental cache: for each file keep its identity (path, size, modification time), the 64-bit FNV-1a hashes of the
+response keys it owns, and its per-day contributions. On launch and periodically (every 10 minutes and at midnight),
+unchanged files reuse their contributions; new or changed files are re-parsed completely, skipping keys owned by any
+other file (ownership follows startup order); files that no longer exist keep their contributions. Daily totals are
+the sums over files. The history store is versioned: a parser change bumps the version and triggers a full
+recomputation that keeps previously stored days for which no logs exist any more. "Clear history" (settings) deletes
+the store and recomputes from the current logs.

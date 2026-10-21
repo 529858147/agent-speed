@@ -5,6 +5,8 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case claudeCode
     case claudeDesktop
     case deepseek
+    case opencode
+    case gemini
 
     public var id: String { rawValue }
 }
@@ -284,16 +286,24 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var claudeRoot: URL?
     /// Nil uses the default DeepSeek Harness sessions folder.
     public var dshRoot: URL?
+    /// Nil uses the default OpenCode data folder (the one that contains `opencode.db`).
+    public var opencodeRoot: URL?
+    /// Nil uses the default Gemini CLI home folder.
+    public var geminiRoot: URL?
 
     public init(
         enabledSources: Set<SourceKind> = Set(SourceKind.allCases),
         codexRoot: URL? = nil,
         claudeRoot: URL? = nil,
-        dshRoot: URL? = nil
+        dshRoot: URL? = nil,
+        opencodeRoot: URL? = nil,
+        geminiRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
         self.claudeRoot = claudeRoot
         self.dshRoot = dshRoot
+        self.opencodeRoot = opencodeRoot
+        self.geminiRoot = geminiRoot
     }
 }

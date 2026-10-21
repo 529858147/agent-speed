@@ -7,6 +7,7 @@
 The dump format matches the `--dump-today` output of both platform probes. Conversation content is never printed.
 """
 import argparse
+import sqlite3
 import subprocess
 import json
 import os
@@ -487,6 +488,76 @@ def dsh_header(state, header):
         isinstance(depth, (int, float)) and not isinstance(depth, bool) and depth > 0)
 
 
+def opencode_states(db_path, dedupe):
+    """Parses an OpenCode database (METRICS 4.5); returns one state per session, keyed like agent ids."""
+    db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
+    try:
+        tables = {r[0] for r in db.execute("select name from sqlite_master where type='table'")}
+        if not {"session_v2", "session_message"} <= tables:
+            return []
+        sessions = {r[0]: r for r in db.execute(
+            "select id, parent_id, directory, time_created from session_v2")}
+        states = {}
+        for sid, parent, directory, created in sessions.values():
+            st = FileState("opencode:" + sid, "opencode")
+            st.project = basename(directory)
+            st.is_subagent = parent is not None
+            st.parent_session = ("opencode:" + parent) if parent in sessions else None
+            st.file_created = created
+            states[sid] = st
+        rows = db.execute("select id, session_id, type, time_updated, data from session_message "
+                          "order by session_id, seq")
+        for rid, sid, kind, updated, data in rows:
+            st = states.get(sid)
+            if st is None:
+                continue
+            try:
+                d = json.loads(data)
+            except ValueError:
+                st.malformed += 1
+                continue
+            if not isinstance(d, dict):
+                st.malformed += 1
+                continue
+            times = d.get("time") if isinstance(d.get("time"), dict) else {}
+            if kind == "assistant":
+                created = times.get("created")
+                if isinstance(created, (int, float)) and created < st.file_created - 2000:
+                    continue
+                st.last_line = updated if st.last_line is None else max(st.last_line, updated)
+                model = (d.get("model") or {}).get("id") if isinstance(d.get("model"), dict) else None
+                st.model = model or st.model
+                if "streamed" not in times:
+                    st.phase, st.in_flight = "generating", created
+                    continue
+                tokens = d.get("tokens")
+                if isinstance(tokens, dict) and dedupe.owner(rid) in (None, st.path):
+                    dedupe.claim(rid, st.path)
+                    emit(st, rid, created, times["streamed"], opencode_tokens(tokens), model)
+                st.phase = "tools" if d.get("finish") == "tool-calls" else "idle"
+                st.in_flight = None
+            else:
+                st.last_line = updated if st.last_line is None else max(st.last_line, updated)
+                if kind == "compaction" and isinstance(d.get("tokens"), dict):
+                    if dedupe.owner(rid) in (None, st.path):
+                        dedupe.claim(rid, st.path)
+                        model = (d.get("model") or {}).get("id") if isinstance(d.get("model"), dict) else None
+                        emit(st, rid, times.get("created"), times.get("completed", updated),
+                             opencode_tokens(d["tokens"]), model)
+                elif kind == "idle":
+                    st.phase, st.in_flight = "idle", None
+        return list(states.values())
+    finally:
+        db.close()
+
+
+def opencode_tokens(t):
+    cache = t.get("cache") if isinstance(t.get("cache"), dict) else {}
+    cr, cw, r = num(cache.get("read")), num(cache.get("write")), num(t.get("reasoning"))
+    return dict(input=num(t.get("input")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
+                output=num(t.get("output")) + r, reasoning=r)
+
+
 # ----------------------------------------------------------------------------- engine
 
 def interval(resp):
@@ -661,12 +732,33 @@ def check_fixtures():
         for k, v in exp.items():
             if k != "parentFile" and got[k] != v:
                 failures.append("%s: %s expected %r got %r" % (rel, k, v, got[k]))
+    oc = expected.get("opencode")
+    if oc:
+        for st in opencode_states(os.path.join(root, oc["database"]), dedupe):
+            exp = oc["agents"].get(st.path)
+            if exp is None:
+                failures.append("opencode: unexpected agent %s" % st.path)
+                continue
+            got = dict(source=st.source, project=st.project, model=st.model, isSubagent=st.is_subagent,
+                       parentId=st.parent_session, phase=st.phase, inFlightStartMs=st.in_flight,
+                       lastLineMs=st.last_line, responses=list(st.responses.values()))
+            for k, v in exp.items():
+                if got[k] != v:
+                    failures.append("%s: %s expected %r got %r" % (st.path, k, v, got[k]))
     parents = resolve_parents(states)
     for rel in expected["order"]:
         parent = parents[os.path.join(root, rel)]
         got = os.path.relpath(parent, root) if parent else None
         if got != expected["files"][rel]["parentFile"]:
             failures.append("%s: parentFile expected %r got %r" % (rel, expected["files"][rel]["parentFile"], got))
+    hist_path = os.path.join(root, "history-expected.json")
+    if os.path.exists(hist_path):
+        got = daily_history(collect_all(os.path.join(root, "codex", "sessions"), os.path.join(root, "claude", "projects"),
+                                        os.path.join(root, "dsh", "sessions"), os.path.join(root, "opencode", "opencode.db")),
+                            tz=timezone.utc)
+        want = json.load(open(hist_path, encoding="utf-8"))["days"]
+        if json.loads(json.dumps(got)) != want:
+            failures.append("history: expected %s got %s" % (json.dumps(want)[:300], json.dumps(got)[:300]))
     cases = json.load(open(os.path.join(root, "engine-cases.json"), encoding="utf-8"))["cases"]
     for case in cases:
         for q in case["queries"]:
@@ -757,10 +849,65 @@ def dump_today(codex_root, claude_root, dsh_root):
                                   "bytesRead": read_bytes, "seedMs": int((time.time() - started) * 1000)}}))
 
 
+def collect_all(codex_root, claude_root, dsh_root, opencode_db, include_archived=True):
+    """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
+    files = [(p, "codex") for p in discover(codex_root)]
+    if include_archived:
+        archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
+        files += [(p, "codex") for p in discover(archived, limit=10 ** 9)]
+    files += [(p, "claudeCode") for p in discover(claude_root, limit=10 ** 9)]
+    files += [(p, "deepseek") for p in discover(dsh_root, limit=10 ** 9, deepseek=True)]
+    files = sorted({(os.path.getmtime(p), p, s) for p, s in files}, key=lambda t: (t[0], t[1]))
+    dedupe = Deduper(limit=10 ** 9)
+    out = []
+    for _, path, source in files:
+        state = FileState(path, source)
+        process_file(state, dedupe)
+        out += [(state.source, path, r) for r in state.responses.values()]
+    if opencode_db and os.path.exists(opencode_db):
+        for st in opencode_states(opencode_db, dedupe):
+            out += [(st.source, st.path, r) for r in st.responses.values()]
+    return out
+
+
+def daily_history(responses, tz=None):
+    days = {}
+    for source, agent, r in responses:
+        date = datetime.fromtimestamp(r["endMs"] / 1000, tz=tz or datetime.now().astimezone().tzinfo)
+        key = (date.strftime("%Y-%m-%d") if tz else datetime.fromtimestamp(r["endMs"] / 1000).strftime("%Y-%m-%d"),
+               source)
+        d = days.setdefault(key, dict(requests=0, input=0, cachedInput=0, cacheWriteInput=0, output=0, reasoning=0,
+                                      measuredOutput=0, measuredMs=0, unfinalized=0, agents=set(), models={}))
+        d["requests"] += 1
+        for f in TOKEN_FIELDS:
+            d[f] += r[f]
+        iv = interval(r)
+        if iv is not None and is_final(r):
+            d["measuredOutput"] += r["output"]
+            d["measuredMs"] += iv[1] - iv[0]
+        if not is_final(r):
+            d["unfinalized"] += 1
+        d["agents"].add(agent)
+        m = d["models"].setdefault(r.get("model") or "", [0, 0])
+        m[0] += 1
+        m[1] += r["output"]
+    rows = []
+    for (date, source), d in sorted(days.items()):
+        rows.append(OrderedDict([("date", date), ("source", source)] + [(k, d[k]) for k in (
+            "requests", "input", "cachedInput", "cacheWriteInput", "output", "reasoning", "measuredOutput",
+            "measuredMs", "unfinalized")] + [("agents", len(d["agents"])),
+                                             ("models", {k: {"requests": v[0], "output": v[1]}
+                                                         for k, v in sorted(d["models"].items())})]))
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-fixtures", action="store_true")
     parser.add_argument("--dump-today", action="store_true")
+    parser.add_argument("--dump-history", action="store_true")
+    parser.add_argument("--opencode", default=None)
+    parser.add_argument("--utc", action="store_true", help="group days in UTC instead of local time")
     parser.add_argument("--codex", default=None)
     parser.add_argument("--claude", default=None)
     parser.add_argument("--dsh", default=None)
@@ -772,6 +919,14 @@ def main():
                                   if os.environ.get("CLAUDE_CONFIG_DIR") else os.path.join(home, ".claude", "projects"))
     dsh_root = args.dsh or (os.path.join(os.environ["DSH_HOME"], "sessions") if os.environ.get("DSH_HOME")
                             else os.path.join(home, ".dsh", "sessions"))
+    opencode_db = args.opencode or os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
+                                                "opencode", "opencode.db")
+    if args.dump_history:
+        rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db),
+                             tz=timezone.utc if args.utc else None)
+        for row in rows:
+            print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+        return
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:

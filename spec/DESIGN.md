@@ -59,6 +59,8 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | Claude Code | `#FF8A65` coral |
 | Claude Desktop | `#B39DFF` lilac |
 | DeepSeek | `#4D6BFE` DeepSeek blue |
+| OpenCode | `#F4B13E` amber |
+| Gemini CLI | `#34B8F0` sky |
 
 ## 2. The orb (floating window)
 
@@ -181,7 +183,8 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
    drawn with 45 % opacity and a dashed top line at the right edge. A dashed horizontal line marks today's peak with a
    small label. Hover/drag shows a crosshair with time and value.
 3. **Sources** — one row per detected source: colored dot, name, live tok/s (right), today's output tokens
-   (secondary). Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
+   (secondary). Each row is a button that opens the Usage History window (section 4b) pre-filtered to that source:
+   on hover the row gets a subtle highlight and a trailing chevron fades in; keyboard focusable; a11y hint "顯示用量歷史". Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
    Sources still lists every source with its status); a source that is detected but disabled is dimmed.
 4. **Agents** — up to 6 rows sorted by section 6.7 of METRICS: project (semibold), source + model (secondary,
    truncated), phase badge (generating: animated three-dot shimmer in the source color; tools: wrench glyph;
@@ -193,13 +196,54 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
    inside a fixed-height region (12 rows tall) so the panel never outgrows the screen. The hidden count counts agents,
    not groups. The expanded/collapsed
    choice is remembered.
-5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time.
+5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time. The section header
+   carries a small "歷史" text button (clock glyph) that opens the Usage History window for all sources.
 6. **Footer** — floating orb toggle, metric info button (ⓘ explaining the measurement in one paragraph), settings,
    quit.
 
 Metric explanation text (localized):
 > 速度＝輸出 token ÷ 實際生成時間（從送出請求到完成，含等待第一個字）。多個 agent 會加總。進行中的回應先以該 agent
 > 近期的實測速度估算，回應完成後立即以實測值校正。資料只來自本機紀錄。
+
+## 4b. Usage History window
+
+A native, resizable window (default 920 × 680, minimum 720 × 540, frame remembered; macOS: SwiftUI in an `NSWindow`
+with a unified toolbar and the system window material; Windows: Fluent window with Mica). Title `history.title`.
+Opened from a source row (pre-selected source), the Today header's 歷史 button (all sources), the quick menu
+(`history.open`), and Settings → Data Sources. Only one instance; reopening focuses it and applies the new filter.
+
+Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
+
+1. **Toolbar** — leading: source picker (`history.allSources` plus every source with its color dot; sources without
+   any history are hidden). Center: range segmented control `7 天 · 30 天 · 90 天 · 今年 · 全部 · 自訂…`; 自訂 opens a
+   compact popover with two date pickers (`從` / `到`, clamped to the available data, the end never before the start)
+   and `套用`. The resolved range is always spelled out under the title in the locale's date format (e.g.
+   "2026/9/22 – 10/21 · 30 天"). Trailing: `匯出 CSV…` (the rows currently shown, locale-independent columns).
+2. **Summary** — four cards in a row (two rows when narrow): 輸出 token, 輸入 token（含快取）, 請求, 平均速度 (Σ measured
+   output ÷ Σ measured time over the range, never an average of daily averages). Each card: large tabular value,
+   a secondary line (活躍 N 天 / 單日最高 date / 比前一段期間 +12%, colored green/red only for the delta), and a tiny
+   sparkline of the range. Values use the compact formatter (METRICS 7) with full numbers in the tooltip.
+3. **Chart** (height ≈ 260) — one bar per day of output tokens; with 全部來源 the bars stack by source in source
+   colors (largest at the bottom), otherwise a single bar in the source color with a soft vertical gradient. An
+   average-speed line on a secondary axis (right) in the label color with small dots on days with measurements,
+   breaks (no line) on days without measurements. Today's bar is drawn hatched/lighter and labelled 進行中. Weekend
+   bars are not special-cased; month boundaries get a faint vertical rule and a month label. Hover (or keyboard
+   arrows) shows a crosshair and a tooltip card: date with weekday, output, input (incl. cache), requests, average
+   speed, peak (if recorded) and the top 3 models with share bars. Clicking a bar scrolls the table to that day and
+   highlights it for 1.2 s. Transitions between ranges/sources animate bar heights with a spring (≤ 0.45 s);
+   Reduce Motion → crossfade.
+4. **Daily table** — newest first; columns: 日期 (date + weekday; 今天 / 昨天 for the latest two), 請求, 輸出, 輸入（含快取）,
+   快取命中 (cachedInput ÷ input, percentage), 平均速度 (tok/s, `history.noSpeed` when none), 峰值 (if recorded),
+   Agent, 主要模型 (up to 2 model names, rest as "+n"). Sortable headers, tabular digits, right-aligned numbers,
+   alternating subtle row tint, hover highlight linked with the chart, keyboard navigation, copy row as text.
+   Days without data inside the range are not listed (the chart shows the gap).
+5. **Footer** (secondary text) — left: analysis state: `history.analyzing` with a thin progress bar and
+   `history.analyzingFiles` while the background analysis runs (the window is usable and updates live as days come
+   in), otherwise `history.updated`; right: `history.privacy`.
+
+Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
+the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
+spinner. All numbers and dates follow the selected language; weeks start per locale.
 
 ## 5. Settings
 
@@ -214,7 +258,7 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 - **特效 Effects** — Intensity (Off / Soft / Standard / Max), Celebrate new peaks, Response pulses,
   **Preview effects** button: runs the demo driver for 20 s sweeping through every tier.
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
-  Change…, Reset.
+  Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
   conversation content is never stored or displayed.
 

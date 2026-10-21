@@ -1,5 +1,5 @@
 {
-  "_comment": "Process files in `order` with one shared dedupe set. Paths are relative to this folder.",
+  "_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are relative to this folder.",
   "order": [
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl",
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl",
@@ -282,6 +282,83 @@
           "final": true
         }
       ]
+    }
+  },
+  "opencode": {
+    "database": "opencode/opencode.db",
+    "agents": {
+      "opencode:ses_main": {
+        "source": "opencode",
+        "project": "nebula",
+        "model": "claude-opus-5-5",
+        "isSubagent": false,
+        "parentId": null,
+        "phase": "idle",
+        "inFlightStartMs": null,
+        "lastLineMs": 1792490748000,
+        "responses": [
+          {
+            "key": "msg_oc1",
+            "startMs": 1792490701010,
+            "endMs": 1792490705010,
+            "input": 1204,
+            "cachedInput": 1000,
+            "cacheWriteInput": 200,
+            "output": 400,
+            "reasoning": 100,
+            "model": "claude-opus-5-5",
+            "final": true
+          },
+          {
+            "key": "msg_oc2",
+            "startMs": 1792490740000,
+            "endMs": 1792490742000,
+            "input": 1202,
+            "cachedInput": 1200,
+            "cacheWriteInput": 0,
+            "output": 150,
+            "reasoning": 0,
+            "model": "claude-opus-5-5",
+            "final": true
+          },
+          {
+            "key": "cmp_1",
+            "startMs": 1792490743000,
+            "endMs": 1792490747000,
+            "input": 5000,
+            "cachedInput": 0,
+            "cacheWriteInput": 0,
+            "output": 800,
+            "reasoning": 0,
+            "model": "claude-haiku-5",
+            "final": true
+          }
+        ]
+      },
+      "opencode:ses_sub": {
+        "source": "opencode",
+        "project": "nebula",
+        "model": "claude-sonnet-5-5",
+        "isSubagent": true,
+        "parentId": "opencode:ses_main",
+        "phase": "generating",
+        "inFlightStartMs": 1792490730000,
+        "lastLineMs": 1792490730000,
+        "responses": [
+          {
+            "key": "msg_oc3",
+            "startMs": 1792490721000,
+            "endMs": 1792490724000,
+            "input": 503,
+            "cachedInput": 0,
+            "cacheWriteInput": 500,
+            "output": 120,
+            "reasoning": 30,
+            "model": "claude-sonnet-5-5",
+            "final": true
+          }
+        ]
+      }
     }
   }
 }

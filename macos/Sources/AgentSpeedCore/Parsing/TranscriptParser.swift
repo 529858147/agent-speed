@@ -7,11 +7,13 @@ enum TranscriptFamily: Sendable {
     /// DeepSeek Harness (dsh).
     case dsh
 
-    init(_ source: SourceKind) {
+    /// Nil for sources that are not read from transcript files.
+    init?(_ source: SourceKind) {
         switch source {
         case .codex: self = .codex
         case .claudeCode, .claudeDesktop: self = .claude
         case .deepseek: self = .dsh
+        case .opencode, .gemini: return nil
         }
     }
 
