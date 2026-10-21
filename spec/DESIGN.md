@@ -26,7 +26,10 @@ selected metric.
 - Overdrive `o = clamp((v - R) / R, 0, 1)` — extra intensity beyond the redline.
 - Both are smoothed with a critically damped spring (settle ≈ 0.6 s) before driving visuals.
 
-### Tiers (hysteresis: a tier is entered at its threshold and left at 90 % of it; a tier must hold 0.8 s to be shown)
+### Effect tiers (hysteresis: a tier is entered at its threshold and left at 90 % of it; a tier must hold 0.8 s to take effect)
+
+Tiers drive the effects below (sparks, embers, shimmer, tick dots). They are not shown as text; the visible label is
+the speed title.
 
 | Tier | zh-Hant | zh-Hans | English | 日本語 | Enter at |
 | --- | --- | --- | --- | --- | --- |
@@ -35,6 +38,32 @@ selected metric.
 | boost | 加速 | 加速 | BOOST | 加速 | `v ≥ 0.15 R` |
 | overdrive | 狂飆 | 狂飙 | OVERDRIVE | 爆速 | `v ≥ 0.375 R` |
 | redline | 極限 | 极限 | REDLINE | 限界 | `v ≥ 0.75 R` |
+
+### Speed titles (the visible label)
+
+The label under the value (orb, dashboard hero, accessibility) is a vehicle title from this ladder, colored with the
+heat color. Thresholds scale with `R` (shown values are for the default 400 tok/s), so every metric and redline
+setting reads the same. Same hysteresis and 0.8 s hold as the effect tiers. Idle shows `tier.idle` (待機).
+
+| Key | zh-Hant | zh-Hans | English | 日本語 | Enter at | at R = 400 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `title.walk` | 步行 | 步行 | WALKING | 徒歩 | `v ≥ 0.5` | 0.5 |
+| `title.bicycle` | 自行車 | 自行车 | BICYCLE | 自転車 | `0.02 R` | 8 |
+| `title.ebike` | 電動自行車 | 电动车 | E-BIKE | 電動自転車 | `0.03 R` | 12 |
+| `title.motorcycle` | 摩托車 | 摩托车 | MOTORCYCLE | バイク | `0.04 R` | 16 |
+| `title.car` | 汽車 | 汽车 | CAR | 自動車 | `0.06 R` | 24 |
+| `title.sportsCar` | 跑車 | 跑车 | SPORTS CAR | スポーツカー | `0.08 R` | 32 |
+| `title.bulletTrain` | 高鐵 | 高铁 | BULLET TRAIN | 新幹線 | `0.12 R` | 48 |
+| `title.raceCar` | 賽車 | 赛车 | RACE CAR | レースカー | `0.17 R` | 68 |
+| `title.maglev` | 磁浮列車 | 磁悬浮列车 | MAGLEV | リニア | `0.24 R` | 96 |
+| `title.jetliner` | 噴射客機 | 喷气客机 | JETLINER | ジェット機 | `0.34 R` | 136 |
+| `title.fighterJet` | 戰鬥機 | 战斗机 | FIGHTER JET | 戦闘機 | `0.5 R` | 200 |
+| `title.hypersonic` | 極音速飛機 | 高超音速飞机 | HYPERSONIC | 極超音速機 | `0.7 R` | 280 |
+| `title.rocket` | 火箭 | 火箭 | ROCKET | ロケット | `1.0 R` | 400 |
+
+A title change slides the old label up/out and the new one up/in (0.35 s); the gauge flash is reserved for effect-tier
+changes, so climbing the ladder feels lively but never noisy. A title that does not fit the label width shrinks (down
+to 80 % of the label size); it is never truncated.
 
 ### Heat palette (interpolate in OKLab or linear RGB between stops)
 
@@ -78,7 +107,7 @@ light variant ("porcelain") changes only these tokens:
 | Unlit segments | white 7 % | black 8 % |
 | Value text | white 96 % | `#0B0D12` 92 % |
 | Unit / secondary | white 55 % | black 50 % |
-| Tier label | heat color | heat color darkened 18 % (OKLab L) for ≥ 3:1 contrast |
+| Title label | heat color | heat color darkened 18 % (OKLab L) for ≥ 3:1 contrast |
 | Aura opacity | `0.55 * h`, additive | `0.32 * h`, normal blending |
 | Sparks / embers | additive, heat → white-hot | normal blending, heat colors, size +20 %, white-hot replaced by `#FFB020` |
 | Leading segment | white-hot `#FFF7D6` + bloom | heat color + bloom |
@@ -112,8 +141,9 @@ Layers, back to front:
      From overdrive upward the value leans forward: skew `-6° * h` (motion feel). At redline add a 0.6 px jitter
      (≤ 30 Hz) — disabled in "soft" effects and with Reduce Motion.
    - Unit `tok/s`: `0.072 S`, medium, white 55 %, tracking +0.5.
-   - Tier label: `0.062 S`, semibold, uppercase for Latin, tracking +1.6, in the heat color, below the unit. A tier
-     change slides the old label up/out and the new one up/in (0.35 s) and flashes the gauge (+25 % brightness, 0.4 s).
+   - Title label (speed title, section 1): `0.062 S`, semibold, uppercase for Latin, tracking +1.6, in the heat
+     color, below the unit. A title change slides the old label up/out and the new one up/in (0.35 s); an effect-tier
+     change also flashes the gauge (+25 % brightness, 0.4 s).
    - Agent dots: in the gauge gap at the bottom, one 4 px dot per generating agent colored by source (max 6, then
      `+n`), gently pulsing while generating.
 7. **Pulse** — on each `responseCompleted`: a shockwave ring from `0.5 S` to `0.74 S`, stroke 2 px → 0, opacity
@@ -126,7 +156,7 @@ Idle state: value `0` in white 60 %, label `待機`, gauge dim, comet hidden, an
 along the unlit segments as a sign of life. Optional "fade when idle" (setting): after 60 s idle, fade the window to
 45 % opacity; restore instantly on activity or hover.
 
-Hover: the orb scales to 1.03 (spring), the tier label crossfades to a compact info line
+Hover: the orb scales to 1.03 (spring), the title label crossfades to a compact info line
 (`今日 1.2M · 3 個 agent`), and the cursor shows it is draggable.
 
 Interaction:
@@ -177,18 +207,24 @@ Follows system light/dark. Corner radius: platform default (macOS 12–16 pt, Wi
 Sections (top to bottom, 16 pt spacing, hairline separators):
 
 1. **Hero** — a 112 pt orb (same component, effects capped at Soft) on the left; on the right the value at 44 pt bold
-   tabular with `tok/s`, the tier label in heat color, and one line of context: `生成中 3 · 工具 1`.
+   tabular with `tok/s`, the speed title in heat color, and one line of context: `生成中 3 · 工具 1`.
 2. **Live chart** — last 2 minutes (segmented control 1m / 2m / 5m), height 96. Smooth area chart (Catmull-Rom),
    fill = vertical gradient mapped through the heat palette by value, line 1.5 px. The in-flight estimated part is
    drawn with 45 % opacity and a dashed top line at the right edge. A dashed horizontal line marks today's peak with a
    small label. Hover/drag shows a crosshair with time and value.
 3. **Sources** — one row per detected source: colored dot, name, live tok/s (right), today's output tokens
-   (secondary). Each row is a button that opens the Usage History window (section 4b) pre-filtered to that source:
+   (secondary); a live value below 0.05 shows the tertiary `–` like the agents list. Each row is a button that
+   opens the Usage History window (section 4b) pre-filtered to that source:
    on hover the row gets a subtle highlight and a trailing chevron fades in; keyboard focusable; a11y hint "顯示用量歷史". Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
    Sources still lists every source with its status); a source that is detected but disabled is dimmed.
 4. **Agents** — up to 6 rows sorted by section 6.7 of METRICS: project (semibold), source + model (secondary,
    truncated), phase badge (generating: animated three-dot shimmer in the source color; tools: wrench glyph;
    idle: grey dot), live tok/s right-aligned. Sub-agents are indented 12 pt with a thin connector line.
+   A live value below 0.05 (it would display as `0` or `0.0`) is never shown as a number: `tools` shows a small hourglass glyph (SF
+   Symbol `hourglass` / Segoe Fluent `HourGlass`, 11 pt, secondary color, slow 2 s opacity breathing 55–100 %, static
+   with Reduce Motion); `idle` and `generating` show an en dash `–` in tertiary color. Glyph and dash sit in the same
+   right-aligned trailing slot as the digits (same baseline, no width change), crossfade 0.2 s to and from numbers,
+   and read as the phase name for accessibility (`phase.tools`, `phase.idle`).
    Empty state: `目前沒有 agent 在工作` with a muted gauge glyph.
    Collapsed (default) shows the first 6 rows of the depth-first order (so a child never appears without its parent); when more agents exist, a disclosure row `agents.expand` ("+4 個 agent",
    with a small chevron, accessibility label `agents.expand.a11y`) expands the list in place with a spring height
@@ -251,7 +287,8 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 
 - **一般 General** — Appearance (Auto / Light / Dark), Language (System / 繁體中文 / 简体中文 / English / 日本語),
   Launch at login, Speed metric
-  (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50, shows the tier thresholds).
+  (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50, shows the tier thresholds; a `title.ladder` disclosure lists every
+  speed title with its tok/s threshold at the current redline).
 - **選單列 / 工作列 Menu bar / Taskbar** — Display mode, Colored glyph, Show unit.
 - **懸浮窗 Floating orb** — Show, Size (slider + presets), Opacity (40–100 %), Always on top, Click-through,
   Fade when idle, Show on all Spaces (macOS).

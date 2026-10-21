@@ -42,6 +42,96 @@
     "en": "REDLINE",
     "ja": "限界"
   },
+  "title.walk": {
+    "zh-Hant": "步行",
+    "zh-Hans": "步行",
+    "en": "WALKING",
+    "ja": "徒歩"
+  },
+  "title.bicycle": {
+    "zh-Hant": "自行車",
+    "zh-Hans": "自行车",
+    "en": "BICYCLE",
+    "ja": "自転車"
+  },
+  "title.ebike": {
+    "zh-Hant": "電動自行車",
+    "zh-Hans": "电动车",
+    "en": "E-BIKE",
+    "ja": "電動自転車"
+  },
+  "title.motorcycle": {
+    "zh-Hant": "摩托車",
+    "zh-Hans": "摩托车",
+    "en": "MOTORCYCLE",
+    "ja": "バイク"
+  },
+  "title.car": {
+    "zh-Hant": "汽車",
+    "zh-Hans": "汽车",
+    "en": "CAR",
+    "ja": "自動車"
+  },
+  "title.sportsCar": {
+    "zh-Hant": "跑車",
+    "zh-Hans": "跑车",
+    "en": "SPORTS CAR",
+    "ja": "スポーツカー"
+  },
+  "title.bulletTrain": {
+    "zh-Hant": "高鐵",
+    "zh-Hans": "高铁",
+    "en": "BULLET TRAIN",
+    "ja": "新幹線"
+  },
+  "title.raceCar": {
+    "zh-Hant": "賽車",
+    "zh-Hans": "赛车",
+    "en": "RACE CAR",
+    "ja": "レースカー"
+  },
+  "title.maglev": {
+    "zh-Hant": "磁浮列車",
+    "zh-Hans": "磁悬浮列车",
+    "en": "MAGLEV",
+    "ja": "リニア"
+  },
+  "title.jetliner": {
+    "zh-Hant": "噴射客機",
+    "zh-Hans": "喷气客机",
+    "en": "JETLINER",
+    "ja": "ジェット機"
+  },
+  "title.fighterJet": {
+    "zh-Hant": "戰鬥機",
+    "zh-Hans": "战斗机",
+    "en": "FIGHTER JET",
+    "ja": "戦闘機"
+  },
+  "title.hypersonic": {
+    "zh-Hant": "極音速飛機",
+    "zh-Hans": "高超音速飞机",
+    "en": "HYPERSONIC",
+    "ja": "極超音速機"
+  },
+  "title.rocket": {
+    "zh-Hant": "火箭",
+    "zh-Hans": "火箭",
+    "en": "ROCKET",
+    "ja": "ロケット"
+  },
+  "title.ladder": {
+    "zh-Hant": "速度稱號",
+    "zh-Hans": "速度称号",
+    "en": "Speed titles",
+    "ja": "スピード称号"
+  },
+  "title.ladder.row": {
+    "zh-Hant": "%@ 起",
+    "zh-Hans": "%@ 起",
+    "en": "from %@",
+    "ja": "%@ から"
+  },
   "peak.new": {
     "zh-Hant": "新紀錄",
     "zh-Hans": "新纪录",
