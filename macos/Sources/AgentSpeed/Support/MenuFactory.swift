@@ -46,6 +46,14 @@ enum MenuFactory {
         let l10n = model.l10n
         let menu = NSMenu()
         menu.autoenablesItems = false
+        if let release = model.updates.availableRelease {
+            let update = ActionMenuItem(l10n("update.menu", release.version.description)) { [weak model] in
+                model?.commands?.showUpdate()
+            }
+            update.image = accentDot
+            menu.addItem(update)
+            menu.addItem(.separator())
+        }
         menu.addItem(ActionMenuItem(l10n("menu.dashboard")) { [weak model] in model?.commands?.showDashboard() })
         menu.addItem(.separator())
         menu.addItem(orbVisibilityItem(model: model))
@@ -62,9 +70,23 @@ enum MenuFactory {
         menu.addItem(.separator())
         menu.addItem(settingsItem(model: model))
         menu.addItem(ActionMenuItem(l10n("menu.about")) { [weak model] in model?.commands?.showSettings(.about) })
+        let check = ActionMenuItem(l10n("mac.update.checkMenu")) { [weak model] in model?.commands?.checkForUpdates() }
+        check.isEnabled = !model.updates.isBusy
+        menu.addItem(check)
         menu.addItem(.separator())
         menu.addItem(quitItem(model: model))
         return menu
+    }
+
+    /// The small accent dot that marks an available update.
+    static var accentDot: NSImage {
+        let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.accessibilityDescription = nil
+        return image
     }
 
     static func sizeItem(model: AppModel) -> NSMenuItem {

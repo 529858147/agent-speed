@@ -61,6 +61,9 @@ final class AppSettings {
     var codexRoot: URL? { didSet { store(codexRoot?.path, .codexRoot) } }
     var claudeRoot: URL? { didSet { store(claudeRoot?.path, .claudeRoot) } }
 
+    /// UPDATES section 3: check GitHub at launch and every 6 h.
+    var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -98,6 +101,7 @@ final class AppSettings {
         }
         codexRoot = Self.url(defaults.string(forKey: Key.codexRoot.rawValue))
         claudeRoot = Self.url(defaults.string(forKey: Key.claudeRoot.rawValue))
+        autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
     }
 
     var monitorConfiguration: MonitorConfiguration {
@@ -148,6 +152,7 @@ final class AppSettings {
         case orbVisible, orbSize, orbOpacity, orbAlwaysOnTop, orbClickThrough, orbFadeWhenIdle, orbAllSpaces
         case effects, celebratePeaks, responsePulses
         case enabledSources, codexRoot, claudeRoot
+        case autoCheckUpdates
     }
 }
 

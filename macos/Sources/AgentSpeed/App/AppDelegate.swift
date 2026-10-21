@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     private var orb: OrbWindowController?
     private var dashboard: DashboardController?
     private var settingsWindow: SettingsWindowController?
+    private var updateWindow: UpdateWindowController?
+    private var updateScheduler: UpdateScheduler?
+    private let updateNotifier = UpdateNotifier()
 
     init(options: LaunchOptions) {
         self.options = options
@@ -30,11 +33,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         settingsWindow = SettingsWindowController(model: model)
         let statusItem = StatusItemController(model: model)
         self.statusItem = statusItem
-        dashboard.onVisibilityChange = { [weak statusItem] shown in statusItem?.setHighlighted(shown) }
+        dashboard.onVisibilityChange = { [weak statusItem, weak model] shown in
+            statusItem?.setHighlighted(shown)
+            if !shown { model?.updates.clearUpdatedNotice() }
+        }
         orb = OrbWindowController(model: model)
 
         MainMenu.install(model: model)
         if options.demo { model.startDemoLoop() }
+        startUpdates(model: model)
+    }
+
+    /// Notifications, the schedule, the relaunch hand-off, the developer flags and the one-time `update.done`.
+    private func startUpdates(model: AppModel) {
+        let updates = model.updates
+        updateWindow = UpdateWindowController(model: model)
+        updateNotifier.install()
+        updateNotifier.onOpen = { [weak self] in self?.showUpdate() }
+        updates.onNewRelease = { [weak self, weak model] release in
+            guard let self, let model else { return }
+            let version = release.version.description
+            self.updateNotifier.announce(
+                release,
+                title: model.l10n("update.available.title", version),
+                body: model.l10n("update.notification.body")
+            )
+        }
+        updates.onReadyToRelaunch = {
+            NSApp.terminate(nil)
+        }
+        UpdateWorkspace.removeStale()
+
+        let scheduler = UpdateScheduler(controller: updates, settings: model.settings)
+        updateScheduler = scheduler
+        scheduler.start()
+
+        if options.installUpdateNow {
+            Task { [weak self] in
+                await updates.check(manual: true)
+                guard updates.availableRelease != nil else { return }
+                self?.showUpdate()
+                updates.install()
+            }
+        } else if options.checkUpdatesNow {
+            checkForUpdates()
+        }
+        if updates.justUpdatedTo != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.showDashboard() }
+        }
     }
 
     @objc func openSettingsFromMenu(_ sender: Any?) {
@@ -42,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateScheduler?.stop()
         orb?.savePosition()
         model?.shutdown()
     }
@@ -78,6 +125,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
 
     func resetOrbPosition() {
         orb?.resetPosition()
+    }
+
+    func showUpdate() {
+        dashboard?.close()
+        updateWindow?.show()
+    }
+
+    func checkForUpdates() {
+        model?.updates.startCheck(manual: true)
+        showUpdate()
     }
 
     func quit() {

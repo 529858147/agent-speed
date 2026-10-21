@@ -11,6 +11,10 @@ protocol AppCommands: AnyObject {
     func showSettings(_ pane: SettingsPane?)
     func setOrbVisible(_ visible: Bool)
     func resetOrbPosition()
+    /// Opens the update window on the current update state.
+    func showUpdate()
+    /// Manual check from a menu: opens the update window, which reports the result.
+    func checkForUpdates()
     func quit()
 }
 
@@ -24,6 +28,7 @@ final class AppModel {
     let gauge: LiveGauge
     let accessibility: AccessibilityState
     let launchAtLogin: LaunchAtLogin
+    let updates: UpdateController
 
     /// True while the 20 s effects preview (or the `--demo` loop) drives the store.
     private(set) var isPreviewing = false
@@ -35,9 +40,10 @@ final class AppModel {
     @ObservationIgnored private var loops: [ObservationLoop] = []
     @ObservationIgnored private var appliedConfiguration: MonitorConfiguration?
 
-    init(store: SpeedStore = SpeedStore(), settings: AppSettings = AppSettings()) {
+    init(store: SpeedStore = SpeedStore(), settings: AppSettings = AppSettings(), updates: UpdateController? = nil) {
         self.store = store
         self.settings = settings
+        self.updates = updates ?? UpdateController()
         l10n = Localizer(preference: settings.language)
         gauge = LiveGauge()
         accessibility = AccessibilityState()

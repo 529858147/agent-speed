@@ -34,6 +34,48 @@ struct PreviewBanner: View {
     }
 }
 
+/// "Updated to 1.2.0", shown once after relaunching into a new version (UPDATES section 4).
+struct UpdatedBanner: View {
+    let model: AppModel
+    let version: String
+
+    var body: some View {
+        let l10n = model.l10n
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text(l10n("update.done", version))
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Spacing.xs)
+            Button {
+                model.updates.clearUpdatedNotice()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.dashboardSecondary)
+            .help(l10n("mac.update.dismiss"))
+            .accessibilityLabel(l10n("mac.update.dismiss"))
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.accentColor.opacity(0.12))
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// Startup progress while today's transcripts are read.
 struct LoadingState: View {
     let model: AppModel

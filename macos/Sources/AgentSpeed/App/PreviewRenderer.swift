@@ -12,7 +12,11 @@ enum PreviewRenderer {
 
         let suite = "AgentSpeedPreview"
         UserDefaults.standard.removePersistentDomain(forName: suite)
-        let model = AppModel(settings: AppSettings(defaults: UserDefaults(suiteName: suite) ?? .standard))
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        let model = AppModel(
+            settings: AppSettings(defaults: defaults),
+            updates: UpdateController(configuration: .current(environment: [:]), store: UpdateStore(defaults: defaults))
+        )
         model.activate(live: false)
         let redline = model.settings.redline
 
@@ -33,6 +37,9 @@ enum PreviewRenderer {
                     )
                 }
             }
+        }
+        if wants("update") {
+            UpdatePreviews.render(model: model, into: directory)
         }
         if wants("settings") {
             publish(model, speed: redline * 0.4)

@@ -13,6 +13,11 @@ struct DashboardView: View {
 
     var body: some View {
         DashboardColumn(maxHeight: maxHeight.map { $0 - Self.topPadding - Self.bottomPadding }) {
+            if let version = model.updates.justUpdatedTo {
+                UpdatedBanner(model: model, version: version)
+                    .padding(.bottom, DashboardLayout.sectionSpacing)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if model.isPreviewing {
                 PreviewBanner(model: model)
                     .padding(.bottom, DashboardLayout.sectionSpacing)
@@ -31,6 +36,7 @@ struct DashboardView: View {
         .padding(.bottom, Self.bottomPadding)
         .frame(width: DashboardController.width, alignment: .top)
         .animation(model.dashboardMotion, value: model.isPreviewing)
+        .animation(model.dashboardMotion, value: model.updates.justUpdatedTo)
     }
 }
 

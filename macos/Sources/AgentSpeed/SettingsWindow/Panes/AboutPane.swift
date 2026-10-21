@@ -35,8 +35,11 @@ struct AboutPane: View {
             }
             .padding(.top, Spacing.l)
 
-            privacyCard(l10n("settings.about.privacy"))
+            UpdateSettingsCard(model: model)
                 .padding(.top, Spacing.xl)
+
+            privacyCard(l10n("settings.about.privacy"))
+                .padding(.top, Spacing.s)
 
             VStack(spacing: Spacing.xxs) {
                 Text(l10n("settings.about.update"))

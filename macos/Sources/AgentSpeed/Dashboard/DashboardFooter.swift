@@ -1,7 +1,7 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// Floating-orb toggle, metric info, settings and quit (DESIGN section 4.6).
+/// Floating-orb toggle, metric info, update pill, settings and quit (DESIGN section 4.6, UPDATES section 4).
 struct DashboardFooter: View {
     let model: AppModel
 
@@ -44,6 +44,11 @@ struct DashboardFooter: View {
 
             Spacer(minLength: Spacing.xs)
 
+            if let release = model.updates.availableRelease {
+                UpdatePill(model: model, release: release)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            }
+
             Button {
                 model.commands?.showSettings(nil)
             } label: {
@@ -64,6 +69,33 @@ struct DashboardFooter: View {
             .help(l10n("menu.quit"))
             .accessibilityLabel(l10n("menu.quit"))
         }
+        .animation(model.dashboardMotion, value: model.updates.availableRelease?.tag)
+    }
+}
+
+/// "Update 1.2.0": opens the update window (UPDATES section 4).
+private struct UpdatePill: View {
+    let model: AppModel
+    let release: Release
+
+    var body: some View {
+        let l10n = model.l10n
+        let version = release.version.description
+        Button {
+            model.commands?.showUpdate()
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+                Text(l10n("update.available.short", version))
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(DashboardPillButtonStyle(isOn: true))
+        .help(l10n("update.menu", version))
+        .accessibilityLabel(l10n("update.menu", version))
     }
 }
 
