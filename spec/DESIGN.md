@@ -153,7 +153,8 @@ Performance: when idle and not hovered, render at ≤ 10 fps (or only on change)
 Glanceable and calm; it must never jitter in width.
 
 - Layout: `[gauge glyph] [value] [unit]`.
-- Gauge glyph: 270° ring, 2 px stroke (scale with DPI), diameter = text cap height × 1.5 (16 pt in the menu bar),
+- Gauge glyph: 270° ring, 1.75 pt stroke (scale with DPI), diameter = text cap height × 1.2 (≈ 13 pt in the menu
+  bar, ≈ 14 px at 100 % on the taskbar), optically centered on the digits,
   track at 25 % of the label color, fill fraction `h` in the heat color with a 6 px soft glow from overdrive upward.
   At redline the fill flickers gently (opacity 85–100 %, 6 Hz). Monochrome option uses the label color only.
 - Value: system font, 13 pt (menu bar) / 15 px semibold (taskbar), tabular digits, placed tight against the glyph
