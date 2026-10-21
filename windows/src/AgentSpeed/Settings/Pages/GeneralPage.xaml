@@ -9,32 +9,43 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
 
-        <!-- One rung of the speed-title list: the title (secondary), then its threshold (semibold, tabular, heat color).
-             Items wrap as wholes, each carrying its trailing separator. -->
+        <!-- One entry of the aligned speed-title grid: the title (secondary), then its threshold right-aligned in the heat
+             color. The value reserves the widest form it takes over the slider range (hidden copies), so dragging the
+             redline changes the numbers but never the layout. -->
         <DataTemplate x:Key="TitleLadderItem" DataType="{x:Type settings:TitleLadderRow}">
-            <Border x:Name="Chip" Background="Transparent" CornerRadius="4" Padding="3,1,3,1" Margin="-3,0,0,0"
-                    Focusable="True" FocusVisualStyle="{x:Null}" AutomationProperties.Name="{Binding AccessibleName}"
+            <Border x:Name="Chip" Background="Transparent" CornerRadius="4" Padding="4,1,4,1"
+                    Focusable="True" FocusVisualStyle="{StaticResource RoundedFocusVisual}" AutomationProperties.Name="{Binding AccessibleName}"
                     MouseEnter="OnLadderItemEnter" MouseLeave="OnLadderItemLeave"
                     GotKeyboardFocus="OnLadderItemEnter" LostKeyboardFocus="OnLadderItemLeave">
-                <StackPanel Orientation="Horizontal">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Right" Margin="8,0,0,0">
+                        <ItemsControl ItemsSource="{Binding ValueShapes}" Focusable="False" IsHitTestVisible="False" IsTabStop="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Grid />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular"
+                                               Visibility="Hidden" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding Value}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right"
+                                   Foreground="{Binding ValueBrush}" Typography.NumeralAlignment="Tabular" />
+                    </Grid>
                     <TextBlock x:Name="Name" Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Text="{Binding Value}" FontSize="12" FontWeight="SemiBold" Margin="4,0,0,0" Foreground="{Binding ValueBrush}"
-                               Typography.NumeralAlignment="Tabular" />
-                    <TextBlock x:Name="Separator" Text="·" FontSize="12" Margin="7,0,4,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                </StackPanel>
+                </DockPanel>
             </Border>
             <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding IsLast}" Value="True">
-                    <Setter TargetName="Separator" Property="Visibility" Value="Collapsed" />
-                </DataTrigger>
                 <Trigger SourceName="Chip" Property="IsMouseOver" Value="True">
                     <Setter TargetName="Name" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
                 </Trigger>
                 <Trigger SourceName="Chip" Property="IsKeyboardFocused" Value="True">
                     <Setter TargetName="Name" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource KeyboardFocusBorderColorBrush}" />
-                    <Setter TargetName="Chip" Property="BorderThickness" Value="1" />
-                    <Setter TargetName="Chip" Property="Padding" Value="2,0,2,0" />
+                    <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
                 </Trigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -97,12 +108,15 @@
 
                 <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Left" Margin="0,10,0,0">
                     <TextBlock Text="{Binding RedlineHint}" Style="{StaticResource CaptionText}" />
-                    <ItemsControl ItemsSource="{Binding TitleLadder}" ItemTemplate="{StaticResource TitleLadderItem}" Margin="0,8,0,0"
-                                  Focusable="False" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle"
-                                  AutomationProperties.Name="{loc:Loc title.ladder}">
+                    <TextBlock Text="{loc:Loc title.ladder}" FontSize="12" FontWeight="SemiBold" Margin="0,12,0,4"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.HeadingLevel="Level2" />
+                    <!-- Aligned 4 × 3 grid (3 or 2 columns when narrow); the entries' 4 DIP padding sits in the outer margin. -->
+                    <ItemsControl ItemsSource="{Binding TitleLadder}" ItemTemplate="{StaticResource TitleLadderItem}" Margin="-4,0,0,0"
+                                  HorizontalAlignment="Left" Focusable="False" KeyboardNavigation.TabNavigation="Once"
+                                  KeyboardNavigation.DirectionalNavigation="Contained" AutomationProperties.Name="{loc:Loc title.ladder}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal" />
+                                <controls:AlignedGridPanel HorizontalSpacing="12" VerticalSpacing="2" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>

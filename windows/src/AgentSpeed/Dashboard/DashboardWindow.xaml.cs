@@ -238,6 +238,7 @@ internal sealed partial class DashboardWindow : Window
     {
         _hwnd = new WindowInteropHelper(this).Handle;
         WindowEffects.SetCornerPreference(_hwnd, DWMWCP.ROUND);
+        WindowEffects.RemoveCaptionButtons(_hwnd);
         ApplyBackground();
     }
 

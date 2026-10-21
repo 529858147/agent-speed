@@ -66,6 +66,41 @@ internal static unsafe class WindowEffects
         return Dwmapi.DwmSetWindowAttribute(hwnd, DWMWA.SYSTEMBACKDROP_TYPE, &backdropType, sizeof(int)) == 0;
     }
 
+    /// <summary>
+    /// Keeps a window free of caption buttons. With the frame extended over the whole client area (Mica), DWM draws the
+    /// buttons of the system menu into the content; a flyout has none, so the system menu bits are removed now and
+    /// whenever anything (WPF included) sets them again.
+    /// </summary>
+    public static void RemoveCaptionButtons(nint hwnd)
+    {
+        if (hwnd == 0)
+        {
+            return;
+        }
+
+        const int buttons = WS.SYSMENU | WS.MINIMIZEBOX | WS.MAXIMIZEBOX;
+        var current = (int)User32.GetWindowLongPtr(hwnd, GWL.STYLE);
+        if ((current & buttons) != 0)
+        {
+            User32.TrySetWindowLongPtr(hwnd, GWL.STYLE, current & ~buttons);
+            User32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                SWP.NOMOVE | SWP.NOSIZE | SWP.NOZORDER | SWP.NOACTIVATE | SWP.FRAMECHANGED | SWP.NOOWNERZORDER);
+        }
+
+        HwndSource.FromHwnd(hwnd)?.AddHook(KeepCaptionButtonsOff);
+    }
+
+    private static nint KeepCaptionButtonsOff(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
+    {
+        if (msg == (int)WM.STYLECHANGING && wParam == GWL.STYLE && lParam != 0)
+        {
+            var change = (STYLESTRUCT*)lParam;
+            change->styleNew &= ~(uint)(WS.SYSMENU | WS.MINIMIZEBOX | WS.MAXIMIZEBOX);
+        }
+
+        return 0;
+    }
+
     public static bool IsCloaked(nint hwnd)
     {
         if (hwnd == 0)

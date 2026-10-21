@@ -31,6 +31,26 @@ internal static class GaugeGlyphPainter
         return new Point(center.X + v.X, center.Y + v.Y);
     }
 
+    /// <summary>The gauge at rest: track at 40 %, the needle pointing at zero and its hub at 75 % of the color.</summary>
+    public static void DrawResting(DrawingContext dc, Rect bounds, Color color, double stroke)
+    {
+        var size = Math.Min(bounds.Width, bounds.Height);
+        if (size <= 0)
+        {
+            return;
+        }
+
+        var radius = (size - stroke) / 2;
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2 + radius * 0.1464);
+        var track = MediaColors.Frozen(Color.FromArgb((byte)Math.Round(color.A * 0.4), color.R, color.G, color.B));
+        dc.DrawGeometry(null, MediaColors.FrozenPen(track, stroke, PenLineCap.Round), Arc(center, radius, GaugeLayout.StartDegrees, GaugeLayout.SweepDegrees));
+
+        var ink = MediaColors.Frozen(Color.FromArgb((byte)Math.Round(color.A * 0.75), color.R, color.G, color.B));
+        var tip = Polar(center, radius * 0.62, GaugeLayout.StartDegrees);
+        dc.DrawLine(MediaColors.FrozenPen(ink, stroke * 0.85, PenLineCap.Round), center, tip);
+        dc.DrawEllipse(ink, null, center, stroke * 0.95, stroke * 0.95);
+    }
+
     /// <param name="labelColor">Text color of the surface; the track uses it at 25 %.</param>
     /// <param name="monochrome">Draw the fill in the label color instead of the heat color.</param>
     public static void Draw(

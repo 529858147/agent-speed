@@ -54,6 +54,13 @@ internal struct RECT
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct STYLESTRUCT
+{
+    public uint styleOld;
+    public uint styleNew;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct MARGINS
 {
     public int cxLeftWidth;

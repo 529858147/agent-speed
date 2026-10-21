@@ -41,6 +41,7 @@ internal sealed class AppController : IAppCommands, IDisposable
     private HistoryHub _historyHub = null!;
     private HistoryController? _history;
     private HistoryService? _historyService;
+    private PinnedSpeedDriver? _pinnedSpeeds;
     private DispatcherTimer? _historyStartFallback;
     private bool _historyStarted;
     private SpeedModel _speed = null!;
@@ -174,6 +175,13 @@ internal sealed class AppController : IAppCommands, IDisposable
             AutoStart.Refresh();
             AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
             StartUpdates();
+            if (_launch.DemoSpeedValues is { Count: > 0 } speeds)
+            {
+                AppLog.Info($"--demo-speed: holding the speed at {_launch.DemoSpeeds} tok/s in turn.");
+                _pinnedSpeeds = new PinnedSpeedDriver(_hub, _ui, speeds);
+                _pinnedSpeeds.Start();
+            }
+
             if (_launch.PreviewHistory)
             {
                 StartHistoryPreview();
@@ -283,6 +291,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         Try(() => _historyService?.Dispose());
         Try(() => _settings.Flush());
         Try(() => _preview.Stop());
+        Try(() => _pinnedSpeeds?.Dispose());
         Try(() => _monitor?.Dispose());
         Try(() => _taskbar?.Dispose());
         Try(() => _tray?.Dispose());

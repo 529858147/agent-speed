@@ -336,7 +336,7 @@
                 <!-- Empty state -->
                 <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,72,0,72"
                             Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}">
-                    <controls:GaugeGlyph Width="44" Height="44" HorizontalAlignment="Center" Opacity="0.5"
+                    <controls:GaugeGlyph Width="44" Height="44" HorizontalAlignment="Center" Opacity="0.8"
                                          TextElement.Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     <TextBlock Text="{loc:Loc history.empty}" Style="{StaticResource BodyStrongText}" HorizontalAlignment="Center"
                                TextAlignment="Center" Margin="0,16,0,0" />

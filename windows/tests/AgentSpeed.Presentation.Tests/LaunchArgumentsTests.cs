@@ -97,6 +97,32 @@ public class LaunchArgumentsTests
     }
 
     [Fact]
+    public void DemoSpeedTakesACommaSeparatedList()
+    {
+        var args = LaunchArguments.Parse(["--demo-speed", "0, 24,96.5,400", "--preview-history"]);
+        Assert.Equal("0,24,96.5,400", args.DemoSpeeds);
+        Assert.Equal([0, 24, 96.5, 400], args.DemoSpeedValues);
+        Assert.True(args.PreviewHistory);
+        Assert.Null(LaunchArguments.None.DemoSpeeds);
+        Assert.Empty(LaunchArguments.None.DemoSpeedValues);
+    }
+
+    [Theory]
+    [InlineData("-5")]
+    [InlineData("abc")]
+    [InlineData("1,,2")]
+    [InlineData("NaN")]
+    [InlineData("1e12")]
+    [InlineData("")]
+    public void InvalidDemoSpeedsAreNotConsumed(string value)
+    {
+        var args = LaunchArguments.Parse(["--demo-speed", value, "--check-updates-now"]);
+        Assert.Null(args.DemoSpeeds);
+        Assert.True(args.CheckUpdatesNow);
+        Assert.Null(LaunchArguments.Parse(["--demo-speed"]).DemoSpeeds);
+    }
+
+    [Fact]
     public void UnknownArgumentsAreIgnored()
     {
         var args = LaunchArguments.Parse(["--verbose", "C:\\file.txt", "--after-update=1.0.0", "-after-update", "--wait-pid=5", "--after-update", "1.2.0", "extra"]);

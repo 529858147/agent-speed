@@ -3,7 +3,10 @@ using System.Windows.Media;
 
 namespace AgentSpeed.Controls;
 
-/// <summary>Muted ring gauge for empty states, drawn in the inherited foreground color.</summary>
+/// <summary>
+/// Gauge glyph in the inherited foreground color. With no heat it rests: a muted track with the needle at zero and a
+/// hub, so empty states read as an instrument rather than a loading spinner (macOS RestingGauge).
+/// </summary>
 internal sealed class GaugeGlyph : FrameworkElement
 {
     public static readonly DependencyProperty HeatProperty = DependencyProperty.Register(
@@ -27,7 +30,14 @@ internal sealed class GaugeGlyph : FrameworkElement
     protected override void OnRender(DrawingContext drawingContext)
     {
         var color = Foreground is SolidColorBrush solid ? solid.Color : Colors.Gray;
-        GaugeGlyphPainter.Draw(drawingContext, new Rect(0, 0, ActualWidth, ActualHeight), Heat, color, monochrome: Heat <= 0,
-            strokeThickness: Math.Max(1.5, Math.Min(ActualWidth, ActualHeight) / 9), trackAlpha: 0.45);
+        var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
+        var stroke = Math.Max(1.5, Math.Min(ActualWidth, ActualHeight) / 9);
+        if (Heat <= 0)
+        {
+            GaugeGlyphPainter.DrawResting(drawingContext, bounds, color, stroke);
+            return;
+        }
+
+        GaugeGlyphPainter.Draw(drawingContext, bounds, Heat, color, monochrome: false, strokeThickness: stroke, trackAlpha: 0.45);
     }
 }

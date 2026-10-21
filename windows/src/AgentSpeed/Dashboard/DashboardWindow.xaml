@@ -226,7 +226,7 @@
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />
                     <TextBlock Text="{loc:Loc dashboard.agents}" Style="{StaticResource BodyStrongText}" Margin="0,0,0,6" />
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,4" Visibility="{Binding HasAgents, Converter={StaticResource Hidden}}">
-                        <controls:GaugeGlyph Width="18" Height="18" Opacity="0.55" />
+                        <controls:GaugeGlyph Width="18" Height="18" TextElement.Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{loc:Loc agents.empty}" Style="{StaticResource CaptionText}" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                     <!-- One viewport in every state: beyond 12 rows the expanded list scrolls inside it, and its height springs

@@ -42,10 +42,11 @@ internal sealed class SourceSettingsRow(SourceKind kind) : ObservableObject
 }
 
 /// <summary>One rung of the speed-title list under the redline slider: title, then its threshold at the current redline.</summary>
-internal sealed class TitleLadderRow(SpeedTitle title, int index, bool isLast) : ObservableObject
+internal sealed class TitleLadderRow(SpeedTitle title, int index) : ObservableObject
 {
     private string _name = string.Empty;
     private string _value = string.Empty;
+    private IReadOnlyList<string> _valueShapes = [];
     private string _accessibleName = string.Empty;
     private System.Windows.Media.Brush _valueBrush = System.Windows.Media.Brushes.Gray;
 
@@ -54,24 +55,25 @@ internal sealed class TitleLadderRow(SpeedTitle title, int index, bool isLast) :
     /// <summary>Position of the title's tick on the heat strip.</summary>
     public int Index { get; } = index;
 
-    /// <summary>The last rung has no trailing separator.</summary>
-    public bool IsLast { get; } = isLast;
-
     public string Name { get => _name; private set => Set(ref _name, value); }
 
     /// <summary>Threshold in tok/s, compact and without the unit: <c>48</c>, <c>24k</c>.</summary>
     public string Value { get => _value; private set => Set(ref _value, value); }
+
+    /// <summary>Every form the value takes over the slider range; the widest one sets the value's width.</summary>
+    public IReadOnlyList<string> ValueShapes { get => _valueShapes; private set => Set(ref _valueShapes, value); }
 
     /// <summary>The heat color of the threshold (darkened on light backgrounds for contrast).</summary>
     public System.Windows.Media.Brush ValueBrush { get => _valueBrush; private set => Set(ref _valueBrush, value); }
 
     public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
 
-    public void Refresh(Localizer loc, double redline, bool dark)
+    public void Refresh(Localizer loc, SpeedMetric metric, double redline, bool dark)
     {
-        Name = Presentation.Formatting.DisplayText.TitleName(Title, loc);
+        Name = TitleLadderText.Name(Title, loc);
         Value = Presentation.Formatting.DisplayText.TitleThreshold(Title, redline);
-        AccessibleName = $"{Name} {Value} {loc["unit.tokS"]}";
+        ValueShapes = TitleLadderText.Shapes(Title, metric);
+        AccessibleName = $"{Name}, {Value} {loc["unit.tokS"]}";
         var heat = SpeedTitles.HeatAt(Title, redline);
         var rgba = dark ? Presentation.Colors.HeatPalette.Sample(heat) : Presentation.Colors.OrbTokens.Light.TierLabel(heat);
         var color = Theme.MediaColors.ToColor(rgba);
@@ -174,7 +176,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _launchAtLogin = AutoStart.IsEnabled;
         for (var i = 0; i < SpeedTitles.Scaled.Count; i++)
         {
-            TitleLadder.Add(new TitleLadderRow(SpeedTitles.Scaled[i].Title, i, i == SpeedTitles.Scaled.Count - 1));
+            TitleLadder.Add(new TitleLadderRow(SpeedTitles.Scaled[i].Title, i));
         }
 
         Relocalize(localizer);
@@ -623,7 +625,7 @@ internal sealed class SettingsViewModel : ObservableObject
     {
         foreach (var row in TitleLadder)
         {
-            row.Refresh(_loc, S.Redline, _darkTheme);
+            row.Refresh(_loc, S.Metric, S.Redline, _darkTheme);
         }
     }
 

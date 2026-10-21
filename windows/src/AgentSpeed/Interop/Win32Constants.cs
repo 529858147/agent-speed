@@ -7,6 +7,9 @@ internal static class WS
     public const int CLIPSIBLINGS = 0x04000000;
     public const int CLIPCHILDREN = 0x02000000;
     public const int POPUP = unchecked((int)0x80000000);
+    public const int SYSMENU = 0x00080000;
+    public const int MINIMIZEBOX = 0x00020000;
+    public const int MAXIMIZEBOX = 0x00010000;
 }
 
 internal static class WS_EX
@@ -65,6 +68,7 @@ internal static class WM
     public const uint MOUSEACTIVATE = 0x0021;
     public const uint WINDOWPOSCHANGED = 0x0047;
     public const uint CONTEXTMENU = 0x007B;
+    public const uint STYLECHANGING = 0x007C;
     public const uint DISPLAYCHANGE = 0x007E;
     public const uint NCDESTROY = 0x0082;
     public const uint NCHITTEST = 0x0084;
