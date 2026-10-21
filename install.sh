@@ -151,13 +151,11 @@ check_macos_version() {
 }
 
 download() {
-    curl -fL --silent --show-error --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 \
-        --connect-timeout 15 -o "$2" "$1" || {
-        case "$1" in
-            https://*) fail "$T_DOWNLOAD_FAILED: $1" ;;
-            *) curl -fL --silent --show-error -o "$2" "$1" || fail "$T_DOWNLOAD_FAILED: $1" ;;
-        esac
-    }
+    case "$1" in
+        https://*) curl -fL --silent --show-error --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 \
+            --connect-timeout 15 -o "$2" "$1" ;;
+        *) curl -fL --silent --show-error --retry 3 --connect-timeout 15 -o "$2" "$1" ;;
+    esac || fail "$T_DOWNLOAD_FAILED: $1"
 }
 
 quit_running() {
