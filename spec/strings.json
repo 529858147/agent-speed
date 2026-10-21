@@ -1,0 +1,657 @@
+{
+  "_comment": "Shared UI strings in zh-Hant, zh-Hans, en, ja. Keys are identical on both platforms. Platform-only strings live in each platform's own table and must provide all four languages. Format specifiers: %d integer, %@ string.",
+  "app.name": {
+    "zh-Hant": "Agent Speed",
+    "zh-Hans": "Agent Speed",
+    "en": "Agent Speed",
+    "ja": "Agent Speed"
+  },
+  "unit.tokS": {
+    "zh-Hant": "tok/s",
+    "zh-Hans": "tok/s",
+    "en": "tok/s",
+    "ja": "tok/s"
+  },
+  "tier.idle": {
+    "zh-Hant": "待機",
+    "zh-Hans": "待机",
+    "en": "IDLE",
+    "ja": "待機"
+  },
+  "tier.cruise": {
+    "zh-Hant": "巡航",
+    "zh-Hans": "巡航",
+    "en": "CRUISE",
+    "ja": "巡航"
+  },
+  "tier.boost": {
+    "zh-Hant": "加速",
+    "zh-Hans": "加速",
+    "en": "BOOST",
+    "ja": "加速"
+  },
+  "tier.overdrive": {
+    "zh-Hant": "狂飆",
+    "zh-Hans": "狂飙",
+    "en": "OVERDRIVE",
+    "ja": "爆速"
+  },
+  "tier.redline": {
+    "zh-Hant": "極限",
+    "zh-Hans": "极限",
+    "en": "REDLINE",
+    "ja": "限界"
+  },
+  "peak.new": {
+    "zh-Hant": "新紀錄",
+    "zh-Hans": "新纪录",
+    "en": "NEW PEAK",
+    "ja": "新記録"
+  },
+  "source.codex": {
+    "zh-Hant": "Codex",
+    "zh-Hans": "Codex",
+    "en": "Codex",
+    "ja": "Codex"
+  },
+  "source.claudeCode": {
+    "zh-Hant": "Claude Code",
+    "zh-Hans": "Claude Code",
+    "en": "Claude Code",
+    "ja": "Claude Code"
+  },
+  "source.claudeDesktop": {
+    "zh-Hant": "Claude Desktop",
+    "zh-Hans": "Claude Desktop",
+    "en": "Claude Desktop",
+    "ja": "Claude Desktop"
+  },
+  "source.notFound": {
+    "zh-Hant": "未偵測到",
+    "zh-Hans": "未检测到",
+    "en": "Not detected",
+    "ja": "未検出"
+  },
+  "source.disabled": {
+    "zh-Hant": "已停用",
+    "zh-Hans": "已停用",
+    "en": "Off",
+    "ja": "オフ"
+  },
+  "source.sessions": {
+    "zh-Hant": "找到 %d 個工作階段",
+    "zh-Hans": "找到 %d 个会话",
+    "en": "%d sessions found",
+    "ja": "%d 件のセッション"
+  },
+  "source.folderMissing": {
+    "zh-Hant": "未找到資料夾",
+    "zh-Hans": "未找到文件夹",
+    "en": "Folder not found",
+    "ja": "フォルダが見つかりません"
+  },
+  "phase.generating": {
+    "zh-Hant": "生成中",
+    "zh-Hans": "生成中",
+    "en": "Generating",
+    "ja": "生成中"
+  },
+  "phase.tools": {
+    "zh-Hant": "執行工具",
+    "zh-Hans": "运行工具",
+    "en": "Running tools",
+    "ja": "ツール実行中"
+  },
+  "phase.idle": {
+    "zh-Hant": "閒置",
+    "zh-Hans": "空闲",
+    "en": "Idle",
+    "ja": "待機中"
+  },
+  "agents.context": {
+    "zh-Hant": "生成中 %d · 工具 %d",
+    "zh-Hans": "生成中 %d · 工具 %d",
+    "en": "%d generating · %d in tools",
+    "ja": "生成中 %d · ツール %d"
+  },
+  "agents.count": {
+    "zh-Hant": "%d 個 agent",
+    "zh-Hans": "%d 个 agent",
+    "en": "%d agents",
+    "ja": "%d 個の agent"
+  },
+  "agents.empty": {
+    "zh-Hant": "目前沒有 agent 在工作",
+    "zh-Hans": "目前没有 agent 在工作",
+    "en": "No agents are working right now",
+    "ja": "現在作業中の agent はありません"
+  },
+  "agents.subagent": {
+    "zh-Hant": "子 agent",
+    "zh-Hans": "子 agent",
+    "en": "Sub-agent",
+    "ja": "サブ agent"
+  },
+  "dashboard.sources": {
+    "zh-Hant": "來源",
+    "zh-Hans": "来源",
+    "en": "Sources",
+    "ja": "ソース"
+  },
+  "dashboard.agents": {
+    "zh-Hant": "Agent",
+    "zh-Hans": "Agent",
+    "en": "Agents",
+    "ja": "Agent"
+  },
+  "dashboard.today": {
+    "zh-Hant": "今天",
+    "zh-Hans": "今天",
+    "en": "Today",
+    "ja": "今日"
+  },
+  "dashboard.live": {
+    "zh-Hant": "即時",
+    "zh-Hans": "实时",
+    "en": "Live",
+    "ja": "ライブ"
+  },
+  "today.output": {
+    "zh-Hant": "輸出",
+    "zh-Hans": "输出",
+    "en": "Output",
+    "ja": "出力"
+  },
+  "today.input": {
+    "zh-Hant": "輸入（含快取）",
+    "zh-Hans": "输入（含缓存）",
+    "en": "Input (incl. cache)",
+    "ja": "入力（キャッシュ含む）"
+  },
+  "today.requests": {
+    "zh-Hant": "請求",
+    "zh-Hans": "请求",
+    "en": "Requests",
+    "ja": "リクエスト"
+  },
+  "today.average": {
+    "zh-Hant": "平均速度",
+    "zh-Hans": "平均速度",
+    "en": "Average speed",
+    "ja": "平均速度"
+  },
+  "today.peak": {
+    "zh-Hant": "今日峰值",
+    "zh-Hans": "今日峰值",
+    "en": "Today's peak",
+    "ja": "今日のピーク"
+  },
+  "today.summary": {
+    "zh-Hant": "今日 %@ · %d 個 agent",
+    "zh-Hans": "今日 %@ · %d 个 agent",
+    "en": "Today %@ · %d agents",
+    "ja": "今日 %@ · %d 個の agent"
+  },
+  "chart.estimated": {
+    "zh-Hant": "估算中",
+    "zh-Hans": "估算中",
+    "en": "Estimating",
+    "ja": "推定中"
+  },
+  "state.loading": {
+    "zh-Hant": "正在讀取今日紀錄…",
+    "zh-Hans": "正在读取今日记录…",
+    "en": "Reading today's history…",
+    "ja": "今日の履歴を読み込み中…"
+  },
+  "state.noSources": {
+    "zh-Hant": "找不到 Codex 或 Claude 的紀錄資料夾",
+    "zh-Hans": "找不到 Codex 或 Claude 的记录文件夹",
+    "en": "No Codex or Claude history folder found",
+    "ja": "Codex または Claude の履歴フォルダが見つかりません"
+  },
+  "warning.partialHistory": {
+    "zh-Hant": "部分歷史過大，已略過最早的內容",
+    "zh-Hans": "部分历史过大，已跳过最早的内容",
+    "en": "Some history was too large; the oldest part was skipped",
+    "ja": "一部の履歴が大きすぎるため、古い部分をスキップしました"
+  },
+  "warning.unreadable": {
+    "zh-Hant": "有 %d 個檔案無法讀取",
+    "zh-Hans": "有 %d 个文件无法读取",
+    "en": "%d files could not be read",
+    "ja": "%d 個のファイルを読み込めませんでした"
+  },
+  "warning.malformed": {
+    "zh-Hant": "略過 %d 行無法解析的紀錄",
+    "zh-Hans": "跳过 %d 行无法解析的记录",
+    "en": "Skipped %d unreadable lines",
+    "ja": "解析できない %d 行をスキップしました"
+  },
+  "metric.info": {
+    "zh-Hant": "速度＝輸出 token ÷ 實際生成時間（從送出請求到完成，含等待第一個字）。多個 agent 會加總。進行中的回應先以該 agent 近期的實測速度估算，回應完成後立即以實測值校正。資料只來自本機紀錄。",
+    "zh-Hans": "速度＝输出 token ÷ 实际生成时间（从发出请求到完成，含等待第一个字）。多个 agent 会加总。进行中的回应先以该 agent 近期的实测速度估算，回应完成后立即以实测值校正。数据只来自本机记录。",
+    "en": "Speed = output tokens ÷ actual generation time (from sending the request to completion, including time to first token). Parallel agents are summed. Responses still in flight are estimated from that agent's recent measured speed and corrected with the measured value the moment they finish. Data comes only from local transcripts.",
+    "ja": "速度＝出力トークン ÷ 実際の生成時間（リクエスト送信から完了まで、最初のトークンを待つ時間を含む）。複数の agent は合算されます。進行中の応答はその agent の最近の実測速度で推定し、完了した瞬間に実測値で補正します。データはローカルの記録のみから取得します。"
+  },
+  "metric.output": {
+    "zh-Hant": "輸出速度",
+    "zh-Hans": "输出速度",
+    "en": "Output speed",
+    "ja": "出力速度"
+  },
+  "metric.total": {
+    "zh-Hant": "總吞吐量（含輸入）",
+    "zh-Hans": "总吞吐量（含输入）",
+    "en": "Total throughput (incl. input)",
+    "ja": "総スループット（入力含む）"
+  },
+  "menu.dashboard": {
+    "zh-Hant": "打開面板",
+    "zh-Hans": "打开面板",
+    "en": "Open Dashboard",
+    "ja": "ダッシュボードを開く"
+  },
+  "menu.showOrb": {
+    "zh-Hant": "顯示懸浮窗",
+    "zh-Hans": "显示悬浮窗",
+    "en": "Show Floating Orb",
+    "ja": "フローティングオーブを表示"
+  },
+  "menu.hideOrb": {
+    "zh-Hant": "隱藏懸浮窗",
+    "zh-Hans": "隐藏悬浮窗",
+    "en": "Hide Floating Orb",
+    "ja": "フローティングオーブを隠す"
+  },
+  "menu.size": {
+    "zh-Hant": "大小",
+    "zh-Hans": "大小",
+    "en": "Size",
+    "ja": "サイズ"
+  },
+  "menu.size.small": {
+    "zh-Hant": "小",
+    "zh-Hans": "小",
+    "en": "Small",
+    "ja": "小"
+  },
+  "menu.size.medium": {
+    "zh-Hant": "中",
+    "zh-Hans": "中",
+    "en": "Medium",
+    "ja": "中"
+  },
+  "menu.size.large": {
+    "zh-Hant": "大",
+    "zh-Hans": "大",
+    "en": "Large",
+    "ja": "大"
+  },
+  "menu.effects": {
+    "zh-Hant": "特效",
+    "zh-Hans": "特效",
+    "en": "Effects",
+    "ja": "エフェクト"
+  },
+  "menu.alwaysOnTop": {
+    "zh-Hant": "永遠置頂",
+    "zh-Hans": "永远置顶",
+    "en": "Always on Top",
+    "ja": "常に手前に表示"
+  },
+  "menu.clickThrough": {
+    "zh-Hant": "滑鼠穿透",
+    "zh-Hans": "鼠标穿透",
+    "en": "Click-Through",
+    "ja": "クリックを透過"
+  },
+  "menu.settings": {
+    "zh-Hant": "設定…",
+    "zh-Hans": "设置…",
+    "en": "Settings…",
+    "ja": "設定…"
+  },
+  "menu.quit": {
+    "zh-Hant": "結束 Agent Speed",
+    "zh-Hans": "退出 Agent Speed",
+    "en": "Quit Agent Speed",
+    "ja": "Agent Speed を終了"
+  },
+  "menu.about": {
+    "zh-Hant": "關於 Agent Speed",
+    "zh-Hans": "关于 Agent Speed",
+    "en": "About Agent Speed",
+    "ja": "Agent Speed について"
+  },
+  "effects.off": {
+    "zh-Hant": "關閉",
+    "zh-Hans": "关闭",
+    "en": "Off",
+    "ja": "オフ"
+  },
+  "effects.soft": {
+    "zh-Hant": "柔和",
+    "zh-Hans": "柔和",
+    "en": "Soft",
+    "ja": "控えめ"
+  },
+  "effects.standard": {
+    "zh-Hant": "標準",
+    "zh-Hans": "标准",
+    "en": "Standard",
+    "ja": "標準"
+  },
+  "effects.max": {
+    "zh-Hant": "熱血全開",
+    "zh-Hans": "热血全开",
+    "en": "Max",
+    "ja": "全開"
+  },
+  "settings.title": {
+    "zh-Hant": "設定",
+    "zh-Hans": "设置",
+    "en": "Settings",
+    "ja": "設定"
+  },
+  "settings.general": {
+    "zh-Hant": "一般",
+    "zh-Hans": "通用",
+    "en": "General",
+    "ja": "一般"
+  },
+  "settings.language": {
+    "zh-Hant": "語言",
+    "zh-Hans": "语言",
+    "en": "Language",
+    "ja": "言語"
+  },
+  "settings.language.system": {
+    "zh-Hant": "跟隨系統",
+    "zh-Hans": "跟随系统",
+    "en": "System",
+    "ja": "システムに合わせる"
+  },
+  "settings.launchAtLogin": {
+    "zh-Hant": "登入時自動啟動",
+    "zh-Hans": "登录时自动启动",
+    "en": "Launch at login",
+    "ja": "ログイン時に起動"
+  },
+  "settings.metric": {
+    "zh-Hant": "速度指標",
+    "zh-Hans": "速度指标",
+    "en": "Speed metric",
+    "ja": "速度の指標"
+  },
+  "settings.redline": {
+    "zh-Hant": "紅線速度",
+    "zh-Hans": "红线速度",
+    "en": "Redline speed",
+    "ja": "レッドライン"
+  },
+  "settings.redline.hint": {
+    "zh-Hant": "達到紅線時特效全開。加速 %@ · 狂飆 %@ · 極限 %@",
+    "zh-Hans": "达到红线时特效全开。加速 %@ · 狂飙 %@ · 极限 %@",
+    "en": "Effects peak at the redline. Boost %@ · Overdrive %@ · Redline %@",
+    "ja": "レッドラインでエフェクトが最大になります。加速 %@ · 爆速 %@ · 限界 %@"
+  },
+  "settings.bar": {
+    "zh-Hant": "選單列",
+    "zh-Hans": "菜单栏",
+    "en": "Menu Bar",
+    "ja": "メニューバー"
+  },
+  "settings.taskbar": {
+    "zh-Hant": "工作列",
+    "zh-Hans": "任务栏",
+    "en": "Taskbar",
+    "ja": "タスクバー"
+  },
+  "settings.bar.mode": {
+    "zh-Hant": "顯示內容",
+    "zh-Hans": "显示内容",
+    "en": "Show",
+    "ja": "表示内容"
+  },
+  "settings.bar.mode.glyphValue": {
+    "zh-Hant": "圖示＋數字",
+    "zh-Hans": "图标＋数字",
+    "en": "Gauge and value",
+    "ja": "ゲージと数値"
+  },
+  "settings.bar.mode.value": {
+    "zh-Hant": "只有數字",
+    "zh-Hans": "只有数字",
+    "en": "Value only",
+    "ja": "数値のみ"
+  },
+  "settings.bar.mode.glyph": {
+    "zh-Hant": "只有圖示",
+    "zh-Hans": "只有图标",
+    "en": "Gauge only",
+    "ja": "ゲージのみ"
+  },
+  "settings.bar.colored": {
+    "zh-Hant": "彩色圖示",
+    "zh-Hans": "彩色图标",
+    "en": "Colored gauge",
+    "ja": "カラーゲージ"
+  },
+  "settings.bar.unit": {
+    "zh-Hant": "顯示單位",
+    "zh-Hans": "显示单位",
+    "en": "Show unit",
+    "ja": "単位を表示"
+  },
+  "settings.bar.show": {
+    "zh-Hant": "在工作列顯示",
+    "zh-Hans": "在任务栏显示",
+    "en": "Show on taskbar",
+    "ja": "タスクバーに表示"
+  },
+  "settings.orb": {
+    "zh-Hant": "懸浮窗",
+    "zh-Hans": "悬浮窗",
+    "en": "Floating Orb",
+    "ja": "フローティングオーブ"
+  },
+  "settings.orb.show": {
+    "zh-Hant": "顯示懸浮窗",
+    "zh-Hans": "显示悬浮窗",
+    "en": "Show floating orb",
+    "ja": "フローティングオーブを表示"
+  },
+  "settings.orb.size": {
+    "zh-Hant": "大小",
+    "zh-Hans": "大小",
+    "en": "Size",
+    "ja": "サイズ"
+  },
+  "settings.orb.opacity": {
+    "zh-Hant": "不透明度",
+    "zh-Hans": "不透明度",
+    "en": "Opacity",
+    "ja": "不透明度"
+  },
+  "settings.orb.fadeIdle": {
+    "zh-Hant": "閒置時淡出",
+    "zh-Hans": "空闲时淡出",
+    "en": "Fade when idle",
+    "ja": "待機中は薄くする"
+  },
+  "settings.orb.allSpaces": {
+    "zh-Hant": "在所有桌面顯示",
+    "zh-Hans": "在所有桌面显示",
+    "en": "Show on all Spaces",
+    "ja": "すべてのデスクトップに表示"
+  },
+  "settings.effects": {
+    "zh-Hant": "特效",
+    "zh-Hans": "特效",
+    "en": "Effects",
+    "ja": "エフェクト"
+  },
+  "settings.effects.intensity": {
+    "zh-Hant": "特效強度",
+    "zh-Hans": "特效强度",
+    "en": "Intensity",
+    "ja": "強さ"
+  },
+  "settings.effects.peaks": {
+    "zh-Hant": "破紀錄慶祝",
+    "zh-Hans": "破纪录庆祝",
+    "en": "Celebrate new peaks",
+    "ja": "新記録を祝う"
+  },
+  "settings.effects.pulses": {
+    "zh-Hant": "回應完成脈衝",
+    "zh-Hans": "回应完成脉冲",
+    "en": "Response pulses",
+    "ja": "応答完了パルス"
+  },
+  "settings.effects.preview": {
+    "zh-Hant": "預覽特效",
+    "zh-Hans": "预览特效",
+    "en": "Preview Effects",
+    "ja": "エフェクトをプレビュー"
+  },
+  "settings.effects.previewing": {
+    "zh-Hant": "預覽中…",
+    "zh-Hans": "预览中…",
+    "en": "Previewing…",
+    "ja": "プレビュー中…"
+  },
+  "settings.effects.reduceMotion": {
+    "zh-Hant": "系統已開啟「減少動態效果」，特效最高為柔和。",
+    "zh-Hans": "系统已开启“减弱动态效果”，特效最高为柔和。",
+    "en": "Reduce Motion is on, so effects are limited to Soft.",
+    "ja": "「視差効果を減らす」がオンのため、エフェクトは控えめまでに制限されます。"
+  },
+  "settings.sources": {
+    "zh-Hant": "資料來源",
+    "zh-Hans": "数据来源",
+    "en": "Data Sources",
+    "ja": "データソース"
+  },
+  "settings.sources.change": {
+    "zh-Hant": "變更…",
+    "zh-Hans": "更改…",
+    "en": "Change…",
+    "ja": "変更…"
+  },
+  "settings.sources.reset": {
+    "zh-Hant": "重設",
+    "zh-Hans": "重置",
+    "en": "Reset",
+    "ja": "リセット"
+  },
+  "settings.sources.sharedRoot": {
+    "zh-Hant": "Claude Code 與 Claude Desktop 共用這個資料夾，依紀錄自動區分。",
+    "zh-Hans": "Claude Code 与 Claude Desktop 共用这个文件夹，按记录自动区分。",
+    "en": "Claude Code and Claude Desktop share this folder and are told apart automatically.",
+    "ja": "Claude Code と Claude Desktop はこのフォルダを共有し、記録から自動で区別されます。"
+  },
+  "settings.about": {
+    "zh-Hant": "關於",
+    "zh-Hans": "关于",
+    "en": "About",
+    "ja": "情報"
+  },
+  "settings.about.version": {
+    "zh-Hant": "版本 %@",
+    "zh-Hans": "版本 %@",
+    "en": "Version %@",
+    "ja": "バージョン %@"
+  },
+  "settings.about.github": {
+    "zh-Hant": "在 GitHub 上查看",
+    "zh-Hans": "在 GitHub 上查看",
+    "en": "View on GitHub",
+    "ja": "GitHub で見る"
+  },
+  "settings.about.privacy": {
+    "zh-Hant": "Agent Speed 只讀取本機紀錄，不連網、不收集任何資料，也不會儲存或顯示對話內容。",
+    "zh-Hans": "Agent Speed 只读取本机记录，不联网、不收集任何数据，也不会保存或显示对话内容。",
+    "en": "Agent Speed only reads local transcripts. It never connects to the network, collects nothing, and never stores or shows conversation content.",
+    "ja": "Agent Speed はローカルの記録のみを読み取ります。ネットワークに接続せず、データを収集せず、会話の内容を保存・表示することもありません。"
+  },
+  "settings.about.update": {
+    "zh-Hant": "重新執行安裝指令即可更新到最新版。",
+    "zh-Hans": "重新运行安装命令即可更新到最新版。",
+    "en": "Run the install command again to update to the latest version.",
+    "ja": "インストールコマンドを再実行すると最新版に更新されます。"
+  },
+  "time.justNow": {
+    "zh-Hant": "剛剛",
+    "zh-Hans": "刚刚",
+    "en": "just now",
+    "ja": "たった今"
+  },
+  "time.secondsAgo": {
+    "zh-Hant": "%d 秒前",
+    "zh-Hans": "%d 秒前",
+    "en": "%ds ago",
+    "ja": "%d 秒前"
+  },
+  "time.minutesAgo": {
+    "zh-Hant": "%d 分鐘前",
+    "zh-Hans": "%d 分钟前",
+    "en": "%dm ago",
+    "ja": "%d 分前"
+  },
+  "a11y.orb": {
+    "zh-Hant": "每秒 %@ 個 token，%@",
+    "zh-Hans": "每秒 %@ 个 token，%@",
+    "en": "%@ tokens per second, %@",
+    "ja": "毎秒 %@ トークン、%@"
+  },
+  "settings.appearance": {
+    "zh-Hant": "外觀",
+    "zh-Hans": "外观",
+    "en": "Appearance",
+    "ja": "外観"
+  },
+  "appearance.auto": {
+    "zh-Hant": "自動",
+    "zh-Hans": "自动",
+    "en": "Auto",
+    "ja": "自動"
+  },
+  "appearance.light": {
+    "zh-Hant": "淺色",
+    "zh-Hans": "浅色",
+    "en": "Light",
+    "ja": "ライト"
+  },
+  "appearance.dark": {
+    "zh-Hant": "深色",
+    "zh-Hans": "深色",
+    "en": "Dark",
+    "ja": "ダーク"
+  },
+  "language.zhHant": {
+    "zh-Hant": "繁體中文",
+    "zh-Hans": "繁體中文",
+    "en": "繁體中文",
+    "ja": "繁體中文"
+  },
+  "language.zhHans": {
+    "zh-Hant": "简体中文",
+    "zh-Hans": "简体中文",
+    "en": "简体中文",
+    "ja": "简体中文"
+  },
+  "language.en": {
+    "zh-Hant": "English",
+    "zh-Hans": "English",
+    "en": "English",
+    "ja": "English"
+  },
+  "language.ja": {
+    "zh-Hant": "日本語",
+    "zh-Hans": "日本語",
+    "en": "日本語",
+    "ja": "日本語"
+  }
+}

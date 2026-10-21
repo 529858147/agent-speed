@@ -1,0 +1,184 @@
+{
+  "_comment": "Process files in `order` with one shared dedupe set. Paths are relative to this folder.",
+  "order": [
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl",
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl",
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl",
+    "claude/projects/-Users-dev-projects-nova/s-cli.jsonl",
+    "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl",
+    "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl"
+  ],
+  "files": {
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": {
+      "source": "codex",
+      "project": "rocket",
+      "model": "gpt-6.1-sol",
+      "isSubagent": false,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490410700,
+      "malformedLines": 1,
+      "responses": [
+        {
+          "key": "resp-1",
+          "startMs": 1792490401010,
+          "endMs": 1792490405010,
+          "input": 10000,
+          "cachedInput": 8000,
+          "cacheWriteInput": 0,
+          "output": 200,
+          "reasoning": 50,
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "key": "resp-2",
+          "startMs": 1792490407500,
+          "endMs": 1792490410500,
+          "input": 10400,
+          "cachedInput": 10000,
+          "cacheWriteInput": 0,
+          "output": 330,
+          "reasoning": 0,
+          "model": "gpt-6.1-sol"
+        }
+      ]
+    },
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl": {
+      "source": "codex",
+      "project": "rocket",
+      "model": "gpt-6.1-sol",
+      "isSubagent": true,
+      "phase": "generating",
+      "inFlightStartMs": 1792490430000,
+      "lastLineMs": 1792490430000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "resp-3",
+          "startMs": 1792490421000,
+          "endMs": 1792490424000,
+          "input": 5000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "output": 120,
+          "reasoning": 40,
+          "model": "gpt-6.1-sol"
+        }
+      ]
+    },
+    "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl": {
+      "source": "codex",
+      "project": "legacy-app",
+      "model": "gpt-5.5",
+      "isSubagent": false,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490469100,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "codex-legacy:thread-legacy:20213",
+          "startMs": 1792490460500,
+          "endMs": 1792490464000,
+          "input": 19515,
+          "cachedInput": 7040,
+          "cacheWriteInput": 0,
+          "output": 698,
+          "reasoning": 368,
+          "model": "gpt-5.5"
+        },
+        {
+          "key": "codex-legacy:thread-legacy:41000",
+          "startMs": 1792490466000,
+          "endMs": 1792490469000,
+          "input": 20485,
+          "cachedInput": 11960,
+          "cacheWriteInput": 0,
+          "output": 302,
+          "reasoning": 32,
+          "model": "gpt-5.5"
+        }
+      ]
+    },
+    "claude/projects/-Users-dev-projects-nova/s-cli.jsonl": {
+      "source": "claudeCode",
+      "project": "nova",
+      "model": "claude-opus-5-5",
+      "isSubagent": false,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490545000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "msg_A",
+          "startMs": 1792490520050,
+          "endMs": 1792490526050,
+          "input": 21002,
+          "cachedInput": 20000,
+          "cacheWriteInput": 1000,
+          "output": 300,
+          "reasoning": 60,
+          "model": "claude-opus-5-5"
+        },
+        {
+          "key": "msg_B",
+          "startMs": 1792490529000,
+          "endMs": 1792490532000,
+          "input": 21205,
+          "cachedInput": 21000,
+          "cacheWriteInput": 200,
+          "output": 240,
+          "reasoning": 0,
+          "model": "claude-opus-5-5"
+        }
+      ]
+    },
+    "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl": {
+      "source": "claudeCode",
+      "project": "nova",
+      "model": "claude-opus-5-5",
+      "isSubagent": true,
+      "phase": "generating",
+      "inFlightStartMs": 1792490531000,
+      "lastLineMs": 1792490531000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "msg_D",
+          "startMs": 1792490527000,
+          "endMs": 1792490530000,
+          "input": 504,
+          "cachedInput": 0,
+          "cacheWriteInput": 500,
+          "output": 90,
+          "reasoning": 0,
+          "model": "claude-opus-5-5"
+        }
+      ]
+    },
+    "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl": {
+      "source": "claudeDesktop",
+      "project": "orbit",
+      "model": "claude-opus-5-5",
+      "isSubagent": false,
+      "phase": "tools",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490585000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "msg_C",
+          "startMs": 1792490580000,
+          "endMs": 1792490585000,
+          "input": 30003,
+          "cachedInput": 30000,
+          "cacheWriteInput": 0,
+          "output": 500,
+          "reasoning": 0,
+          "model": "claude-opus-5-5"
+        }
+      ]
+    }
+  }
+}
