@@ -50,16 +50,23 @@ final class AppSettings {
     var orbFadeWhenIdle: Bool { didSet { store(orbFadeWhenIdle, .orbFadeWhenIdle) } }
     var orbAllSpaces: Bool { didSet { store(orbAllSpaces, .orbAllSpaces) } }
 
+    /// Dashboard agents list: every agent instead of the first rows (DESIGN section 4.4).
+    var agentsExpanded: Bool { didSet { store(agentsExpanded, .agentsExpanded) } }
+
     var effects: EffectsLevel { didSet { store(effects.rawValue, .effects) } }
     var celebratePeaks: Bool { didSet { store(celebratePeaks, .celebratePeaks) } }
     var responsePulses: Bool { didSet { store(responsePulses, .responsePulses) } }
 
     var enabledSources: Set<SourceKind> {
-        didSet { store(enabledSources.map(\.rawValue).sorted(), .enabledSources) }
+        didSet {
+            store(enabledSources.map(\.rawValue).sorted(), .enabledSources)
+            store(SourceKind.allCases.map(\.rawValue), .knownSources)
+        }
     }
     /// Nil means the default location from `LiveMonitor`.
     var codexRoot: URL? { didSet { store(codexRoot?.path, .codexRoot) } }
     var claudeRoot: URL? { didSet { store(claudeRoot?.path, .claudeRoot) } }
+    var dshRoot: URL? { didSet { store(dshRoot?.path, .dshRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -91,21 +98,26 @@ final class AppSettings {
         orbClickThrough = defaults.object(forKey: Key.orbClickThrough.rawValue) as? Bool ?? false
         orbFadeWhenIdle = defaults.object(forKey: Key.orbFadeWhenIdle.rawValue) as? Bool ?? false
         orbAllSpaces = defaults.object(forKey: Key.orbAllSpaces.rawValue) as? Bool ?? true
+        agentsExpanded = defaults.object(forKey: Key.agentsExpanded.rawValue) as? Bool ?? false
         effects = EffectsLevel(rawValue: defaults.string(forKey: Key.effects.rawValue) ?? "") ?? .standard
         celebratePeaks = defaults.object(forKey: Key.celebratePeaks.rawValue) as? Bool ?? true
         responsePulses = defaults.object(forKey: Key.responsePulses.rawValue) as? Bool ?? true
         if let raw = defaults.array(forKey: Key.enabledSources.rawValue) as? [String] {
+            // A source added after the choice was saved starts enabled, like it would for a new user.
+            let known = (defaults.array(forKey: Key.knownSources.rawValue) as? [String]).map(Set.init) ?? Self.legacySources
             enabledSources = Set(raw.compactMap(SourceKind.init(rawValue:)))
+                .union(SourceKind.allCases.filter { !known.contains($0.rawValue) })
         } else {
             enabledSources = Set(SourceKind.allCases)
         }
         codexRoot = Self.url(defaults.string(forKey: Key.codexRoot.rawValue))
         claudeRoot = Self.url(defaults.string(forKey: Key.claudeRoot.rawValue))
+        dshRoot = Self.url(defaults.string(forKey: Key.dshRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
     }
 
     var monitorConfiguration: MonitorConfiguration {
-        MonitorConfiguration(enabledSources: enabledSources, codexRoot: codexRoot, claudeRoot: claudeRoot)
+        MonitorConfiguration(enabledSources: enabledSources, codexRoot: codexRoot, claudeRoot: claudeRoot, dshRoot: dshRoot)
     }
 
     func isEnabled(_ source: SourceKind) -> Bool { enabledSources.contains(source) }
@@ -137,6 +149,9 @@ final class AppSettings {
         (redline * SpeedTier.boost.threshold, redline * SpeedTier.overdrive.threshold, redline * SpeedTier.redline.threshold)
     }
 
+    /// The sources that existed before `knownSources` was saved alongside `enabledSources`.
+    private static let legacySources: Set<String> = ["codex", "claudeCode", "claudeDesktop"]
+
     private static func url(_ path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path, isDirectory: true)
@@ -150,8 +165,9 @@ final class AppSettings {
         case appearance, language, metric, redline, redlineTotal
         case barMode, barColoredGlyph, barShowsUnit
         case orbVisible, orbSize, orbOpacity, orbAlwaysOnTop, orbClickThrough, orbFadeWhenIdle, orbAllSpaces
+        case agentsExpanded
         case effects, celebratePeaks, responsePulses
-        case enabledSources, codexRoot, claudeRoot
+        case enabledSources, knownSources, codexRoot, claudeRoot, dshRoot
         case autoCheckUpdates
     }
 }

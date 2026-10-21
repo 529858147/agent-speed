@@ -77,7 +77,8 @@ internal sealed class AgentRow : ObservableObject
 /// <summary>Text and rows for the dashboard, refreshed from snapshots (≤ 4 Hz while visible).</summary>
 internal sealed class DashboardViewModel : ObservableObject
 {
-    private const int MaxAgents = 6;
+    /// <summary>Fixed agent row height, so the scrolling viewport is exactly a whole number of rows.</summary>
+    public const double AgentRowHeight = 40;
 
     private string _valueText = "0";
     private string _unitText = "tok/s";
@@ -89,7 +90,17 @@ internal sealed class DashboardViewModel : ObservableObject
     private bool _isRunning = true;
     private double _loadingProgress;
     private bool _hasAgents;
-    private string _hiddenAgentsText = string.Empty;
+    private bool _agentsExpanded;
+    private bool _holdAllAgents;
+    private bool _canToggleAgents;
+    private string _agentsToggleText = string.Empty;
+    private string _agentsToggleAccessibleName = string.Empty;
+    private double _agentsViewportHeight;
+    private double _collapsedAgentsHeight;
+    private bool _agentsScroll;
+    private IReadOnlyList<AgentStatus> _lastAgents = [];
+    private SpeedMetric _lastMetric;
+    private Localizer? _lastLoc;
     private string _outputText = "0";
     private string _inputText = "0";
     private string _requestsText = "0";
@@ -133,20 +144,52 @@ internal sealed class DashboardViewModel : ObservableObject
 
     public bool HasAgents { get => _hasAgents; private set => Set(ref _hasAgents, value); }
 
-    /// <summary><c>+3 個 agent</c> when rows did not fit; empty otherwise.</summary>
-    public string HiddenAgentsText
+    /// <summary>The remembered choice to show every agent (DESIGN section 4, item 4).</summary>
+    public bool AgentsExpanded
     {
-        get => _hiddenAgentsText;
-        private set
+        get => _agentsExpanded;
+        set
         {
-            if (Set(ref _hiddenAgentsText, value))
+            if (Set(ref _agentsExpanded, value))
             {
-                OnPropertyChanged(nameof(HasHiddenAgents));
+                RefreshAgents();
             }
         }
     }
 
-    public bool HasHiddenAgents => _hiddenAgentsText.Length > 0;
+    /// <summary>Keeps every row while the list animates closed; the collapsed rows replace them when it settles.</summary>
+    public bool HoldAllAgents
+    {
+        get => _holdAllAgents;
+        set
+        {
+            if (Set(ref _holdAllAgents, value))
+            {
+                RefreshAgents();
+            }
+        }
+    }
+
+    /// <summary>More agents exist than the collapsed list shows, so the disclosure row is offered.</summary>
+    public bool CanToggleAgents { get => _canToggleAgents; private set => Set(ref _canToggleAgents, value); }
+
+    /// <summary><c>+4 個 agent</c> while collapsed, <c>收合</c> while expanded.</summary>
+    public string AgentsToggleText { get => _agentsToggleText; private set => Set(ref _agentsToggleText, value); }
+
+    public string AgentsToggleAccessibleName
+    {
+        get => _agentsToggleAccessibleName;
+        private set => Set(ref _agentsToggleAccessibleName, value);
+    }
+
+    /// <summary>Height of the agents viewport for the rows shown: up to 12 rows, beyond that the list scrolls.</summary>
+    public double AgentsViewportHeight { get => _agentsViewportHeight; private set => Set(ref _agentsViewportHeight, value); }
+
+    /// <summary>Height the viewport settles at once collapsed, the target of the closing animation.</summary>
+    public double CollapsedAgentsHeight { get => _collapsedAgentsHeight; private set => Set(ref _collapsedAgentsHeight, value); }
+
+    /// <summary>The shown rows exceed the viewport.</summary>
+    public bool AgentsScroll { get => _agentsScroll; private set => Set(ref _agentsScroll, value); }
 
     public string OutputText { get => _outputText; private set => Set(ref _outputText, value); }
 
@@ -192,7 +235,10 @@ internal sealed class DashboardViewModel : ObservableObject
         HasEstimate = snapshot.LiveEstimatedShare > 0.001 || snapshot.History.Count > 0 && snapshot.History[^1].Estimated.ValueFor(metric) > 0.05;
 
         UpdateSources(snapshot, metric, loc, unit);
-        UpdateAgents(snapshot, metric, loc);
+        _lastAgents = snapshot.Agents;
+        _lastMetric = metric;
+        _lastLoc = loc;
+        RefreshAgents();
 
         var today = snapshot.Today;
         OutputText = SpeedFormat.Tokens(today.Output);
@@ -252,10 +298,19 @@ internal sealed class DashboardViewModel : ObservableObject
         }
     }
 
-    private void UpdateAgents(SpeedSnapshot snapshot, SpeedMetric metric, Localizer loc)
+    private void RefreshAgents()
     {
-        var layout = AgentTree.Arrange(snapshot.Agents, MaxAgents);
-        var rows = layout.Rows;
+        if (_lastLoc is { } loc)
+        {
+            UpdateAgents(_lastAgents, _lastMetric, loc);
+        }
+    }
+
+    private void UpdateAgents(IReadOnlyList<AgentStatus> agents, SpeedMetric metric, Localizer loc)
+    {
+        var list = AgentList.Arrange(agents);
+        var showAll = _agentsExpanded || _holdAllAgents;
+        var rows = list.For(showAll).Rows;
         while (Agents.Count > rows.Count)
         {
             Agents.RemoveAt(Agents.Count - 1);
@@ -285,6 +340,11 @@ internal sealed class DashboardViewModel : ObservableObject
         }
 
         HasAgents = rows.Count > 0;
-        HiddenAgentsText = layout.Hidden > 0 ? DisplayText.HiddenAgents(layout.Hidden, loc) : string.Empty;
+        CanToggleAgents = list.CanExpand;
+        AgentsToggleText = _agentsExpanded ? loc["agents.collapse"] : DisplayText.ExpandAgents(list.Collapsed.Hidden, loc);
+        AgentsToggleAccessibleName = _agentsExpanded ? AgentsToggleText : DisplayText.ExpandAgentsAccessibility(list.Total, loc);
+        AgentsViewportHeight = list.ViewportRowsFor(showAll) * AgentRowHeight;
+        CollapsedAgentsHeight = list.Collapsed.Rows.Count * AgentRowHeight;
+        AgentsScroll = showAll && list.ExpandedScrolls;
     }
 }

@@ -51,7 +51,8 @@ public sealed class ClaudeFinalUsageTests
         temp.WriteFile("claude/projects/p/s.jsonl", string.Join('\n',
             UserText(now - 9000, "a"), Assistant(now - 7000, "msg_ok", 100),
             UserText(now - 6000, "b"), Snapshot(now - 4000, "msg_snap", "tool_use")) + "\n");
-        var core = new MonitorCore(MonitorConfiguration.Default, temp.Combine("codex"), temp.Combine("claude", "projects"), today);
+        var core = new MonitorCore(
+            MonitorConfiguration.Default, temp.Combine("codex"), temp.Combine("claude", "projects"), temp.Combine("dsh"), today);
 
         core.Seed(now, today, CancellationToken.None);
         var (snapshot, _) = core.BuildSnapshot(now, today, MonitorState.Running, observeLive: false);

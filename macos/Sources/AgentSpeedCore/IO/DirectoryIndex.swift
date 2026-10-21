@@ -18,15 +18,17 @@ struct DirectoryIndex: Sendable {
     }
 
     let root: String
+    let names: TranscriptNames
     let maxDepth: Int
     private var listings: [String: Listing] = [:]
 
-    init(root: String, maxDepth: Int = TranscriptDiscovery.maxDepth) {
+    init(root: String, names: TranscriptNames = .jsonl, maxDepth: Int = TranscriptDiscovery.maxDepth) {
         self.root = TranscriptDiscovery.normalizedRoot(root)
+        self.names = names
         self.maxDepth = maxDepth
     }
 
-    /// Paths of every `*.jsonl` regular file within the limits. Symlinks are never followed below the root.
+    /// Paths of every transcript regular file within the limits. Symlinks are never followed below the root.
     mutating func scan() -> [String] {
         var found: [String] = []
         var visited: Set<String> = []
@@ -42,7 +44,7 @@ struct DirectoryIndex: Sendable {
             if let cached = listings[directory], cached.identity == info.identity, cached.modifiedNs == info.modifiedNs {
                 listing = cached
             } else {
-                listing = Self.list(directory, info: info)
+                listing = Self.list(directory, info: info, names: names)
                 listings[directory] = listing
             }
             for path in listing.transcripts {
@@ -59,7 +61,7 @@ struct DirectoryIndex: Sendable {
         return found
     }
 
-    private static func list(_ directory: String, info: FileStat) -> Listing {
+    private static func list(_ directory: String, info: FileStat, names: TranscriptNames) -> Listing {
         var listing = Listing(identity: info.identity, modifiedNs: info.modifiedNs, directories: [], transcripts: [])
         guard let handle = opendir(directory) else { return listing }
         defer { closedir(handle) }
@@ -72,7 +74,7 @@ struct DirectoryIndex: Sendable {
             }
             if type == DT_DIR {
                 listing.directories.append(path)
-            } else if type == DT_REG, name.hasSuffix(".jsonl") {
+            } else if type == DT_REG, names.matches(name) {
                 listing.transcripts.append(path)
             }
         }

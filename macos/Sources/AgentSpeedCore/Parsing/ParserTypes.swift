@@ -44,8 +44,9 @@ struct ResponseUpsert: Equatable, Sendable {
     var isCompletion: Bool
 }
 
-/// A Codex thread as named by the first `session_meta` of its file (METRICS 4.2, 6.7).
-struct CodexThread: Equatable, Sendable {
+/// A Codex thread or a DeepSeek Harness session as named by the first `session_meta` or header of its file
+/// (METRICS 4.2, 4.3, 6.7).
+struct SessionThread: Equatable, Sendable {
     var id: String?
     var parentId: String?
     var createdMs: Int64
@@ -57,8 +58,8 @@ struct AgentState: Equatable, Sendable {
     var project: String?
     var model: String?
     var isSubagent: Bool
-    /// Codex only; set once by the first `session_meta`.
-    var thread: CodexThread?
+    /// Codex and DeepSeek only; set once by the first `session_meta` or header.
+    var thread: SessionThread?
     var phase: AgentPhase = .idle
     var phaseSinceMs: Int64?
     var inFlightStartMs: Int64?

@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using AgentSpeed.Interop;
 using AgentSpeed.Orb;
@@ -15,17 +17,38 @@ internal sealed partial class DashboardWindow : Window
     private const double FlyoutWidth = 368;
     private const double ScreenMargin = 12;
 
+    private readonly DashboardViewModel _model;
+    private readonly HeightSpring _agentsHeight;
     private nint _hwnd;
     private TaskbarEdge _edge = TaskbarEdge.Bottom;
     private RECT _work;
     private double _scale = 1;
     private bool _placing;
     private bool _suppressRange;
+    private bool _toggling;
+    private bool _collapsing;
+    private double _collapseFromHeight;
+    private double _collapseFromOffset;
 
     public DashboardWindow(DashboardViewModel viewModel, Func<double> clock)
     {
         InitializeComponent();
         DataContext = viewModel;
+        _model = viewModel;
+        _agentsHeight = new HeightSpring(AgentsViewport);
+        _agentsHeight.Stepped += OnAgentsStepped;
+        _agentsHeight.Settled += OnAgentsSettled;
+        _agentsHeight.Snap(viewModel.AgentsViewportHeight);
+        viewModel.PropertyChanged += OnModelChanged;
+        TurnChevron(animate: false);
+        UpdateAgentsScrollBar();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible)
+            {
+                _agentsHeight.Finish();
+            }
+        };
         Hero = new OrbView(clock)
         {
             Margin = new Thickness(-28),
@@ -53,6 +76,9 @@ internal sealed partial class DashboardWindow : Window
     public event EventHandler<bool>? OrbToggled;
 
     public event EventHandler<int>? RangeChanged;
+
+    /// <summary>The agents list was expanded (true) or collapsed (false) by the user.</summary>
+    public event EventHandler<bool>? AgentsExpandedChanged;
 
     /// <summary>The update pill was clicked.</summary>
     public event EventHandler? UpdateRequested;
@@ -280,6 +306,147 @@ internal sealed partial class DashboardWindow : Window
         }
 
         RangeChanged?.Invoke(this, seconds);
+    }
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(DashboardViewModel.AgentsViewportHeight) when !_toggling && !_collapsing:
+                if (_agentsHeight.IsRunning)
+                {
+                    _agentsHeight.Retarget(_model.AgentsViewportHeight);
+                }
+                else
+                {
+                    _agentsHeight.Snap(_model.AgentsViewportHeight);
+                }
+
+                break;
+            case nameof(DashboardViewModel.CollapsedAgentsHeight) when _collapsing:
+                _agentsHeight.Retarget(_model.CollapsedAgentsHeight);
+                break;
+            case nameof(DashboardViewModel.AgentsExpanded):
+                TurnChevron(animate: IsVisible && !_model.ReduceMotion);
+                break;
+            case nameof(DashboardViewModel.AgentsScroll):
+                UpdateAgentsScrollBar();
+                break;
+        }
+    }
+
+    private void OnAgentsToggle(object sender, RoutedEventArgs e)
+    {
+        var animate = IsVisible && !_model.ReduceMotion;
+        var from = AgentsViewport.ActualHeight;
+        var expand = !_model.AgentsExpanded;
+        _toggling = true;
+        try
+        {
+            if (expand)
+            {
+                _collapsing = false;
+                _model.AgentsExpanded = true;
+                _model.HoldAllAgents = false;
+            }
+            else
+            {
+                // Rows stay until the height settles, so the list closes over them instead of leaving a gap.
+                _model.HoldAllAgents = animate;
+                _model.AgentsExpanded = false;
+            }
+        }
+        finally
+        {
+            _toggling = false;
+        }
+
+        if (!animate)
+        {
+            AgentsViewport.ScrollToVerticalOffset(0);
+            _agentsHeight.Snap(_model.AgentsViewportHeight);
+        }
+        else if (expand)
+        {
+            _agentsHeight.AnimateTo(from, _model.AgentsViewportHeight);
+        }
+        else
+        {
+            _collapsing = true;
+            _collapseFromHeight = from;
+            _collapseFromOffset = AgentsViewport.VerticalOffset;
+            _agentsHeight.AnimateTo(from, _model.CollapsedAgentsHeight);
+        }
+
+        UpdateAgentsScrollBar();
+        AgentsExpandedChanged?.Invoke(this, expand);
+    }
+
+    private void OnAgentsStepped(object? sender, double height)
+    {
+        if (!_collapsing)
+        {
+            return;
+        }
+
+        var span = _collapseFromHeight - _agentsHeight.Target;
+        var remaining = span > 0 ? Math.Clamp((height - _agentsHeight.Target) / span, 0, 1) : 0;
+        AgentsViewport.ScrollToVerticalOffset(_collapseFromOffset * remaining);
+    }
+
+    private void OnAgentsSettled(object? sender, EventArgs e)
+    {
+        if (_collapsing)
+        {
+            _collapsing = false;
+            AgentsViewport.ScrollToVerticalOffset(0);
+            _model.HoldAllAgents = false;
+        }
+
+        UpdateAgentsScrollBar();
+    }
+
+    /// <summary>The scroll bar appears only once the expanded list rests in its 12-row viewport.</summary>
+    private void UpdateAgentsScrollBar() =>
+        AgentsViewport.VerticalScrollBarVisibility = _model.AgentsScroll && !_agentsHeight.IsRunning
+            ? ScrollBarVisibility.Auto
+            : ScrollBarVisibility.Hidden;
+
+    private void TurnChevron(bool animate)
+    {
+        var angle = _model.AgentsExpanded ? 180 : 0;
+        if (animate)
+        {
+            var turn = new DoubleAnimation(angle, TimeSpan.FromMilliseconds(260))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            };
+            AgentsChevron.BeginAnimation(RotateTransform.AngleProperty, turn);
+        }
+        else
+        {
+            AgentsChevron.BeginAnimation(RotateTransform.AngleProperty, null);
+            AgentsChevron.Angle = angle;
+        }
+    }
+
+    /// <summary>Hands the wheel to the flyout when the agents list cannot scroll that way.</summary>
+    private void OnAgentsWheel(object sender, MouseWheelEventArgs e)
+    {
+        var offset = AgentsViewport.VerticalOffset;
+        var canScroll = _model.AgentsScroll && !_agentsHeight.IsRunning
+            && (e.Delta > 0 ? offset > 0.5 : offset < AgentsViewport.ScrollableHeight - 0.5);
+        if (canScroll)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Scroller.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = MouseWheelEvent,
+            Source = sender,
+        });
     }
 
     private void OnOrbToggled(object sender, RoutedEventArgs e) => OrbToggled?.Invoke(this, OrbToggle.IsChecked == true);

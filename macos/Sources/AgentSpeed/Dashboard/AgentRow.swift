@@ -52,7 +52,7 @@ struct AgentRow: View {
                 .frame(width: DashboardLayout.speedColumn, alignment: .trailing)
                 .accessibilityLabel(l10n("mac.settings.speedValue", speedText))
         }
-        .frame(minHeight: DashboardLayout.rowHeight)
+        .frame(height: DashboardLayout.rowHeight)
         .padding(.leading, CGFloat(depth) * DashboardLayout.subagentIndent)
         .contentShape(Rectangle())
         .help("\(project) · \(status)")

@@ -6,16 +6,17 @@ internal enum ProbeMode
     Watch,
 }
 
-internal sealed record ProbeOptions(ProbeMode Mode, int WatchSeconds, string? CodexRoot, string? ClaudeRoot)
+internal sealed record ProbeOptions(ProbeMode Mode, int WatchSeconds, string? CodexRoot, string? ClaudeRoot, string? DshRoot)
 {
-    public const string Usage = "usage: AgentSpeed.Probe (--dump-today | --watch N) [--codex PATH] [--claude PATH]";
+    public const string Usage =
+        "usage: AgentSpeed.Probe (--dump-today | --watch N) [--codex PATH] [--claude PATH] [--dsh PATH]";
 
     public static ProbeOptions? Parse(string[] args, out string? error)
     {
         error = null;
         ProbeMode? mode = null;
         var seconds = 0;
-        string? codex = null, claude = null;
+        string? codex = null, claude = null, dsh = null;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -34,6 +35,9 @@ internal sealed record ProbeOptions(ProbeMode Mode, int WatchSeconds, string? Co
                 case "--claude" when i + 1 < args.Length:
                     claude = args[++i];
                     break;
+                case "--dsh" when i + 1 < args.Length:
+                    dsh = args[++i];
+                    break;
                 default:
                     error = $"unknown or incomplete argument: {args[i]}";
                     return null;
@@ -46,6 +50,6 @@ internal sealed record ProbeOptions(ProbeMode Mode, int WatchSeconds, string? Co
             return null;
         }
 
-        return new ProbeOptions(mode.Value, seconds, codex, claude);
+        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh);
     }
 }

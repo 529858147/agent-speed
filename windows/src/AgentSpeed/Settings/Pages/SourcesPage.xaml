@@ -32,5 +32,13 @@
             </StackPanel>
         </controls:SettingsCard>
         <TextBlock Text="{loc:Loc settings.sources.sharedRoot}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+        <controls:SettingsCard Header="{loc:Loc source.deepseek}" Icon="&#xE8B7;" Description="{Binding DshPath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding DshStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeDshCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetDshCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.dshHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
     </StackPanel>
 </UserControl>

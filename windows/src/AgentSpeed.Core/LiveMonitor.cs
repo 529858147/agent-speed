@@ -71,6 +71,17 @@ public sealed class LiveMonitor : IDisposable
         }
     }
 
+    public static string DefaultDshRoot
+    {
+        get
+        {
+            var home = Environment.GetEnvironmentVariable("DSH_HOME");
+            return string.IsNullOrEmpty(home)
+                ? Path.Combine(UserHome, ".dsh", "sessions")
+                : Path.Combine(home, "sessions");
+        }
+    }
+
     private static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     public void Start()
@@ -210,6 +221,7 @@ public sealed class LiveMonitor : IDisposable
             configuration,
             NormalizeRoot(configuration.CodexRoot ?? DefaultCodexRoot),
             NormalizeRoot(configuration.ClaudeRoot ?? DefaultClaudeRoot),
+            NormalizeRoot(configuration.DshRoot ?? DefaultDshRoot),
             LocalDay.StartMs(NowMs(), zone));
         var watchers = new Dictionary<SourceRoot, RootWatcher>();
         try
@@ -365,7 +377,7 @@ public sealed class LiveMonitor : IDisposable
             var wanted = root.Enabled && root.Available;
             if (wanted && !watchers.ContainsKey(root))
             {
-                if (RootWatcher.TryCreate(root.Path, OnWatcherPath, OnWatcherOverflow) is { } watcher)
+                if (RootWatcher.TryCreate(root.Path, root.Naming, OnWatcherPath, OnWatcherOverflow) is { } watcher)
                 {
                     watchers[root] = watcher;
                 }

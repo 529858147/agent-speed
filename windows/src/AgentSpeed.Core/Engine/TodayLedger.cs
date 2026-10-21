@@ -11,7 +11,7 @@ internal sealed class TodayLedger
     private readonly Queue<string> _order = new();
     private readonly SecondSeries _output = new();
     private readonly SecondSeries _total = new();
-    private readonly TokenTotals[] _perSource = new TokenTotals[3];
+    private readonly TokenTotals[] _perSource = new TokenTotals[Enum.GetValues<SourceKind>().Length];
     private double _validOutput;
     private double _validSeconds;
     private long _validCount;

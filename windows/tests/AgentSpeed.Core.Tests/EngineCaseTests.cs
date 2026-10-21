@@ -140,6 +140,7 @@ public sealed class EngineCaseTests
         "codex" => SourceKind.Codex,
         "claudeCode" => SourceKind.ClaudeCode,
         "claudeDesktop" => SourceKind.ClaudeDesktop,
+        "deepseek" => SourceKind.DeepSeek,
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
     };
 

@@ -18,7 +18,15 @@ enum DashboardLayout {
     static let subagentIndent: CGFloat = 12
     /// Deeper sub-agents share the last indent.
     static let maxAgentDepth = 2
+    /// Agent rows of the collapsed list.
     static let maxAgents = 6
+    /// Agent rows the expanded list shows before it scrolls.
+    static let maxExpandedAgents = 12
+
+    /// Height of `rows` agent rows stacked at `rowSpacing`.
+    static func agentListHeight(rows: Int) -> CGFloat {
+        rows > 0 ? CGFloat(rows) * rowHeight + CGFloat(rows - 1) * rowSpacing : 0
+    }
 }
 
 enum DashboardFont {

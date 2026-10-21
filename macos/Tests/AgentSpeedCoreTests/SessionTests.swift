@@ -10,12 +10,13 @@ struct SessionTests {
         let order = try #require(try Fixtures.json("parser-expected.json")["order"] as? [String])
         let start = Date().addingTimeInterval(-60)
         for (index, relative) in order.enumerated() {
-            let text = try String(contentsOf: Fixtures.root.appendingPathComponent(relative), encoding: .utf8)
-            try directory.write(relative, text, modified: start.addingTimeInterval(TimeInterval(index)))
+            let bytes = try Data(contentsOf: Fixtures.root.appendingPathComponent(relative))
+            try directory.write(relative, bytes: Array(bytes), modified: start.addingTimeInterval(TimeInterval(index)))
         }
         let configuration = MonitorConfiguration(
             codexRoot: directory.file("codex/sessions"),
-            claudeRoot: directory.file("claude/projects")
+            claudeRoot: directory.file("claude/projects"),
+            dshRoot: directory.file("dsh/sessions")
         )
         return (directory, configuration)
     }
@@ -27,19 +28,23 @@ struct SessionTests {
         let session = TranscriptSession(configuration: configuration)
         let fixtureDay = Clock.milliseconds(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_792_490_400)))
         let summary = session.seed(todayStartMs: fixtureDay)
-        #expect(summary.filesRead == 6)
-        #expect(summary.filesDiscovered == 6)
+        #expect(summary.filesRead == 8)
+        #expect(summary.filesDiscovered == 8)
         #expect(Set(session.responses.map(\.key)) == [
             "resp-1", "resp-2", "resp-3", "resp-4", "codex-legacy:thread-legacy:20213", "codex-legacy:thread-legacy:41000",
-            "msg_A", "msg_B", "msg_C", "msg_D", "msg_E",
+            "msg_A", "msg_B", "msg_C", "msg_D", "msg_E", "dsm-1", "dsm-2", "dss-1",
         ])
         #expect(session.responses.first { $0.key == "msg_B" }?.agentId.hasSuffix("s-cli.jsonl") == true)
-        #expect(session.malformedLines == 1)
+        #expect(session.responses.first { $0.key == "dsm-1" }?.agentId.hasSuffix("session-dsh-main/session.v4.jsonl.zstd") == true)
+        #expect(session.responses.first { $0.key == "dss-1" }?.source == .deepseek)
+        #expect(session.malformedLines == 2)
         #expect(session.responses.first { $0.key == "msg_E" }?.isFinal == false)
         let (output, events) = session.advance(nowMs: 1_792_491_000_000, todayStartMs: fixtureDay, emitsEvents: true)
         #expect(events.isEmpty)
         let context = SnapshotContext(session: session, todayStartMs: fixtureDay)
-        #expect(context.warnings(for: output) == [.malformedLines(1), .unfinalizedUsage(1)])
+        #expect(context.warnings(for: output) == [.malformedLines(2), .unfinalizedUsage(1)])
+        #expect(context.sources[.deepseek]?.available == true)
+        #expect(context.sources[.deepseek]?.rootPath == directory.file("dsh/sessions").path)
         _ = directory
     }
 
@@ -54,6 +59,7 @@ struct SessionTests {
         let pairs = [
             ("rollout-2026-10-20T10-00-00-modern.jsonl", "rollout-2026-10-20T10-00-20-subagent.jsonl"),
             ("s-cli.jsonl", "agent-abc.jsonl"),
+            ("session-dsh-main/session.v4.jsonl.zstd", "session-dsh-sub/session.v4.jsonl.zstd"),
         ]
         for (parentName, childName) in pairs {
             let child = try #require(agents.firstIndex { $0.id.hasSuffix("/" + childName) }, "\(childName) listed")
@@ -62,8 +68,8 @@ struct SessionTests {
             #expect(agents[child].parentId == agents[child - 1].id)
             #expect(agents[child - 1].parentId == nil)
         }
-        #expect(agents.count == 6)
-        #expect(agents.filter { $0.parentId != nil }.count == 2)
+        #expect(agents.count == 8)
+        #expect(agents.filter { $0.parentId != nil }.count == 3)
         _ = directory
     }
 
@@ -123,6 +129,61 @@ struct SessionTests {
         let record = session.responses.first { $0.key == "msg_new" }
         #expect(record?.startMs == Timestamp.parse("2026-10-20T10:05:00.000Z"))
         #expect(record?.source == .claudeCode)
+    }
+
+    @Test func deepseekFramesAppendedLiveProduceCompletions() throws {
+        let (directory, configuration) = try Self.makeFixtureRoots()
+        let session = TranscriptSession(configuration: configuration)
+        _ = session.seed(todayStartMs: Self.startOfToday())
+        let relative = "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd"
+        let message = #"{"type":"assistant/message","seq":26,"time":1792490657010,"data":{"message":{"id":"dss-live","#
+            + #""content":[{"type":"text"}],"source":{"model":"deepseek-pro"}},"usage":{"inputTokens":10,"outputTokens":120}}}"#
+        try directory.append(relative, bytes: ZstdFrames.raw(message + "\n"))
+        let canonical = try #require(realpath(directory.file(relative).path, nil))
+        let canonicalPath = String(cString: canonical)
+        free(canonical)
+        #expect(session.handleChanges(atCanonicalPaths: [canonicalPath, canonicalPath.replacingOccurrences(of: "session.v4.jsonl.zstd", with: "session.lock")]))
+        let (_, events) = session.advance(nowMs: Clock.milliseconds(Date()), todayStartMs: Self.startOfToday(), emitsEvents: true)
+        #expect(events.count == 1)
+        if case .responseCompleted(let summary)? = events.first {
+            #expect(summary.source == .deepseek)
+            #expect(summary.outputTokens == 120)
+            #expect(summary.duration == 2)
+            #expect(summary.project == "quasar")
+        } else {
+            Issue.record("expected a completion")
+        }
+
+        let fresh = "dsh/sessions/--w-nebula--/session-new/session.v4.jsonl.zstd"
+        try directory.write(fresh, bytes: ZstdFrames.raw([
+            #"{"type":"session","version":4,"id":"session-new","createdAt":1792490700000,"cwd":"/w/nebula"}"#,
+            #"{"type":"step/start","seq":1,"time":1792490701000,"data":{}}"#,
+            #"{"type":"assistant/message","seq":2,"time":1792490703000,"data":{"message":{"id":"dsn-1"},"usage":{"outputTokens":7}}}"#,
+        ].joined(separator: "\n") + "\n"))
+        #expect(session.rediscover(todayStartMs: Self.startOfToday()))
+        #expect(session.responses.first { $0.key == "dsn-1" }?.startMs == 1_792_490_701_000)
+    }
+
+    @Test func largeFrameStreamsStartAtTheirEndWithAWarning() throws {
+        let directory = try TempDirectory()
+        let relative = "--w-big--/session-big/session.v4.jsonl.zstd"
+        func message(_ id: String, _ seq: Int) -> String {
+            #"{"type":"assistant/message","seq":\#(seq),"time":1792490703000,"data":{"message":{"id":"\#(id)"},"usage":{"outputTokens":7}}}"#
+        }
+        let seeded = ZstdFrames.raw(message("before", 1) + "\n")
+        try directory.write(relative, bytes: seeded)
+        let limits = TranscriptSession.ReadingLimits(largeFileBytes: Int64(seeded.count - 1))
+        let session = TranscriptSession(
+            configuration: MonitorConfiguration(enabledSources: [.deepseek], dshRoot: directory.url),
+            limits: limits
+        )
+        let summary = session.seed(todayStartMs: Self.startOfToday())
+        #expect(summary.partialHistory)
+        #expect(summary.filesRead == 0)
+        #expect(session.responses.isEmpty)
+        try directory.append(relative, bytes: ZstdFrames.raw(message("after", 2) + "\n"))
+        #expect(session.pollRecentFiles(nowMs: Clock.milliseconds(Date())))
+        #expect(session.responses.map(\.key) == ["after"])
     }
 
     @Test func oldFilesStartAtTheirEnd() throws {

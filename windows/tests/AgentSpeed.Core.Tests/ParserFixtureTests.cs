@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
 
@@ -111,6 +112,7 @@ public sealed class ParserFixtureTests
         SourceKind.Codex => "codex",
         SourceKind.ClaudeCode => "claudeCode",
         SourceKind.ClaudeDesktop => "claudeDesktop",
+        SourceKind.DeepSeek => "deepseek",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -155,6 +157,14 @@ public sealed class ParserFixtureTests
                 }
 
                 parser = codex;
+            }
+            else if (relative.StartsWith("dsh/", StringComparison.Ordinal))
+            {
+                var dsh = new DshParser(path, deduper);
+                var batch = dsh.NewBatch();
+                new ZstdFrameTailer(path).ReadAppended(batch);
+                batch.ApplyTo(sink);
+                parser = dsh;
             }
             else
             {

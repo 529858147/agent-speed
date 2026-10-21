@@ -29,7 +29,9 @@ public static class DisplayText
     {
         SourceKind.Codex => "source.codex",
         SourceKind.ClaudeCode => "source.claudeCode",
-        _ => "source.claudeDesktop",
+        SourceKind.ClaudeDesktop => "source.claudeDesktop",
+        SourceKind.DeepSeek => "source.deepseek",
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 
     public static string PhaseKey(AgentPhase phase) => phase switch
@@ -61,8 +63,11 @@ public static class DisplayText
         return localizer.Format("agents.context", snapshot.GeneratingCount, snapshot.ToolsCount);
     }
 
-    /// <summary><c>+3 個 agent</c>: agents that did not fit in the list.</summary>
-    public static string HiddenAgents(int count, Localizer localizer) => "+" + localizer.Format("agents.count", count);
+    /// <summary><c>+4 個 agent</c>: the disclosure row for agents the collapsed list leaves out.</summary>
+    public static string ExpandAgents(int hidden, Localizer localizer) => localizer.Format("agents.expand", hidden);
+
+    /// <summary><c>顯示全部 10 個 agent</c>: the disclosure row's accessibility label.</summary>
+    public static string ExpandAgentsAccessibility(int total, Localizer localizer) => localizer.Format("agents.expand.a11y", total);
 
     public static string TimeAgo(TimeSpan elapsed, Localizer localizer)
     {

@@ -72,12 +72,15 @@ public static class SettingsSerializer
             w.WriteBoolean("codex", s.CodexEnabled);
             w.WriteBoolean("claudeCode", s.ClaudeCodeEnabled);
             w.WriteBoolean("claudeDesktop", s.ClaudeDesktopEnabled);
+            w.WriteBoolean("deepseek", s.DeepSeekEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
+            WriteNullableString(w, "dshRoot", s.DshRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
             w.WriteNumber("chartSeconds", s.ChartSeconds);
+            w.WriteBoolean("agentsExpanded", s.AgentsExpanded);
             w.WriteEndObject();
 
             w.WriteStartObject("updates");
@@ -143,9 +146,12 @@ public static class SettingsSerializer
             CodexEnabled = ReadBool(sources, "codex", d.CodexEnabled),
             ClaudeCodeEnabled = ReadBool(sources, "claudeCode", d.ClaudeCodeEnabled),
             ClaudeDesktopEnabled = ReadBool(sources, "claudeDesktop", d.ClaudeDesktopEnabled),
+            DeepSeekEnabled = ReadBool(sources, "deepseek", d.DeepSeekEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
+            DshRoot = ReadString(sources, "dshRoot"),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
+            AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),
             AutoCheckUpdates = ReadBool(updates, "autoCheck", d.AutoCheckUpdates),
             LastUpdateCheck = ReadTimestamp(updates, "lastCheck"),
             SkippedVersion = ReadString(updates, "skippedVersion"),

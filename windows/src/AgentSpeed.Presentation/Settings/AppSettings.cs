@@ -100,13 +100,21 @@ public sealed record AppSettings
 
     public bool ClaudeDesktopEnabled { get; init; } = true;
 
+    public bool DeepSeekEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
     /// <summary>Null uses the default Claude projects folder.</summary>
     public string? ClaudeRoot { get; init; }
 
+    /// <summary>Null uses the default DeepSeek Harness sessions folder.</summary>
+    public string? DshRoot { get; init; }
+
     public int ChartSeconds { get; init; } = 120;
+
+    /// <summary>The dashboard shows every agent instead of the collapsed list.</summary>
+    public bool AgentsExpanded { get; init; }
 
     /// <summary>Key of the monitor the orb was last placed on.</summary>
     public string? OrbMonitor { get; init; }
@@ -131,6 +139,7 @@ public sealed record AppSettings
         SourceKind.Codex => CodexEnabled,
         SourceKind.ClaudeCode => ClaudeCodeEnabled,
         SourceKind.ClaudeDesktop => ClaudeDesktopEnabled,
+        SourceKind.DeepSeek => DeepSeekEnabled,
         _ => false,
     };
 
@@ -139,13 +148,14 @@ public sealed record AppSettings
         SourceKind.Codex => this with { CodexEnabled = enabled },
         SourceKind.ClaudeCode => this with { ClaudeCodeEnabled = enabled },
         SourceKind.ClaudeDesktop => this with { ClaudeDesktopEnabled = enabled },
+        SourceKind.DeepSeek => this with { DeepSeekEnabled = enabled },
         _ => this,
     };
 
     public MonitorConfiguration ToMonitorConfiguration()
     {
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
-        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot);
+        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot);
     }
 
     public AppSettings WithOrbAnchor(string monitorKey, OrbAnchor anchor)
@@ -179,6 +189,7 @@ public sealed record AppSettings
         Effects = Enum.IsDefined(Effects) ? Effects : EffectsIntensity.Standard,
         CodexRoot = CleanPath(CodexRoot),
         ClaudeRoot = CleanPath(ClaudeRoot),
+        DshRoot = CleanPath(DshRoot),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),

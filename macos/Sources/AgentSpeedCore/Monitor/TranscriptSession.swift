@@ -61,6 +61,8 @@ final class TranscriptSession {
                  enabled: configuration.readsCodex, available: false),
             Root(family: .claude, path: configuration.resolvedClaudeRoot, canonicalPath: configuration.resolvedClaudeRoot,
                  enabled: configuration.readsClaude, available: false),
+            Root(family: .dsh, path: configuration.resolvedDshRoot, canonicalPath: configuration.resolvedDshRoot,
+                 enabled: configuration.readsDsh, available: false),
         ]
         refreshAvailability()
     }
@@ -108,13 +110,19 @@ final class TranscriptSession {
         for root in roots where root.enabled && root.available {
             for file in TranscriptDiscovery.mostRecent(TranscriptDiscovery.files(at: scan(root))) where files[file.path] == nil {
                 summary.filesDiscovered += 1
-                let readsBacklog = file.stat.modifiedMs >= threshold
+                var readsBacklog = file.stat.modifiedMs >= threshold
                 let start: FileTailer.Start
                 if !readsBacklog {
                     start = .end(file.stat.size)
                 } else if file.stat.size > limits.largeFileBytes {
-                    start = .tail(limits.tailWindowBytes)
                     partialHistory = true
+                    if TranscriptReader.isFrameStream(file.path) {
+                        // A frame stream cannot be entered in the middle, so it is not seeded at all (METRICS 5.1).
+                        start = .end(file.stat.size)
+                        readsBacklog = false
+                    } else {
+                        start = .tail(limits.tailWindowBytes)
+                    }
                 } else {
                     start = .beginning
                 }
@@ -125,11 +133,11 @@ final class TranscriptSession {
         backlog.sort { TranscriptDiscovery.startupOrder($0.file, $1.file) }
         let ordered = backlog.map(\.tracked)
 
-        let jobs = ordered.map { DecodeJob(family: $0.family, tailer: $0.tailer, size: $0.lastStat.size) }
+        let jobs = ordered.map { DecodeJob(family: $0.family, reader: $0.reader, size: $0.lastStat.size) }
         let decoded = Self.decodeInParallel(jobs, progress: progress, isCancelled: isCancelled)
         for (file, result) in zip(ordered, decoded) {
             guard let result else { continue }
-            file.tailer = result.tailer
+            file.reader = result.reader
             summary.filesRead += 1
             summary.bytesRead += Int64(result.read.bytesRead)
             var upserts: [ResponseUpsert] = []
@@ -145,12 +153,12 @@ final class TranscriptSession {
 
     private struct DecodeJob: Sendable {
         var family: TranscriptFamily
-        var tailer: FileTailer
+        var reader: TranscriptReader
         var size: Int64
     }
 
     private struct DecodedFile: Sendable {
-        var tailer: FileTailer
+        var reader: TranscriptReader
         var lines: DecodedLines
         var read: FileTailer.ReadResult
     }
@@ -199,20 +207,28 @@ final class TranscriptSession {
         switch job.family {
         case .codex:
             var lines: [LineExtraction<CodexLine>] = []
-            let read = job.tailer.read { bytes in
+            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
                 let extraction = CodexLineExtractor.extract(bytes)
                 if case .blank = extraction { return }
                 lines.append(extraction)
             }
-            return DecodedFile(tailer: job.tailer, lines: .codex(lines), read: read)
+            return DecodedFile(reader: job.reader, lines: .codex(lines), read: read)
         case .claude:
             var lines: [LineExtraction<ClaudeLine>] = []
-            let read = job.tailer.read { bytes in
+            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
                 let extraction = ClaudeLineExtractor.extract(bytes)
                 if case .blank = extraction { return }
                 lines.append(extraction)
             }
-            return DecodedFile(tailer: job.tailer, lines: .claude(lines), read: read)
+            return DecodedFile(reader: job.reader, lines: .claude(lines), read: read)
+        case .dsh:
+            var lines: [LineExtraction<DshLine>] = []
+            let read = job.reader.read(onMalformed: { lines.append(.malformed) }) { bytes in
+                let extraction = DshLineExtractor.extract(bytes)
+                if case .blank = extraction { return }
+                lines.append(extraction)
+            }
+            return DecodedFile(reader: job.reader, lines: .dsh(lines), read: read)
         }
     }
 
@@ -294,7 +310,7 @@ final class TranscriptSession {
     }
 
     private func scan(_ root: Root) -> [String] {
-        var index = indexes[root.family] ?? DirectoryIndex(root: root.path)
+        var index = indexes[root.family] ?? DirectoryIndex(root: root.path, names: root.family.names)
         let paths = index.scan()
         indexes[root.family] = index
         return paths
@@ -303,7 +319,7 @@ final class TranscriptSession {
     @discardableResult
     private func read(_ file: TrackedFile, live: Bool) -> Bool {
         var upserts: [ResponseUpsert] = []
-        let result = file.tailer.read(onReset: { file.resetParser() }) { bytes in
+        let result = file.reader.read(onReset: { file.resetParser() }, onMalformed: { file.parser.noteMalformedLine() }) { bytes in
             file.parser.consume(rawLine: bytes, deduper: &deduper) { upserts.append($0) }
             guard !upserts.isEmpty else { return }
             let project = projectName(of: file)
@@ -410,8 +426,8 @@ final class TranscriptSession {
 
     /// Maps an FSEvents (canonical) path to the configured-root path, if it names a candidate transcript.
     private func localPath(forCanonical path: String) -> (String, TranscriptFamily)? {
-        guard path.hasSuffix(".jsonl") else { return nil }
-        for root in roots where root.enabled && root.available {
+        let name = (path as NSString).lastPathComponent
+        for root in roots where root.enabled && root.available && root.family.names.matches(name) {
             let prefix = root.canonicalPath == "/" ? "/" : root.canonicalPath + "/"
             guard path.hasPrefix(prefix) else { continue }
             let relative = path.dropFirst(prefix.count)

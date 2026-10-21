@@ -1,19 +1,26 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// The busiest agents in parent groups, already ordered by the engine (METRICS 6.7; DESIGN section 4.4).
+/// The busiest agents in parent groups, already ordered by the engine (METRICS 6.7; DESIGN section 4.4). Collapsed it
+/// shows the first rows and a disclosure for the rest; expanded it shows everyone, scrolling past a dozen rows.
 struct AgentsSection: View {
     let model: AppModel
 
     @State private var order = StableAgentOrder()
+    /// True while a collapse animates: the extra rows stay until the closing region has slid over them.
+    @State private var isCollapsing = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         let l10n = model.l10n
         let snapshot = model.snapshot
-        let rows = order.arrange(snapshot.agents, limit: DashboardLayout.maxAgents) { model.value(of: $0.live) }
-        let hidden = snapshot.agents.count - rows.count
+        let expanded = model.settings.agentsExpanded
+        let limit = DashboardLayout.maxAgents
+        let rows = order.arrange(snapshot.agents, limit: expanded || isCollapsing ? nil : limit) { model.value(of: $0.live) }
+        let total = snapshot.agents.count
+        let visible = min(rows.count, expanded ? DashboardLayout.maxExpandedAgents : limit)
+        let hidden = expanded ? 0 : total - visible
         let tree = AgentTree(rows)
         let depths = tree.depths
 
@@ -31,38 +38,64 @@ struct AgentsSection: View {
                 AgentsEmptyState(text: l10n("agents.empty"))
                     .transition(.opacity)
             } else {
-                VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, agent in
-                        // Leaving rows go at once so they never ghost under the row taking their place.
-                        AgentRow(
-                            model: model,
-                            agent: agent,
-                            depth: min(depths[index], DashboardLayout.maxAgentDepth),
-                            now: snapshot.timestamp
-                        )
-                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                        .zIndex(Double(rows.count - index))
+                AgentsListRegion(
+                    height: DashboardLayout.agentListHeight(rows: visible),
+                    scrolls: expanded && rows.count > DashboardLayout.maxExpandedAgents,
+                    motion: model.dashboardMotion
+                ) {
+                    VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, agent in
+                            // Leaving rows go at once so they never ghost under the row taking their place.
+                            AgentRow(
+                                model: model,
+                                agent: agent,
+                                depth: min(depths[index], DashboardLayout.maxAgentDepth),
+                                now: snapshot.timestamp
+                            )
+                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                            .zIndex(Double(rows.count - index))
+                        }
+                    }
+                    .overlayPreferenceValue(BadgeAnchors.self) { anchors in
+                        GeometryReader { proxy in
+                            SubagentConnectors(tree: tree, anchors: anchors, proxy: proxy, color: DashboardPalette.rule(
+                                dark: colorScheme == .dark,
+                                increasedContrast: contrast == .increased
+                            ))
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
                 }
-                .overlayPreferenceValue(BadgeAnchors.self) { anchors in
-                    GeometryReader { proxy in
-                        SubagentConnectors(tree: tree, anchors: anchors, proxy: proxy, color: DashboardPalette.rule(
-                            dark: colorScheme == .dark,
-                            increasedContrast: contrast == .increased
-                        ))
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-                if hidden > 0 {
-                    Text("+" + l10n("agents.count", hidden))
-                        .font(DashboardFont.detail)
-                        .foregroundStyle(.dashboardSecondary)
-                        .padding(.leading, DashboardLayout.badgeWidth + Spacing.s)
+                if hidden > 0 || (expanded && total > limit) {
+                    AgentsDisclosure(
+                        expanded: expanded,
+                        hidden: hidden,
+                        total: total,
+                        l10n: l10n,
+                        reduceMotion: model.accessibility.reduceMotion,
+                        action: toggle
+                    )
+                    .transition(.opacity)
                 }
             }
         }
         .animation(model.dashboardMotion, value: rows.map(\.id))
+    }
+
+    private func toggle() {
+        let settings = model.settings
+        guard settings.agentsExpanded else {
+            isCollapsing = false
+            withAnimation(model.dashboardMotion) { settings.agentsExpanded = true }
+            return
+        }
+        isCollapsing = true
+        withAnimation(model.dashboardMotion) {
+            settings.agentsExpanded = false
+        } completion: {
+            if !settings.agentsExpanded { isCollapsing = false }
+        }
     }
 }
 

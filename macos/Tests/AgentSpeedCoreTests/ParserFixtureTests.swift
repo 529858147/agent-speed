@@ -9,6 +9,11 @@ struct ParserFixtureTests {
         var responses: [ResponseRecord]
     }
 
+    static func family(of relative: String) -> TranscriptFamily {
+        if relative.hasPrefix("codex/") { return .codex }
+        return relative.hasPrefix("dsh/") ? .dsh : .claude
+    }
+
     static func runFixtures() throws -> (expected: [String: Any], results: [String: FileResult]) {
         let expected = try Fixtures.json("parser-expected.json")
         let order = try #require(expected["order"] as? [String])
@@ -16,16 +21,22 @@ struct ParserFixtureTests {
         var results: [String: FileResult] = [:]
         for (index, relative) in order.enumerated() {
             let url = Fixtures.root.appendingPathComponent(relative)
-            let family: TranscriptFamily = relative.hasPrefix("codex/") ? .codex : .claude
-            var parser = TranscriptParser(family: family, agentId: url.path, fileID: FileID(index))
+            var parser = TranscriptParser(family: family(of: relative), agentId: url.path, fileID: FileID(index))
             var keys: [String] = []
             var latest: [String: ResponseRecord] = [:]
-            let data = try Data(contentsOf: url)
-            forEachLine(in: data) { line in
+            let consume = { (line: UnsafeRawBufferPointer) in
                 parser.consume(rawLine: line, deduper: &deduper) { upsert in
                     if latest[upsert.record.key] == nil { keys.append(upsert.record.key) }
                     latest[upsert.record.key] = upsert.record
                 }
+            }
+            if TranscriptReader.isFrameStream(url.path) {
+                var reader = TranscriptReader(path: url.path)
+                let read = reader.read(onMalformed: { parser.noteMalformedLine() }, onLine: consume)
+                #expect(!read.failed, "\(relative) readable")
+            } else {
+                let data = try Data(contentsOf: url)
+                forEachLine(in: data, consume)
             }
             results[relative] = FileResult(state: parser.state, responses: keys.compactMap { latest[$0] })
         }
@@ -73,7 +84,7 @@ struct ParserFixtureTests {
         let members = results.map { relative, result in
             AgentParents.Member(
                 id: path(relative),
-                family: relative.hasPrefix("codex/") ? .codex : .claude,
+                family: Self.family(of: relative),
                 thread: result.state.thread
             )
         }

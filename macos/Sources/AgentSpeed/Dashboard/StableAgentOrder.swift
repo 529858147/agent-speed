@@ -7,7 +7,8 @@ import AgentSpeedCore
 final class StableAgentOrder {
     private var previous: [String: Int] = [:]
 
-    func arrange(_ agents: [AgentStatus], limit: Int, speed: (AgentStatus) -> Double) -> [AgentStatus] {
+    /// The rows to show, in display order: at most `limit` of them, or every agent when `limit` is nil.
+    func arrange(_ agents: [AgentStatus], limit: Int?, speed: (AgentStatus) -> Double) -> [AgentStatus] {
         let tree = AgentTree(agents)
         let ownRank = agents.map { Self.rank($0.phase) }
         let ownSpeed = agents.map(speed)
@@ -26,6 +27,7 @@ final class StableAgentOrder {
         }
 
         // A depth-first prefix always includes the parents of the rows it shows.
+        let limit = limit ?? order.count
         var shown = Set(order.prefix(limit))
         // An agent that just slipped below the cut stays if it near-ties the newcomer that would replace it. Only a
         // newcomer without shown children gives way, and only to an agent whose parent is shown.

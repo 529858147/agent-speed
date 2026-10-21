@@ -44,6 +44,7 @@ internal sealed class MonitorCore
         MonitorConfiguration configuration,
         string codexRoot,
         string claudeRoot,
+        string dshRoot,
         long todayStartMs,
         IResponseObserver? observer = null)
     {
@@ -55,6 +56,7 @@ internal sealed class MonitorCore
             RootFamily.Claude,
             claudeRoot,
             _enabled.Contains(SourceKind.ClaudeCode) || _enabled.Contains(SourceKind.ClaudeDesktop));
+        DshRoot = new SourceRoot(RootFamily.DeepSeek, dshRoot, _enabled.Contains(SourceKind.DeepSeek));
         RefreshAvailability();
     }
 
@@ -62,12 +64,15 @@ internal sealed class MonitorCore
 
     public SourceRoot ClaudeRoot { get; }
 
+    public SourceRoot DshRoot { get; }
+
     public IEnumerable<SourceRoot> Roots
     {
         get
         {
             yield return CodexRoot;
             yield return ClaudeRoot;
+            yield return DshRoot;
         }
     }
 
@@ -102,7 +107,7 @@ internal sealed class MonitorCore
                 continue;
             }
 
-            var files = TranscriptDiscovery.Enumerate(root.Path, cancellationToken);
+            var files = TranscriptDiscovery.Enumerate(root.Path, root.Naming, cancellationToken);
             discovered += files.Count;
             foreach (var file in files)
             {
@@ -149,7 +154,7 @@ internal sealed class MonitorCore
 
             foreach (var root in Roots)
             {
-                if (root.Enabled && root.Seeded && TranscriptDiscovery.IsAcceptablePath(root.Path, path))
+                if (root.Enabled && root.Seeded && TranscriptDiscovery.IsAcceptablePath(root.Path, path, root.Naming))
                 {
                     changed |= AddRuntimeFile(root, path, todayStartMs);
                     break;
@@ -223,7 +228,7 @@ internal sealed class MonitorCore
             }
 
             var seen = new HashSet<string>(PathComparer);
-            foreach (var file in TranscriptDiscovery.Enumerate(root.Path, cancellationToken))
+            foreach (var file in TranscriptDiscovery.Enumerate(root.Path, root.Naming, cancellationToken))
             {
                 seen.Add(file.Path);
                 if (!_files.TryGetValue(file.Path, out var tracked))
@@ -356,7 +361,12 @@ internal sealed class MonitorCore
 
     private SourceStatus BuildSourceStatus(SourceKind kind, long todayStartMs, Rate live, TokenTotals today, int activeAgents)
     {
-        var root = kind == SourceKind.Codex ? CodexRoot : ClaudeRoot;
+        var root = kind switch
+        {
+            SourceKind.Codex => CodexRoot,
+            SourceKind.DeepSeek => DshRoot,
+            _ => ClaudeRoot,
+        };
         var enabled = _enabled.Contains(kind);
         return new SourceStatus(
             kind,
@@ -377,6 +387,14 @@ internal sealed class MonitorCore
         if (modifiedMs < todayStartMs - BacklogWindowMs)
         {
             tracked.Tailer.StartAt(file.Length, StartAlignment.SkipPartialLine);
+            return null;
+        }
+
+        // A frame stream cannot be entered in the middle (METRICS 5.1).
+        if (file.Length > LargeFileBytes && tracked.Tailer is ZstdFrameTailer)
+        {
+            _partialHistory = true;
+            tracked.Tailer.StartAt(file.Length);
             return null;
         }
 

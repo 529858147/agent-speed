@@ -16,8 +16,8 @@ struct SourcesPane: View {
                     }
                     SourceFolderRow(folder: folder, model: model)
                 } footer: {
-                    if kinds.count > 1 {
-                        SectionFootnote(model.l10n("settings.sources.sharedRoot"))
+                    if let key = folder.footnoteKey {
+                        SectionFootnote(model.l10n(key))
                     }
                 }
             }
@@ -31,6 +31,7 @@ extension SourceKind {
         switch self {
         case .codex: .codex
         case .claudeCode, .claudeDesktop: .claude
+        case .deepseek: .dsh
         }
     }
 }

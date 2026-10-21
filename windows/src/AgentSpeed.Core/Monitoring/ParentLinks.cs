@@ -2,15 +2,32 @@ using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Monitoring;
 
-/// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
-internal readonly record struct AgentLink(string Id, bool IsCodex, string? ThreadId, string? ParentThreadId, long? CreatedMs)
+/// <summary>How a transcript names its parent (METRICS 6.7).</summary>
+internal enum LinkKind : byte
 {
-    public static AgentLink Of(TranscriptParser parser) => parser is CodexParser codex
-        ? new AgentLink(codex.AgentId, true, codex.MetaThreadId, codex.ParentThreadId, codex.CreatedMs)
-        : new AgentLink(parser.AgentId, false, null, null, null);
+    /// <summary>Claude: by the <c>subagents</c> folder layout.</summary>
+    Path,
+
+    /// <summary>Codex: by parent thread id.</summary>
+    CodexThread,
+
+    /// <summary>DeepSeek Harness: by parent session id.</summary>
+    DshSession,
 }
 
-/// <summary>Resolves parent agent ids (METRICS 6.7): Claude by path, Codex by parent thread id.</summary>
+/// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
+/// <param name="ThreadId">The id other transcripts use to name this one as their parent.</param>
+internal readonly record struct AgentLink(string Id, LinkKind Kind, string? ThreadId, string? ParentThreadId, long? CreatedMs)
+{
+    public static AgentLink Of(TranscriptParser parser) => parser switch
+    {
+        CodexParser codex => new AgentLink(codex.AgentId, LinkKind.CodexThread, codex.MetaThreadId, codex.ParentThreadId, codex.CreatedMs),
+        DshParser dsh => new AgentLink(dsh.AgentId, LinkKind.DshSession, dsh.SessionId, dsh.ParentSession, dsh.CreatedMs),
+        _ => new AgentLink(parser.AgentId, LinkKind.Path, null, null, null),
+    };
+}
+
+/// <summary>Resolves parent agent ids (METRICS 6.7): Claude by path, Codex by parent thread, dsh by parent session.</summary>
 internal static class ParentLinks
 {
     private const string SubagentsFolder = "subagents";
@@ -21,14 +38,14 @@ internal static class ParentLinks
     public static Dictionary<string, string> Resolve(IReadOnlyCollection<AgentLink> agents, StringComparer pathComparer)
     {
         var byPath = new Dictionary<string, string>(agents.Count, pathComparer);
-        var byThread = new Dictionary<string, AgentLink>(StringComparer.Ordinal);
+        var byThread = new Dictionary<(LinkKind, string), AgentLink>();
         foreach (var agent in agents)
         {
             byPath.TryAdd(agent.Id, agent.Id);
-            if (agent.IsCodex && agent.ThreadId is { Length: > 0 } thread
-                && (!byThread.TryGetValue(thread, out var known) || CreatedBefore(agent, known)))
+            if (agent.Kind != LinkKind.Path && agent.ThreadId is { Length: > 0 } thread
+                && (!byThread.TryGetValue((agent.Kind, thread), out var known) || CreatedBefore(agent, known)))
             {
-                byThread[thread] = agent;
+                byThread[(agent.Kind, thread)] = agent;
             }
         }
 
@@ -36,9 +53,9 @@ internal static class ParentLinks
         foreach (var agent in agents)
         {
             string? parent = null;
-            if (agent.IsCodex)
+            if (agent.Kind != LinkKind.Path)
             {
-                if (agent.ParentThreadId is { Length: > 0 } thread && byThread.TryGetValue(thread, out var owner))
+                if (agent.ParentThreadId is { Length: > 0 } thread && byThread.TryGetValue((agent.Kind, thread), out var owner))
                 {
                     parent = owner.Id;
                 }

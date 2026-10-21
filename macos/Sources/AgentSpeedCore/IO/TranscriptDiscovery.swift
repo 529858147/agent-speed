@@ -6,8 +6,31 @@ struct DiscoveredFile: Equatable, Sendable {
     var stat: FileStat
 }
 
-/// Finds transcript files under a root (METRICS 2): `*.jsonl`, depth limit 6, no symlinks, at most 20 000 files
-/// per root (the most recently modified ones).
+/// Which file names under a root are transcripts (METRICS 2).
+enum TranscriptNames: Sendable {
+    /// `*.jsonl`
+    case jsonl
+    /// `session.v<N>.jsonl` or `session.v<N>.jsonl.zstd` (DeepSeek Harness).
+    case dshSession
+
+    func matches(_ name: String) -> Bool {
+        switch self {
+        case .jsonl:
+            return name.hasSuffix(".jsonl")
+        case .dshSession:
+            let prefix = "session.v"
+            guard name.hasPrefix(prefix) else { return false }
+            let rest = name.utf8.dropFirst(prefix.utf8.count)
+            let digits = rest.prefix { $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }
+            guard !digits.isEmpty else { return false }
+            let suffix = rest.dropFirst(digits.count)
+            return suffix.elementsEqual(".jsonl".utf8) || suffix.elementsEqual(".jsonl.zstd".utf8)
+        }
+    }
+}
+
+/// Finds transcript files under a root (METRICS 2): `*.jsonl` (DeepSeek: `session.v<N>.jsonl(.zstd)`), depth
+/// limit 6, no symlinks, at most 20 000 files per root (the most recently modified ones).
 enum TranscriptDiscovery {
     static let maxDepth = 6
     static let maxFiles = 20_000
@@ -25,8 +48,13 @@ enum TranscriptDiscovery {
         return access(root, R_OK | X_OK) == 0
     }
 
-    static func enumerate(root: String, maxDepth: Int = maxDepth, maxFiles: Int = maxFiles) -> [DiscoveredFile] {
-        var index = DirectoryIndex(root: root, maxDepth: maxDepth)
+    static func enumerate(
+        root: String,
+        names: TranscriptNames = .jsonl,
+        maxDepth: Int = maxDepth,
+        maxFiles: Int = maxFiles
+    ) -> [DiscoveredFile] {
+        var index = DirectoryIndex(root: root, names: names, maxDepth: maxDepth)
         return mostRecent(files(at: index.scan()), limit: maxFiles)
     }
 

@@ -12,7 +12,8 @@ internal sealed class RootWatcher : IDisposable
         _watcher = watcher;
     }
 
-    public static RootWatcher? TryCreate(string root, Action<string> onPath, Action onOverflow)
+    public static RootWatcher? TryCreate(
+        string root, TranscriptNaming naming, Action<string> onPath, Action onOverflow)
     {
         FileSystemWatcher? watcher = null;
         try
@@ -23,6 +24,11 @@ internal sealed class RootWatcher : IDisposable
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
                 InternalBufferSize = 64 * 1024,
             };
+            if (naming == TranscriptNaming.DshSession)
+            {
+                watcher.Filters.Add("*.zstd");
+            }
+
             watcher.Changed += (_, e) => onPath(e.FullPath);
             watcher.Created += (_, e) => onPath(e.FullPath);
             watcher.Deleted += (_, e) => onPath(e.FullPath);

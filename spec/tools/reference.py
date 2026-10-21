@@ -78,7 +78,7 @@ class FileState:
         self.source_decided = False
         self.project = None
         self.model = None
-        self.is_subagent = "subagents" in [p for p in re.split(r"[\\/]", path) if p]
+        self.is_subagent = source == "claudeCode" and "subagents" in [p for p in re.split(r"[\\/]", path) if p]
         self.phase = "idle"
         self.in_flight = None
         self.last_line = None
@@ -291,6 +291,7 @@ def claude_line(state, obj, dedupe):
 
 
 ZSTD_MAGIC = 0xFD2FB528
+SKIPPABLE_MAGIC = re.compile(rb"[\x50-\x5f]\x2a\x4d\x18")
 
 
 def zstd_frame_size(data, pos):
@@ -328,7 +329,15 @@ def zstd_lines(path, start_offset=0):
         try:
             size = zstd_frame_size(data, pos)
         except ValueError:
-            break
+            malformed += 1
+            candidates = [i for i in [data.find(b"\x28\xb5\x2f\xfd", pos + 1)] if i >= 0]
+            skippable = SKIPPABLE_MAGIC.search(data, pos + 1)
+            if skippable:
+                candidates.append(skippable.start())
+            if not candidates:
+                break
+            pos = min(candidates)
+            continue
         if size is None:
             break
         frame = data[pos:pos + size]

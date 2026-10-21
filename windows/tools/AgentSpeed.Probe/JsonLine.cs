@@ -80,7 +80,9 @@ internal sealed class JsonLine
     {
         SourceKind.Codex => "codex",
         SourceKind.ClaudeCode => "claudeCode",
-        _ => "claudeDesktop",
+        SourceKind.ClaudeDesktop => "claudeDesktop",
+        SourceKind.DeepSeek => "deepseek",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
     public static string PhaseName(AgentPhase phase) => phase switch

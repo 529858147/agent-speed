@@ -11,7 +11,7 @@ struct ProbeArguments {
     var configuration: MonitorConfiguration
 
     static let usage = """
-        usage: AgentSpeedProbe (--dump-today | --watch SECONDS) [--codex PATH] [--claude PATH]
+        usage: AgentSpeedProbe (--dump-today | --watch SECONDS) [--codex PATH] [--claude PATH] [--dsh PATH]
         """
 
     static func parse(_ arguments: [String]) -> ProbeArguments? {
@@ -31,6 +31,9 @@ struct ProbeArguments {
             case "--claude":
                 guard let path = iterator.next() else { return nil }
                 configuration.claudeRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--dsh":
+                guard let path = iterator.next() else { return nil }
+                configuration.dshRoot = URL(fileURLWithPath: path, isDirectory: true)
             default:
                 return nil
             }

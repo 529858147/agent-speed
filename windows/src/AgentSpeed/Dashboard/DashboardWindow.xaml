@@ -151,34 +151,49 @@
                         <controls:GaugeGlyph Width="18" Height="18" Opacity="0.55" />
                         <TextBlock Text="{loc:Loc agents.empty}" Style="{StaticResource CaptionText}" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
-                    <ItemsControl ItemsSource="{Binding Agents}" Focusable="False">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type dash:AgentRow}">
-                                <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->
-                                <Grid MinHeight="40" AutomationProperties.Name="{Binding AccessibleName}">
-                                    <dash:TreeConnectors Guides="{Binding Guides}" Stroke="{DynamicResource DividerStrokeColorDefaultBrush}" />
-                                    <Grid Margin="{Binding Indent}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="30" />
-                                            <ColumnDefinition Width="56" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,3,8,3">
-                                            <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Detail}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
-                                        <dash:PhaseBadge Grid.Column="1" Phase="{Binding Phase}" Color="{Binding Color}"
-                                                         ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                        <TextBlock Grid.Column="2" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
-                                                   VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                    <!-- Expanded lists beyond 12 rows scroll inside a fixed viewport; its height springs between modes. -->
+                    <ScrollViewer x:Name="AgentsViewport" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
+                                  Focusable="False" PanningMode="VerticalOnly" PreviewMouseWheel="OnAgentsWheel">
+                        <ItemsControl ItemsSource="{Binding Agents}" Focusable="False" VerticalAlignment="Top">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type dash:AgentRow}">
+                                    <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->
+                                    <Grid Height="{x:Static dash:DashboardViewModel.AgentRowHeight}" AutomationProperties.Name="{Binding AccessibleName}">
+                                        <dash:TreeConnectors Guides="{Binding Guides}" Stroke="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                                        <Grid Margin="{Binding Indent}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="30" />
+                                                <ColumnDefinition Width="56" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,3,8,3">
+                                                <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Detail}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                            <dash:PhaseBadge Grid.Column="1" Phase="{Binding Phase}" Color="{Binding Color}"
+                                                             ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                                        </Grid>
                                     </Grid>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Text="{Binding HiddenAgentsText}" Style="{StaticResource CaptionText}" Margin="0,2,0,0"
-                               Visibility="{Binding HasHiddenAgents, Converter={StaticResource Visible}}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button x:Name="AgentsToggle" Style="{StaticResource DisclosureButton}" Margin="-6,4,0,0" Click="OnAgentsToggle"
+                            Visibility="{Binding CanToggleAgents, Converter={StaticResource Visible}}"
+                            AutomationProperties.Name="{Binding AgentsToggleAccessibleName}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding AgentsToggleText}" VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                            <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE70D;" FontSize="9" Margin="6,1,0,0" VerticalAlignment="Center"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform x:Name="AgentsChevron" />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </StackPanel>
+                    </Button>
 
                     <!-- Today -->
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />

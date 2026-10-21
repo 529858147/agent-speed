@@ -23,6 +23,10 @@ struct ClaudeParser: Sendable {
         state = AgentState(source: .claudeCode, isSubagent: components.dropLast().contains("subagents"))
     }
 
+    mutating func noteMalformedLine() {
+        state.malformedLines += 1
+    }
+
     mutating func consume(
         _ extraction: LineExtraction<ClaudeLine>,
         deduper: inout Deduper,

@@ -11,6 +11,8 @@ public sealed class LiveMonitorTests : IDisposable
 
     private string ClaudeRoot => _temp.Combine("claude", "projects");
 
+    private string DshRoot => _temp.Combine("dsh", "sessions");
+
     public void Dispose() => _temp.Dispose();
 
     [Fact]
@@ -25,7 +27,7 @@ public sealed class LiveMonitorTests : IDisposable
         {
             monitor.Start();
             var running = await probe.WaitForAsync(s => s.State.Kind == MonitorStateKind.Running && s.Today.Requests == 1);
-            Assert.Equal(3, running.Sources.Count);
+            Assert.Equal(4, running.Sources.Count);
             Assert.True(running.Sources.Single(s => s.Kind == SourceKind.Codex).Available);
             Assert.Equal(300, running.History.Count);
             Assert.Empty(probe.Events);
@@ -45,6 +47,29 @@ public sealed class LiveMonitorTests : IDisposable
         var count = probe.SnapshotCount;
         await Task.Delay(700);
         Assert.Equal(count, probe.SnapshotCount);
+    }
+
+    [Fact]
+    public async Task FollowsDshFramesAppendedWhileRunning()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var session = ZstdFrames.Write(Path.Combine(DshRoot, "--w-quasar--", "session-a", "session.v4.jsonl.zstd"),
+            ZstdFrames.Lines(DshLines.Session(now - 60_000, id: "a", cwd: "/w/quasar")));
+        var probe = await HubProbe.CreateAsync();
+        using (var monitor = new LiveMonitor(probe.Hub, Configuration()))
+        {
+            monitor.Start();
+            await probe.WaitForAsync(s => s.State.Kind == MonitorStateKind.Running
+                && s.Sources.Single(x => x.Kind == SourceKind.DeepSeek).Available);
+
+            var start = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            ZstdFrames.Append(session, ZstdFrames.Lines(DshLines.StepStart(1, start)));
+            ZstdFrames.Append(session, ZstdFrames.Lines(DshLines.Message(2, start + 900, "dsm-live", DshLines.Usage(40, 90))));
+
+            var completed = await probe.WaitForEventAsync<SpeedEvent.ResponseCompleted>();
+            Assert.Equal((SourceKind.DeepSeek, "quasar", 90L), (completed.Response.Source, completed.Response.Project, completed.Response.OutputTokens));
+            await probe.WaitForAsync(s => s.Sources.Single(x => x.Kind == SourceKind.DeepSeek).Today.Output == 90);
+        }
     }
 
     [Fact]
@@ -95,7 +120,7 @@ public sealed class LiveMonitorTests : IDisposable
     }
 
     private MonitorConfiguration Configuration(params SourceKind[] enabled) => new(
-        new HashSet<SourceKind>(enabled.Length == 0 ? Enum.GetValues<SourceKind>() : enabled), CodexRoot, ClaudeRoot);
+        new HashSet<SourceKind>(enabled.Length == 0 ? Enum.GetValues<SourceKind>() : enabled), CodexRoot, ClaudeRoot, DshRoot);
 
     private sealed class HubProbe
     {

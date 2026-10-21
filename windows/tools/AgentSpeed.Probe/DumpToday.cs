@@ -16,6 +16,7 @@ internal static class DumpToday
             MonitorConfiguration.Default,
             Path.GetFullPath(options.CodexRoot ?? LiveMonitor.DefaultCodexRoot),
             Path.GetFullPath(options.ClaudeRoot ?? LiveMonitor.DefaultClaudeRoot),
+            Path.GetFullPath(options.DshRoot ?? LiveMonitor.DefaultDshRoot),
             todayStart,
             collector);
         var report = core.Seed(now, todayStart, CancellationToken.None);

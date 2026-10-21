@@ -26,19 +26,18 @@ struct FileTailer: Sendable {
     }
 
     let path: String
-    let maxLineBytes: Int
     private(set) var offset: Int64 = 0
     private(set) var identity: FileIdentity?
-    private(set) var oversizedLines = 0
     private var start: Start?
-    private var partial: [UInt8] = []
-    /// Skipping bytes until the next newline (oversized or unaligned line).
-    private var discarding = false
+    private var lines: LineSplitter
+
+    var maxLineBytes: Int { lines.maxLineBytes }
+    var oversizedLines: Int { lines.oversizedLines }
 
     init(path: String, start: Start = .beginning, maxLineBytes: Int = FileTailer.defaultMaxLineBytes) {
         self.path = path
         self.start = start
-        self.maxLineBytes = max(1, maxLineBytes)
+        lines = LineSplitter(maxLineBytes: maxLineBytes)
     }
 
     /// Reads every complete line appended since the last call.
@@ -80,7 +79,7 @@ struct FileTailer: Sendable {
                 break
             }
             if count == 0 { break }
-            consume(UnsafeRawBufferPointer(rebasing: buffer[0..<count]), onLine: onLine)
+            lines.consume(UnsafeRawBufferPointer(rebasing: buffer[0..<count]), onLine: onLine)
             offset += Int64(count)
             result.bytesRead += count
         }
@@ -90,8 +89,7 @@ struct FileTailer: Sendable {
     /// Forgets everything; the next read starts at offset 0.
     mutating func restart() {
         offset = 0
-        partial = []
-        discarding = false
+        lines.reset()
         start = nil
     }
 
@@ -104,65 +102,16 @@ struct FileTailer: Sendable {
             if offset > 0 {
                 var last: UInt8 = 0
                 if Darwin.pread(descriptor, &last, 1, off_t(offset - 1)) == 1, last != 0x0A {
-                    discarding = true
+                    lines.skipToNextNewline()
                 }
             }
         case .tail(let window):
             if size > window {
                 offset = size - window
-                discarding = true
+                lines.skipToNextNewline()
             } else {
                 offset = 0
             }
-        }
-    }
-
-    private mutating func consume(_ chunk: UnsafeRawBufferPointer, onLine: (UnsafeRawBufferPointer) -> Void) {
-        guard let base = chunk.baseAddress else { return }
-        var lineStart = 0
-        while lineStart < chunk.count {
-            let remaining = chunk.count - lineStart
-            if let newline = memchr(base + lineStart, 0x0A, remaining) {
-                let lineEnd = base.distance(to: UnsafeRawPointer(newline))
-                let fragment = UnsafeRawBufferPointer(rebasing: chunk[lineStart..<lineEnd])
-                if discarding {
-                    discarding = false
-                } else if partial.isEmpty {
-                    if fragment.count > maxLineBytes {
-                        oversizedLines += 1
-                    } else {
-                        onLine(fragment)
-                    }
-                } else if partial.count + fragment.count > maxLineBytes {
-                    oversizedLines += 1
-                    releasePartial()
-                } else {
-                    partial.append(contentsOf: fragment)
-                    partial.withUnsafeBytes { onLine($0) }
-                    releasePartial()
-                }
-                lineStart = lineEnd + 1
-            } else {
-                let fragment = UnsafeRawBufferPointer(rebasing: chunk[lineStart..<chunk.count])
-                if !discarding {
-                    if partial.count + fragment.count > maxLineBytes {
-                        oversizedLines += 1
-                        releasePartial()
-                        discarding = true
-                    } else {
-                        partial.append(contentsOf: fragment)
-                    }
-                }
-                lineStart = chunk.count
-            }
-        }
-    }
-
-    private mutating func releasePartial() {
-        if partial.capacity > 1 << 20 {
-            partial = []
-        } else {
-            partial.removeAll(keepingCapacity: true)
         }
     }
 }

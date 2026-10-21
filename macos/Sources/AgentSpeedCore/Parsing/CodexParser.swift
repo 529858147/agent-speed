@@ -20,6 +20,10 @@ struct CodexParser: Sendable {
         self.fileID = fileID
     }
 
+    mutating func noteMalformedLine() {
+        state.malformedLines += 1
+    }
+
     mutating func consume(
         _ extraction: LineExtraction<CodexLine>,
         deduper: inout Deduper,
@@ -42,7 +46,7 @@ struct CodexParser: Sendable {
             // Only the first session_meta applies; sub-agent files copy their parent's right after their own.
             guard state.thread == nil else { return }
             state.noteLine(at: timestamp)
-            state.thread = CodexThread(id: meta.id, parentId: meta.parentThreadId, createdMs: timestamp)
+            state.thread = SessionThread(id: meta.id, parentId: meta.parentThreadId, createdMs: timestamp)
             if let cwd = meta.cwd { state.setProject(fromWorkingDirectory: cwd) }
             myAgentPath = meta.agentPath ?? Self.defaultAgentPath
             state.isSubagent = meta.isSubagent

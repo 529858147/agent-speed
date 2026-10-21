@@ -5,7 +5,11 @@ import Testing
 @Suite("Agent parents")
 struct AgentParentsTests {
     static func codex(_ id: String, thread: String?, parent: String?, created: Int64 = 0) -> AgentParents.Member {
-        AgentParents.Member(id: id, family: .codex, thread: CodexThread(id: thread, parentId: parent, createdMs: created))
+        AgentParents.Member(id: id, family: .codex, thread: SessionThread(id: thread, parentId: parent, createdMs: created))
+    }
+
+    static func dsh(_ id: String, session: String?, parent: String?, created: Int64 = 0) -> AgentParents.Member {
+        AgentParents.Member(id: id, family: .dsh, thread: SessionThread(id: session, parentId: parent, createdMs: created))
     }
 
     @Test func claudeSubagentsBelongToTheirSessionFile() {
@@ -30,6 +34,18 @@ struct AgentParentsTests {
             Self.codex("/s/lost.jsonl", thread: "lost", parent: "missing", created: 30),
         ])
         #expect(parents == ["/s/worker.jsonl": "/s/a-early.jsonl"])
+    }
+
+    @Test func deepseekParentIsTheEarliestFileOfTheSession() {
+        let parents = AgentParents.resolve([
+            Self.dsh("/d/main-copy/session.v4.jsonl.zstd", session: "main", parent: nil, created: 50),
+            Self.dsh("/d/main/session.v4.jsonl.zstd", session: "main", parent: nil, created: 10),
+            Self.dsh("/d/sub/session.v4.jsonl.zstd", session: "sub", parent: "main", created: 60),
+            Self.dsh("/d/self/session.v4.jsonl.zstd", session: "self", parent: "self", created: 60),
+            Self.codex("/s/main.jsonl", thread: "main", parent: nil, created: 1),
+            Self.codex("/s/worker.jsonl", thread: "worker", parent: "sub", created: 70),
+        ])
+        #expect(parents == ["/d/sub/session.v4.jsonl.zstd": "/d/main/session.v4.jsonl.zstd"])
     }
 
     @Test func selfReferencesAndCyclesHaveNoParent() {

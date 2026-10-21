@@ -75,6 +75,7 @@ public static class HeatPalette
         SourceKind.Codex => Rgba.FromHex("#34D399"),
         SourceKind.ClaudeCode => Rgba.FromHex("#FF8A65"),
         SourceKind.ClaudeDesktop => Rgba.FromHex("#B39DFF"),
+        SourceKind.DeepSeek => Rgba.FromHex("#4D6BFE"),
         _ => Rgba.FromHex("#7C8798"),
     };
 

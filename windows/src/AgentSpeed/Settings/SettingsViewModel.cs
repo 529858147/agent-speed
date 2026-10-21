@@ -94,10 +94,12 @@ internal sealed class SettingsViewModel : ObservableObject
                 OrbSize = size;
             }
         });
-        ChangeCodexCommand = new RelayCommand(() => ChangeFolder(isCodex: true));
-        ChangeClaudeCommand = new RelayCommand(() => ChangeFolder(isCodex: false));
+        ChangeCodexCommand = new RelayCommand(() => ChangeFolder(CodexPath, (s, path) => s with { CodexRoot = path }));
+        ChangeClaudeCommand = new RelayCommand(() => ChangeFolder(ClaudePath, (s, path) => s with { ClaudeRoot = path }));
+        ChangeDshCommand = new RelayCommand(() => ChangeFolder(DshPath, (s, path) => s with { DshRoot = path }));
         ResetCodexCommand = new RelayCommand(() => _settings.Update(s => s with { CodexRoot = null }), () => _settings.Current.CodexRoot is not null);
         ResetClaudeCommand = new RelayCommand(() => _settings.Update(s => s with { ClaudeRoot = null }), () => _settings.Current.ClaudeRoot is not null);
+        ResetDshCommand = new RelayCommand(() => _settings.Update(s => s with { DshRoot = null }), () => _settings.Current.DshRoot is not null);
         OpenRepositoryCommand = new RelayCommand(() => OpenUrl(AppPaths.RepositoryUrl));
         OpenLicenseCommand = new RelayCommand(() => OpenUrl(AppPaths.LicenseUrl));
         OpenLogsCommand = new RelayCommand(OpenLogs);
@@ -145,9 +147,13 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public RelayCommand ChangeClaudeCommand { get; }
 
+    public RelayCommand ChangeDshCommand { get; }
+
     public RelayCommand ResetCodexCommand { get; }
 
     public RelayCommand ResetClaudeCommand { get; }
+
+    public RelayCommand ResetDshCommand { get; }
 
     public RelayCommand OpenRepositoryCommand { get; }
 
@@ -334,11 +340,17 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string ClaudePath => S.ClaudeRoot ?? LiveMonitor.DefaultClaudeRoot;
 
+    public string DshPath => S.DshRoot ?? LiveMonitor.DefaultDshRoot;
+
     public bool CodexIsCustom => S.CodexRoot is not null;
 
     public bool ClaudeIsCustom => S.ClaudeRoot is not null;
 
+    public bool DshIsCustom => S.DshRoot is not null;
+
     public string CodexStatus => StatusFor(SourceKind.Codex);
+
+    public string DshStatus => StatusFor(SourceKind.DeepSeek);
 
     public string ClaudeStatus
     {
@@ -433,6 +445,7 @@ internal sealed class SettingsViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CodexStatus));
         OnPropertyChanged(nameof(ClaudeStatus));
+        OnPropertyChanged(nameof(DshStatus));
         OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 
@@ -510,16 +523,15 @@ internal sealed class SettingsViewModel : ObservableObject
         _preview.Start(redline);
     }
 
-    private void ChangeFolder(bool isCodex)
+    private void ChangeFolder(string current, Func<AppSettings, string, AppSettings> apply)
     {
-        var current = isCodex ? CodexPath : ClaudePath;
         var picked = _pickFolder(Directory.Exists(current) ? current : null);
         if (string.IsNullOrWhiteSpace(picked) || !Path.IsPathFullyQualified(picked))
         {
             return;
         }
 
-        _settings.Update(s => isCodex ? s with { CodexRoot = picked } : s with { ClaudeRoot = picked });
+        _settings.Update(s => apply(s, picked));
     }
 
     private static void OpenUrl(string url)

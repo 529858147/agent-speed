@@ -32,9 +32,12 @@ public class SettingsSerializerTests
             CodexEnabled = false,
             ClaudeCodeEnabled = true,
             ClaudeDesktopEnabled = false,
+            DeepSeekEnabled = false,
             CodexRoot = Path.Combine(Path.GetTempPath(), "codex sessions"),
             ClaudeRoot = Path.Combine(Path.GetTempPath(), "claude", "projects"),
+            DshRoot = Path.Combine(Path.GetTempPath(), "dsh", "sessions"),
             ChartSeconds = 300,
+            AgentsExpanded = true,
         })
         .WithOrbAnchor(@"\\.\DISPLAY2", new OrbAnchor(0.5, 0.125))
         .WithOrbAnchor("Display 1 \"quoted\" ü", new OrbAnchor(0.25, 0.75));
@@ -97,9 +100,18 @@ public class SettingsSerializerTests
         Assert.Equal(0.25, root.GetProperty("orb").GetProperty("anchors").GetProperty("Display 1 \"quoted\" ü").GetProperty("x").GetDouble());
         Assert.Equal("Max", root.GetProperty("effects").GetProperty("intensity").GetString());
         Assert.Equal(300, root.GetProperty("dashboard").GetProperty("chartSeconds").GetInt32());
+        Assert.True(root.GetProperty("dashboard").GetProperty("agentsExpanded").GetBoolean());
+
+        var sources = root.GetProperty("sources");
+        Assert.False(sources.GetProperty("deepseek").GetBoolean());
+        Assert.Equal(Path.Combine(Path.GetTempPath(), "dsh", "sessions"), sources.GetProperty("dshRoot").GetString());
 
         using var defaults = JsonDocument.Parse(SettingsSerializer.Serialize(AppSettings.Default));
-        Assert.Equal(JsonValueKind.Null, defaults.RootElement.GetProperty("sources").GetProperty("codexRoot").ValueKind);
+        var defaultSources = defaults.RootElement.GetProperty("sources");
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("codexRoot").ValueKind);
+        Assert.True(defaultSources.GetProperty("deepseek").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("dshRoot").ValueKind);
+        Assert.False(defaults.RootElement.GetProperty("dashboard").GetProperty("agentsExpanded").GetBoolean());
         Assert.False(defaults.RootElement.GetProperty("orb").TryGetProperty("monitor", out _));
     }
 
@@ -188,9 +200,12 @@ public class SettingsSerializerTests
         Assert.Null(AppSettings.CleanPath(full + "\0evil"));
         Assert.Null(AppSettings.CleanPath(Path.Combine(Path.GetTempPath(), new string('a', AppSettings.MaxPathLength))));
 
-        var validated = (AppSettings.Default with { CodexRoot = "relative", ClaudeRoot = full }).Validated();
+        var validated = (AppSettings.Default with { CodexRoot = "relative", ClaudeRoot = full, DshRoot = Path.Combine("..", "dsh") }).Validated();
         Assert.Null(validated.CodexRoot);
         Assert.Equal(full, validated.ClaudeRoot);
+        Assert.Null(validated.DshRoot);
+        Assert.Equal(full, (AppSettings.Default with { DshRoot = "  " + full + " " }).Validated().DshRoot);
+        Assert.Null(SettingsSerializer.Deserialize("""{ "sources": { "dshRoot": "relative/sessions" } }""").DshRoot);
     }
 
     [Fact]
@@ -243,10 +258,73 @@ public class SettingsSerializerTests
         Assert.True(settings.IsSourceEnabled(SourceKind.Codex));
         Assert.True(settings.IsSourceEnabled(SourceKind.ClaudeDesktop));
 
+        Assert.True(settings.IsSourceEnabled(SourceKind.DeepSeek));
+
         var config = (settings with { CodexRoot = Path.Combine(Path.GetTempPath(), "c") }).ToMonitorConfiguration();
-        Assert.True(config.EnabledSources.SetEquals([SourceKind.Codex, SourceKind.ClaudeDesktop]));
+        Assert.True(config.EnabledSources.SetEquals([SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek]));
         Assert.Equal(Path.Combine(Path.GetTempPath(), "c"), config.CodexRoot);
         Assert.Null(config.ClaudeRoot);
+        Assert.Null(config.DshRoot);
+    }
+
+    [Fact]
+    public void DeepSeekToggleAndFolderReachTheMonitor()
+    {
+        var dsh = Path.Combine(Path.GetTempPath(), "dsh", "sessions");
+        var settings = AppSettings.Default.WithSourceEnabled(SourceKind.DeepSeek, false) with { DshRoot = dsh };
+        Assert.False(settings.DeepSeekEnabled);
+        Assert.False(settings.IsSourceEnabled(SourceKind.DeepSeek));
+        Assert.True(settings.WithSourceEnabled(SourceKind.DeepSeek, true).IsSourceEnabled(SourceKind.DeepSeek));
+
+        var config = settings.ToMonitorConfiguration();
+        Assert.True(config.EnabledSources.SetEquals([SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop]));
+        Assert.Equal(dsh, config.DshRoot);
+        Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { DshRoot = dsh }).ToMonitorConfiguration());
+
+        var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(settings));
+        Assert.False(back.DeepSeekEnabled);
+        Assert.Equal(dsh, back.DshRoot);
+    }
+
+    [Theory]
+    [InlineData("""{ "dashboard": { "agentsExpanded": true } }""", true)]
+    [InlineData("""{ "dashboard": { "agentsExpanded": false } }""", false)]
+    [InlineData("""{ "dashboard": { "chartSeconds": 60 } }""", false)]
+    [InlineData("""{ "dashboard": { "agentsExpanded": "true" } }""", false)]
+    [InlineData("""{ "dashboard": { "agentsExpanded": 1 } }""", false)]
+    [InlineData("""{ "dashboard": { "agentsExpanded": null } }""", false)]
+    [InlineData("""{ "dashboard": [] }""", false)]
+    [InlineData("""{ "agentsExpanded": true }""", false)]
+    [InlineData("{}", false)]
+    public void AgentsExpandedIsReadTolerantly(string json, bool expected)
+    {
+        Assert.Equal(expected, SettingsSerializer.Deserialize(json).AgentsExpanded);
+    }
+
+    [Fact]
+    public void AgentsExpandedDefaultsToCollapsedAndRoundTrips()
+    {
+        Assert.False(AppSettings.Default.AgentsExpanded);
+        var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(AppSettings.Default with { AgentsExpanded = true }));
+        Assert.True(back.AgentsExpanded);
+        Assert.Equal(120, back.ChartSeconds);
+    }
+
+    [Fact]
+    public void FilesWithoutDeepSeekKeysKeepItOnWithTheDefaultFolder()
+    {
+        const string json = """
+            {
+              "version": 1,
+              "sources": { "codex": true, "claudeCode": false, "claudeDesktop": true, "codexRoot": null, "claudeRoot": null }
+            }
+            """;
+        var s = SettingsSerializer.Deserialize(json);
+        Assert.True(s.DeepSeekEnabled);
+        Assert.Null(s.DshRoot);
+        Assert.False(s.ClaudeCodeEnabled);
+        Assert.True(SettingsSerializer.Deserialize("{}").DeepSeekEnabled);
+        Assert.True(s.ToMonitorConfiguration().EnabledSources.Contains(SourceKind.DeepSeek));
     }
 
     [Fact]
@@ -261,7 +339,7 @@ public class SettingsSerializerTests
               "taskbar": { "show": "yes", "mode": "ValueOnly", "showUnit": false },
               "orb": { "size": 200, "opacity": "x", "monitor": 12, "anchors": [] },
               "effects": [],
-              "sources": { "codex": false, "codexRoot": 3 },
+              "sources": { "codex": false, "codexRoot": 3, "deepseek": "no", "dshRoot": false },
               "dashboard": { "chartSeconds": "60" }
             }
             """;
@@ -281,6 +359,8 @@ public class SettingsSerializerTests
         Assert.Equal(EffectsIntensity.Standard, s.Effects);
         Assert.False(s.CodexEnabled);
         Assert.Null(s.CodexRoot);
+        Assert.True(s.DeepSeekEnabled);
+        Assert.Null(s.DshRoot);
         Assert.Equal(120, s.ChartSeconds);
     }
 

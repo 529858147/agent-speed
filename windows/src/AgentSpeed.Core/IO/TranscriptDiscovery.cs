@@ -4,7 +4,17 @@ namespace AgentSpeed.Core.IO;
 
 internal readonly record struct DiscoveredFile(string Path, long Length, DateTime LastWriteUtc);
 
-/// <summary>Recursive <c>*.jsonl</c> enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
+/// <summary>Which file names a root's transcripts have (METRICS 2).</summary>
+internal enum TranscriptNaming
+{
+    /// <summary><c>*.jsonl</c> (Codex, Claude).</summary>
+    Jsonl,
+
+    /// <summary><c>session.v&lt;N&gt;.jsonl.zstd</c> or <c>session.v&lt;N&gt;.jsonl</c> (DeepSeek Harness).</summary>
+    DshSession,
+}
+
+/// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
 internal static class TranscriptDiscovery
 {
     /// <summary>Directories are listed down to this many levels below the root, so files sit at most one deeper.</summary>
@@ -14,10 +24,34 @@ internal static class TranscriptDiscovery
 
     private const int MaxScannedEntries = 200_000;
 
-    public static bool IsTranscriptName(ReadOnlySpan<char> fileName) =>
-        fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase);
+    public static bool IsTranscriptName(ReadOnlySpan<char> fileName, TranscriptNaming naming = TranscriptNaming.Jsonl) =>
+        naming == TranscriptNaming.DshSession
+            ? IsDshSessionName(fileName)
+            : fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase);
 
-    public static List<DiscoveredFile> Enumerate(string root, CancellationToken cancellationToken = default)
+    public static bool IsDshSessionName(ReadOnlySpan<char> fileName)
+    {
+        const string Prefix = "session.v";
+        if (!fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var rest = fileName[Prefix.Length..];
+        var digits = 0;
+        while (digits < rest.Length && char.IsAsciiDigit(rest[digits]))
+        {
+            digits++;
+        }
+
+        rest = rest[digits..];
+        return digits > 0
+            && (rest.Equals(".jsonl", StringComparison.OrdinalIgnoreCase)
+                || rest.Equals(".jsonl.zstd", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static List<DiscoveredFile> Enumerate(
+        string root, TranscriptNaming naming = TranscriptNaming.Jsonl, CancellationToken cancellationToken = default)
     {
         var options = new EnumerationOptions
         {
@@ -38,10 +72,10 @@ internal static class TranscriptDiscovery
                     entry.ToFullPath(), entry.Length, entry.LastWriteTimeUtc.UtcDateTime),
                 options)
             {
-                ShouldIncludePredicate = static (ref FileSystemEntry entry) =>
+                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
                     !entry.IsDirectory
                     && (entry.Attributes & FileAttributes.ReparsePoint) == 0
-                    && IsTranscriptName(entry.FileName),
+                    && IsTranscriptName(entry.FileName, naming),
                 ShouldRecursePredicate = static (ref FileSystemEntry entry) =>
                     (entry.Attributes & FileAttributes.ReparsePoint) == 0,
             };
@@ -73,9 +107,9 @@ internal static class TranscriptDiscovery
     /// Validates a path reported by a watcher: inside <paramref name="root"/>, within the depth limit, a transcript
     /// name, and no reparse point on the file or on any directory between root and file.
     /// </summary>
-    public static bool IsAcceptablePath(string root, string path)
+    public static bool IsAcceptablePath(string root, string path, TranscriptNaming naming = TranscriptNaming.Jsonl)
     {
-        if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan())))
+        if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan()), naming))
         {
             return false;
         }

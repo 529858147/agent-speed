@@ -60,7 +60,11 @@ internal sealed class LineCollector : ILineSink
 {
     public List<string> Lines { get; } = [];
 
+    public int Malformed { get; private set; }
+
     public void OnLine(ReadOnlySpan<byte> line) => Lines.Add(Encoding.UTF8.GetString(line));
+
+    public void OnMalformed() => Malformed++;
 
     public List<string> Take()
     {

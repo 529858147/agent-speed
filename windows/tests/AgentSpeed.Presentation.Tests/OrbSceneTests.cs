@@ -664,6 +664,10 @@ public class OrbSceneTests
         Assert.Equal([SourceKind.ClaudeDesktop], rig.Scene.AgentDots);
         Assert.Equal(0, rig.Scene.AgentOverflow);
 
+        rig.Scene.SetAgents([SourceKind.DeepSeek, SourceKind.Codex, SourceKind.DeepSeek]);
+        Assert.Equal([SourceKind.DeepSeek, SourceKind.Codex, SourceKind.DeepSeek], rig.Scene.AgentDots);
+        Assert.Equal(0, rig.Scene.AgentOverflow);
+
         Assert.Throws<ArgumentNullException>(() => rig.Scene.SetAgents(null!));
     }
 

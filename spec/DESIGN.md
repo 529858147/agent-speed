@@ -180,13 +180,14 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
    fill = vertical gradient mapped through the heat palette by value, line 1.5 px. The in-flight estimated part is
    drawn with 45 % opacity and a dashed top line at the right edge. A dashed horizontal line marks today's peak with a
    small label. Hover/drag shows a crosshair with time and value.
-3. **Sources** — one row per source: colored dot, name, live tok/s (right), today's output tokens (secondary).
-   Unavailable sources are dimmed with `未偵測到` and a link to settings.
+3. **Sources** — one row per detected source: colored dot, name, live tok/s (right), today's output tokens
+   (secondary). Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
+   Sources still lists every source with its status); a source that is detected but disabled is dimmed.
 4. **Agents** — up to 6 rows sorted by section 6.7 of METRICS: project (semibold), source + model (secondary,
    truncated), phase badge (generating: animated three-dot shimmer in the source color; tools: wrench glyph;
    idle: grey dot), live tok/s right-aligned. Sub-agents are indented 12 pt with a thin connector line.
    Empty state: `目前沒有 agent 在工作` with a muted gauge glyph.
-   Collapsed (default) shows up to 6 rows; when more agents exist, a disclosure row `agents.expand` ("+4 個 agent",
+   Collapsed (default) shows the first 6 rows of the depth-first order (so a child never appears without its parent); when more agents exist, a disclosure row `agents.expand` ("+4 個 agent",
    with a small chevron, accessibility label `agents.expand.a11y`) expands the list in place with a spring height
    animation; expanded shows every agent and ends with `agents.collapse`. Beyond 12 rows the expanded list scrolls
    inside a fixed-height region (12 rows tall) so the panel never outgrows the screen. Truncation keeps whole groups

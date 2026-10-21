@@ -5,11 +5,13 @@ import AppKit
 enum TranscriptFolder: CaseIterable {
     case codex
     case claude
+    case dsh
 
     var defaultURL: URL {
         switch self {
         case .codex: LiveMonitor.defaultCodexRoot
         case .claude: LiveMonitor.defaultClaudeRoot
+        case .dsh: LiveMonitor.defaultDshRoot
         }
     }
 
@@ -17,6 +19,16 @@ enum TranscriptFolder: CaseIterable {
         switch self {
         case .codex: "mac.settings.sources.chooseCodex"
         case .claude: "mac.settings.sources.chooseClaude"
+        case .dsh: "mac.settings.sources.chooseDsh"
+        }
+    }
+
+    /// What the section footer explains about the folder, if anything.
+    var footnoteKey: String? {
+        switch self {
+        case .codex: nil
+        case .claude: "settings.sources.sharedRoot"
+        case .dsh: "settings.sources.dshHint"
         }
     }
 
@@ -25,6 +37,7 @@ enum TranscriptFolder: CaseIterable {
         switch self {
         case .codex: settings.codexRoot
         case .claude: settings.claudeRoot
+        case .dsh: settings.dshRoot
         }
     }
 
@@ -40,6 +53,7 @@ enum TranscriptFolder: CaseIterable {
         switch self {
         case .codex: settings.codexRoot = value
         case .claude: settings.claudeRoot = value
+        case .dsh: settings.dshRoot = value
         }
     }
 

@@ -78,6 +78,12 @@
     "en": "Choose the Claude projects folder",
     "ja": "Claude の projects フォルダを選択"
   },
+  "mac.settings.sources.chooseDsh": {
+    "zh-Hant": "選擇 DeepSeek Harness 的 sessions 資料夾",
+    "zh-Hans": "选择 DeepSeek Harness 的 sessions 文件夹",
+    "en": "Choose the DeepSeek Harness sessions folder",
+    "ja": "DeepSeek Harness の sessions フォルダを選択"
+  },
   "mac.settings.sources.choosePrompt": {
     "zh-Hant": "選擇",
     "zh-Hans": "选择",

@@ -40,73 +40,143 @@ public sealed record AgentTreeRow(AgentStatus Agent, int Depth, TreeGuides Guide
     public int Indent => Math.Min(Depth, AgentTree.MaxIndent);
 }
 
-/// <param name="Hidden">Agents left out by the row limit.</param>
+/// <param name="Hidden">Agents left out: the total minus the shown rows.</param>
 public sealed record AgentTreeLayout(IReadOnlyList<AgentTreeRow> Rows, int Hidden);
 
 /// <summary>
-/// Shows the engine's grouped agent list (METRICS 6.7) as an indented tree without reordering it. An agent whose
-/// parent is not listed is a root; one whose parent row did not fit is left out with the rest.
+/// Shows the engine's grouped agent list (METRICS 6.7) as an indented tree. Groups (a root with all its descendants)
+/// keep the engine's order and every agent is followed by its subtree. An agent whose parent is not listed is a root;
+/// one listed before its parent is left out.
 /// </summary>
 public static class AgentTree
 {
     public const int MaxIndent = 2;
 
+    /// <summary>
+    /// Takes whole groups while they fit in <paramref name="maxRows"/> and stops at the first one that does not; when
+    /// even the first group is too long, shows its first rows so the list is never empty.
+    /// </summary>
     public static AgentTreeLayout Arrange(IReadOnlyList<AgentStatus> agents, int maxRows)
     {
         ArgumentNullException.ThrowIfNull(agents);
+        var nodes = Order(agents);
+        return Layout(nodes, Fit(nodes, maxRows), agents.Count);
+    }
+
+    /// <summary>Every agent that can be placed in the tree.</summary>
+    public static AgentTreeLayout Arrange(IReadOnlyList<AgentStatus> agents) => Arrange(agents, int.MaxValue);
+
+    internal readonly record struct Node(AgentStatus Agent, int Parent, int Depth);
+
+    /// <summary>Depth-first rows of every placeable agent; roots and siblings keep the input order.</summary>
+    internal static List<Node> Order(IReadOnlyList<AgentStatus> agents)
+    {
         var listed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var agent in agents)
         {
             listed.Add(agent.Id);
         }
 
-        var shown = new Dictionary<string, int>(StringComparer.Ordinal);
-        var rows = new List<(AgentStatus Agent, int Parent, int Depth)>();
+        var placed = new Dictionary<string, int>(StringComparer.Ordinal);
+        var children = new List<List<int>>();
+        var roots = new List<int>();
+        var members = new List<AgentStatus>();
         foreach (var agent in agents)
         {
-            if (rows.Count >= maxRows)
-            {
-                break;
-            }
-
             var parent = -1;
             if (agent.ParentId is { } parentId && listed.Contains(parentId)
                 && !string.Equals(parentId, agent.Id, StringComparison.Ordinal)
-                && !shown.TryGetValue(parentId, out parent))
+                && !placed.TryGetValue(parentId, out parent))
             {
                 continue;
             }
 
-            if (shown.TryAdd(agent.Id, rows.Count))
+            if (!placed.TryAdd(agent.Id, members.Count))
             {
-                rows.Add((agent, parent, parent < 0 ? 0 : rows[parent].Depth + 1));
+                continue;
+            }
+
+            (parent < 0 ? roots : children[parent]).Add(members.Count);
+            members.Add(agent);
+            children.Add([]);
+        }
+
+        var nodes = new List<Node>(members.Count);
+        var pending = new Stack<(int Member, int Parent, int Depth)>();
+        foreach (var root in roots)
+        {
+            pending.Push((root, -1, 0));
+            while (pending.TryPop(out var item))
+            {
+                nodes.Add(new Node(members[item.Member], item.Parent, item.Depth));
+                var row = nodes.Count - 1;
+                var kids = children[item.Member];
+                for (var k = kids.Count - 1; k >= 0; k--)
+                {
+                    pending.Push((kids[k], row, item.Depth + 1));
+                }
             }
         }
 
-        var hasLaterSibling = new bool[rows.Count];
-        var parentsSeen = new HashSet<int>();
-        for (var i = rows.Count - 1; i >= 0; i--)
+        return nodes;
+    }
+
+    /// <summary>How many leading rows to show under the group rule.</summary>
+    internal static int Fit(List<Node> nodes, int maxRows)
+    {
+        maxRows = Math.Max(0, maxRows);
+        if (nodes.Count <= maxRows)
         {
-            hasLaterSibling[i] = !parentsSeen.Add(rows[i].Parent);
+            return nodes.Count;
         }
 
-        var result = new AgentTreeRow[rows.Count];
-        for (var i = 0; i < rows.Count; i++)
+        var shown = 0;
+        while (shown < nodes.Count)
+        {
+            var end = shown + 1;
+            while (end < nodes.Count && nodes[end].Depth > 0)
+            {
+                end++;
+            }
+
+            if (end > maxRows)
+            {
+                break;
+            }
+
+            shown = end;
+        }
+
+        return shown == 0 ? maxRows : shown;
+    }
+
+    /// <summary>Rows and connector guides for the first <paramref name="count"/> nodes (a depth-first prefix).</summary>
+    internal static AgentTreeLayout Layout(List<Node> nodes, int count, int total)
+    {
+        var hasLaterSibling = new bool[count];
+        var parentsSeen = new HashSet<int>();
+        for (var i = count - 1; i >= 0; i--)
+        {
+            hasLaterSibling[i] = !parentsSeen.Add(nodes[i].Parent);
+        }
+
+        var result = new AgentTreeRow[count];
+        for (var i = 0; i < count; i++)
         {
             var guides = default(TreeGuides);
             var node = i;
-            for (var level = rows[i].Depth; level >= 1; level--)
+            for (var level = nodes[i].Depth; level >= 1; level--)
             {
                 var guide = node == i
                     ? hasLaterSibling[node] ? TreeGuide.Branch : TreeGuide.Last
                     : hasLaterSibling[node] ? TreeGuide.Through : TreeGuide.None;
                 guides = guides.With(level, guide);
-                node = rows[node].Parent;
+                node = nodes[node].Parent;
             }
 
-            result[i] = new AgentTreeRow(rows[i].Agent, rows[i].Depth, guides);
+            result[i] = new AgentTreeRow(nodes[i].Agent, nodes[i].Depth, guides);
         }
 
-        return new AgentTreeLayout(result, agents.Count - result.Length);
+        return new AgentTreeLayout(result, total - count);
     }
 }

@@ -119,6 +119,71 @@ public sealed class AgentParentTests : IDisposable
     }
 
     [Fact]
+    public void DshParentIsTheEarliestCreatedFileOfTheParentSession()
+    {
+        var parents = ParentLinks.Resolve(
+            [
+                Dsh("resumed", "main", null, 2000),
+                Dsh("original", "main", null, 1000),
+                Dsh("explorer", "sub", "main", 3000),
+                Dsh("orphan", "o", "gone", 3000),
+                Dsh("self", "me", "me", 3000),
+            ],
+            StringComparer.Ordinal);
+
+        Assert.Equal(new Dictionary<string, string> { ["explorer"] = "original" }, parents);
+    }
+
+    [Fact]
+    public void DshSessionsAndCodexThreadsNeverLinkToEachOther()
+    {
+        var parents = ParentLinks.Resolve(
+            [Codex("codex-main", "main", null, 1000), Dsh("dsh-sub", "sub", "main", 2000),
+                Dsh("dsh-main", "x", null, 1000), Codex("codex-sub", "y", "x", 2000)],
+            StringComparer.Ordinal);
+
+        Assert.Empty(parents);
+    }
+
+    [Fact]
+    public void DshParentSessionComesFromTheFirstHeader()
+    {
+        var parser = new DshParser("/d/session-sub/session.v4.jsonl.zstd", new Deduper());
+        Feed.Lines(parser, new RecordingSink(),
+            DshLines.Session(T0, id: "sub", extra: ",\"parentSession\":\"main\""),
+            DshLines.Session(T0 + 10, id: "other", extra: ",\"parentSession\":\"elsewhere\""));
+
+        var link = AgentLink.Of(parser);
+
+        Assert.Equal(new AgentLink(parser.AgentId, LinkKind.DshSession, "sub", "main", T0), link);
+    }
+
+    [Fact]
+    public void MonitorListsDshSubagentsRightAfterTheirParents()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var todayStart = now - 7_200_000;
+        var dshRoot = _temp.Combine("dsh", "sessions");
+        var main = ZstdFrames.Write(Path.Combine(dshRoot, "--p--", "session-main", "session.v4.jsonl.zstd"),
+            ZstdFrames.Lines(DshLines.Session(now - 3_000_000, id: "session-main", cwd: "/w/quasar")),
+            ZstdFrames.Lines(DshLines.StepStart(1, now - 2_000_000), DshLines.TurnEnd(2, now - 1_900_000)));
+        var sub = ZstdFrames.Write(Path.Combine(dshRoot, "--p--", "session-sub", "session.v4.jsonl.zstd"),
+            ZstdFrames.Lines(DshLines.Session(now - 60_000, id: "session-sub", cwd: "/w/quasar",
+                extra: ",\"parentSession\":\"session-main\",\"origin\":\"subagent\"")),
+            ZstdFrames.Lines(DshLines.StepStart(3, now - 1000)));
+        var core = new MonitorCore(MonitorConfiguration.Default, _temp.Combine("codex"), _temp.Combine("claude"), dshRoot, todayStart);
+
+        core.Seed(now, todayStart, CancellationToken.None);
+        var agents = core.BuildSnapshot(now, todayStart, MonitorState.Running, observeLive: false).Snapshot.Agents;
+
+        Assert.Equal([main, sub], agents.Select(a => a.Id));
+        Assert.Equal([null, main], agents.Select(a => a.ParentId));
+        Assert.All(agents, a => Assert.Equal(SourceKind.DeepSeek, a.Source));
+        Assert.True(agents[1].IsSubagent);
+        Assert.Equal(AgentPhase.Generating, agents[1].Phase);
+    }
+
+    [Fact]
     public void InactiveParentIsListedRightBeforeItsRunningSubagent()
     {
         var engine = new SpeedEngine(0);
@@ -190,7 +255,7 @@ public sealed class AgentParentTests : IDisposable
             SessionMeta(now - 2_400_000, "main") + "\n" + UserMessage(now - 2_400_000) + "\n"));
         var worker = Path.GetFullPath(_temp.WriteFile("codex/sessions/rollout-worker.jsonl",
             SessionMeta(now - 5000, "worker", extra: ""","parent_thread_id":"main" """) + "\n" + UserMessage(now - 4000) + "\n"));
-        var core = new MonitorCore(MonitorConfiguration.Default, codexRoot, claudeRoot, todayStart);
+        var core = new MonitorCore(MonitorConfiguration.Default, codexRoot, claudeRoot, _temp.Combine("dsh"), todayStart);
 
         core.Seed(now, todayStart, CancellationToken.None);
         var agents = core.BuildSnapshot(now, todayStart, MonitorState.Running, observeLive: false).Snapshot.Agents.ToList();
@@ -206,10 +271,13 @@ public sealed class AgentParentTests : IDisposable
         }
     }
 
-    private static AgentLink Claude(string path) => new(path, false, null, null, null);
+    private static AgentLink Claude(string path) => new(path, LinkKind.Path, null, null, null);
 
     private static AgentLink Codex(string id, string thread, string? parentThread, long createdMs) =>
-        new(id, true, thread, parentThread, createdMs);
+        new(id, LinkKind.CodexThread, thread, parentThread, createdMs);
+
+    private static AgentLink Dsh(string id, string session, string? parentSession, long createdMs) =>
+        new(id, LinkKind.DshSession, session, parentSession, createdMs);
 
     private static AgentInfo Agent(string id, AgentPhase phase, long lastLineMs, string? parentId = null, bool isSubagent = false) =>
         new(id, SourceKind.Codex, "p", "m", isSubagent, phase, null, lastLineMs, parentId);

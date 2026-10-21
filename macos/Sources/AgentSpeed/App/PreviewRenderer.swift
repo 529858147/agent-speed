@@ -27,8 +27,17 @@ enum PreviewRenderer {
             SurfacePreviews.renderMenuBar(model: model, into: directory)
         }
         if wants("dashboard") {
-            for (name, speed, grouped) in [("cruise", redline * 0.08, false), ("redline", redline * 0.92, false), ("groups", redline * 0.6, true)] {
-                publish(model, speed: speed, grouped: grouped)
+            let cases: [(String, Double, PreviewData.AgentSet, Bool)] = [
+                ("cruise", redline * 0.08, .standard, false),
+                ("redline", redline * 0.92, .standard, false),
+                ("groups", redline * 0.6, .grouped, false),
+                ("agents-collapsed", redline * 0.7, .crowd(16), false),
+                ("agents-expanded", redline * 0.7, .crowd(10), true),
+                ("agents-scrolling", redline * 0.7, .crowd(16), true),
+            ]
+            for (name, speed, agents, expanded) in cases {
+                model.settings.agentsExpanded = expanded
+                publish(model, speed: speed, agents: agents)
                 for dark in [false, true] {
                     PreviewSnapshot.writeHosted(
                         DashboardView(model: model).appEnvironment(model).environment(\.orbStillTime, Clock.now),
@@ -37,6 +46,7 @@ enum PreviewRenderer {
                     )
                 }
             }
+            model.settings.agentsExpanded = false
         }
         if wants("update") {
             UpdatePreviews.render(model: model, into: directory)
@@ -55,8 +65,8 @@ enum PreviewRenderer {
         }
     }
 
-    static func publish(_ model: AppModel, speed: Double, grouped: Bool = false) {
-        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline, grouped: grouped)
+    static func publish(_ model: AppModel, speed: Double, agents: PreviewData.AgentSet = .standard) {
+        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline, agents: agents)
         model.store.publishLive(snapshot)
         model.gauge.snap(to: model.value(of: snapshot.live), now: Clock.now)
     }

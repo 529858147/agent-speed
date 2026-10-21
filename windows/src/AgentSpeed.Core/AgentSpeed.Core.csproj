@@ -7,6 +7,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Pure managed zstd (MIT) for DeepSeek Harness frame streams; no native binaries. -->
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="AgentSpeed.Core.Tests" />
     <InternalsVisibleTo Include="AgentSpeed.Probe" />
   </ItemGroup>

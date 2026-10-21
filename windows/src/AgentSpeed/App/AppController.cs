@@ -378,6 +378,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         _dashboardDirty = false;
         var snapshot = _speed.Snapshot;
         _dashboardModel.ReduceMotion = _theme.ReduceMotion;
+        _dashboardModel.AgentsExpanded = Settings.AgentsExpanded;
         _dashboardModel.Update(snapshot, _speed.Value, _speed.Tier, _speed.Redline, _speed.Metric, _loc, _theme.IsDark);
         var peak = snapshot.PeakToday.ValueFor(_speed.Metric);
         var summary = $"{DisplayText.SpeedLine(_speed.Value, _speed.Tier, _loc)} · {_loc["today.peak"]} {SpeedFormat.Speed(peak)}";
@@ -520,6 +521,7 @@ internal sealed class AppController : IAppCommands, IDisposable
             _dashboard.QuitRequested += (_, _) => Quit();
             _dashboard.OrbToggled += (_, visible) => _settings.Update(s => s with { ShowOrb = visible });
             _dashboard.RangeChanged += (_, seconds) => _settings.Update(s => s with { ChartSeconds = seconds });
+            _dashboard.AgentsExpandedChanged += (_, expanded) => _settings.Update(s => s with { AgentsExpanded = expanded });
             _dashboard.UpdateRequested += (_, _) => OpenUpdate();
             _dashboard.IsVisibleChanged += (_, _) =>
             {

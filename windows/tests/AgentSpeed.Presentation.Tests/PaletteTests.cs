@@ -229,9 +229,18 @@ public class PaletteTests
     [InlineData(SourceKind.Codex, "#34D399")]
     [InlineData(SourceKind.ClaudeCode, "#FF8A65")]
     [InlineData(SourceKind.ClaudeDesktop, "#B39DFF")]
+    [InlineData(SourceKind.DeepSeek, "#4D6BFE")]
     public void SourceColorsMatchDesign(SourceKind source, string hex)
     {
         Assert.Equal(hex, HeatPalette.SourceColor(source).ToHex());
+    }
+
+    [Fact]
+    public void EverySourceHasItsOwnColor()
+    {
+        var colors = Enum.GetValues<SourceKind>().Select(s => HeatPalette.SourceColor(s).ToHex()).ToArray();
+        Assert.Equal(colors.Length, colors.Distinct().Count());
+        Assert.DoesNotContain(HeatPalette.Stops[0].Color.ToHex(), colors);
     }
 
     [Fact]

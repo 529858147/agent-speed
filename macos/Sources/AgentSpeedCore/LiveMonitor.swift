@@ -50,4 +50,8 @@ public final class LiveMonitor {
     public nonisolated static var defaultClaudeRoot: URL {
         TranscriptLocations.defaultClaudeRoot
     }
+
+    public nonisolated static var defaultDshRoot: URL {
+        TranscriptLocations.defaultDshRoot
+    }
 }

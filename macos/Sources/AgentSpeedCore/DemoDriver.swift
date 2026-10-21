@@ -29,10 +29,11 @@ public final class DemoDriver {
     }
 
     private let agents: [FakeAgent] = [
-        FakeAgent(id: "demo-rocket", source: .codex, project: "rocket", model: "gpt-6.1-sol", isSubagent: false, weight: 0.34),
-        FakeAgent(id: "demo-nova", source: .claudeCode, project: "nova", model: "claude-opus-5-5", isSubagent: false, weight: 0.3),
-        FakeAgent(id: "demo-nova-sub", source: .claudeCode, project: "nova", model: "claude-sonnet-5-5", isSubagent: true, weight: 0.16),
-        FakeAgent(id: "demo-orbit", source: .claudeDesktop, project: "orbit", model: "claude-fable-5-1", isSubagent: false, weight: 0.2),
+        FakeAgent(id: "demo-rocket", source: .codex, project: "rocket", model: "gpt-6.1-sol", isSubagent: false, weight: 0.28),
+        FakeAgent(id: "demo-nova", source: .claudeCode, project: "nova", model: "claude-opus-5-5", isSubagent: false, weight: 0.26),
+        FakeAgent(id: "demo-quasar", source: .deepseek, project: "quasar", model: "deepseek-v4-pro", isSubagent: false, weight: 0.18),
+        FakeAgent(id: "demo-nova-sub", source: .claudeCode, project: "nova", model: "claude-sonnet-5-5", isSubagent: true, weight: 0.14),
+        FakeAgent(id: "demo-orbit", source: .claudeDesktop, project: "orbit", model: "claude-fable-5-1", isSubagent: false, weight: 0.14),
     ]
 
     public init(store: SpeedStore) {
@@ -150,7 +151,7 @@ public final class DemoDriver {
     }
 
     private func snapshot(now: Date, speed: Double) -> SpeedSnapshot {
-        let generating = speed < 0.5 ? 0 : min(agents.count, 1 + Int(speed / (redline * 0.3)))
+        let generating = speed < 0.5 ? 0 : min(agents.count, 1 + Int(speed / (redline * 0.25)))
         let agentStatuses: [AgentStatus] = agents.enumerated().map { index, agent in
             let active = index < generating
             let share = active ? speed * agent.weight / activeWeight(generating) : 0
@@ -167,6 +168,7 @@ public final class DemoDriver {
                 parentId: agent.isSubagent ? "demo-nova" : nil
             )
         }
+        let sourceCount = SourceKind.allCases.count
         let sources: [SourceStatus] = SourceKind.allCases.map { kind in
             let live = agentStatuses.filter { $0.source == kind }.reduce(0) { $0 + $1.live.output }
             return SourceStatus(
@@ -177,10 +179,10 @@ public final class DemoDriver {
                 sessionCount: 12,
                 live: Rate(output: live, total: live * 24),
                 today: TokenTotals(
-                    requests: today.requests / 3,
-                    input: today.input / 3,
-                    cachedInput: today.cachedInput / 3,
-                    output: today.output / 3
+                    requests: today.requests / sourceCount,
+                    input: today.input / sourceCount,
+                    cachedInput: today.cachedInput / sourceCount,
+                    output: today.output / sourceCount
                 ),
                 activeAgents: agentStatuses.filter { $0.source == kind && $0.phase == .generating }.count
             )

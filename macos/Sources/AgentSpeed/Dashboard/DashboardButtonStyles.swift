@@ -27,6 +27,23 @@ struct DashboardPillButtonStyle: ButtonStyle {
     }
 }
 
+/// Full-width row button whose hover plate bleeds slightly past the column, so its content stays aligned with the
+/// rows above while the layout keeps the plain row height (agents disclosure).
+struct DashboardRowButtonStyle: ButtonStyle {
+    private static let bleed: CGFloat = 6
+    private static let lift: CGFloat = 2
+
+    func makeBody(configuration: Configuration) -> some View {
+        HoverPlate(isPressed: configuration.isPressed, isOn: false) {
+            configuration.label
+                .padding(.horizontal, Self.bleed)
+                .frame(maxWidth: .infinity, minHeight: DashboardLayout.rowHeight + Self.lift * 2, alignment: .leading)
+        }
+        .padding(.horizontal, -Self.bleed)
+        .padding(.vertical, -Self.lift)
+    }
+}
+
 private struct HoverPlate<Label: View>: View {
     let isPressed: Bool
     let isOn: Bool

@@ -3,7 +3,15 @@ import Foundation
 
 /// Deterministic sample data for `--render-previews`.
 enum PreviewData {
-    static func snapshot(speed: Double, redline: Double, grouped: Bool = false, now: Date = Date()) -> SpeedSnapshot {
+    enum AgentSet {
+        case standard
+        /// Nested groups, a sub-agent whose parent is not listed, and a group cut by the row limit.
+        case grouped
+        /// The first `count` (up to 16) agents of a busy machine, for the expandable list.
+        case crowd(Int)
+    }
+
+    static func snapshot(speed: Double, redline: Double, agents set: AgentSet = .standard, now: Date = Date()) -> SpeedSnapshot {
         let second = floor(now.timeIntervalSince1970)
         let history: [HistoryPoint] = (0..<300).map { index in
             let t = Double(index)
@@ -18,19 +26,18 @@ enum PreviewData {
                 estimated: Rate(output: isTail ? base * 0.6 : 0, total: isTail ? base * 15 : 0)
             )
         }
-        let agents = grouped ? groupedAgents(speed: speed, now: now) : [
-            agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.38, now),
-            agent("nova", .claudeCode, "nova", "claude-opus-5-5", .generating, false, speed * 0.31, now),
-            agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.18, now, parent: "nova"),
-            agent("orbit", .claudeDesktop, "orbit", "claude-fable-5-1", .generating, false, speed * 0.13, now),
-            agent("atlas", .codex, "atlas-web", "gpt-6.1-sol-mini", .tools, false, 0, now.addingTimeInterval(-14)),
-            agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
-        ]
+        let agents: [AgentStatus]
+        switch set {
+        case .standard: agents = standardAgents(speed: speed, now: now)
+        case .grouped: agents = groupedAgents(speed: speed, now: now)
+        case .crowd(let count): agents = Array(crowdAgents(speed: speed, now: now).prefix(count))
+        }
         let today = TokenTotals(requests: 1_284, input: 48_200_000, cachedInput: 41_000_000, cacheWriteInput: 2_100_000, output: 1_240_000, reasoning: 380_000)
         let sources: [SourceStatus] = [
-            source(.codex, speed * 0.38, TokenTotals(requests: 610, input: 22_000_000, output: 620_000), 2),
-            source(.claudeCode, speed * 0.49, TokenTotals(requests: 540, input: 21_000_000, output: 480_000), 3),
-            source(.claudeDesktop, speed * 0.13, TokenTotals(requests: 134, input: 5_200_000, output: 140_000), 1),
+            source(.codex, speed * 0.34, TokenTotals(requests: 520, input: 19_000_000, output: 520_000), 1),
+            source(.claudeCode, speed * 0.42, TokenTotals(requests: 480, input: 19_400_000, output: 440_000), 2),
+            source(.claudeDesktop, speed * 0.10, TokenTotals(requests: 120, input: 4_600_000, output: 120_000), 1),
+            source(.deepseek, speed * 0.14, TokenTotals(requests: 164, input: 5_200_000, output: 160_000), 1),
         ]
         return SpeedSnapshot(
             timestamp: now,
@@ -51,6 +58,39 @@ enum PreviewData {
         )
     }
 
+    private static func standardAgents(speed: Double, now: Date) -> [AgentStatus] {
+        [
+            agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.34, now),
+            agent("nova", .claudeCode, "nova", "claude-opus-5-5", .generating, false, speed * 0.27, now),
+            agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.15, now, parent: "nova"),
+            agent("quasar", .deepseek, "quasar", "deepseek-v4-pro", .generating, false, speed * 0.14, now),
+            agent("orbit", .claudeDesktop, "orbit", "claude-fable-5-1", .generating, false, speed * 0.10, now),
+            agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
+        ]
+    }
+
+    /// Sixteen agents in engine order: groups of every source, then tools and idle stragglers.
+    private static func crowdAgents(speed: Double, now: Date) -> [AgentStatus] {
+        [
+            agent("orbit", .claudeDesktop, "orbit", "claude-opus-5-5", .generating, false, speed * 0.16, now),
+            agent("orbit-explore", .claudeDesktop, "orbit", "claude-sonnet-5-5", .generating, true, speed * 0.1, now, parent: "orbit"),
+            agent("orbit-tests", .claudeDesktop, "orbit", "claude-haiku-5", .tools, true, 0, now.addingTimeInterval(-4), parent: "orbit"),
+            agent("quasar", .deepseek, "quasar", "deepseek-v4-pro", .generating, false, speed * 0.14, now),
+            agent("quasar-scout", .deepseek, "quasar", "deepseek-v4-flash", .generating, true, speed * 0.08, now, parent: "quasar"),
+            agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.12, now),
+            agent("rocket-worker", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.06, now, parent: "rocket"),
+            agent("rocket-review", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.04, now, parent: "rocket"),
+            agent("nova", .claudeCode, "nova", "claude-opus-5-5", .generating, false, speed * 0.1, now),
+            agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.05, now, parent: "nova"),
+            agent("atlas", .codex, "atlas-web", "gpt-6.1-sol", .generating, false, speed * 0.07, now),
+            agent("vega", .deepseek, "vega", "deepseek-v4-flash", .generating, false, speed * 0.05, now),
+            agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .tools, false, 0, now.addingTimeInterval(-9)),
+            agent("pulse", .claudeDesktop, "pulse", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-95)),
+            agent("ember", .codex, "ember", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-240)),
+            agent("cinder", .claudeCode, "cinder", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-420)),
+        ]
+    }
+
     /// Nested groups, a sub-agent whose parent is not listed, and a group cut by the row limit.
     private static func groupedAgents(speed: Double, now: Date) -> [AgentStatus] {
         [
@@ -58,7 +98,7 @@ enum PreviewData {
             agent("orbit-explore", .claudeDesktop, "orbit", "claude-sonnet-5-5", .generating, true, speed * 0.16, now, parent: "orbit"),
             agent("orbit-review", .claudeDesktop, "orbit", "claude-haiku-5", .generating, true, speed * 0.06, now, parent: "orbit-explore"),
             agent("orbit-tests", .claudeDesktop, "orbit", "claude-sonnet-5-5", .tools, true, 0, now.addingTimeInterval(-6), parent: "orbit"),
-            agent("atlas-worker", .codex, "atlas-web", "gpt-6.1-sol-mini", .generating, true, speed * 0.2, now),
+            agent("quasar-worker", .deepseek, "quasar", "deepseek-v4-flash", .generating, true, speed * 0.2, now),
             agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.12, now),
             agent("rocket-worker", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.06, now, parent: "rocket"),
             agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
@@ -87,12 +127,20 @@ enum PreviewData {
         SourceStatus(
             kind: kind,
             enabled: true,
-            rootPath: kind == .codex ? LiveMonitor.defaultCodexRoot.path : LiveMonitor.defaultClaudeRoot.path,
+            rootPath: kind.transcriptFolder.defaultURL.path,
             available: true,
-            sessionCount: kind == .codex ? 128 : 342,
+            sessionCount: sessionCount(kind.transcriptFolder),
             live: Rate(output: live, total: live * 26),
             today: today,
             activeAgents: active
         )
+    }
+
+    private static func sessionCount(_ folder: TranscriptFolder) -> Int {
+        switch folder {
+        case .codex: 128
+        case .claude: 342
+        case .dsh: 46
+        }
     }
 }

@@ -201,7 +201,9 @@ emissions with the same key in the same file are *updates*: the engine replaces 
 (zstd `findFrameCompressedSize`); if the frame is not complete yet, stop and wait for more bytes. Decode each complete
 frame (at most 64 MiB of output per frame, else the frame counts as malformed and is skipped), feed the decoded bytes
 to the line reader, and advance the offset past the frame. A frame that fails to decode is skipped and counted as one
-malformed line. Skippable frames are skipped. Files that start at their end (older files) start at the current size;
+malformed line. Skippable frames are skipped. When the bytes at the offset are not a frame at all (unknown magic or
+an invalid block header), count one malformed line and resynchronize at the next zstd frame or skippable-frame magic
+after the offset; if none is present yet, keep the offset and retry when the file grows. Files that start at their end (older files) start at the current size;
 files over 256 MiB are not seeded at all (they start at their end with the `partialHistory` warning), because a frame
 stream cannot be entered in the middle.
 

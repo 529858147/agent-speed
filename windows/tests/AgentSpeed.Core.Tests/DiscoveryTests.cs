@@ -122,6 +122,37 @@ public sealed class DiscoveryTests : IDisposable
         Assert.False(TranscriptDiscovery.IsAcceptablePath(_root, _temp.Combine("root-sibling", "s.jsonl")));
     }
 
+    [Fact]
+    public void DshRootsListOnlySessionFiles()
+    {
+        var zstd = Write("root/--Users-me-quasar--/session-a/session.v4.jsonl.zstd");
+        var plain = Write("root/--Users-me-quasar--/session-b/session.v12.jsonl");
+        Write("root/--Users-me-quasar--/session-a/session.lock");
+        Write("root/--Users-me-quasar--/session-a/other.jsonl");
+        Write("root/--Users-me-quasar--/session-a/session.v.jsonl");
+        Write("root/--Users-me-quasar--/session-a/session.v4.jsonl.zst");
+        Write("root/--Users-me-quasar--/session-a/session.v4x.jsonl");
+
+        var found = Relative(TranscriptDiscovery.Enumerate(_root, TranscriptNaming.DshSession));
+
+        Assert.Equal(Relative([zstd, plain]), found);
+        Assert.True(TranscriptDiscovery.IsAcceptablePath(_root, zstd, TranscriptNaming.DshSession));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(_root, zstd));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(
+            _root, Path.Combine(_root, "--Users-me-quasar--", "session-a", "session.lock"), TranscriptNaming.DshSession));
+    }
+
+    [Theory]
+    [InlineData("session.v4.jsonl.zstd", true)]
+    [InlineData("SESSION.V4.JSONL.ZSTD", true)]
+    [InlineData("session.v10.jsonl", true)]
+    [InlineData("session.v4.jsonl.zstd.tmp", false)]
+    [InlineData("xsession.v4.jsonl", false)]
+    [InlineData("session.v-1.jsonl", false)]
+    [InlineData("session.jsonl", false)]
+    public void DshSessionNames(string name, bool expected) =>
+        Assert.Equal(expected, TranscriptDiscovery.IsDshSessionName(name));
+
     private string Write(string relative, string content = "{}\n") => _temp.WriteFile(relative, content);
 
     private List<string> Relative(IEnumerable<DiscoveredFile> files) => Relative(files.Select(f => f.Path));

@@ -79,11 +79,88 @@ public class AgentTreeTests
     }
 
     [Fact]
-    public void ChildrenOfARowThatDidNotFitAreNeverShown()
+    public void AGroupThatDoesNotFitIsLeftOutWhole()
     {
         var layout = AgentTree.Arrange([Agent("a"), Agent("b"), Agent("p"), Agent("c", "p")], 3);
 
-        Assert.Equal(["a", "b", "p"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(["a", "b"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(2, layout.Hidden);
+    }
+
+    [Fact]
+    public void TruncationStopsAtTheFirstGroupThatDoesNotFit()
+    {
+        var layout = AgentTree.Arrange(
+            [Agent("a"), Agent("p"), Agent("c1", "p"), Agent("c2", "p"), Agent("c3", "p"), Agent("b"), Agent("q")], 4);
+
+        Assert.Equal(["a"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal(6, layout.Hidden);
+    }
+
+    [Fact]
+    public void AnOversizedFirstGroupShowsItsFirstRowsDepthFirst()
+    {
+        var layout = AgentTree.Arrange(
+            [
+                Agent("r"), Agent("c1", "r"), Agent("g1", "c1"), Agent("g2", "c1"), Agent("c2", "r"), Agent("g3", "c2"),
+                Agent("c3", "r"), Agent("c4", "r"), Agent("x"),
+            ],
+            6);
+
+        Assert.Equal(["r", "c1", "g1", "g2", "c2", "g3"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal([0, 1, 2, 2, 1, 2], layout.Rows.Select(r => r.Depth));
+        Assert.Equal(3, layout.Hidden);
+        Assert.Equal(new TreeGuides(Last, None, None), layout.Rows[4].Guides);
+        Assert.Equal(new TreeGuides(None, Last, None), layout.Rows[5].Guides);
+    }
+
+    [Fact]
+    public void ShownRowsAlwaysIncludeEachParent()
+    {
+        var agents = new List<AgentStatus> { Agent("r0") };
+        for (var i = 1; i < 20; i++)
+        {
+            agents.Add(Agent("r" + i, i % 3 == 0 ? null : "r" + (i - 1)));
+        }
+
+        for (var limit = 0; limit <= agents.Count; limit++)
+        {
+            var layout = AgentTree.Arrange(agents, limit);
+            var shown = layout.Rows.Select(r => r.Agent.Id).ToHashSet();
+            Assert.All(layout.Rows, row => Assert.True(row.Depth == 0 || shown.Contains(row.Agent.ParentId!)));
+            Assert.Equal(agents.Count - layout.Rows.Count, layout.Hidden);
+            Assert.True(layout.Rows.Count <= limit);
+            Assert.True(limit == 0 || layout.Rows.Count > 0);
+        }
+    }
+
+    [Fact]
+    public void ChildrenFollowTheirParentEvenWhenListedAfterAnotherRoot()
+    {
+        var layout = AgentTree.Arrange([Agent("p"), Agent("q"), Agent("c", "p")]);
+
+        Assert.Equal(["p", "c", "q"], layout.Rows.Select(r => r.Agent.Id));
+        Assert.Equal([0, 1, 0], layout.Rows.Select(r => r.Depth));
+        Assert.Equal(new TreeGuides(Last, None, None), layout.Rows[1].Guides);
+    }
+
+    [Fact]
+    public void WithoutALimitEveryPlaceableAgentIsShown()
+    {
+        var agents = Enumerable.Range(0, 30).Select(i => Agent("a" + i, i % 2 == 1 ? "a" + (i - 1) : null)).ToList();
+
+        var layout = AgentTree.Arrange(agents);
+
+        Assert.Equal(agents, layout.Rows.Select(r => r.Agent));
+        Assert.Equal(0, layout.Hidden);
+    }
+
+    [Fact]
+    public void DuplicateIdsAreShownOnce()
+    {
+        var layout = AgentTree.Arrange([Agent("a"), Agent("a"), Agent("b")], 6);
+
+        Assert.Equal(["a", "b"], layout.Rows.Select(r => r.Agent.Id));
         Assert.Equal(1, layout.Hidden);
     }
 
@@ -115,12 +192,18 @@ public class AgentTreeTests
     }
 
     [Fact]
-    public void HiddenAgentsText()
+    public void DisclosureTexts()
     {
         var table = Localizer.LoadEmbeddedTable();
+        var zh = new Localizer(table, LanguageCodes.ZhHant);
+        var en = new Localizer(table, LanguageCodes.En);
 
-        Assert.Equal("+3 個 agent", DisplayText.HiddenAgents(3, new Localizer(table, LanguageCodes.ZhHant)));
-        Assert.Equal("+2 agents", DisplayText.HiddenAgents(2, new Localizer(table, LanguageCodes.En)));
+        Assert.Equal("+4 個 agent", DisplayText.ExpandAgents(4, zh));
+        Assert.Equal("+2 more", DisplayText.ExpandAgents(2, en));
+        Assert.Equal("顯示全部 10 個 agent", DisplayText.ExpandAgentsAccessibility(10, zh));
+        Assert.Equal("Show all 10 agents", DisplayText.ExpandAgentsAccessibility(10, en));
+        Assert.Equal("收合", zh["agents.collapse"]);
+        Assert.Equal("Show less", en["agents.collapse"]);
     }
 
     private static AgentStatus Agent(string id, string? parent = null, bool subagent = false) => new(

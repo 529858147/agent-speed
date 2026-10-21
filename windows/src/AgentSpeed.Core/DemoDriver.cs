@@ -13,8 +13,11 @@ public sealed class DemoDriver : IDisposable
         new("demo-rocket", SourceKind.Codex, "rocket", "gpt-6.1-sol", false, 0.34),
         new("demo-nova", SourceKind.ClaudeCode, "nova", "claude-opus-5-5", false, 0.3),
         new("demo-nova-sub", SourceKind.ClaudeCode, "nova", "claude-sonnet-5-5", true, 0.16),
+        new("demo-quasar", SourceKind.DeepSeek, "quasar", "deepseek-flash", false, 0.24),
         new("demo-orbit", SourceKind.ClaudeDesktop, "orbit", "claude-fable-5-1", false, 0.2),
     ];
+
+    private static readonly SourceKind[] Sources = Enum.GetValues<SourceKind>();
 
     private readonly SpeedHub _hub;
     private readonly object _gate = new();
@@ -188,11 +191,12 @@ public sealed class DemoDriver : IDisposable
                 new Rate(share, share * 24), active ? share : null, now, agent.IsSubagent ? "demo-nova" : null);
         }).ToList();
 
-        var sources = Enum.GetValues<SourceKind>().Select(kind =>
+        var n = Sources.Length;
+        var sources = Sources.Select(kind =>
         {
             var live = agents.Where(a => a.Source == kind).Sum(a => a.Live.Output);
             return new SourceStatus(kind, true, string.Empty, true, 12, new Rate(live, live * 24),
-                new TokenTotals(_today.Requests / 3, _today.Input / 3, _today.CachedInput / 3, 0, _today.Output / 3),
+                new TokenTotals(_today.Requests / n, _today.Input / n, _today.CachedInput / n, 0, _today.Output / n),
                 agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating));
         }).ToList();
 

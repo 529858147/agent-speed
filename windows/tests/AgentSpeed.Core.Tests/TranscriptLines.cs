@@ -68,3 +68,34 @@ internal static class CodexLines
     public static string TokenCount(long ms, string totalJson, string lastJson) =>
         Envelope(ms, "event_msg", $$"""{"type":"token_count","info":{"total_token_usage":{{totalJson}},"last_token_usage":{{lastJson}} } }""");
 }
+
+/// <summary>Builders for synthetic DeepSeek Harness session events (one JSON object per line).</summary>
+internal static class DshLines
+{
+    public const long T0 = 1_792_490_400_000;
+
+    public static string Session(long createdMs, string id = "session-1", string cwd = "/home/me/quasar", string extra = "") =>
+        $$"""{"type":"session","version":4,"id":"{{id}}","createdAt":{{createdMs}},"cwd":"{{cwd}}","delegationDepth":0{{extra}} }""";
+
+    public static string Event(string type, long seq, long ms, string dataJson = "{}") =>
+        $$"""{"type":"{{type}}","seq":{{seq}},"time":{{ms}},"data":{{dataJson}} }""";
+
+    public static string StepStart(long seq, long ms) => Event("step/start", seq, ms, """{"turn":1,"step":1}""");
+
+    public static string TurnEnd(long seq, long ms) => Event("turn/end", seq, ms, """{"turn":1,"reason":{"kind":"completed"}}""");
+
+    public static string RequestHeader(long seq, long ms, string model) =>
+        Event("request/header", seq, ms, $$"""{"header":{"config":{"provider":"deepseek-account","model":"{{model}}"} } }""");
+
+    public static string Usage(long input, long output, long cacheRead = 0, long cacheWrite = 0) =>
+        $$"""{"inputTokens":{{input}},"outputTokens":{{output}},"cacheReadTokens":{{cacheRead}},"cacheWriteTokens":{{cacheWrite}},"totalTokens":{{input + output + cacheRead}} }""";
+
+    public static string Message(long seq, long ms, string? id, string? usageJson, string blockType = "text", string? model = "deepseek-flash")
+    {
+        var idPart = id is null ? string.Empty : $$""","id":"{{id}}" """;
+        var source = model is null ? string.Empty : $$""","source":{"kind":"model","provider":"deepseek-account","model":"{{model}}"}""";
+        var usage = usageJson is null ? string.Empty : $$""","usage":{{usageJson}}""";
+        return Event("assistant/message", seq, ms,
+            $$"""{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"{{blockType}}"}]{{source}}{{idPart}} }{{usage}} }""");
+    }
+}

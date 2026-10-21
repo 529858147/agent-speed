@@ -20,6 +20,8 @@ public sealed class MonitorCoreTests : IDisposable
 
     private string ClaudeRoot => _temp.Combine("claude", "projects");
 
+    private string DshRoot => _temp.Combine("dsh", "sessions");
+
     public void Dispose() => _temp.Dispose();
 
     [Fact]
@@ -96,7 +98,7 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Empty(events);
         Assert.Equal(new TokenTotals(1, 1000, 800, 0, 200, 20), snapshot.Today);
         Assert.Equal(50.0, snapshot.AverageToday!.Value, 6);
-        Assert.Equal(3, snapshot.Sources.Count);
+        Assert.Equal(4, snapshot.Sources.Count);
         Assert.Equal(Enum.GetValues<SourceKind>(), snapshot.Sources.Select(s => s.Kind));
         Assert.Equal(1, snapshot.Sources[0].SessionCount);
     }
@@ -150,7 +152,7 @@ public sealed class MonitorCoreTests : IDisposable
             ClaudeLines.User(t, "\"hi\"", extra: ",\"entrypoint\":\"cli\""),
             ClaudeLines.Assistant(t + 1000, "msg_c", 20, extra: ",\"entrypoint\":\"cli\""));
         var configuration = new MonitorConfiguration(new HashSet<SourceKind> { SourceKind.ClaudeCode });
-        var core = new MonitorCore(configuration, CodexRoot, ClaudeRoot, _todayStart);
+        var core = new MonitorCore(configuration, CodexRoot, ClaudeRoot, DshRoot, _todayStart);
 
         core.Seed(_now, _todayStart, CancellationToken.None);
         var (snapshot, _) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: false);
@@ -179,7 +181,7 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Equal(4, core.TrackedFileCount);
         Assert.Equal(1, core.SessionCount(SourceKind.ClaudeDesktop, _todayStart));
         Assert.Equal(1, core.SessionCount(SourceKind.ClaudeCode, _todayStart));
-        Assert.Equal([0, 1, 1], snapshot.Sources.Select(s => s.SessionCount));
+        Assert.Equal([0, 1, 1, 0], snapshot.Sources.Select(s => s.SessionCount));
     }
 
     [Fact]
@@ -203,7 +205,8 @@ public sealed class MonitorCoreTests : IDisposable
     [Fact]
     public void MissingRootsMeanNoSources()
     {
-        var core = new MonitorCore(MonitorConfiguration.Default, _temp.Combine("nope1"), _temp.Combine("nope2"), _todayStart);
+        var core = new MonitorCore(
+            MonitorConfiguration.Default, _temp.Combine("nope1"), _temp.Combine("nope2"), _temp.Combine("nope3"), _todayStart);
 
         var report = core.Seed(_now, _todayStart, CancellationToken.None);
 
@@ -239,8 +242,134 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Equal(0, core.TrackedFileCount);
     }
 
+    [Fact]
+    public void DshSessionsAreADeepSeekSourceWithItsOwnRoot()
+    {
+        var path = WriteDsh("--w-quasar--/session-a/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_now - 600_000, id: "a", cwd: "/w/quasar")),
+            ZstdFrames.Lines(DshLines.StepStart(1, _now - 5000)),
+            ZstdFrames.Lines(DshLines.Message(2, _now - 2000, "dsm-1", DshLines.Usage(100, 60, cacheRead: 900))));
+        var observer = new Observer();
+        var core = NewCore(observer);
+
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        var (snapshot, _) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: false);
+
+        var source = snapshot.Sources.Single(s => s.Kind == SourceKind.DeepSeek);
+        Assert.True(source.Enabled);
+        Assert.True(source.Available);
+        Assert.Equal(DshRoot, source.RootPath);
+        Assert.Equal(1, source.SessionCount);
+        Assert.Equal(60, source.Today.Output);
+        Assert.Equal(1000, source.Today.Input);
+        var agent = Assert.Single(snapshot.Agents);
+        Assert.Equal((path, SourceKind.DeepSeek, "quasar", "deepseek-flash"), (agent.Id, agent.Source, agent.Project, agent.Model));
+        Assert.True(Assert.Single(observer.Seen).Seeded);
+    }
+
+    [Fact]
+    public void DisabledDeepSeekIsNotRead()
+    {
+        WriteDsh("--w--/session-a/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_now - 600_000), DshLines.StepStart(1, _now - 5000),
+                DshLines.Message(2, _now - 2000, "dsm-1", DshLines.Usage(1, 2))));
+        var core = new MonitorCore(
+            new MonitorConfiguration(new HashSet<SourceKind> { SourceKind.Codex }), CodexRoot, ClaudeRoot, DshRoot, _todayStart);
+
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        var (snapshot, _) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: false);
+
+        Assert.Equal(0, core.TrackedFileCount);
+        Assert.False(snapshot.Sources.Single(s => s.Kind == SourceKind.DeepSeek).Enabled);
+        Assert.Empty(snapshot.Agents);
+    }
+
+    [Fact]
+    public void OldDshFilesStartAtTheirEndAndAppendedFramesAreLive()
+    {
+        var path = WriteDsh("--w--/session-a/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_todayStart - 86_400_000, id: "a")),
+            ZstdFrames.Lines(DshLines.StepStart(1, _todayStart - 86_000_000),
+                DshLines.Message(2, _todayStart - 85_000_000, "dsm-old", DshLines.Usage(1, 2))));
+        SetModified(path, _todayStart - 86_000_000);
+        var observer = new Observer();
+        var core = NewCore(observer);
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        Assert.Empty(observer.Seen);
+
+        ZstdFrames.Append(path, ZstdFrames.Lines(DshLines.StepStart(3, _now - 3000)),
+            ZstdFrames.Lines(DshLines.Message(4, _now - 1000, "dsm-new", DshLines.Usage(10, 20))));
+        Assert.True(core.ProcessPaths([path], _now, _todayStart));
+
+        var seen = Assert.Single(observer.Seen);
+        Assert.Equal(("dsm-new", _now - 3000, false), (seen.Response.Key, seen.Response.StartMs, seen.Seeded));
+    }
+
+    [Fact]
+    public void HugeDshFilesAreNotSeededButStillFollowed()
+    {
+        var path = WriteDsh("--w--/session-a/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_now - 600_000), DshLines.StepStart(1, _now - 500_000),
+                DshLines.Message(2, _now - 400_000, "dsm-seed", DshLines.Usage(1, 2))));
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            stream.SetLength(MonitorCore.LargeFileBytes + 1);
+        }
+
+        var observer = new Observer();
+        var core = NewCore(observer);
+        var report = core.Seed(_now, _todayStart, CancellationToken.None);
+
+        Assert.Equal(0, report.FilesRead);
+        Assert.True(core.PartialHistory);
+        Assert.Contains(core.Warnings(), w => w is MonitorWarning.PartialHistory);
+
+        ZstdFrames.Append(path, ZstdFrames.Lines(DshLines.StepStart(3, _now - 3000), DshLines.Message(4, _now - 1000, "dsm-tail", DshLines.Usage(5, 6))));
+        core.ProcessPaths([path], _now, _todayStart);
+
+        Assert.Equal("dsm-tail", Assert.Single(observer.Seen).Response.Key);
+        Assert.Equal(0, core.MalformedLineCount);
+    }
+
+    [Fact]
+    public void CorruptDshFramesAreReportedAsMalformedLines()
+    {
+        var corrupt = ZstdFrames.Lines(DshLines.StepStart(1, _now - 5000));
+        corrupt[^6] ^= 0xFF;
+        WriteDsh("--w--/session-a/session.v4.jsonl.zstd", ZstdFrames.Lines(DshLines.Session(_now - 600_000)), corrupt,
+            ZstdFrames.Lines("not json"));
+        var core = NewCore();
+
+        core.Seed(_now, _todayStart, CancellationToken.None);
+
+        Assert.Equal(2, Assert.Single(core.Warnings().OfType<MonitorWarning.MalformedLines>()).Count);
+    }
+
+    [Fact]
+    public void NewDshSessionsAreFoundByPathAndByRediscovery()
+    {
+        Directory.CreateDirectory(DshRoot);
+        var observer = new Observer();
+        var core = NewCore(observer);
+        core.Seed(_now, _todayStart, CancellationToken.None);
+
+        var first = WriteDsh("--w--/session-a/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_now - 10_000, id: "a"), DshLines.StepStart(1, _now - 5000),
+                DshLines.Message(2, _now - 2000, "dsm-a", DshLines.Usage(1, 2))));
+        var lockFile = Path.Combine(Path.GetDirectoryName(first)!, "session.lock");
+        File.WriteAllText(lockFile, "1");
+        core.ProcessPaths([first, lockFile], _now, _todayStart);
+        WriteDsh("--w--/session-b/session.v4.jsonl.zstd",
+            ZstdFrames.Lines(DshLines.Session(_now - 10_000, id: "b"), DshLines.StepStart(1, _now - 5000),
+                DshLines.Message(2, _now - 2000, "dsm-b", DshLines.Usage(1, 2))));
+        core.Rediscover(_now, _todayStart, CancellationToken.None);
+
+        Assert.Equal(["dsm-a", "dsm-b"], observer.Seen.Select(s => s.Response.Key));
+        Assert.Equal(2, core.TrackedFileCount);
+    }
+
     private MonitorCore NewCore(IResponseObserver? observer = null) =>
-        new(MonitorConfiguration.Default, CodexRoot, ClaudeRoot, _todayStart, observer);
+        new(MonitorConfiguration.Default, CodexRoot, ClaudeRoot, DshRoot, _todayStart, observer);
 
     private Dictionary<string, ParsedResponse> SeedAndCollect()
     {
@@ -251,6 +380,9 @@ public sealed class MonitorCoreTests : IDisposable
 
     private string WriteClaude(string relative, params string[] lines) =>
         Write(Path.Combine(ClaudeRoot, relative), lines);
+
+    private string WriteDsh(string relative, params byte[][] frames) =>
+        ZstdFrames.Write(Path.Combine(DshRoot, relative), frames);
 
     private string WriteCodex(string relative, params string[] lines) =>
         Write(Path.Combine(CodexRoot, relative), lines);

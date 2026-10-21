@@ -27,6 +27,8 @@ private struct GaugeMark: View {
     private static let lit = 28
     private static let tileTop = RGBColor(hex: 0x282D3C)
     private static let tileBottom = RGBColor(hex: 0x0B0E15)
+    /// The three dots baked into the bundled app icon (assets/icon), not every source the app reads.
+    private static let iconSources: [SourceKind] = [.codex, .claudeCode, .claudeDesktop]
 
     var body: some View {
         Canvas { context, size in
@@ -72,7 +74,7 @@ private struct GaugeMark: View {
 
             let dot = side * 0.034
             let dotsY = center.y + outer * 0.98
-            for (offset, kind) in zip([-1.0, 0, 1], SourceKind.allCases) {
+            for (offset, kind) in zip([-1.0, 0, 1], Self.iconSources) {
                 let x = center.x + CGFloat(offset) * dot * 2.6
                 let rect = CGRect(x: x - dot / 2, y: dotsY - dot / 2, width: dot, height: dot)
                 context.fill(Path(ellipseIn: rect), with: .color(kind.tint.color))

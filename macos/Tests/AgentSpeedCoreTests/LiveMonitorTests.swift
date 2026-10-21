@@ -19,7 +19,8 @@ struct LiveMonitorTests {
         let store = SpeedStore()
         let monitor = LiveMonitor(store: store, configuration: MonitorConfiguration(
             codexRoot: directory.file("missing-codex"),
-            claudeRoot: directory.file("missing-claude")
+            claudeRoot: directory.file("missing-claude"),
+            dshRoot: directory.file("missing-dsh")
         ))
         monitor.start()
         defer { monitor.stop() }
@@ -41,9 +42,10 @@ struct LiveMonitorTests {
 
         #expect(await Self.waitUntil { store.snapshot.state == .running })
         let snapshot = store.snapshot
-        #expect(snapshot.sources.count == 3)
+        #expect(snapshot.sources.count == SourceKind.allCases.count)
         #expect(snapshot.sources.first { $0.kind == .codex }?.available == true)
-        #expect(snapshot.warnings.contains(.malformedLines(1)))
+        #expect(snapshot.sources.first { $0.kind == .deepseek }?.available == true)
+        #expect(snapshot.warnings.contains(.malformedLines(2)))
         #expect(snapshot.history.count == 300)
         #expect(completions.isEmpty, "seeded responses never produce live events")
 
@@ -69,6 +71,11 @@ struct LiveMonitorTests {
         var configuration = monitor.configuration
         configuration.codexRoot = LiveMonitor.defaultCodexRoot
         #expect(!configuration.requiresRescan(comparedTo: monitor.configuration))
+        configuration.dshRoot = LiveMonitor.defaultDshRoot
+        #expect(!configuration.requiresRescan(comparedTo: monitor.configuration))
+        configuration.dshRoot = URL(fileURLWithPath: "/elsewhere/sessions", isDirectory: true)
+        #expect(configuration.requiresRescan(comparedTo: monitor.configuration))
+        configuration.dshRoot = nil
         configuration.enabledSources = [.codex]
         #expect(configuration.requiresRescan(comparedTo: monitor.configuration))
     }

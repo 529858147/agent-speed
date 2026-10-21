@@ -6,9 +6,9 @@ enum AgentParents {
     struct Member: Equatable, Sendable {
         var id: String
         var family: TranscriptFamily
-        var thread: CodexThread?
+        var thread: SessionThread?
 
-        init(id: String, family: TranscriptFamily, thread: CodexThread? = nil) {
+        init(id: String, family: TranscriptFamily, thread: SessionThread? = nil) {
             self.id = id
             self.family = family
             self.thread = thread
@@ -18,23 +18,24 @@ enum AgentParents {
     /// Parent id of every member that has one. Self references and cycles resolve to no parent.
     static func resolve(_ members: [Member]) -> [String: String] {
         var ids = Set<String>()
-        var threads: [String: (createdMs: Int64, id: String)] = [:]
+        // Codex threads and DeepSeek sessions, each by family: the earliest created file names a thread.
+        var threads: [TranscriptFamily: [String: (createdMs: Int64, id: String)]] = [:]
         for member in members {
             ids.insert(member.id)
-            guard member.family == .codex, let thread = member.thread, let threadId = thread.id else { continue }
-            if let earliest = threads[threadId],
+            guard member.family != .claude, let thread = member.thread, let threadId = thread.id else { continue }
+            if let earliest = threads[member.family]?[threadId],
                earliest.createdMs < thread.createdMs
                 || (earliest.createdMs == thread.createdMs && ordinal(earliest.id, precedes: member.id)) {
                 continue
             }
-            threads[threadId] = (thread.createdMs, member.id)
+            threads[member.family, default: [:]][threadId] = (thread.createdMs, member.id)
         }
         var parents: [String: String] = [:]
         for member in members {
             let parent: String?
             switch member.family {
-            case .codex:
-                parent = member.thread?.parentId.flatMap { threads[$0]?.id }
+            case .codex, .dsh:
+                parent = member.thread?.parentId.flatMap { threads[member.family]?[$0]?.id }
             case .claude:
                 parent = claudeParentPath(of: member.id).flatMap { ids.contains($0) ? $0 : nil }
             }

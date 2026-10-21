@@ -1,11 +1,11 @@
 import Foundation
 
-/// One transcript file being followed: its tailer, its parser and the last observed stat.
+/// One transcript file being followed: its reader, its parser and the last observed stat.
 final class TrackedFile {
     let path: String
     let family: TranscriptFamily
     let fileID: FileID
-    var tailer: FileTailer
+    var reader: TranscriptReader
     var parser: TranscriptParser
     var lastStat: FileStat
 
@@ -21,7 +21,7 @@ final class TrackedFile {
         self.family = family
         self.fileID = fileID
         lastStat = stat
-        tailer = FileTailer(path: path, start: start, maxLineBytes: maxLineBytes)
+        reader = TranscriptReader(path: path, start: start, maxLineBytes: maxLineBytes)
         parser = TranscriptParser(family: family, agentId: path, fileID: fileID)
     }
 

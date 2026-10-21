@@ -90,6 +90,31 @@ public class DisplayTextTests
 
         Assert.Equal("source.claudeCode", DisplayText.SourceKey(SourceKind.ClaudeCode));
         Assert.Equal("phase.tools", DisplayText.PhaseKey(AgentPhase.Tools));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DisplayText.SourceKey((SourceKind)99));
+    }
+
+    [Theory]
+    [InlineData(SourceKind.Codex, "source.codex", "Codex")]
+    [InlineData(SourceKind.ClaudeCode, "source.claudeCode", "Claude Code")]
+    [InlineData(SourceKind.ClaudeDesktop, "source.claudeDesktop", "Claude Desktop")]
+    [InlineData(SourceKind.DeepSeek, "source.deepseek", "DeepSeek")]
+    public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
+    {
+        Assert.Equal(key, DisplayText.SourceKey(source));
+        Assert.Equal(english, For(LanguageCodes.En)[key]);
+    }
+
+    [Fact]
+    public void DeepSeekStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.deepseek", language, out _), language);
+            Assert.True(Embedded.TryGet("settings.sources.dshHint", language, out var hint), language);
+            Assert.Contains("dsh", hint, StringComparison.Ordinal);
+            Assert.True(Embedded.TryGet("state.noSources", language, out var noSources), language);
+            Assert.Contains("DeepSeek", noSources, StringComparison.Ordinal);
+        }
     }
 
     [Theory]

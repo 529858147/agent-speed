@@ -4,6 +4,9 @@ namespace AgentSpeed.Core.Parsing;
 internal interface ILineSink
 {
     void OnLine(ReadOnlySpan<byte> line);
+
+    /// <summary>Input that never became a line (an undecodable zstd frame); counted as one malformed line.</summary>
+    void OnMalformed();
 }
 
 /// <summary>Lines extracted off-thread, applied later to their parser in file order.</summary>
@@ -174,13 +177,21 @@ internal abstract class TranscriptParser<TLine> : TranscriptParser
     private sealed class Batch(TranscriptParser<TLine> owner) : ILineBatch
     {
         private readonly List<TLine> _lines = [];
+        private int _malformed;
 
         public int Count => _lines.Count;
 
         public void OnLine(ReadOnlySpan<byte> line) => _lines.Add(owner.Extract(line));
 
+        public void OnMalformed() => _malformed++;
+
         public void ApplyTo(IResponseSink sink)
         {
+            for (var i = 0; i < _malformed; i++)
+            {
+                owner.CountMalformed();
+            }
+
             foreach (ref readonly var line in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_lines))
             {
                 owner.Apply(in line, sink);
@@ -190,6 +201,7 @@ internal abstract class TranscriptParser<TLine> : TranscriptParser
         public void Clear()
         {
             _lines.Clear();
+            _malformed = 0;
             if (_lines.Capacity > 4096)
             {
                 _lines.Capacity = 4096;
