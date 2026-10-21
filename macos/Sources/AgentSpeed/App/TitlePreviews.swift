@@ -33,7 +33,7 @@ enum TitlePreviews {
                 let heroes = heroTitles.compactMap { title -> NSImage? in
                     let speed = speed(for: title, redline: model.settings.redline)
                     PreviewRenderer.publish(model, speed: speed)
-                    model.gauge.snap(to: speed, now: Clock.now - 3)
+                    PreviewRenderer.snapGauge(model, to: speed, now: Clock.now - 3)
                     return heroImage(model: model, dark: dark)
                 }
                 SurfacePreviews.writeColumn(heroes, to: directory.appendingPathComponent("titles-hero-\(language.rawValue)-\(scheme).png"))

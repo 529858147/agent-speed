@@ -19,6 +19,7 @@ enum PreviewRenderer {
         )
         model.activate(live: false)
         let redline = model.settings.redline
+        GaugeChecks.run(into: directory)
 
         if wants("orb") {
             SurfacePreviews.renderOrbs(model: model, into: directory)
@@ -98,7 +99,15 @@ enum PreviewRenderer {
 
     static func publish(_ model: AppModel, snapshot: SpeedSnapshot) {
         model.store.publishLive(snapshot)
-        model.gauge.snap(to: model.value(of: snapshot.live), now: Clock.now)
+        snapGauge(model, to: model.value(of: snapshot.live), now: Clock.now)
+    }
+
+    /// Snaps the gauge, title and tier to `value` at the current settings. The app syncs the gauge's redline from the
+    /// settings asynchronously, so a preview that just changed the redline (the redline ladder renders) would
+    /// otherwise snap against a stale one and show the wrong title and heat.
+    static func snapGauge(_ model: AppModel, to value: Double, tier: SpeedTier? = nil, now: TimeInterval) {
+        model.gauge.redline = model.settings.redline
+        model.gauge.snap(to: value, tier: tier, now: now)
     }
 }
 

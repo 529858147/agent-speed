@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop 与 DeepSeek Harness 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
+**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop、DeepSeek Harness、OpenCode 与 Gemini CLI 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -44,14 +44,17 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 
 ## 功能
 
-- **悬浮窗**——烟熏玻璃质感的仪表，36 格 LED 表盘。速度从「巡航 → 加速 → 狂飙 → 极限」一路攀升时，表盘沿着热度光谱点亮、彗星绕圈疾驰、火花四溅、余烬升腾，每完成一次回应就释放一道冲击波；打破今日纪录还会庆祝。
+- **悬浮窗**——烟熏玻璃质感的仪表，36 格 LED 表盘。速度一路攀升时，称号也跟着升级——从「步行」「自行车」到「高铁」「战斗机」，冲到红线就是「火箭」；表盘沿着热度光谱点亮、彗星绕圈疾驰、火花四溅、余烬升腾，每完成一次回应就释放一道冲击波；打破今日纪录还会庆祝。
 - **菜单栏／任务栏**——精简的仪表与数字，宽度固定不跳动。Windows 版直接嵌在任务栏里、时钟旁边。
-- **面板**——实时曲线、各来源速度、所有正在工作的 agent（含子 agent）及其状态、今日统计。
+- **面板**——实时曲线、各来源速度、所有正在工作的 agent（含子 agent）及其状态、今日统计。点一下来源就能打开它的用量历史。
+- **用量历史**——从最早的记录开始，每天的输出与输入 token、请求数、平均速度与峰值，可按来源与任意日期区间绘成图表，并导出 CSV。只保存每日汇总，即使工具删除了旧记录，历史也不会消失。
 - **全原生**——macOS 使用 SwiftUI + AppKit，Windows 使用 WPF 与 Fluent／Mica。浅色、深色、自动主题；繁體中文、简体中文、English、日本語。
 - **人性化**——特效强度从「关闭」到「热血全开」，遵循「减弱动态效果」与高对比度设置，支持鼠标穿透、边缘磁吸、记住每块屏幕上的位置、登录时自动启动。
 - **永远最新**——后台检查 GitHub Releases，有新版一键更新，并以 SHA-256 验证。
 
 <p align="center"><img src="docs/images/dashboards.png" width="560" alt="深色与浅色面板"></p>
+
+<p align="center"><img src="docs/images/history.png" width="760" alt="用量历史窗口"></p>
 
 ## 速度怎么算
 
@@ -59,10 +62,12 @@ Agent Speed 只读取 agent 本来就写在你电脑上的记录：
 
 | 来源 | 文件夹 |
 | --- | --- |
-| Codex（CLI、IDE、桌面版） | `~/.codex/sessions`（或 `$CODEX_HOME/sessions`） |
+| Codex（CLI、IDE、桌面版） | `~/.codex/sessions` 与 `archived_sessions`，含压缩记录（或 `$CODEX_HOME`） |
 | Claude Code（CLI、IDE） | `~/.claude/projects`（或 `$CLAUDE_CONFIG_DIR/projects`） |
 | Claude Desktop（Code 与 agent 会话） | `~/.claude/projects`，自动区分 |
 | DeepSeek Harness（`dsh`，桌面版与命令行） | `~/.dsh/sessions`（或 `$DSH_HOME/sessions`） |
+| OpenCode（命令行与桌面版） | `~/.local/share/opencode/opencode.db`（或 `$XDG_DATA_HOME/opencode`） |
+| Gemini CLI | `~/.gemini/tmp`（或 `$GEMINI_CLI_HOME/.gemini/tmp`） |
 
 **速度＝输出 token ÷ 模型实际花在这些 token 上的时间**——从发出请求到回应完成，含等待第一个字。多个 agent 并行时会加总。回应仍在进行时，先以该 agent 近期的实测速度估算，完成的瞬间立即以实测值校正。也可以切换成「总吞吐量」（输入＋输出）。
 
@@ -72,7 +77,7 @@ Claude Desktop 普通聊天对话不会保存在本机，因此无法统计。
 
 ## 隐私
 
-只读、只在本机。不收集数据、不需要账号；唯一的网络连接是向 GitHub Releases 检查更新（可关闭），不发送任何个人数据，安装更新前会先验证 SHA-256 校验码（校验码与发布版本放在一起，能拦下损坏或被篡改的下载，但无法防范仓库本身被入侵）。Agent Speed 不会保存或显示对话内容——只用到 token 数量、模型名称与项目文件夹名称。
+只读、只在本机。不收集数据、不需要账号；唯一的网络连接是向 GitHub Releases 检查更新（可关闭），不发送任何个人数据，安装更新前会先验证 SHA-256 校验码（校验码与发布版本放在一起，能拦下损坏或被篡改的下载，但无法防范仓库本身被入侵）。Agent Speed 不会保存或显示对话内容——只用到 token 数量、模型名称与项目文件夹名称。用量历史只保存每日汇总，存放在你电脑上的一个小型数据库（`~/Library/Application Support/AgentSpeed`、`%LOCALAPPDATA%\AgentSpeed`），可在设置中清除。
 
 ## 从源码构建
 

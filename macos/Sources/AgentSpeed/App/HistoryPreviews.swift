@@ -139,10 +139,17 @@ enum HistoryPreviews {
                     window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                     window.setContentSize(item.size)
                     window.center()
-                    // Screenshots need the active-window look; cooperative activation alone may be declined.
-                    _ = NSApp.perform(NSSelectorFromString("activateIgnoringOtherApps:"), with: true)
-                    window.makeKeyAndOrderFront(nil)
-                    try? await Task.sleep(for: .seconds(1.2))
+                    // Wherever the pointer happens to be, it must not leave a hover state in the picture.
+                    window.ignoresMouseEvents = true
+                    // Screenshots need the active-window look; cooperative activation alone may be declined,
+                    // so ask again until the window is key (or give up after a few tries).
+                    for _ in 0..<8 where !window.isKeyWindow {
+                        NSApp.activate()
+                        _ = NSApp.perform(NSSelectorFromString("activateIgnoringOtherApps:"), with: true)
+                        window.makeKeyAndOrderFront(nil)
+                        try? await Task.sleep(for: .seconds(0.3))
+                    }
+                    try? await Task.sleep(for: .seconds(1.0))
                     let url = directory.appendingPathComponent("screen-\(item.name)-\(dark ? "dark" : "light").png")
                     let process = Process()
                     process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")

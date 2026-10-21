@@ -55,7 +55,7 @@ enum SurfacePreviews {
         let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline)
         model.store.publishLive(snapshot)
         let now = Clock.now
-        model.gauge.snap(to: speed, tier: tier, now: now - 3)
+        PreviewRenderer.snapGauge(model, to: speed, tier: tier, now: now - 3)
         let interaction = OrbInteraction()
         interaction.isHovered = extra == .hover
         let animator = OrbAnimator(style: .floating)
@@ -94,7 +94,7 @@ enum SurfacePreviews {
             var images: [NSImage] = []
             for value in values {
                 model.store.publishLive(PreviewData.snapshot(speed: value, redline: redline))
-                model.gauge.snap(to: value, now: Clock.now - 3)
+                PreviewRenderer.snapGauge(model, to: value, now: Clock.now - 3)
                 let state = StatusItemState(model: model, time: Clock.now)
                 let size = CGSize(width: 120, height: state.layout.height)
                 let image = NSImage(size: size, flipped: true) { rect in
