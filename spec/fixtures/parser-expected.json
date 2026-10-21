@@ -6,7 +6,9 @@
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl",
     "claude/projects/-Users-dev-projects-nova/s-cli.jsonl",
     "claude/projects/-Users-dev-projects-nova/s-cli/subagents/agent-abc.jsonl",
-    "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl"
+    "claude/projects/-Users-dev-projects-orbit/s-desk.jsonl",
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd",
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd"
   ],
   "files": {
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": {
@@ -215,6 +217,68 @@
           "output": 500,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "final": true
+        }
+      ]
+    },
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd": {
+      "source": "deepseek",
+      "project": "quasar",
+      "model": "deepseek-flash",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490648030,
+      "malformedLines": 1,
+      "responses": [
+        {
+          "key": "dsm-1",
+          "startMs": 1792490641000,
+          "endMs": 1792490645000,
+          "input": 9000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "output": 400,
+          "reasoning": 0,
+          "model": "deepseek-flash",
+          "final": true
+        },
+        {
+          "key": "dsm-2",
+          "startMs": 1792490646010,
+          "endMs": 1792490648010,
+          "input": 9400,
+          "cachedInput": 9216,
+          "cacheWriteInput": 64,
+          "output": 300,
+          "reasoning": 0,
+          "model": "deepseek-flash",
+          "final": true
+        }
+      ]
+    },
+    "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd": {
+      "source": "deepseek",
+      "project": "quasar",
+      "model": "deepseek-pro",
+      "isSubagent": true,
+      "parentFile": "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd",
+      "phase": "generating",
+      "inFlightStartMs": 1792490655010,
+      "lastLineMs": 1792490655010,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "dss-1",
+          "startMs": 1792490651000,
+          "endMs": 1792490654000,
+          "input": 4500,
+          "cachedInput": 4000,
+          "cacheWriteInput": 0,
+          "output": 240,
+          "reasoning": 0,
+          "model": "deepseek-pro",
           "final": true
         }
       ]

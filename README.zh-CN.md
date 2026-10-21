@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code 与 Claude Desktop 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
+**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop 与 DeepSeek Harness 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -62,6 +62,7 @@ Agent Speed 只读取 agent 本来就写在你电脑上的记录：
 | Codex（CLI、IDE、桌面版） | `~/.codex/sessions`（或 `$CODEX_HOME/sessions`） |
 | Claude Code（CLI、IDE） | `~/.claude/projects`（或 `$CLAUDE_CONFIG_DIR/projects`） |
 | Claude Desktop（Code 与 agent 会话） | `~/.claude/projects`，自动区分 |
+| DeepSeek Harness（`dsh`，桌面版与命令行） | `~/.dsh/sessions`（或 `$DSH_HOME/sessions`） |
 
 **速度＝输出 token ÷ 模型实际花在这些 token 上的时间**——从发出请求到回应完成，含等待第一个字。多个 agent 并行时会加总。回应仍在进行时，先以该 agent 近期的实测速度估算，完成的瞬间立即以实测值校正。也可以切换成「总吞吐量」（输入＋输出）。
 

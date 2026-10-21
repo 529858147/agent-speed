@@ -4,6 +4,7 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case codex
     case claudeCode
     case claudeDesktop
+    case deepseek
 
     public var id: String { rawValue }
 }
@@ -281,14 +282,18 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var codexRoot: URL?
     /// Nil uses the default Claude projects folder (shared by Claude Code and Claude Desktop).
     public var claudeRoot: URL?
+    /// Nil uses the default DeepSeek Harness sessions folder.
+    public var dshRoot: URL?
 
     public init(
         enabledSources: Set<SourceKind> = Set(SourceKind.allCases),
         codexRoot: URL? = nil,
-        claudeRoot: URL? = nil
+        claudeRoot: URL? = nil,
+        dshRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
         self.claudeRoot = claudeRoot
+        self.dshRoot = dshRoot
     }
 }

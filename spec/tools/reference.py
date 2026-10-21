@@ -7,6 +7,7 @@
 The dump format matches the `--dump-today` output of both platform probes. Conversation content is never printed.
 """
 import argparse
+import subprocess
 import json
 import os
 import re
@@ -94,6 +95,8 @@ class FileState:
         self.prev_legacy = None
         # claude
         self.precise = False
+        # deepseek
+        self.parent_session = None
 
 
 def emit(state, key, start, end, tokens, model, final=True):
@@ -287,6 +290,64 @@ def claude_line(state, obj, dedupe):
             state.phase, state.in_flight = "idle", None
 
 
+ZSTD_MAGIC = 0xFD2FB528
+
+
+def zstd_frame_size(data, pos):
+    """Compressed size of the frame starting at pos, or None when it is not complete yet (zstd format spec)."""
+    if len(data) - pos < 8:
+        return None
+    magic = int.from_bytes(data[pos:pos + 4], "little")
+    if magic & 0xFFFFFFF0 == 0x184D2A50:
+        size = 8 + int.from_bytes(data[pos + 4:pos + 8], "little")
+        return size if len(data) - pos >= size else None
+    if magic != ZSTD_MAGIC:
+        raise ValueError("not a zstd frame")
+    fhd = data[pos + 4]
+    single, fcs_flag, checksum, dict_flag = (fhd >> 5) & 1, fhd >> 6, (fhd >> 2) & 1, fhd & 3
+    header = 1 + (0 if single else 1) + [0, 1, 2, 4][dict_flag] + [1 if single else 0, 2, 4, 8][fcs_flag]
+    cur = pos + 4 + header
+    while True:
+        if len(data) - cur < 3:
+            return None
+        bh = int.from_bytes(data[cur:cur + 3], "little")
+        last, kind, size = bh & 1, (bh >> 1) & 3, bh >> 3
+        cur += 3 + (1 if kind == 1 else size)
+        if kind == 3:
+            raise ValueError("reserved block type")
+        if last:
+            break
+    cur += 4 if checksum else 0
+    return cur - pos if cur <= len(data) else None
+
+
+def zstd_lines(path, start_offset=0):
+    data = open(path, "rb").read()
+    pos, pending, malformed = start_offset, b"", 0
+    while pos < len(data):
+        try:
+            size = zstd_frame_size(data, pos)
+        except ValueError:
+            break
+        if size is None:
+            break
+        frame = data[pos:pos + size]
+        pos += size
+        if int.from_bytes(frame[:4], "little") != ZSTD_MAGIC:
+            continue
+        out = subprocess.run(["zstd", "-dc", "-q"], input=frame, capture_output=True)
+        if out.returncode != 0 or len(out.stdout) > 64 * 1024 * 1024:
+            malformed += 1
+            continue
+        pending += out.stdout
+        *complete, pending = pending.split(b"\n")
+        for raw in complete:
+            if raw.strip() and len(raw) <= MAX_LINE:
+                yield raw
+    if malformed:
+        yield ("malformed", malformed)
+
+
 def read_lines(path, start_offset=0):
     with open(path, "rb") as f:
         f.seek(start_offset)
@@ -304,8 +365,12 @@ def read_lines(path, start_offset=0):
 
 
 def process_file(state, dedupe, start_offset=0):
-    handler = codex_line if state.source == "codex" else claude_line
-    for raw in read_lines(state.path, start_offset):
+    handler = {"codex": codex_line, "deepseek": dsh_event}.get(state.source, claude_line)
+    lines = zstd_lines(state.path, start_offset) if state.path.endswith(".zstd") else read_lines(state.path, start_offset)
+    for raw in lines:
+        if isinstance(raw, tuple):
+            state.malformed += raw[1]
+            continue
         try:
             obj = json.loads(raw)
         except (ValueError, UnicodeDecodeError):
@@ -320,15 +385,19 @@ def process_file(state, dedupe, start_offset=0):
 def resolve_parents(states):
     """Maps agent id (path) to its parent agent id per METRICS 6.7."""
     by_path = {s.path: s for s in states}
-    by_thread = {}
-    for s in states:
+    by_thread, by_session = {}, {}
+    for s in sorted(states, key=lambda s: (s.file_created or 0, s.path)):
         if s.source == "codex" and s.thread_id and s.thread_id not in by_thread:
             by_thread[s.thread_id] = s.path
+        if s.source == "deepseek" and s.thread_id and s.thread_id not in by_session:
+            by_session[s.thread_id] = s.path
     parents = {}
     for s in states:
         parent = None
         if s.source == "codex":
             parent = by_thread.get(s.parent_thread_id) if s.parent_thread_id else None
+        elif s.source == "deepseek":
+            parent = by_session.get(s.parent_session) if s.parent_session else None
         else:
             parts = re.split(r"[\\/]", s.path)
             if len(parts) >= 3 and parts[-2] == "subagents":
@@ -343,6 +412,70 @@ def resolve_parents(states):
         if cur is not None:
             parents[path] = None
     return parents
+
+
+def dsh_event(state, obj, dedupe):
+    kind = obj.get("type")
+    if kind == "event" and isinstance(obj.get("event"), dict):
+        return dsh_event(state, obj["event"], dedupe)
+    if kind == "snapshot":
+        if isinstance(obj.get("header"), dict):
+            dsh_header(state, obj["header"])
+        for record in obj.get("records") or []:
+            if isinstance(record, dict):
+                dsh_event(state, record, dedupe)
+        return
+    if kind == "session":
+        dsh_header(state, obj)
+        return
+    ts = obj.get("time")
+    if isinstance(ts, bool) or not isinstance(ts, (int, float)):
+        return
+    ts = int(ts)
+    if state.file_created is not None and ts < state.file_created - 2000:
+        return
+    state.last_line = ts if state.last_line is None else max(state.last_line, ts)
+    data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+    if kind == "request/header":
+        config = (data.get("header") or {}).get("config") if isinstance(data.get("header"), dict) else None
+        if isinstance(config, dict) and isinstance(config.get("model"), str) and config["model"]:
+            state.model = config["model"]
+    elif kind == "step/start":
+        state.pending, state.phase, state.in_flight = ts, "generating", ts
+    elif kind == "turn/end":
+        state.phase, state.pending, state.in_flight = "idle", None, None
+    elif kind == "assistant/message":
+        message = data.get("message") if isinstance(data.get("message"), dict) else {}
+        key = message.get("id") or "dsh:%s:%s" % (state.thread_id, obj.get("seq"))
+        if dedupe.owner(key) is not None:
+            return
+        dedupe.claim(key, state.path)
+        usage = data.get("usage")
+        if isinstance(usage, dict):
+            cr, cw = num(usage.get("cacheReadTokens")), num(usage.get("cacheWriteTokens"))
+            tokens = dict(input=num(usage.get("inputTokens")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
+                          output=num(usage.get("outputTokens")), reasoning=0)
+            source = message.get("source") if isinstance(message.get("source"), dict) else {}
+            model = source.get("model") or state.model
+            emit(state, key, state.pending, ts, tokens, model)
+            state.model = model or state.model
+        content = message.get("content") if isinstance(message.get("content"), list) else []
+        tool = any(isinstance(b, dict) and b.get("type") == "tool-call" for b in content)
+        state.pending, state.phase, state.in_flight = None, ("tools" if tool else "idle"), None
+
+
+def dsh_header(state, header):
+    if state.file_created is not None:
+        return
+    created = header.get("createdAt")
+    state.file_created = int(created) if isinstance(created, (int, float)) and not isinstance(created, bool) else 0
+    state.thread_id = header.get("id") or state.thread_id
+    state.project = basename(header.get("cwd")) or state.project
+    parent = header.get("parentSession")
+    depth = header.get("delegationDepth")
+    state.parent_session = parent if isinstance(parent, str) and parent else None
+    state.is_subagent = state.is_subagent or header.get("origin") == "subagent" or bool(state.parent_session) or (
+        isinstance(depth, (int, float)) and not isinstance(depth, bool) and depth > 0)
 
 
 # ----------------------------------------------------------------------------- engine
@@ -509,7 +642,7 @@ def check_fixtures():
     states = []
     for rel in expected["order"]:
         exp = expected["files"][rel]
-        source = "codex" if rel.startswith("codex/") else "claudeCode"
+        source = "codex" if rel.startswith("codex/") else ("deepseek" if rel.startswith("dsh/") else "claudeCode")
         state = FileState(os.path.join(root, rel), source)
         process_file(state, dedupe)
         states.append(state)
@@ -555,7 +688,10 @@ def check_fixtures():
           % (len(expected["order"]), len(cases)))
 
 
-def discover(root, limit=20_000):
+DSH_NAME = re.compile(r"^session\.v\d+\.jsonl(\.zstd)?$")
+
+
+def discover(root, limit=20_000, deepseek=False):
     found = []
     if not os.path.isdir(root):
         return found
@@ -566,17 +702,19 @@ def discover(root, limit=20_000):
         dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             path = os.path.join(dirpath, name)
-            if name.endswith(".jsonl") and not os.path.islink(path):
+            wanted = DSH_NAME.match(name) if deepseek else name.endswith(".jsonl")
+            if wanted and not os.path.islink(path):
                 found.append(path)
     found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return found[:limit]
 
 
-def dump_today(codex_root, claude_root):
+def dump_today(codex_root, claude_root, dsh_root):
     started = time.time()
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    files = [(p, "codex") for p in discover(codex_root)] + [(p, "claudeCode") for p in discover(claude_root)]
+    files = ([(p, "codex") for p in discover(codex_root)] + [(p, "claudeCode") for p in discover(claude_root)]
+             + [(p, "deepseek") for p in discover(dsh_root, deepseek=True)])
     files = [(os.path.getmtime(p), p, s) for p, s in files]
     files.sort(key=lambda t: (t[0], t[1]))
     dedupe = Deduper()
@@ -585,6 +723,8 @@ def dump_today(codex_root, claude_root):
         if mtime * 1000 < today_start - 15 * 60_000:
             continue
         size = os.path.getsize(path)
+        if size > 256 * 1024 * 1024 and path.endswith(".zstd"):
+            continue
         offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 else 0
         state = FileState(path, source)
         process_file(state, dedupe, offset)
@@ -614,16 +754,19 @@ def main():
     parser.add_argument("--dump-today", action="store_true")
     parser.add_argument("--codex", default=None)
     parser.add_argument("--claude", default=None)
+    parser.add_argument("--dsh", default=None)
     args = parser.parse_args()
     home = os.path.expanduser("~")
     codex_root = args.codex or (os.path.join(os.environ["CODEX_HOME"], "sessions") if os.environ.get("CODEX_HOME")
                                 else os.path.join(home, ".codex", "sessions"))
     claude_root = args.claude or (os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects")
                                   if os.environ.get("CLAUDE_CONFIG_DIR") else os.path.join(home, ".claude", "projects"))
+    dsh_root = args.dsh or (os.path.join(os.environ["DSH_HOME"], "sessions") if os.environ.get("DSH_HOME")
+                            else os.path.join(home, ".dsh", "sessions"))
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root)
+        dump_today(codex_root, claude_root, dsh_root)
     else:
         parser.print_help()
 

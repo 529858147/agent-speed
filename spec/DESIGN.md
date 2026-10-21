@@ -58,6 +58,7 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | Codex | `#34D399` mint |
 | Claude Code | `#FF8A65` coral |
 | Claude Desktop | `#B39DFF` lilac |
+| DeepSeek | `#4D6BFE` DeepSeek blue |
 
 ## 2. The orb (floating window)
 

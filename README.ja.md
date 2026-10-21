@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
+**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop・DeepSeek Harness のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -62,6 +62,7 @@ Agent Speed は、agent がすでにローカルに書き出している記録�
 | Codex（CLI・IDE・デスクトップ） | `~/.codex/sessions`（または `$CODEX_HOME/sessions`） |
 | Claude Code（CLI・IDE） | `~/.claude/projects`（または `$CLAUDE_CONFIG_DIR/projects`） |
 | Claude Desktop（Code と agent セッション） | `~/.claude/projects`（自動で区別） |
+| DeepSeek Harness（`dsh`、デスクトップと CLI） | `~/.dsh/sessions`（または `$DSH_HOME/sessions`） |
 
 **速度＝出力トークン ÷ モデルが実際にそれらに費やした時間**——リクエスト送信から応答完了まで、最初のトークンを待つ時間を含みます。複数の agent は合算されます。ストリーミング中の応答はその agent の最近の実測速度で推定し、完了した瞬間に実測値で補正します。「総スループット」（入力＋出力）にも切り替えられます。
 

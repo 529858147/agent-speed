@@ -205,10 +205,10 @@
     "ja": "今日の履歴を読み込み中…"
   },
   "state.noSources": {
-    "zh-Hant": "找不到 Codex 或 Claude 的紀錄資料夾",
-    "zh-Hans": "找不到 Codex 或 Claude 的记录文件夹",
-    "en": "No Codex or Claude history folder found",
-    "ja": "Codex または Claude の履歴フォルダが見つかりません"
+    "zh-Hant": "找不到 Codex、Claude 或 DeepSeek 的紀錄資料夾",
+    "zh-Hans": "找不到 Codex、Claude 或 DeepSeek 的记录文件夹",
+    "en": "No Codex, Claude or DeepSeek history folder found",
+    "ja": "Codex、Claude、DeepSeek の履歴フォルダが見つかりません"
   },
   "warning.partialHistory": {
     "zh-Hant": "部分歷史過大，已略過最早的內容",
@@ -815,5 +815,17 @@
     "zh-Hans": "点一下即可更新。",
     "en": "Click to update.",
     "ja": "クリックしてアップデート。"
+  },
+  "source.deepseek": {
+    "zh-Hant": "DeepSeek",
+    "zh-Hans": "DeepSeek",
+    "en": "DeepSeek",
+    "ja": "DeepSeek"
+  },
+  "settings.sources.dshHint": {
+    "zh-Hant": "DeepSeek Harness（dsh）桌面版與命令列共用這個資料夾。",
+    "zh-Hans": "DeepSeek Harness（dsh）桌面版与命令行共用这个文件夹。",
+    "en": "The DeepSeek Harness (dsh) desktop app and CLI share this folder.",
+    "ja": "DeepSeek Harness（dsh）のデスクトップアプリと CLI はこのフォルダを共有します。"
   }
 }

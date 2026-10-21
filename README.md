@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code and Claude Desktop — calm when idle, on fire at the redline.
+**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code, Claude Desktop and DeepSeek Harness — calm when idle, on fire at the redline.
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -67,6 +67,7 @@ Agent Speed reads the transcripts your agents already write on your disk:
 | Codex (CLI, IDE, desktop) | `~/.codex/sessions` (or `$CODEX_HOME/sessions`) |
 | Claude Code (CLI, IDE) | `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) |
 | Claude Desktop (Code and agent sessions) | `~/.claude/projects`, told apart automatically |
+| DeepSeek Harness (`dsh`, desktop and CLI) | `~/.dsh/sessions` (or `$DSH_HOME/sessions`) |
 
 **Speed = output tokens ÷ the real time the model spent on them** — from the moment the request was sent until the response finished, including time to first token. Parallel agents add up. While a response is still streaming, it is estimated from that agent's recent measured speed and corrected with the measured value the instant it completes. Optionally you can switch to *total throughput* (input + output).
 

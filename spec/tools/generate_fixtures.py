@@ -248,6 +248,89 @@ expect(rel, source="claudeDesktop", project="orbit", model="claude-opus-5-5", is
        phase="tools", inFlightStartMs=None, lastLineMs=at(3, 5), malformedLines=0,
        responses=[resp("msg_C", at(3, 0), at(3, 5), 30003, 30000, 0, 500, 0, "claude-opus-5-5")])
 
+
+# --- DeepSeek Harness (dsh): zstd frame streams ------------------------------
+import subprocess
+
+
+def write_zstd(rel, frames):
+    path = os.path.join(ROOT, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        for rows in frames:
+            text = "".join((r if isinstance(r, str) else json.dumps(r, ensure_ascii=False, separators=(",", ":"))) + "\n"
+                           for r in rows)
+            f.write(subprocess.run(["zstd", "-q", "-c", "--no-content-size"], input=text.encode("utf-8"),
+                                   check=True, capture_output=True).stdout)
+
+
+def dsh(kind, seq, ms, data, **extra):
+    row = {"type": kind, "seq": seq, "time": ms, "data": data}
+    row.update(extra)
+    return row
+
+
+def dsh_usage(i, o, cr, cw):
+    return {"inputTokens": i, "outputTokens": o, "cacheReadTokens": cr, "cacheWriteTokens": cw,
+            "totalTokens": i + o + cr}
+
+
+def dsh_message(seq, ms, mid, blocks, model, usage):
+    return dsh("assistant/message", seq, ms, {
+        "turn": 1, "step": seq,
+        "message": {"role": "assistant", "content": [{"type": b} for b in blocks],
+                    "source": {"kind": "model", "provider": "deepseek-account", "model": model}, "id": mid},
+        "usage": usage, "stream": [{"type": "chunk", "time": ms - 100, "chunk": {"type": "usage", "usage": usage}}]},
+        surfaceOp="append")
+
+
+rel = "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd"
+write_zstd(rel, [
+    [{"type": "session", "version": 4, "id": "session-dsh-main", "createdAt": at(4, 0),
+      "cwd": "/Users/dev/projects/quasar", "isSeeded": False, "delegationDepth": 0, "agentPreset": "standard"}],
+    [dsh("permission/preset", 1, at(4, 0, 10), {"preset": "default"}), dsh("turn/start", 2, at(4, 1), {"turn": 1})],
+    [dsh("step/start", 3, at(4, 1), {"turn": 1, "step": 1}),
+     dsh("user/message", 4, at(4, 1, 5), {"content": [{"type": "text", "text": "Fix the build"}], "role": "user"}),
+     dsh("request/header", 5, at(4, 1, 10), {"header": {"config": {"provider": "deepseek-account",
+                                                                    "model": "deepseek-flash"}}})],
+    [dsh("session-log-deepseek/delivery-accepted", 6, at(4, 1, 400), {"throughSeq": 5})],
+    [dsh_message(7, at(4, 5), "dsm-1", ["reasoning", "tool-call"], "deepseek-flash", dsh_usage(9000, 400, 0, 0))],
+    [dsh("tool/call", 8, at(4, 5, 2), {"callId": "c1", "name": "bash"}),
+     dsh("tool/result", 9, at(4, 6), {"message": {"role": "tool", "toolCallId": "c1"}}),
+     dsh("step/end", 10, at(4, 6), {"turn": 1, "step": 1})],
+    [dsh("step/start", 11, at(4, 6, 10), {"turn": 1, "step": 2})],
+    [dsh_message(12, at(4, 8, 10), "dsm-2", ["text"], "deepseek-flash", dsh_usage(120, 300, 9216, 64)),
+     dsh_message(13, at(4, 8, 20), "dsm-2", ["text"], "deepseek-flash", dsh_usage(120, 300, 9216, 64))],
+    [dsh("step/end", 14, at(4, 8, 25), {"turn": 1, "step": 2}),
+     dsh("turn/end", 15, at(4, 8, 30), {"turn": 1, "reason": {"kind": "completed"}}),
+     "this line is not json"],
+])
+expect(rel, source="deepseek", project="quasar", model="deepseek-flash", isSubagent=False, parentFile=None,
+       phase="idle", inFlightStartMs=None, lastLineMs=at(4, 8, 30), malformedLines=1,
+       responses=[
+           resp("dsm-1", at(4, 1), at(4, 5), 9000, 0, 0, 400, 0, "deepseek-flash"),
+           resp("dsm-2", at(4, 6, 10), at(4, 8, 10), 9400, 9216, 64, 300, 0, "deepseek-flash"),
+       ])
+
+rel = "dsh/sessions/--Users-dev-projects-quasar--/session-dsh-sub/session.v4.jsonl.zstd"
+write_zstd(rel, [
+    [{"type": "session", "version": 4, "id": "session-dsh-sub", "createdAt": at(4, 10),
+      "cwd": "/Users/dev/projects/quasar", "parentSession": "session-dsh-main", "isSeeded": True,
+      "origin": "subagent", "delegationDepth": 1, "agentPreset": "explore"}],
+    [dsh("step/start", 3, at(4, 1), {"turn": 1, "step": 1}),
+     dsh_message(7, at(4, 5), "dsm-1", ["reasoning", "tool-call"], "deepseek-flash", dsh_usage(9000, 400, 0, 0))],
+    [dsh("step/start", 20, at(4, 11), {"turn": 1, "step": 1}),
+     dsh("request/header", 21, at(4, 11, 5), {"header": {"config": {"model": "deepseek-pro"}}})],
+    [dsh_message(22, at(4, 14), "dss-1", ["tool-call"], "deepseek-pro", dsh_usage(500, 240, 4000, 0))],
+    [dsh("tool/call", 23, at(4, 14, 5), {"callId": "c9", "name": "grep"}),
+     dsh("tool/result", 24, at(4, 15), {"message": {"role": "tool", "toolCallId": "c9"}})],
+    [dsh("step/start", 25, at(4, 15, 10), {"turn": 1, "step": 2})],
+])
+expect(rel, source="deepseek", project="quasar", model="deepseek-pro", isSubagent=True,
+       parentFile="dsh/sessions/--Users-dev-projects-quasar--/session-dsh-main/session.v4.jsonl.zstd",
+       phase="generating", inFlightStartMs=at(4, 15, 10), lastLineMs=at(4, 15, 10), malformedLines=0,
+       responses=[resp("dss-1", at(4, 11), at(4, 14), 4500, 4000, 0, 240, 0, "deepseek-pro")])
+
 with open(os.path.join(ROOT, "parser-expected.json"), "w", encoding="utf-8") as f:
     json.dump({"_comment": "Process files in `order` with one shared dedupe set. Paths are relative to this folder.",
                "order": order, "files": files}, f, indent=2, ensure_ascii=False)

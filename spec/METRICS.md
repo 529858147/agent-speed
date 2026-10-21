@@ -8,7 +8,7 @@ shared fixtures in `spec/fixtures/`.
 
 | Term | Meaning |
 | --- | --- |
-| Source | `codex`, `claudeCode`, `claudeDesktop` |
+| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`) |
 | Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. |
 | Response | One model API call that produced a usage record. |
 | Phase | `generating` (a request is in flight), `tools` (model finished, waiting for tool results), `idle` |
@@ -19,12 +19,14 @@ shared fixtures in `spec/fixtures/`.
 | --- | --- | --- |
 | Codex | `$CODEX_HOME/sessions`, else `~/.codex/sessions` | user setting |
 | Claude Code + Claude Desktop | `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects` | user setting |
+| DeepSeek Harness (`dsh`, desktop app and CLI) | `$DSH_HOME/sessions`, else `~/.dsh/sessions` | user setting |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
 locally and are out of scope.
 
-Discovery: recursive enumeration of `*.jsonl`, maximum depth 6, never follow symlinks, at most 20 000 files per root.
+Discovery: recursive enumeration of `*.jsonl` (DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`), maximum
+depth 6, never follow symlinks, at most 20 000 files per root.
 The app never writes inside these folders.
 
 ## 3. Common rules
@@ -62,7 +64,7 @@ Missing numeric fields are 0. Negative values are clamped to 0. `total = input +
 ### 3.4 Deduplication
 A global, bounded (65 536 entries, FIFO eviction) set of response keys shared by all files of all sources.
 A key first seen in file A and later seen in file B is ignored in B (forks and resumes copy history). Claude: repeated
-lines of the same key in the same file are merged (4.1, 4.3). Codex: every repeat of a key is skipped (4.2).
+lines of the same key in the same file are merged (4.1, 4.4). Codex: every repeat of a key is skipped (4.2).
 
 ### 3.5 Copied history
 For Codex, once `session_meta` has been read, any later line whose timestamp is earlier than `fileCreatedMs - 2000`
@@ -157,11 +159,51 @@ Legacy usage (`event_msg` / `token_count`):
 5. `key = "codex-legacy:" + threadId + ":" + total.total_tokens`. Skip if already seen.
 6. Emit with `startMs = pendingStartMs`, `endMs = ts`. Then `pendingStartMs = ts`, `streaming = false`, phase `tools`.
 
-### 4.3 Response upserts
+### 4.3 DeepSeek Harness (dsh)
+
+Files are a sequence of independent zstd frames (section 5.1); the decoded stream is JSONL. Every event line has
+`type`, `seq` (number) and `time` (Unix milliseconds, a number). Wrappers are unwrapped first: a line
+`{"type":"event","event":{...}}` is processed as its inner event; a line `{"type":"snapshot","header":{...},
+"records":[...]}` is processed as its header followed by each record (itself possibly an `event` wrapper) in order.
+
+State: `sessionId`, `createdMs`, `parentSession`, `model`, `pendingStartMs`, `phase`.
+
+| Event | Action |
+| --- | --- |
+| first header (`type == "session"`, or a snapshot `header`) | `sessionId = id`; `createdMs = createdAt`; `project` from `cwd`; `isSubagent = origin == "subagent"` or `delegationDepth > 0` or `parentSession` is a non-empty string; `parentSession = parentSession`. Later headers are ignored. |
+| any event whose `time` is earlier than `createdMs - 2000` | fork-inherited history: ignore completely |
+| `request/header` | `model = data.header.config.model` when present |
+| `step/start` | `pendingStartMs = time`; phase `generating` (`inFlightStartMs = time`) |
+| `assistant/message` | response (below) |
+| `turn/end` | phase `idle`, `pendingStartMs = null` |
+| anything else | only updates `lastLineMs` |
+
+`assistant/message`:
+1. `key = data.message.id`, else `"dsh:" + sessionId + ":" + seq`. Skip the event entirely if the key was seen anywhere.
+2. When `data.usage` is an object, emit a response with `startMs = pendingStartMs`, `endMs = time`, `final = true`,
+   `model = data.message.source.model ?? model`, and tokens `input = inputTokens + cacheReadTokens + cacheWriteTokens`,
+   `cachedInput = cacheReadTokens`, `cacheWriteInput = cacheWriteTokens`, `output = outputTokens`, `reasoning = 0`
+   (dsh does not report reasoning separately; it is included in `outputTokens`).
+3. `pendingStartMs = null`; phase `tools` when `data.message.content` has a block of type `tool-call`, else `idle`.
+
+`lastLineMs` is the latest `time` seen (excluding ignored inherited events). Verified against dsh's own session
+statistics: the sum of `step/start → assistant/message` intervals equals dsh's `llmMs`, and the token sums equal its
+`tokenUsage` totals.
+
+### 4.4 Response upserts
 A response is identified by its key. The first emission is a *completion* (used for live events, 6.4). Later
 emissions with the same key in the same file are *updates*: the engine replaces the stored response.
 
 ## 5. Reading files
+
+### 5.1 zstd frame streams (DeepSeek Harness)
+`.zstd` files are read frame by frame: from the current offset, determine the compressed size of the next frame
+(zstd `findFrameCompressedSize`); if the frame is not complete yet, stop and wait for more bytes. Decode each complete
+frame (at most 64 MiB of output per frame, else the frame counts as malformed and is skipped), feed the decoded bytes
+to the line reader, and advance the offset past the frame. A frame that fails to decode is skipped and counted as one
+malformed line. Skippable frames are skipped. Files that start at their end (older files) start at the current size;
+files over 256 MiB are not seeded at all (they start at their end with the `partialHistory` warning), because a frame
+stream cannot be entered in the middle.
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
   ties broken by ordinal path comparison. Each file is read to its end before the next one starts.
@@ -216,7 +258,7 @@ out of `generating` or starts a new in-flight interval at the response end.
 Per-source and per-agent live rates use the same formula restricted to that source or agent.
 
 ### 6.4 Events (live only, never during seeding)
-- `responseCompleted` — the first emission of a key (4.3), carrying source, project, model, output, total, duration
+- `responseCompleted` — the first emission of a key (4.4), carrying source, project, model, output, total, duration
   and speed.
 - `newPeak` — when the measured+estimated live output exceeds the previous peak of today by at least 1 tok/s, is at
   least 20 tok/s, and no `newPeak` was emitted in the last 60 seconds.
@@ -243,6 +285,8 @@ output and total.
 Parent links (`parentId`, an agent id or null):
 - Claude: a file at `<dir>/<session>/subagents/<name>.jsonl` has the parent `<dir>/<session>.jsonl` when that file is
   a tracked agent.
+- DeepSeek: the tracked dsh file whose first header `id` equals this file's `parentSession` (the earliest created
+  one if several).
 - Codex: from the first `session_meta`, `parentThreadId = payload.parent_thread_id ??
   payload.source.subagent.thread_spawn.parent_thread_id`. The parent is the tracked file whose first `session_meta`
   has `payload.id == parentThreadId` (the earliest created one if several). `forked_from_id` alone is not a parent.
