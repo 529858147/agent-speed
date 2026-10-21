@@ -78,6 +78,9 @@ internal sealed class OpenCodeSource : IDisposable
 
     public OpenCodeStatus Status { get; private set; } = OpenCodeStatus.Missing;
 
+    /// <summary>The database is read with <c>immutable=1</c> because OpenCode closed it (METRICS 4.5).</summary>
+    public bool IsImmutable => _database?.IsImmutable == true;
+
     /// <summary>The database file exists (it may still be unreadable or unsupported).</summary>
     public bool DatabaseExists { get; private set; }
 
@@ -197,6 +200,7 @@ internal sealed class OpenCodeSource : IDisposable
     public OpenCodeUpdate Refresh()
     {
         var update = new OpenCodeUpdate();
+        DropStaleImmutableConnection();
         if (Status != OpenCodeStatus.Ready || _database is not { } database)
         {
             return update;
@@ -344,6 +348,31 @@ internal sealed class OpenCodeSource : IDisposable
     }
 
     public void Dispose() => Close(OpenCodeStatus.Missing);
+
+    /// <summary>
+    /// An immutable connection (OpenCode had closed the database) is replaced by a <c>mode=ro</c> one as soon as the
+    /// file changes or a WAL appears (METRICS 4.5); sessions and cursors carry over.
+    /// </summary>
+    private void DropStaleImmutableConnection()
+    {
+        if (_database is not { IsImmutable: true } database
+            || (!SafeExists(WalPath) && Stamp(DatabasePath) == _databaseStamp))
+        {
+            return;
+        }
+
+        database.Dispose();
+        _database = null;
+        try
+        {
+            _database = OpenCodeDatabase.Open(DatabasePath);
+            Status = OpenCodeStatus.Ready;
+        }
+        catch (OpenCodeOpenException e)
+        {
+            Status = e.Status;
+        }
+    }
 
     private OpenCodeUpdate Drop()
     {

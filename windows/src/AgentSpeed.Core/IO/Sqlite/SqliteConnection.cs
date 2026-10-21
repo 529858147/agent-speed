@@ -18,9 +18,15 @@ internal sealed class SqliteException(int code, string message) : Exception(mess
 
 internal enum SqliteOpenMode
 {
-    /// <summary>Never writes; never uses the <c>immutable</c> flag, so concurrent writers stay visible.</summary>
+    /// <summary>Never writes; without <c>immutable</c>, so concurrent writers stay visible.</summary>
     ReadOnly,
     ReadWriteCreate,
+
+    /// <summary>
+    /// <c>immutable=1</c>: reads the database file alone (no WAL, no locks) and creates nothing. Only for a database
+    /// nobody has open (METRICS 4.5).
+    /// </summary>
+    Immutable,
 }
 
 /// <summary>
@@ -56,10 +62,13 @@ internal sealed unsafe class SqliteConnection : IDisposable
             throw new SqliteException(SqliteNative.CantOpen, "SQLite is not available on this system.");
         }
 
-        var flags = SqliteNative.OpenNoMutex | (mode == SqliteOpenMode.ReadOnly
-            ? SqliteNative.OpenReadOnly
-            : SqliteNative.OpenReadWrite | SqliteNative.OpenCreate);
-        var name = Utf8(path);
+        var flags = SqliteNative.OpenNoMutex | mode switch
+        {
+            SqliteOpenMode.ReadOnly => SqliteNative.OpenReadOnly,
+            SqliteOpenMode.Immutable => SqliteNative.OpenReadOnly | SqliteNative.OpenUri,
+            _ => SqliteNative.OpenReadWrite | SqliteNative.OpenCreate,
+        };
+        var name = Utf8(mode == SqliteOpenMode.Immutable ? ImmutableUri(path) : path);
         int code;
         IntPtr db;
         fixed (byte* pointer = name)
@@ -184,6 +193,35 @@ internal sealed unsafe class SqliteConnection : IDisposable
     internal SqliteException Failure(int code) => new(code, Message(Handle));
 
     private static string Message(IntPtr db) => Marshal.PtrToStringUTF8(SqliteNative.sqlite3_errmsg(db)) ?? "SQLite error";
+
+    /// <summary><c>file:</c> URI of an absolute path with <c>mode=ro&amp;immutable=1</c>; unusual bytes are percent-encoded.</summary>
+    internal static string ImmutableUri(string path)
+    {
+        var full = System.IO.Path.GetFullPath(path).Replace('\\', '/');
+        var builder = new StringBuilder("file:");
+        if (!full.StartsWith('/'))
+        {
+            builder.Append("///");
+        }
+        else if (full.StartsWith("//", StringComparison.Ordinal))
+        {
+            builder.Append("//");
+        }
+
+        foreach (var b in Encoding.UTF8.GetBytes(full))
+        {
+            if (char.IsAsciiLetterOrDigit((char)b) || b is (byte)'/' or (byte)':' or (byte)'-' or (byte)'_' or (byte)'.' or (byte)'~')
+            {
+                builder.Append((char)b);
+            }
+            else
+            {
+                builder.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        return builder.Append("?mode=ro&immutable=1").ToString();
+    }
 
     /// <summary>NUL-terminated UTF-8.</summary>
     private static byte[] Utf8(string text)

@@ -201,9 +201,11 @@ emissions with the same key in the same file are *updates*: the engine replaces 
 OpenCode (2.x) stores everything in one SQLite database in WAL mode. It is opened read-only (`mode=ro`, never
 written), with a busy timeout of 2 s, and every read is a short transaction so OpenCode's checkpoints are never
 blocked. When OpenCode is not running it closes the database cleanly and deletes `opencode.db-wal` and
-`opencode.db-shm`; a `mode=ro` open then fails. In that case (the open fails and no `-wal` file exists) open the file
-with `immutable=1`, which reads the database file alone and creates nothing; drop that connection on the next change
-of `opencode.db` or as soon as a `-wal` file appears, and reopen with `mode=ro`. A database without the tables `session_v2` and `session_message` is reported as unsupported (warning
+`opencode.db-shm`; a `mode=ro` open then either fails (macOS) or creates those two files (Windows `winsqlite3`), which
+the app must never do. So: when the database header says WAL (bytes 18 and 19 are both 2) and no `-wal` file exists,
+open with `immutable=1` directly, which reads the database file alone and creates nothing; otherwise open `mode=ro`,
+and if that fails while no `-wal` file exists, fall back to `immutable=1`. Drop an immutable connection on the next
+change of `opencode.db` or as soon as a `-wal` file appears, and reopen with `mode=ro`. A database without the tables `session_v2` and `session_message` is reported as unsupported (warning
 `unsupportedFormat`) and contributes nothing.
 
 Agents: one per session row. Agent id `opencode:<session_v2.id>`; `project` = basename of `session_v2.directory`;

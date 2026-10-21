@@ -38,9 +38,10 @@ internal sealed class OpenCodeDatabase : IDisposable
     private readonly SqliteStatement _rowsCreatedSince;
     private readonly SqliteStatement _maxCreated;
 
-    private OpenCodeDatabase(SqliteConnection connection)
+    private OpenCodeDatabase(SqliteConnection connection, bool immutable)
     {
         _connection = connection;
+        IsImmutable = immutable;
         _sessions = connection.Prepare($"SELECT {SessionColumns} FROM session_v2");
         _sessionsSince = connection.Prepare($"SELECT {SessionColumns} FROM session_v2 WHERE time_updated >= ?1");
         _sessionRows = connection.Prepare($"SELECT {RowColumns} FROM session_message WHERE session_id = ?1 ORDER BY seq");
@@ -52,6 +53,12 @@ internal sealed class OpenCodeDatabase : IDisposable
     }
 
     public string Path => _connection.Path;
+
+    /// <summary>
+    /// Opened with <c>immutable=1</c> because OpenCode closed the database (no WAL); the connection must be dropped on
+    /// the next change of the file or once a WAL appears.
+    /// </summary>
+    public bool IsImmutable { get; }
 
     /// <summary><c>opencode.db</c> inside a configured folder; a configured path that names the file itself also works.</summary>
     public static string DatabasePath(string root)
@@ -71,6 +78,10 @@ internal sealed class OpenCodeDatabase : IDisposable
         }
     }
 
+    /// <summary>
+    /// Opens read-only (<c>mode=ro</c>); when that fails and no WAL exists (OpenCode closed the database and deleted
+    /// its WAL files), opens with <c>immutable=1</c> instead (METRICS 4.5).
+    /// </summary>
     /// <exception cref="OpenCodeOpenException">The database is missing, unreadable or of an unsupported format.</exception>
     public static OpenCodeDatabase Open(string path)
     {
@@ -79,10 +90,51 @@ internal sealed class OpenCodeDatabase : IDisposable
             throw new OpenCodeOpenException(OpenCodeStatus.Missing, "missing");
         }
 
+        // Closed cleanly: a mode=ro open would fail (macOS) or create -wal/-shm inside OpenCode's folder (winsqlite3).
+        if (IsClosedWalDatabase(path))
+        {
+            return Open(path, SqliteOpenMode.Immutable);
+        }
+
+        try
+        {
+            return Open(path, SqliteOpenMode.ReadOnly);
+        }
+        catch (OpenCodeOpenException e) when (e.Status == OpenCodeStatus.Unreadable && !File.Exists(path + "-wal"))
+        {
+            return Open(path, SqliteOpenMode.Immutable);
+        }
+    }
+
+    /// <summary>A WAL-mode database (header bytes 18 and 19 are 2) whose <c>-wal</c> file is gone: nobody has it open.</summary>
+    internal static bool IsClosedWalDatabase(string path)
+    {
+        if (File.Exists(path + "-wal"))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var handle = IO.TranscriptTailer.Open(path);
+            Span<byte> header = stackalloc byte[20];
+            return RandomAccess.Read(handle, header, 0) == header.Length
+                && header[..16].SequenceEqual("SQLite format 3\0"u8)
+                && header[18] == 2
+                && header[19] == 2;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static OpenCodeDatabase Open(string path, SqliteOpenMode mode)
+    {
         SqliteConnection connection;
         try
         {
-            connection = SqliteConnection.Open(path, SqliteOpenMode.ReadOnly);
+            connection = SqliteConnection.Open(path, mode);
         }
         catch (SqliteException e)
         {
@@ -96,7 +148,7 @@ internal sealed class OpenCodeDatabase : IDisposable
                 throw new OpenCodeOpenException(OpenCodeStatus.Unsupported, "required tables are missing");
             }
 
-            return new OpenCodeDatabase(connection);
+            return new OpenCodeDatabase(connection, mode == SqliteOpenMode.Immutable);
         }
         catch (SqliteException e)
         {

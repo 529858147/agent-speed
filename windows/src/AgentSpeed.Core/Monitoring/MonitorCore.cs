@@ -36,6 +36,8 @@ internal sealed class MonitorCore : IDisposable
     private readonly Dictionary<string, string> _parents = new(StringComparer.Ordinal);
     private readonly Collector _collector = new();
     private readonly List<SourceRoot> _roots = [];
+    private readonly Dictionary<TrackedFile, BackgroundRead> _wholeReads = [];
+    private readonly CancellationTokenSource _backgroundStop = new();
     private readonly OpenCodeSource? _openCode;
     private bool _openCodeSeeded;
     private bool _linksChanged;
@@ -95,6 +97,20 @@ internal sealed class MonitorCore : IDisposable
 
     internal OpenCodeSource? OpenCode => _openCode;
 
+    /// <summary>
+    /// While running, whole-file reads (<c>.jsonl.zst</c>, legacy Gemini <c>.json</c>) happen on the pool and are applied
+    /// later by <see cref="ApplyCompletedReads"/>, so the live loop never waits for them (METRICS 5.3).
+    /// </summary>
+    public bool ReadWholeFilesInBackground { get; set; }
+
+    /// <summary>Raised on a pool thread when a background read finished.</summary>
+    public Action? BackgroundReadCompleted { get; set; }
+
+    /// <summary>Runs on the pool thread right before a background read (tests use it to make a read slow).</summary>
+    internal Action<string>? BeforeBackgroundRead { get; set; }
+
+    public int PendingReadCount => _wholeReads.Count;
+
     /// <summary>Transcript roots (file families).</summary>
     public IReadOnlyList<SourceRoot> Roots => _roots;
 
@@ -118,7 +134,66 @@ internal sealed class MonitorCore : IDisposable
         }
     }
 
-    public void Dispose() => _openCode?.Dispose();
+    public void Dispose()
+    {
+        _backgroundStop.Cancel();
+        if (_wholeReads.Count > 0)
+        {
+            try
+            {
+                Task.WaitAll([.. _wholeReads.Values.Select(r => r.Task)], TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+            }
+        }
+
+        _wholeReads.Clear();
+        _openCode?.Dispose();
+    }
+
+    /// <summary>Applies whole-file reads that finished in the background, each in one step; true when anything changed.</summary>
+    public bool ApplyCompletedReads()
+    {
+        if (_wholeReads.Count == 0)
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var (tracked, read) in _wholeReads.Where(r => r.Value.Task.IsCompleted).ToList())
+        {
+            _wholeReads.Remove(tracked);
+            if (!_files.TryGetValue(tracked.Path, out var current) || !ReferenceEquals(current, tracked))
+            {
+                continue;
+            }
+
+            try
+            {
+                var prepared = read.Task.GetAwaiter().GetResult();
+                changed |= TryCommit(tracked, prepared, seeded: false)
+                    && (prepared.Result.BytesRead > 0 || prepared.Result.WasReset);
+            }
+            catch (OperationCanceledException)
+            {
+                continue;
+            }
+            catch (Exception e)
+            {
+                HandleReadFailure(tracked, e);
+                changed = true;
+                continue;
+            }
+
+            if (read.Again)
+            {
+                StartBackgroundRead(tracked);
+            }
+        }
+
+        return changed;
+    }
 
     /// <summary>Reads the startup backlog of every enabled, available root (METRICS 5).</summary>
     public SeedReport Seed(long nowMs, long todayStartMs, CancellationToken cancellationToken, Action<double>? progress = null)
@@ -645,6 +720,12 @@ internal sealed class MonitorCore : IDisposable
 
     private bool ReadLive(TrackedFile tracked)
     {
+        if (ReadWholeFilesInBackground && tracked.Tailer is WholeFileTailer)
+        {
+            StartBackgroundRead(tracked);
+            return false;
+        }
+
         try
         {
             var prepared = Prepare(tracked, CancellationToken.None);
@@ -656,6 +737,30 @@ internal sealed class MonitorCore : IDisposable
             HandleReadFailure(tracked, e);
             return false;
         }
+    }
+
+    private void StartBackgroundRead(TrackedFile tracked)
+    {
+        if (_wholeReads.TryGetValue(tracked, out var running))
+        {
+            running.Again = true;
+            return;
+        }
+
+        var token = _backgroundStop.Token;
+        var before = BeforeBackgroundRead;
+        var task = Task.Run(() =>
+        {
+            before?.Invoke(tracked.Path);
+            return Prepare(tracked, token);
+        }, token);
+        _wholeReads[tracked] = new BackgroundRead(task);
+        task.ContinueWith(
+            static (_, state) => ((Action?)state)?.Invoke(),
+            BackgroundReadCompleted,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private bool AddRuntimeFile(SourceRoot root, string path, long todayStartMs, DiscoveredFile? known = null)
@@ -820,12 +925,15 @@ internal sealed class MonitorCore : IDisposable
         }
     }
 
+    /// <summary>The file no longer exists: its agent leaves the list, its responses stay in every total (METRICS 6.7).</summary>
     private void Remove(TrackedFile tracked)
     {
         if (_files.Remove(tracked.Path))
         {
             _removedMalformedLines += tracked.Parser.MalformedLines;
             _removedOversizedLines += tracked.Tailer.OversizedLines;
+            _engine.RemoveAgent(tracked.Parser.AgentId);
+            _linksChanged |= _links.Remove(tracked.Parser.AgentId);
         }
     }
 
@@ -857,6 +965,14 @@ internal sealed class MonitorCore : IDisposable
         TrackedFile File, DateTime LastWriteUtc, long StartOffset, StartAlignment Align, long ExpectedLength);
 
     private readonly record struct Prepared(ILineBatch Batch, TailReadResult Result);
+
+    private sealed class BackgroundRead(Task<Prepared> task)
+    {
+        public Task<Prepared> Task { get; } = task;
+
+        /// <summary>The file changed again while it was being read.</summary>
+        public bool Again { get; set; }
+    }
 
     private sealed class Collector : IResponseSink
     {

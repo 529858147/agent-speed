@@ -22,6 +22,7 @@ internal static unsafe partial class SqliteNative
     public const int OpenReadOnly = 0x00000001;
     public const int OpenReadWrite = 0x00000002;
     public const int OpenCreate = 0x00000004;
+    public const int OpenUri = 0x00000040;
     public const int OpenNoMutex = 0x00008000;
 
     public const int ColumnInteger = 1;

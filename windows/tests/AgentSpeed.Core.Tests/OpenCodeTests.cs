@@ -212,6 +212,74 @@ public sealed class OpenCodeTests : IDisposable
     }
 
     [Fact]
+    public void ADatabaseClosedByOpenCodeIsReadImmutablyUntilItChanges()
+    {
+        var t = _now - 60_000;
+        using (var writer = OpenCodeWriter.Create(DatabasePath))
+        {
+            writer.Session("ses_a", null, "/w/comet", t, t + 5000);
+            writer.Message("m1", "ses_a", "assistant", 1, t + 1000, t + 5000,
+                OpenCodeWriter.Assistant(t + 1000, streamed: t + 4000, output: 70, finish: "stop"));
+        }
+
+        OpenCodeWriter.DeleteWalFiles(DatabasePath);
+        Assert.True(OpenCodeDatabase.IsClosedWalDatabase(DatabasePath));
+        Assert.False(OpenCodeDatabase.IsClosedWalDatabase(FixtureLocator.PathOf("opencode/opencode.db")));
+        var before = Directory.GetFiles(Root).Order(StringComparer.Ordinal).ToList();
+        using var source = new OpenCodeSource(Root, new Deduper());
+        source.RefreshAvailability();
+
+        Assert.Equal((OpenCodeStatus.Ready, true), (source.Status, source.IsImmutable));
+        Assert.Equal(70, Assert.Single(source.Seed(_now - 3_600_000).Responses).Response.Tokens.Output);
+        Assert.Null(source.RefreshIfChanged());
+        Assert.Equal(before, Directory.GetFiles(Root).Order(StringComparer.Ordinal).ToList());
+
+        using (var writer = OpenCodeWriter.Open(DatabasePath))
+        {
+            writer.Message("m2", "ses_a", "assistant", 2, t + 6000, t + 9000,
+                OpenCodeWriter.Assistant(t + 6000, streamed: t + 9000, output: 30, finish: "stop"));
+            writer.TouchSession("ses_a", t + 9000);
+            Assert.False(OpenCodeDatabase.IsClosedWalDatabase(DatabasePath));
+            var update = source.RefreshIfChanged();
+            Assert.NotNull(update);
+            Assert.False(source.IsImmutable);
+            Assert.Equal("m2", Assert.Single(update.Responses).Response.Key);
+        }
+    }
+
+    [Fact]
+    public void TheHistoryReadsAClosedDatabaseWithoutCreatingFiles()
+    {
+        using (var writer = OpenCodeWriter.Create(DatabasePath))
+        {
+            writer.Session("ses_a", null, "/w/comet", ClaudeLines.T0, ClaudeLines.T0 + 5000);
+            writer.Message("m1", "ses_a", "assistant", 1, ClaudeLines.T0 + 1000, ClaudeLines.T0 + 5000,
+                OpenCodeWriter.Assistant(ClaudeLines.T0 + 1000, streamed: ClaudeLines.T0 + 4000, output: 70, finish: "stop"));
+        }
+
+        OpenCodeWriter.DeleteWalFiles(DatabasePath);
+        using var store = History.HistoryStore.Open(_temp.Combine("store", "history.sqlite"));
+        var analyzer = new History.HistoryAnalyzer(store);
+        var report = analyzer.Run(
+            new SourceLocations(string.Empty, string.Empty, string.Empty, Root, []),
+            new HashSet<SourceKind> { SourceKind.OpenCode },
+            TimeZoneInfo.Utc,
+            CancellationToken.None);
+
+        Assert.Equal((1, 0), (report.SessionsAnalyzed, report.FilesUnreadable));
+        Assert.Equal(70, Assert.Single(analyzer.Days()).Totals.Output);
+        Assert.Equal([DatabasePath], Directory.GetFiles(Root));
+    }
+
+    [Fact]
+    public void ImmutableUrisEscapeEveryUnusualCharacter()
+    {
+        var uri = SqliteConnection.ImmutableUri(Path.Combine(Path.GetTempPath(), "a b", "c?#%é", "opencode.db"));
+        Assert.StartsWith("file:", uri, StringComparison.Ordinal);
+        Assert.EndsWith("/a%20b/c%3F%23%25%C3%A9/opencode.db?mode=ro&immutable=1", uri, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MalformedDataCountsAndForkCopiesAreIgnored()
     {
         var session = new OpenCodeSessionInfo("s", null, "/w/x", 10_000, 20_000);
@@ -260,6 +328,16 @@ internal sealed class OpenCodeWriter : IDisposable
             CREATE INDEX session_message_time_created_idx ON session_message (time_created);
             """);
         return new OpenCodeWriter(db);
+    }
+
+    /// <summary>Opens an existing database again, the way OpenCode does when it starts.</summary>
+    public static OpenCodeWriter Open(string path) => new(SqliteConnection.Open(path, SqliteOpenMode.ReadWriteCreate));
+
+    /// <summary>What a clean shutdown leaves behind: the database file alone.</summary>
+    public static void DeleteWalFiles(string path)
+    {
+        File.Delete(path + "-wal");
+        File.Delete(path + "-shm");
     }
 
     public static string Assistant(

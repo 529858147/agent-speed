@@ -38,6 +38,9 @@ public sealed class LiveMonitor : IDisposable
         _configuration = configuration ?? MonitorConfiguration.Default;
     }
 
+    /// <summary>Runs on the pool thread before each background whole-file read (tests make reads slow with it).</summary>
+    internal Action<string>? BeforeBackgroundRead { get; set; }
+
     public MonitorConfiguration Configuration
     {
         get
@@ -247,6 +250,9 @@ public sealed class LiveMonitor : IDisposable
     {
         var zone = TimeZoneInfo.Local;
         using var core = new MonitorCore(configuration, SourceLocations.Resolve(configuration), LocalDay.StartMs(NowMs(), zone));
+        core.ReadWholeFilesInBackground = true;
+        core.BackgroundReadCompleted = SignalWake;
+        core.BeforeBackgroundRead = BeforeBackgroundRead;
         var watchers = new Dictionary<SourceRoot, RootWatcher>();
         try
         {
@@ -331,6 +337,7 @@ public sealed class LiveMonitor : IDisposable
                     nextDiscovery = elapsed + DiscoveryInterval;
                 }
 
+                changed |= core.ApplyCompletedReads();
                 if (TakePendingPaths(start, elapsed) is { } paths)
                 {
                     changed |= core.ProcessPaths(paths, now, today);

@@ -395,6 +395,8 @@ def read_lines(path, start_offset=0, max_lines=None):
 
 def zst_stream_lines(path):
     """A compressed Codex session (METRICS 5.3): decompressed as one stream, always from the start."""
+    if os.path.getsize(path) == 0:
+        return  # nothing to read; not a decoding error (zstd -dc exits non-zero on an empty file)
     proc = subprocess.Popen(["zstd", "-dc", "-q", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     pending = b""
     try:
@@ -544,7 +546,12 @@ def dsh_header(state, header):
 
 def opencode_states(db_path, dedupe):
     """Parses an OpenCode database (METRICS 4.5); returns one state per session, keyed like agent ids."""
+    with open(db_path, "rb") as f:
+        header = f.read(20)
+    closed_wal = len(header) == 20 and header[18] == 2 and header[19] == 2 and not os.path.exists(db_path + "-wal")
     try:
+        if closed_wal:
+            raise sqlite3.OperationalError("closed WAL database")
         db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
         db.execute("select 1 from sqlite_master limit 1")
     except sqlite3.OperationalError:
