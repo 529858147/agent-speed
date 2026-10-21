@@ -1,0 +1,148 @@
+import AgentSpeedCore
+import SwiftUI
+
+/// The card next to the crosshair: date with weekday, the day's numbers and its top three models with share bars.
+struct HistoryTooltip: View {
+    let day: DayKey
+    let summary: DaySummary?
+    let chart: HistoryChartModel
+    let l10n: Localizer
+    let dark: Bool
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(HistoryText.longDate(day, l10n))
+                    .font(HistoryFont.tooltipTitle)
+                    .lineLimit(1)
+                if day == chart.today {
+                    Text(l10n("history.inProgress"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                }
+            }
+            .padding(.bottom, 8)
+            if let summary {
+                rows(summary)
+                if !summary.models.isEmpty {
+                    Divider().padding(.vertical, 8)
+                    models(summary)
+                }
+                if summary.unfinalized > 0 {
+                    Text(l10n("history.unfinalized", summary.unfinalized))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.historySecondary)
+                        .padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                row(l10n("history.table.output"), "0")
+            }
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(dark ? Color(white: 0.19) : Color.white)
+                .shadow(color: .black.opacity(dark ? 0.45 : 0.16), radius: 12, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(HistoryPalette.cardStroke(dark: dark, increasedContrast: contrast == .increased), lineWidth: 1)
+                )
+        }
+    }
+
+    @ViewBuilder
+    private func rows(_ summary: DaySummary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row(l10n("history.table.output"), HistoryText.fullNumber(summary.output, l10n), emphasized: true)
+            if !chart.isSingleSource, summary.sources.count > 1 {
+                SourceShareBar(summary: summary, stack: chart.stack, dark: dark)
+                    .frame(height: 5)
+                    .padding(.bottom, 3)
+            }
+            row(l10n("history.table.input"), HistoryText.fullNumber(summary.input, l10n))
+            row(l10n("history.table.requests"), HistoryText.fullNumber(summary.requests, l10n))
+            row(l10n("history.table.speed"), HistoryText.speed(summary.averageSpeed, l10n))
+            if let peak = summary.peak {
+                row(l10n("history.table.peak"), HistoryText.speed(peak, l10n))
+            }
+        }
+    }
+
+    private func row(_ label: String, _ value: String, emphasized: Bool = false, swatch: Color? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if let swatch {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(swatch)
+                    .frame(width: 7, height: 7)
+            }
+            Text(label)
+                .foregroundStyle(.historySecondary)
+                .lineLimit(1)
+            Spacer(minLength: 10)
+            Text(value)
+                .fontWeight(emphasized ? .semibold : .medium)
+                .lineLimit(1)
+        }
+        .font(HistoryFont.tooltip)
+    }
+
+    private func models(_ summary: DaySummary) -> some View {
+        let tint = chart.isSingleSource ? (chart.stack.first?.tint(dark: dark) ?? Color.accentColor) : Color.accentColor
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(l10n("history.table.models"))
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.historySecondary)
+            ForEach(summary.models.prefix(3)) { model in
+                let share = summary.output > 0 ? Double(model.output) / Double(summary.output) : 0
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(model.model)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        Text(HistoryText.percent(share))
+                            .foregroundStyle(.historySecondary)
+                    }
+                    .font(HistoryFont.tooltip)
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.primary.opacity(0.08))
+                            Capsule().fill(tint).frame(width: max(3, proxy.size.width * share))
+                        }
+                    }
+                    .frame(height: 3)
+                }
+            }
+        }
+    }
+}
+
+/// The day's output split by source, in stacking order, as one thin bar.
+private struct SourceShareBar: View {
+    let summary: DaySummary
+    let stack: [SourceKind]
+    let dark: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let total = max(Double(summary.output), 1)
+            let gap: CGFloat = 1.5
+            let parts = stack.map { ($0, Double(summary.output(of: $0))) }.filter { $0.1 > 0 }
+            let usable = max(0, proxy.size.width - gap * CGFloat(max(parts.count - 1, 0)))
+            HStack(spacing: gap) {
+                ForEach(parts, id: \.0) { source, output in
+                    Rectangle()
+                        .fill(source.tint(dark: dark))
+                        .frame(width: usable * output / total)
+                }
+            }
+            .clipShape(Capsule())
+        }
+    }
+}

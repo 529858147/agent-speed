@@ -130,7 +130,7 @@ enum SurfacePreviews {
         return result
     }
 
-    private static func writeSheet(_ rows: [[NSImage]], dark: Bool, to url: URL) {
+    static func writeSheet(_ rows: [[NSImage]], dark: Bool, to url: URL) {
         let cellWidth = rows.flatMap { $0 }.map(\.size.width).max() ?? 0
         let rowHeights = rows.map { $0.map(\.size.height).max() ?? 0 }
         let width = cellWidth * CGFloat(rows.map(\.count).max() ?? 0)
@@ -155,7 +155,7 @@ enum SurfacePreviews {
         }
     }
 
-    private static func writeColumn(_ images: [NSImage], to url: URL) {
+    static func writeColumn(_ images: [NSImage], to url: URL) {
         let width = images.map(\.size.width).max() ?? 0
         let height = images.reduce(0) { $0 + $1.size.height + 8 }
         guard width > 0 else { return }

@@ -67,6 +67,10 @@ final class AppSettings {
     var codexRoot: URL? { didSet { store(codexRoot?.path, .codexRoot) } }
     var claudeRoot: URL? { didSet { store(claudeRoot?.path, .claudeRoot) } }
     var dshRoot: URL? { didSet { store(dshRoot?.path, .dshRoot) } }
+    /// The folder that contains `opencode.db`.
+    var opencodeRoot: URL? { didSet { store(opencodeRoot?.path, .opencodeRoot) } }
+    /// One Gemini CLI `tmp` folder, replacing both defaults.
+    var geminiRoot: URL? { didSet { store(geminiRoot?.path, .geminiRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -113,11 +117,20 @@ final class AppSettings {
         codexRoot = Self.url(defaults.string(forKey: Key.codexRoot.rawValue))
         claudeRoot = Self.url(defaults.string(forKey: Key.claudeRoot.rawValue))
         dshRoot = Self.url(defaults.string(forKey: Key.dshRoot.rawValue))
+        opencodeRoot = Self.url(defaults.string(forKey: Key.opencodeRoot.rawValue))
+        geminiRoot = Self.url(defaults.string(forKey: Key.geminiRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
     }
 
     var monitorConfiguration: MonitorConfiguration {
-        MonitorConfiguration(enabledSources: enabledSources, codexRoot: codexRoot, claudeRoot: claudeRoot, dshRoot: dshRoot)
+        MonitorConfiguration(
+            enabledSources: enabledSources,
+            codexRoot: codexRoot,
+            claudeRoot: claudeRoot,
+            dshRoot: dshRoot,
+            opencodeRoot: opencodeRoot,
+            geminiRoot: geminiRoot
+        )
     }
 
     func isEnabled(_ source: SourceKind) -> Bool { enabledSources.contains(source) }
@@ -167,7 +180,7 @@ final class AppSettings {
         case orbVisible, orbSize, orbOpacity, orbAlwaysOnTop, orbClickThrough, orbFadeWhenIdle, orbAllSpaces
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
-        case enabledSources, knownSources, codexRoot, claudeRoot, dshRoot
+        case enabledSources, knownSources, codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot
         case autoCheckUpdates
     }
 }

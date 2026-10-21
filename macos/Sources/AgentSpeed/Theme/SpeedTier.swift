@@ -1,7 +1,30 @@
 import Foundation
 
-enum SpeedTier: Int, CaseIterable, Comparable, Sendable {
+/// A ladder of speed steps entered at thresholds that scale with the redline (DESIGN section 1). The first active
+/// step starts at an absolute speed; below it, after a delay, the ladder rests at `idle`.
+protocol SpeedLadder: CaseIterable, Comparable, Sendable where AllCases == [Self] {
+    static var idle: Self { get }
+    /// The lowest active step, entered at `SpeedTier.cruiseSpeed`.
+    static var firstActive: Self { get }
+    /// Speed (tok/s) at which the step is entered.
+    func enterSpeed(redline: Double) -> Double
+    var next: Self? { get }
+    var previous: Self? { get }
+}
+
+extension SpeedLadder {
+    /// The step for a value without hysteresis (first snapshot, previews).
+    static func step(for value: Double, redline: Double) -> Self {
+        guard value >= SpeedTier.cruiseSpeed else { return idle }
+        return allCases.last { $0 != idle && value >= $0.enterSpeed(redline: redline) } ?? firstActive
+    }
+}
+
+/// Effect tiers: they drive sparks, embers, shimmer and the tick dots; they are not shown as text.
+enum SpeedTier: Int, SpeedLadder {
     case idle, cruise, boost, overdrive, redline
+
+    static var firstActive: SpeedTier { .cruise }
 
     /// Entry threshold as a fraction of the redline speed (cruise uses an absolute 0.5 tok/s).
     var threshold: Double {
@@ -36,20 +59,22 @@ enum SpeedTier: Int, CaseIterable, Comparable, Sendable {
     static func < (lhs: SpeedTier, rhs: SpeedTier) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
-/// Tier selection with hysteresis (enter at the threshold, leave at 90 %), a 3 s idle delay and a 0.8 s hold.
-struct TierTracker {
-    static let holdDuration: TimeInterval = 0.8
-    static let idleDelay: TimeInterval = 3
-    static let exitRatio = 0.9
+typealias TierTracker = LadderTracker<SpeedTier>
 
-    private(set) var shown: SpeedTier = .idle
-    private var candidate: SpeedTier = .idle
+/// Step selection with hysteresis (enter at the threshold, leave at 90 %), a 3 s idle delay and a 0.8 s hold.
+struct LadderTracker<Step: SpeedLadder> {
+    static var holdDuration: TimeInterval { 0.8 }
+    static var idleDelay: TimeInterval { 3 }
+    static var exitRatio: Double { 0.9 }
+
+    private(set) var shown: Step = .idle
+    private var candidate: Step = .idle
     private var candidateSince: TimeInterval = 0
-    private var belowCruiseSince: TimeInterval?
+    private var belowActiveSince: TimeInterval?
 
-    /// Feeds a raw value; returns true when the shown tier changed.
+    /// Feeds a raw value; returns true when the shown step changed.
     mutating func update(value: Double, redline: Double, now: TimeInterval) -> Bool {
-        let next = rawTier(value: value, redline: redline, now: now)
+        let next = rawStep(value: value, redline: redline, now: now)
         if next != candidate {
             candidate = next
             candidateSince = now
@@ -59,34 +84,34 @@ struct TierTracker {
         return true
     }
 
-    /// Next moment a re-evaluation could change the shown tier without new data.
+    /// Next moment a re-evaluation could change the shown step without new data.
     func nextDecisionTime(after now: TimeInterval) -> TimeInterval? {
         var times: [TimeInterval] = []
         if candidate != shown { times.append(candidateSince + Self.holdDuration) }
-        if let since = belowCruiseSince, candidate != .idle { times.append(since + Self.idleDelay) }
+        if let since = belowActiveSince, candidate != .idle { times.append(since + Self.idleDelay) }
         return times.filter { $0 > now }.min()
     }
 
-    mutating func reset(to tier: SpeedTier = .idle) {
-        shown = tier
-        candidate = tier
-        belowCruiseSince = nil
+    mutating func reset(to step: Step = .idle) {
+        shown = step
+        candidate = step
+        belowActiveSince = nil
     }
 
-    private mutating func rawTier(value: Double, redline: Double, now: TimeInterval) -> SpeedTier {
+    private mutating func rawStep(value: Double, redline: Double, now: TimeInterval) -> Step {
         if value < SpeedTier.cruiseSpeed {
-            if belowCruiseSince == nil { belowCruiseSince = now }
+            if belowActiveSince == nil { belowActiveSince = now }
         } else {
-            belowCruiseSince = nil
+            belowActiveSince = nil
         }
-        if let since = belowCruiseSince, now - since >= Self.idleDelay { return .idle }
+        if let since = belowActiveSince, now - since >= Self.idleDelay { return .idle }
 
-        var tier = candidate == .idle ? (value >= SpeedTier.cruiseSpeed ? .cruise : .idle) : candidate
-        guard tier != .idle else { return .idle }
-        while let up = tier.next, value >= up.enterSpeed(redline: redline) { tier = up }
-        while tier > .cruise, value < tier.enterSpeed(redline: redline) * Self.exitRatio, let down = tier.previous {
-            tier = down
+        var step = candidate == .idle ? (value >= SpeedTier.cruiseSpeed ? Step.firstActive : .idle) : candidate
+        guard step != .idle else { return .idle }
+        while let up = step.next, value >= up.enterSpeed(redline: redline) { step = up }
+        while step > Step.firstActive, value < step.enterSpeed(redline: redline) * Self.exitRatio, let down = step.previous {
+            step = down
         }
-        return tier
+        return step
     }
 }

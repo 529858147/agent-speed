@@ -11,6 +11,8 @@ final class SettingsTabViewController: NSTabViewController {
     private var heights: [SettingsPane: CGFloat] = [:]
     private var resizePending = false
     private var titleLoop: ObservationLoop?
+    /// Room kept between a pane that fills the screen and the screen's edges.
+    private static let screenMargin: CGFloat = 16
 
     init(model: AppModel) {
         self.model = model
@@ -69,7 +71,11 @@ final class SettingsTabViewController: NSTabViewController {
     /// Sizes the window so its content area matches the selected pane, keeping the top edge in place.
     func fitWindowToSelectedPane(animated: Bool) {
         guard isViewLoaded, let window = view.window, let height = heights[selectedPane] else { return }
-        let target = NSSize(width: SettingsPaneView.width, height: height.rounded(.up))
+        var target = NSSize(width: SettingsPaneView.width, height: height.rounded(.up))
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            let chrome = window.frame.height - view.frame.height
+            target.height = min(target.height, (visible.height - chrome - Self.screenMargin).rounded(.down))
+        }
         let current = view.frame.size
         let deltaHeight = target.height - current.height
         let deltaWidth = target.width - current.width

@@ -2,24 +2,30 @@ import AgentSpeedCore
 import Foundation
 import Observation
 
-/// The live speed reduced to what every surface draws: smoothed heat, overdrive and value, and the shown tier.
+/// The live speed reduced to what every surface draws: smoothed heat, overdrive and value, the effect tier and the
+/// speed title shown as the label.
 @MainActor
 @Observable
 final class LiveGauge {
     private(set) var tier: SpeedTier = .idle
     private(set) var previousTier: SpeedTier = .idle
+    /// The visible label (DESIGN section 1, "Speed titles"); changes independently of the effect tier.
+    private(set) var title: SpeedTitle = .idle
+    private(set) var previousTitle: SpeedTitle = .idle
     /// Value shown in text readouts, refreshed at most 4 times per second.
     private(set) var readoutValue: Double = 0
     /// Bumps on every ingest so paused renderers redraw.
     private(set) var revision = 0
 
     @ObservationIgnored private(set) var tierChangedAt: TimeInterval = -.infinity
+    @ObservationIgnored private(set) var titleChangedAt: TimeInterval = -.infinity
     @ObservationIgnored private(set) var rawValue: Double = 0
     @ObservationIgnored private(set) var lastActiveAt: TimeInterval = -.infinity
     @ObservationIgnored private var heatSpring = SpringValue()
     @ObservationIgnored private var overdriveSpring = SpringValue()
     @ObservationIgnored private var valueSpring = SpringValue(omega: 9)
     @ObservationIgnored private var tracker = TierTracker()
+    @ObservationIgnored private var titleTracker = TitleTracker()
     @ObservationIgnored private var readoutUpdatedAt: TimeInterval = -.infinity
     @ObservationIgnored private var pendingReadout: Timer?
     @ObservationIgnored private var decisionTimer: Timer?
@@ -45,7 +51,7 @@ final class LiveGauge {
     }
 
     /// Jumps straight to a value without animation (previews, first snapshot).
-    func snap(to value: Double, tier: SpeedTier? = nil, now: TimeInterval) {
+    func snap(to value: Double, tier: SpeedTier? = nil, title: SpeedTitle? = nil, now: TimeInterval) {
         rawValue = value
         heatSpring.snap(to: HeatPalette.heat(value: value, redline: redline), at: now)
         overdriveSpring.snap(to: HeatPalette.overdrive(value: value, redline: redline), at: now)
@@ -55,6 +61,11 @@ final class LiveGauge {
         previousTier = resolved
         self.tier = resolved
         tierChangedAt = -.infinity
+        let resolvedTitle = title ?? SpeedTitle.step(for: value, redline: redline)
+        titleTracker.reset(to: resolvedTitle)
+        previousTitle = resolvedTitle
+        self.title = resolvedTitle
+        titleChangedAt = -.infinity
         readoutValue = value
         if value >= SpeedTier.cruiseSpeed { lastActiveAt = now }
         revision &+= 1
@@ -73,8 +84,7 @@ final class LiveGauge {
     func idleDuration(at time: TimeInterval) -> TimeInterval { time - lastActiveAt }
 
     static func tier(for value: Double, redline: Double) -> SpeedTier {
-        guard value >= SpeedTier.cruiseSpeed else { return .idle }
-        return SpeedTier.allCases.last { $0 != .idle && value >= $0.enterSpeed(redline: redline) } ?? .cruise
+        SpeedTier.step(for: value, redline: redline)
     }
 
     private func evaluateTier(now: TimeInterval) {
@@ -83,9 +93,15 @@ final class LiveGauge {
             tier = tracker.shown
             tierChangedAt = now
         }
+        if titleTracker.update(value: rawValue, redline: redline, now: now) {
+            previousTitle = title
+            title = titleTracker.shown
+            titleChangedAt = now
+        }
         decisionTimer?.invalidate()
         decisionTimer = nil
-        guard let next = tracker.nextDecisionTime(after: now) else { return }
+        let decisions = [tracker.nextDecisionTime(after: now), titleTracker.nextDecisionTime(after: now)].compactMap { $0 }
+        guard let next = decisions.min() else { return }
         let timer = Timer(timeInterval: max(0.02, next - now + 0.01), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }

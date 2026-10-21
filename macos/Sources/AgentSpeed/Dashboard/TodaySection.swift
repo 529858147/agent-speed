@@ -1,7 +1,7 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// Today's totals as a 2 × 2 grid plus the peak (DESIGN section 4.5).
+/// Today's totals as a 2 × 2 grid plus the peak, with a History button on the title line (DESIGN section 4.5).
 struct TodaySection: View {
     let model: AppModel
 
@@ -15,7 +15,25 @@ struct TodaySection: View {
         let unit = l10n("unit.tokS")
 
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionTitle(text: l10n("dashboard.today"), latin: model.dashboardLatinCaps)
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                SectionTitle(text: l10n("dashboard.today"), latin: model.dashboardLatinCaps)
+                Spacer(minLength: 0)
+                Button {
+                    model.commands?.showHistory(source: nil)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(l10n("mac.dashboard.history"))
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(DashboardInlineButtonStyle())
+                .padding(.trailing, -7)
+                .help(l10n("mac.dashboard.historyHint"))
+                .accessibilityLabel(l10n("mac.dashboard.history"))
+                .accessibilityHint(l10n("mac.dashboard.historyHint"))
+            }
             Grid(alignment: .leading, horizontalSpacing: Spacing.m, verticalSpacing: Spacing.s) {
                 GridRow {
                     MetricCell(label: l10n("today.output"), value: SpeedFormat.tokens(today.output))

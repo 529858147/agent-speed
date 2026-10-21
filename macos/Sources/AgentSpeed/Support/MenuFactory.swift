@@ -55,6 +55,7 @@ enum MenuFactory {
             menu.addItem(.separator())
         }
         menu.addItem(ActionMenuItem(l10n("menu.dashboard")) { [weak model] in model?.commands?.showDashboard() })
+        menu.addItem(historyItem(model: model))
         menu.addItem(.separator())
         menu.addItem(orbVisibilityItem(model: model))
         menu.addItem(sizeItem(model: model))
@@ -134,6 +135,10 @@ enum MenuFactory {
         return ActionMenuItem(model.l10n(visible ? "menu.hideOrb" : "menu.showOrb")) { [weak model] in
             model?.commands?.setOrbVisible(!visible)
         }
+    }
+
+    static func historyItem(model: AppModel) -> NSMenuItem {
+        ActionMenuItem(model.l10n("history.open"), key: "y") { [weak model] in model?.commands?.showHistory(source: nil) }
     }
 
     static func settingsItem(model: AppModel) -> NSMenuItem {

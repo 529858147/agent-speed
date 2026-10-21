@@ -26,7 +26,7 @@ final class OrbAccessibilityReporter {
 
     private func observe() {
         _ = model.gauge.readoutValue
-        _ = model.gauge.tier
+        _ = model.gauge.title
         _ = model.l10n.language
         let elapsed = Clock.now - publishedAt
         if elapsed >= Self.interval {
@@ -52,7 +52,7 @@ final class OrbAccessibilityReporter {
         let gauge = model.gauge
         host.accessibilityLabelText = l10n("app.name")
         host.accessibilityHelpText = l10n("mac.a11y.orbHint")
-        let value = l10n("a11y.orb", SpeedFormat.speed(gauge.readoutValue), l10n(gauge.tier.titleKey))
+        let value = l10n("a11y.orb", SpeedFormat.speed(gauge.readoutValue), l10n(gauge.title.titleKey))
         guard value != host.accessibilityValueText else { return }
         host.accessibilityValueText = value
         NSAccessibility.post(element: host, notification: .valueChanged)

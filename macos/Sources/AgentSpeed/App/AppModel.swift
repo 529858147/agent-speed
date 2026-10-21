@@ -9,6 +9,8 @@ protocol AppCommands: AnyObject {
     func showDashboard()
     func closeDashboard()
     func showSettings(_ pane: SettingsPane?)
+    /// Opens the Usage History window filtered to `source` (all sources when nil).
+    func showHistory(source: SourceKind?)
     func setOrbVisible(_ visible: Bool)
     func resetOrbPosition()
     /// Opens the update window on the current update state.
@@ -18,11 +20,13 @@ protocol AppCommands: AnyObject {
     func quit()
 }
 
-/// The app's shared state: one store, the settings, the live gauge and the data monitor.
+/// The app's shared state: one store, the settings, the live gauge, the data monitor and the daily history.
 @MainActor
 @Observable
 final class AppModel {
     let store: SpeedStore
+    /// Daily usage (METRICS 8) for the history window, filled by `HistoryService` (or previews).
+    let history: HistoryStore
     let settings: AppSettings
     let l10n: Localizer
     let gauge: LiveGauge
@@ -35,13 +39,21 @@ final class AppModel {
 
     @ObservationIgnored weak var commands: AppCommands?
     @ObservationIgnored private(set) var monitor: LiveMonitor?
+    @ObservationIgnored private(set) var historyService: HistoryService?
+    @ObservationIgnored private var historyStartTimer: Timer?
     @ObservationIgnored private var demo: DemoDriver?
     @ObservationIgnored private var demoLoops = false
     @ObservationIgnored private var loops: [ObservationLoop] = []
     @ObservationIgnored private var appliedConfiguration: MonitorConfiguration?
 
-    init(store: SpeedStore = SpeedStore(), settings: AppSettings = AppSettings(), updates: UpdateController? = nil) {
+    init(
+        store: SpeedStore = SpeedStore(),
+        settings: AppSettings = AppSettings(),
+        updates: UpdateController? = nil,
+        history: HistoryStore = HistoryStore()
+    ) {
         self.store = store
+        self.history = history
         self.settings = settings
         self.updates = updates ?? UpdateController()
         l10n = Localizer(preference: settings.language)
@@ -90,11 +102,49 @@ final class AppModel {
             guard configuration != self.appliedConfiguration else { return }
             self.appliedConfiguration = configuration
             self.monitor?.update(configuration: configuration)
+            self.historyService?.update(configuration: configuration)
         })
+        scheduleHistory()
+    }
+
+    /// The history analysis reads every log, so it starts only once the live monitor has read today's transcripts
+    /// (or after a grace period, or as soon as the history window asks for it), never slowing the live start.
+    private func scheduleHistory() {
+        let timer = Timer(timeInterval: Self.historyGracePeriod, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.startHistory() }
+        }
+        timer.tolerance = 2
+        RunLoop.main.add(timer, forMode: .common)
+        historyStartTimer = timer
+        loops.append(ObservationLoop { [weak self] in
+            guard let self, self.historyService == nil else { return }
+            if case .starting = self.store.snapshot.state { return }
+            DispatchQueue.main.async { [weak self] in self?.startHistory() }
+        })
+    }
+
+    private static let historyGracePeriod: TimeInterval = 20
+
+    /// Starts the daily history analysis if it is not running yet.
+    func startHistory() {
+        guard historyService == nil, monitor != nil else { return }
+        historyStartTimer?.invalidate()
+        historyStartTimer = nil
+        let service = HistoryService(store: history, configuration: settings.monitorConfiguration, liveStore: store)
+        historyService = service
+        service.start()
+    }
+
+    /// Deletes the stored daily statistics and analyses the current logs again (Settings → Data Sources).
+    func clearHistory() {
+        startHistory()
+        history.clear()
     }
 
     func shutdown() {
         demo?.stop()
+        historyStartTimer?.invalidate()
+        historyService?.stop()
         monitor?.stop()
         loops.forEach { $0.cancel() }
         loops.removeAll()

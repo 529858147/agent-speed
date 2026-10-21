@@ -281,5 +281,125 @@
     "zh-Hans": "这份 Agent Speed 无法自行更新，请从 GitHub 下载新版本",
     "en": "This copy of Agent Speed can't update itself. Download the new version from GitHub",
     "ja": "この Agent Speed は自動で更新できません。GitHub から新しいバージョンをダウンロードしてください"
+  },
+  "mac.dashboard.sourceHint": {
+    "zh-Hant": "顯示用量歷史",
+    "zh-Hans": "显示用量历史",
+    "en": "Show usage history",
+    "ja": "使用履歴を表示"
+  },
+  "mac.dashboard.history": {
+    "zh-Hant": "歷史",
+    "zh-Hans": "历史",
+    "en": "History",
+    "ja": "履歴"
+  },
+  "mac.dashboard.historyHint": {
+    "zh-Hant": "顯示所有來源的用量歷史",
+    "zh-Hans": "显示所有来源的用量历史",
+    "en": "Show usage history for all sources",
+    "ja": "すべてのソースの使用履歴を表示"
+  },
+  "mac.settings.sources.chooseOpencode": {
+    "zh-Hant": "選擇內含 opencode.db 的 OpenCode 資料夾",
+    "zh-Hans": "选择包含 opencode.db 的 OpenCode 文件夹",
+    "en": "Choose the OpenCode folder that contains opencode.db",
+    "ja": "opencode.db を含む OpenCode のフォルダを選択"
+  },
+  "mac.settings.sources.chooseGemini": {
+    "zh-Hant": "選擇 Gemini CLI 的 tmp 資料夾",
+    "zh-Hans": "选择 Gemini CLI 的 tmp 文件夹",
+    "en": "Choose the Gemini CLI tmp folder",
+    "ja": "Gemini CLI の tmp フォルダを選択"
+  },
+  "mac.history.days": {
+    "zh-Hant": "%d 天",
+    "zh-Hans": "%d 天",
+    "en": "%d days",
+    "ja": "%d 日間"
+  },
+  "mac.history.days.one": {
+    "zh-Hant": "%d 天",
+    "zh-Hans": "%d 天",
+    "en": "%d day",
+    "ja": "%d 日間"
+  },
+  "mac.history.models.more": {
+    "zh-Hant": "+%d",
+    "zh-Hans": "+%d",
+    "en": "+%d",
+    "ja": "+%d"
+  },
+  "mac.history.a11y.item": {
+    "zh-Hant": "%@：%@",
+    "zh-Hans": "%@：%@",
+    "en": "%@: %@",
+    "ja": "%@：%@"
+  },
+  "mac.history.a11y.join": {
+    "zh-Hant": "，",
+    "zh-Hans": "，",
+    "en": ", ",
+    "ja": "、"
+  },
+  "mac.history.clear.title": {
+    "zh-Hant": "清除歷史統計",
+    "zh-Hans": "清除历史统计",
+    "en": "Clear History",
+    "ja": "履歴をクリア"
+  },
+  "mac.history.failed": {
+    "zh-Hant": "無法分析歷史紀錄。",
+    "zh-Hans": "无法分析历史记录。",
+    "en": "History could not be analyzed.",
+    "ja": "履歴を分析できませんでした。"
+  },
+  "mac.history.refresh": {
+    "zh-Hant": "立即更新",
+    "zh-Hans": "立即更新",
+    "en": "Refresh Now",
+    "ja": "今すぐ更新"
+  },
+  "mac.history.export.failed": {
+    "zh-Hant": "無法儲存這個檔案。",
+    "zh-Hans": "无法存储这个文件。",
+    "en": "The file could not be saved.",
+    "ja": "ファイルを保存できませんでした。"
+  },
+  "mac.history.copy": {
+    "zh-Hant": "拷貝",
+    "zh-Hans": "拷贝",
+    "en": "Copy",
+    "ja": "コピー"
+  },
+  "mac.history.table": {
+    "zh-Hant": "每日明細",
+    "zh-Hans": "每日明细",
+    "en": "Daily breakdown",
+    "ja": "日別の内訳"
+  },
+  "mac.history.range": {
+    "zh-Hant": "日期範圍",
+    "zh-Hans": "日期范围",
+    "en": "Date range",
+    "ja": "期間"
+  },
+  "mac.history.sorted.asc": {
+    "zh-Hant": "遞增排序",
+    "zh-Hans": "升序排列",
+    "en": "Sorted ascending",
+    "ja": "昇順"
+  },
+  "mac.history.sorted.desc": {
+    "zh-Hant": "遞減排序",
+    "zh-Hans": "降序排列",
+    "en": "Sorted descending",
+    "ja": "降順"
+  },
+  "mac.history.chart.hint": {
+    "zh-Hant": "用左右方向鍵逐日查看；按一下長條或按 Return 可在表格中顯示該日。",
+    "zh-Hans": "用左右方向键逐日查看；点按条形或按 Return 可在表格中显示该日。",
+    "en": "Use the left and right arrow keys to move between days. Click a bar or press Return to show the day in the table.",
+    "ja": "左右の矢印キーで日を移動し、バーのクリックか Return で表の該当日を表示します。"
   }
 }

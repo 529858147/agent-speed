@@ -17,7 +17,7 @@ final class StatusItemAccessibility {
         self.button = button
         loop = ObservationLoop { [weak self] in
             guard let self else { return }
-            _ = (self.model.gauge.readoutValue, self.model.gauge.tier, self.model.l10n.language)
+            _ = (self.model.gauge.readoutValue, self.model.gauge.title, self.model.l10n.language)
             self.schedule()
         }
     }
@@ -53,11 +53,11 @@ final class StatusItemAccessibility {
         updatedAt = Clock.now
         let l10n = model.l10n
         let speed = Self.spokenSpeed(model.gauge.readoutValue, locale: l10n.locale)
-        let tier = l10n(model.gauge.tier.titleKey).capitalized(with: l10n.locale)
+        let title = l10n(model.gauge.title.titleKey).capitalized(with: l10n.locale)
         let name = l10n("app.name")
         if button.accessibilityLabel() != name { button.setAccessibilityLabel(name) }
-        button.setAccessibilityValue(l10n("a11y.orb", speed, tier))
-        button.toolTip = l10n("mac.a11y.statusItem", speed, tier)
+        button.setAccessibilityValue(l10n("a11y.orb", speed, title))
+        button.toolTip = l10n("mac.a11y.statusItem", speed, title)
     }
 
     /// Whole numbers with locale grouping read better aloud than the compact "1.28k" of the visual readout.

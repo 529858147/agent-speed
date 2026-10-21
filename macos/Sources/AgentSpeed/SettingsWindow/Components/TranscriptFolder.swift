@@ -1,25 +1,35 @@
 import AgentSpeedCore
 import AppKit
 
-/// A transcript root folder the user can relocate. Claude Code and Claude Desktop share the Claude root.
+/// A data folder the user can relocate. Claude Code and Claude Desktop share the Claude root; OpenCode's folder is the
+/// one that contains `opencode.db`; Gemini CLI reads one `tmp` folder, or by default two (an override replaces both).
 enum TranscriptFolder: CaseIterable {
     case codex
     case claude
     case dsh
+    case opencode
+    case gemini
 
-    var defaultURL: URL {
+    /// Every default location, in reading order.
+    var defaultURLs: [URL] {
         switch self {
-        case .codex: LiveMonitor.defaultCodexRoot
-        case .claude: LiveMonitor.defaultClaudeRoot
-        case .dsh: LiveMonitor.defaultDshRoot
+        case .codex: [LiveMonitor.defaultCodexRoot]
+        case .claude: [LiveMonitor.defaultClaudeRoot]
+        case .dsh: [LiveMonitor.defaultDshRoot]
+        case .opencode: [LiveMonitor.defaultOpencodeRoot]
+        case .gemini: LiveMonitor.defaultGeminiRoots
         }
     }
+
+    var defaultURL: URL { defaultURLs[0] }
 
     var chooseMessageKey: String {
         switch self {
         case .codex: "mac.settings.sources.chooseCodex"
         case .claude: "mac.settings.sources.chooseClaude"
         case .dsh: "mac.settings.sources.chooseDsh"
+        case .opencode: "mac.settings.sources.chooseOpencode"
+        case .gemini: "mac.settings.sources.chooseGemini"
         }
     }
 
@@ -29,6 +39,8 @@ enum TranscriptFolder: CaseIterable {
         case .codex: nil
         case .claude: "settings.sources.sharedRoot"
         case .dsh: "settings.sources.dshHint"
+        case .opencode: "settings.sources.opencodeHint"
+        case .gemini: "settings.sources.geminiHint"
         }
     }
 
@@ -38,6 +50,8 @@ enum TranscriptFolder: CaseIterable {
         case .codex: settings.codexRoot
         case .claude: settings.claudeRoot
         case .dsh: settings.dshRoot
+        case .opencode: settings.opencodeRoot
+        case .gemini: settings.geminiRoot
         }
     }
 
@@ -46,7 +60,13 @@ enum TranscriptFolder: CaseIterable {
         customURL(in: settings) ?? defaultURL
     }
 
-    /// Stores a custom folder; choosing the default location (or nil) clears the override.
+    /// The folders read with the current settings: the custom one, else every default.
+    @MainActor
+    func urls(in settings: AppSettings) -> [URL] {
+        customURL(in: settings).map { [$0] } ?? defaultURLs
+    }
+
+    /// Stores a custom folder; choosing the (first) default location, or nil, clears the override.
     @MainActor
     func setURL(_ url: URL?, in settings: AppSettings) {
         let value = url.flatMap { Self.isSameFolder($0, defaultURL) ? nil : $0 }
@@ -54,6 +74,8 @@ enum TranscriptFolder: CaseIterable {
         case .codex: settings.codexRoot = value
         case .claude: settings.claudeRoot = value
         case .dsh: settings.dshRoot = value
+        case .opencode: settings.opencodeRoot = value
+        case .gemini: settings.geminiRoot = value
         }
     }
 

@@ -19,7 +19,6 @@ struct AgentRow: View {
         // Model first: when space runs out the source name truncates, and the badge color still carries it.
         let detail = [agent.model, sourceName].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
         let speed = model.value(of: agent.live)
-        let speedText = SpeedFormat.speed(speed)
         let status = status(l10n)
 
         HStack(spacing: Spacing.s) {
@@ -45,12 +44,12 @@ struct AgentRow: View {
 
             Spacer(minLength: Spacing.xs)
 
-            Text(speedText)
-                .font(DashboardFont.rowNumber)
-                .foregroundStyle(speed > 0 ? AnyShapeStyle(.primary) : AnyShapeStyle(.dashboardSecondary))
-                .contentTransition(.identity)
-                .frame(width: DashboardLayout.speedColumn, alignment: .trailing)
-                .accessibilityLabel(l10n("mac.settings.speedValue", speedText))
+            LiveSpeedValue(
+                speed: speed,
+                phase: agent.phase,
+                l10n: l10n,
+                reduceMotion: model.accessibility.reduceMotion
+            )
         }
         .frame(height: DashboardLayout.rowHeight)
         .padding(.leading, CGFloat(depth) * DashboardLayout.subagentIndent)

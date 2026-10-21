@@ -38,6 +38,8 @@ enum PreviewData {
             source(.claudeCode, speed * 0.42, TokenTotals(requests: 480, input: 19_400_000, output: 440_000), 2),
             source(.claudeDesktop, speed * 0.10, TokenTotals(requests: 120, input: 4_600_000, output: 120_000), 1),
             source(.deepseek, speed * 0.14, TokenTotals(requests: 164, input: 5_200_000, output: 160_000), 1),
+            source(.opencode, 0, TokenTotals(requests: 36, input: 1_100_000, output: 38_000), 0),
+            source(.gemini, speed * 0.04, TokenTotals(requests: 22, input: 700_000, output: 24_000), 1),
         ]
         return SpeedSnapshot(
             timestamp: now,
@@ -157,9 +159,9 @@ enum PreviewData {
         SourceStatus(
             kind: kind,
             enabled: true,
-            rootPath: kind.transcriptFolder?.defaultURL.path ?? "",
+            rootPath: kind.transcriptFolder.defaultURL.path,
             available: true,
-            sessionCount: kind.transcriptFolder.map(sessionCount) ?? 0,
+            sessionCount: sessionCount(kind.transcriptFolder),
             live: Rate(output: live, total: live * 26),
             today: today,
             activeAgents: active
@@ -171,6 +173,8 @@ enum PreviewData {
         case .codex: 128
         case .claude: 342
         case .dsh: 46
+        case .opencode: 1
+        case .gemini: 23
         }
     }
 }

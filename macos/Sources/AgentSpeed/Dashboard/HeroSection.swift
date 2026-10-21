@@ -1,7 +1,7 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// The embedded orb with the big live readout, tier and agent context (DESIGN section 4.1).
+/// The embedded orb with the big live readout, speed title and agent context (DESIGN section 4.1).
 struct HeroSection: View {
     let model: AppModel
 
@@ -13,9 +13,10 @@ struct HeroSection: View {
         let gauge = model.gauge
         let value = gauge.readoutValue
         let tier = gauge.tier
+        let title = gauge.title
         let snapshot = model.snapshot
         let speed = SpeedFormat.speed(value)
-        let tierName = l10n(tier.titleKey)
+        let titleName = l10n(title.titleKey)
         let context = l10n("agents.context", snapshot.generatingCount, snapshot.toolsCount)
 
         HStack(spacing: Spacing.l) {
@@ -29,9 +30,9 @@ struct HeroSection: View {
                     isIdle: tier == .idle,
                     reduceMotion: model.accessibility.reduceMotion
                 )
-                TierLabel(
-                    tier: tier,
-                    title: tierName,
+                SpeedTitleLabel(
+                    title: title,
+                    text: titleName,
                     heat: HeatPalette.heat(value: value, redline: model.settings.redline),
                     latin: model.dashboardLatinCaps,
                     reduceMotion: model.accessibility.reduceMotion
@@ -48,7 +49,7 @@ struct HeroSection: View {
         .padding(.leading, Self.auraRoom)
         .padding(.top, Self.auraRoom)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(l10n("a11y.orb", speed, tierName))
+        .accessibilityLabel(l10n("a11y.orb", speed, titleName))
         .accessibilityValue(context)
     }
 }
@@ -78,9 +79,10 @@ private struct HeroReadout: View {
     }
 }
 
-private struct TierLabel: View {
-    let tier: SpeedTier
-    let title: String
+/// The speed title in the heat color; a new title slides up into place (0.35 s). It shrinks to fit, never truncating.
+private struct SpeedTitleLabel: View {
+    let title: SpeedTitle
+    let text: String
     let heat: Double
     let latin: Bool
     let reduceMotion: Bool
@@ -91,16 +93,19 @@ private struct TierLabel: View {
     var body: some View {
         let color = DashboardPalette.heatText(heat, dark: colorScheme == .dark, increasedContrast: contrast == .increased)
         ZStack(alignment: .leading) {
-            Text(title)
+            Text(text)
                 .font(DashboardFont.tier)
                 .textCase(latin ? .uppercase : nil)
                 .tracking(latin ? 1.4 : 0.8)
                 .foregroundStyle(color)
-                .id(tier)
+                .lineLimit(1)
+                .minimumScaleFactor(TitleFit.minimumScale)
+                .allowsTightening(true)
+                .id(title)
                 .transition(transition)
         }
         .clipped()
-        .animation(reduceMotion ? Motion.fade : .spring(response: 0.35, dampingFraction: 0.86), value: tier)
+        .animation(reduceMotion ? Motion.fade : .spring(response: 0.35, dampingFraction: 0.86), value: title)
     }
 
     private var transition: AnyTransition {

@@ -1,12 +1,15 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// Redline of the selected metric: title and live value, a full-width slider, and the gauge scale it calibrates.
-/// The slider moves along a 0…1 position: linear for output speed, logarithmic for total throughput.
+/// Redline of the selected metric: title and live value, a full-width slider, and the heat strip it calibrates with a
+/// tick where each speed title begins. The slider moves along a 0…1 position: linear for output speed, logarithmic
+/// for total throughput.
 struct RedlineControl: View {
     let settings: AppSettings
     let l10n: Localizer
     var reduceMotion = false
+    /// The title hovered or focused in the ladder below; its tick is emphasized.
+    var highlightedTitle: SpeedTitle?
 
     var body: some View {
         let title = l10n("settings.redline")
@@ -27,7 +30,7 @@ struct RedlineControl: View {
             .accessibilityAdjustableAction { direction in
                 adjust(direction)
             }
-            RedlineScale()
+            RedlineScale(highlighted: highlightedTitle)
                 .padding(.top, Spacing.xxs)
         }
         .padding(.vertical, Spacing.xxs)
@@ -62,72 +65,81 @@ struct RedlineControl: View {
     }
 }
 
-/// The orb's 36-segment gauge unrolled: the heat spectrum from idle to redline, with dots where boost,
-/// overdrive and redline begin (the same positions as the orb's tick dots).
+/// The orb's 36-segment gauge unrolled: the heat spectrum from idle to redline, with a thin tick where each speed
+/// title begins at `(t / R)^0.6`. The ticks stay put while the redline moves; only the values in the ladder change.
 struct RedlineScale: View {
-    @Environment(\.colorScheme) private var colorScheme
+    var highlighted: SpeedTitle?
 
-    static let tiers: [SpeedTier] = [.boost, .overdrive, .redline]
-    private static let segments = 36
-    private static let gap: CGFloat = 2
-    private static let barHeight: CGFloat = 5
-    private static let dotSize: CGFloat = 4
-    private static let dotSpacing: CGFloat = 3
-
-    var body: some View {
-        let dark = colorScheme == .dark
-        Canvas { context, size in
-            let count = Self.segments
-            let width = (size.width - Self.gap * CGFloat(count - 1)) / CGFloat(count)
-            let top = size.height - Self.barHeight
-            for index in 0..<count {
-                let heat = Double(index) / Double(count - 1)
-                let rect = CGRect(x: CGFloat(index) * (width + Self.gap), y: top, width: width, height: Self.barHeight)
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: 1.5, style: .continuous),
-                    with: .color(HeatPalette.color(heat, dark: dark).color)
-                )
-            }
-            for tier in Self.tiers {
-                let heat = HeatPalette.heat(forFraction: tier.threshold)
-                let x = (heat * size.width).clamped(to: Self.dotSize...(size.width - Self.dotSize))
-                let dot = CGRect(x: x - Self.dotSize / 2, y: 0, width: Self.dotSize, height: Self.dotSize)
-                context.fill(Path(ellipseIn: dot), with: .color(HeatPalette.color(heat, dark: dark).color))
-            }
-        }
-        .frame(height: Self.dotSize + Self.dotSpacing + Self.barHeight)
-        .accessibilityHidden(true)
-    }
-}
-
-/// The redline hint with each threshold speed set in the heat color of its tick.
-struct RedlineHint: View {
-    let settings: AppSettings
-    let l10n: Localizer
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
+    private static let segments = 36
+    private static let gap: CGFloat = 2
+    private static let barHeight: CGFloat = 5
+    private static let tickArea: CGFloat = 9
+    private static let tickHeight: CGFloat = 5
+    private static let tickSpacing: CGFloat = 2
+
     var body: some View {
-        Text(attributed)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        let dark = colorScheme == .dark
+        let increasedContrast = contrast == .increased
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack(alignment: .topLeading) {
+                Canvas { context, size in
+                    let count = Self.segments
+                    let segment = (size.width - Self.gap * CGFloat(count - 1)) / CGFloat(count)
+                    let top = size.height - Self.barHeight
+                    for index in 0..<count {
+                        let heat = Double(index) / Double(count - 1)
+                        let rect = CGRect(x: CGFloat(index) * (segment + Self.gap), y: top, width: segment, height: Self.barHeight)
+                        context.fill(
+                            Path(roundedRect: rect, cornerRadius: 1.5, style: .continuous),
+                            with: .color(HeatPalette.color(heat, dark: dark).color)
+                        )
+                    }
+                }
+                ForEach(SpeedTitle.scaledLadder, id: \.self) { title in
+                    tick(title, width: width, dark: dark, increasedContrast: increasedContrast)
+                }
+            }
+        }
+        .frame(height: Self.tickArea + Self.tickSpacing + Self.barHeight)
+        .animation(Motion.fade, value: highlighted)
+        .accessibilityHidden(true)
     }
 
-    private var attributed: AttributedString {
-        let thresholds = settings.tierThresholds
-        let values = [thresholds.boost, thresholds.overdrive, thresholds.redline]
-        let markers = ["\u{E000}", "\u{E001}", "\u{E002}"]
-        var text = AttributedString(l10n("settings.redline.hint", markers[0], markers[1], markers[2]))
-        for (index, marker) in markers.enumerated() {
-            guard let range = text.range(of: marker) else { continue }
-            let heat = HeatPalette.heat(forFraction: RedlineScale.tiers[index].threshold)
-            var run = AttributedString(SpeedFormat.speed(values[index]))
-            run.foregroundColor = HeatText.color(heat, dark: colorScheme == .dark, increasedContrast: contrast == .increased)
-            run.font = .subheadline.monospacedDigit().weight(.semibold)
-            text.replaceSubrange(range, with: run)
+    private func tick(_ title: SpeedTitle, width: CGFloat, dark: Bool, increasedContrast: Bool) -> some View {
+        let heat = HeatPalette.heat(forFraction: title.threshold)
+        let isHighlighted = title == highlighted
+        let tickWidth: CGFloat = isHighlighted ? 2 : 1
+        let height = isHighlighted ? Self.tickArea : Self.tickHeight
+        let x = (heat * width).clamped(to: tickWidth...max(tickWidth, width - tickWidth))
+        let color = DashboardPalette.heatGraphic(heat, dark: dark, increasedContrast: increasedContrast).color
+        return Capsule()
+            .fill(color)
+            .frame(width: tickWidth, height: height)
+            .opacity(highlighted == nil || isHighlighted ? 1 : 0.4)
+            .offset(x: x - tickWidth / 2, y: Self.tickArea - height)
+    }
+}
+
+/// Under the redline row: the hint, then every speed title with the speed it starts at for the current redline.
+struct RedlineFooter: View {
+    let settings: AppSettings
+    let l10n: Localizer
+    @Binding var highlightedTitle: SpeedTitle?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs - 2) {
+            Footnote(l10n("settings.redline.hint"))
+            TitleLadderList(
+                redline: settings.redline,
+                metric: settings.metric,
+                l10n: l10n,
+                highlighted: $highlightedTitle
+            )
         }
-        return text
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

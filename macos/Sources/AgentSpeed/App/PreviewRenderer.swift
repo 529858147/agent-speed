@@ -26,6 +26,9 @@ enum PreviewRenderer {
         if wants("menubar") {
             SurfacePreviews.renderMenuBar(model: model, into: directory)
         }
+        if wants("titles") {
+            TitlePreviews.render(model: model, into: directory)
+        }
         if wants("dashboard") {
             let cases: [(String, Double, PreviewData.AgentSet, Bool)] = [
                 ("cruise", redline * 0.08, .standard, false),
@@ -47,6 +50,16 @@ enum PreviewRenderer {
                 }
             }
             model.settings.agentsExpanded = false
+            publish(model, speed: redline * 0.3)
+            for dark in [false, true] {
+                PreviewSnapshot.writeHosted(
+                    DashboardView(model: model).appEnvironment(model)
+                        .environment(\.orbStillTime, Clock.now)
+                        .environment(\.previewHoveredSource, .claudeCode),
+                    dark: dark,
+                    to: directory.appendingPathComponent("dashboard-source-hover-\(dark ? "dark" : "light").png")
+                )
+            }
             publish(model, snapshot: PreviewData.withPartialSources(
                 PreviewData.snapshot(speed: redline * 0.3, redline: model.settings.redline)
             ))
@@ -57,6 +70,10 @@ enum PreviewRenderer {
                     to: directory.appendingPathComponent("dashboard-sources-\(dark ? "dark" : "light").png")
                 )
             }
+        }
+        if wants("history") {
+            HistoryLogicChecks.run(l10n: model.l10n, into: directory)
+            HistoryPreviews.render(model: model, into: directory)
         }
         if wants("update") {
             UpdatePreviews.render(model: model, into: directory)

@@ -92,7 +92,7 @@ final class OrbAnimator {
         loop = ObservationLoop { [weak self] in
             guard let self, let model = self.model else { return }
             let gauge = model.gauge
-            _ = (gauge.revision, gauge.tier, model.settings.effects, model.accessibility.reduceMotion)
+            _ = (gauge.revision, gauge.tier, gauge.title, model.settings.effects, model.accessibility.reduceMotion)
             if gauge.readoutValue != lastReadout {
                 lastReadout = gauge.readoutValue
                 self.readoutChangedAt = Clock.now
@@ -297,6 +297,7 @@ final class OrbAnimator {
             || !pulses.isEmpty
             || now - peakStart < Self.peakDuration + 0.4
             || now - gauge.tierChangedAt < 0.9
+            || now - gauge.titleChangedAt < OrbReadoutBuilder.titleSlide + 0.1
             || now - hoverChangedAt < 0.5
             || flare.value > 0.002
             || !cometVisibility.isSettled(at: envelopeTargets.comet)

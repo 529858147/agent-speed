@@ -107,13 +107,14 @@ struct OrbView: View {
         var readout: Double
         var heat: Double
         var tier: SpeedTier
+        var title: SpeedTitle
         var effects: EffectsLevel
         var opacity: Double
     }
 
     private func redrawKey(content: OrbContent) -> AnyHashable {
         let gauge = model.gauge
-        let text = [content.unit, content.tierLabel, content.infoLine, content.language.rawValue]
+        let text = [content.unit, content.titleLabel, content.infoLine, content.language.rawValue]
             + content.generating.map(\.rawValue) + ["\(content.diameter)", "\(content.increaseContrast)"]
         return AnyHashable(RedrawKey(
             content: text.joined(separator: "|"),
@@ -121,6 +122,7 @@ struct OrbView: View {
             readout: gauge.readoutValue,
             heat: gauge.targetHeat,
             tier: gauge.tier,
+            title: gauge.title,
             effects: model.settings.effects,
             opacity: model.settings.orbOpacity
         ))
@@ -155,8 +157,8 @@ struct OrbView: View {
             tokens: OrbTokens.forScheme(colorScheme),
             increaseContrast: increaseContrast,
             unit: l10n("unit.tokS"),
-            tierLabel: l10n(gauge.tier.titleKey),
-            previousTierLabel: l10n(gauge.previousTier.titleKey),
+            titleLabel: l10n(gauge.title.titleKey),
+            previousTitleLabel: l10n(gauge.previousTitle.titleKey),
             infoLine: l10n("today.summary", SpeedFormat.tokens(todayTokens), snapshot.agents.count),
             peakLabel: l10n("peak.new"),
             latinTracking: l10n.language.usesLatinCase,

@@ -6,7 +6,10 @@ import UniformTypeIdentifiers
 struct SourcesPane: View {
     let model: AppModel
 
+    @State private var confirmsClear = false
+
     var body: some View {
+        let l10n = model.l10n
         Form {
             ForEach(TranscriptFolder.allCases, id: \.self) { folder in
                 let kinds = SourceKind.allCases.filter { $0.transcriptFolder == folder }
@@ -17,23 +20,45 @@ struct SourcesPane: View {
                     SourceFolderRow(folder: folder, model: model)
                 } footer: {
                     if let key = folder.footnoteKey {
-                        SectionFootnote(model.l10n(key))
+                        SectionFootnote(l10n(key))
                     }
                 }
             }
+            Section {
+                HStack(spacing: Spacing.xs) {
+                    Button(l10n("history.open")) {
+                        model.commands?.showHistory(source: nil)
+                    }
+                    Spacer(minLength: Spacing.xs)
+                    Button(l10n("history.clear")) {
+                        confirmsClear = true
+                    }
+                }
+            } footer: {
+                SectionFootnote(l10n("history.privacy"))
+            }
         }
         .settingsForm()
+        .alert(l10n("mac.history.clear.title"), isPresented: $confirmsClear) {
+            Button(l10n("history.clear.action"), role: .destructive) {
+                model.clearHistory()
+            }
+            Button(l10n("history.cancel"), role: .cancel) {}
+        } message: {
+            Text(l10n("history.clear.confirm"))
+        }
     }
 }
 
 extension SourceKind {
-    /// Nil for sources that are not read from a transcript folder.
-    var transcriptFolder: TranscriptFolder? {
+    /// The folder a source is read from.
+    var transcriptFolder: TranscriptFolder {
         switch self {
         case .codex: .codex
         case .claudeCode, .claudeDesktop: .claude
         case .deepseek: .dsh
-        case .opencode, .gemini: nil
+        case .opencode: .opencode
+        case .gemini: .gemini
         }
     }
 }
@@ -131,7 +156,8 @@ private struct SourceStatusLabel: View {
     }
 }
 
-/// The folder a source reads from: abbreviated path, default/custom badge, and Show in Finder / Reset / Change….
+/// The folder a source reads from: abbreviated path (Gemini CLI lists both default folders), default/custom badge,
+/// and Show in Finder / Reset / Change….
 private struct SourceFolderRow: View {
     let folder: TranscriptFolder
     let model: AppModel
@@ -142,9 +168,11 @@ private struct SourceFolderRow: View {
     var body: some View {
         let settings = model.settings
         let l10n = model.l10n
-        let url = folder.url(in: settings)
+        let urls = folder.urls(in: settings)
+        let url = urls.first(where: TranscriptFolder.exists) ?? urls[0]
         let isCustom = folder.customURL(in: settings) != nil
-        let exists = TranscriptFolder.exists(url)
+        let exists = urls.contains(where: TranscriptFolder.exists)
+        let paths = urls.map(TranscriptFolder.displayPath)
         HStack(spacing: Spacing.s) {
             Image(nsImage: Self.folderIcon)
                 .resizable()
@@ -152,13 +180,17 @@ private struct SourceFolderRow: View {
                 .opacity(exists ? 1 : 0.45)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: TranscriptFolder.displayPath(url))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .help(url.path)
-                    .accessibilityLabel(l10n("mac.settings.sources.folder"))
-                    .accessibilityValue(Text(verbatim: TranscriptFolder.displayPath(url)))
+                ForEach(Array(urls.enumerated()), id: \.offset) { _, candidate in
+                    Text(verbatim: TranscriptFolder.displayPath(candidate))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .foregroundStyle(urls.count > 1 && !TranscriptFolder.exists(candidate) ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        .help(candidate.path)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(l10n("mac.settings.sources.folder"))
+                .accessibilityValue(Text(verbatim: paths.joined(separator: ", ")))
                 LocationBadge(isCustom: isCustom, l10n: l10n)
             }
             Spacer(minLength: Spacing.xs)

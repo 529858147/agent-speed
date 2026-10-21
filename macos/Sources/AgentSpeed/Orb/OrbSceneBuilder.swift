@@ -7,8 +7,9 @@ struct OrbContent {
     var tokens: OrbTokens
     var increaseContrast: Bool
     var unit: String
-    var tierLabel: String
-    var previousTierLabel: String
+    /// The speed title (DESIGN section 1) and the one it replaces while the label slides.
+    var titleLabel: String
+    var previousTitleLabel: String
     var infoLine: String
     var peakLabel: String
     var latinTracking: Bool
@@ -28,7 +29,7 @@ struct OrbFrame {
     let displayHeat: Double
     let overdrive: Double
     let tier: SpeedTier
-    let tierChangedAt: TimeInterval
+    let titleChangedAt: TimeInterval
     let flash: Double
     let breath: Double
     let breathPhase: Double
@@ -74,7 +75,7 @@ enum OrbSceneBuilder {
             displayHeat: heat * (effects.celebrate ? animator.peakSweep(at: time) : 1),
             overdrive: overdrive,
             tier: tier,
-            tierChangedAt: gauge.tierChangedAt,
+            titleChangedAt: gauge.titleChangedAt,
             flash: flash,
             breath: effects.breathing ? 1 + 0.15 * sin(2 * .pi * animator.breathPhase) : 1,
             breathPhase: animator.breathPhase,

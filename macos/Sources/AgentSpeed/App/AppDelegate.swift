@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     private var orb: OrbWindowController?
     private var dashboard: DashboardController?
     private var settingsWindow: SettingsWindowController?
+    private var historyWindow: HistoryWindowController?
     private var updateWindow: UpdateWindowController?
     private var updateScheduler: UpdateScheduler?
     private let updateNotifier = UpdateNotifier()
@@ -28,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             MotionHarness.start(into: directory)
             return
         }
+        if let directory = options.historyScreenshotsDirectory {
+            HistoryPreviews.captureOnScreen(into: directory)
+            return
+        }
         #endif
         let model = AppModel()
         model.commands = self
@@ -37,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         let dashboard = DashboardController(model: model)
         self.dashboard = dashboard
         settingsWindow = SettingsWindowController(model: model)
+        historyWindow = HistoryWindowController(model: model)
         let statusItem = StatusItemController(model: model)
         self.statusItem = statusItem
         dashboard.onVisibilityChange = { [weak statusItem, weak model] shown in
@@ -93,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         showSettings(nil)
     }
 
+    @objc func openHistoryFromMenu(_ sender: Any?) {
+        showHistory(source: nil)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         updateScheduler?.stop()
         orb?.savePosition()
@@ -123,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     func showSettings(_ pane: SettingsPane?) {
         dashboard?.close()
         settingsWindow?.show(pane: pane)
+    }
+
+    func showHistory(source: SourceKind?) {
+        dashboard?.close()
+        model?.startHistory()
+        historyWindow?.show(source: source)
     }
 
     func setOrbVisible(_ visible: Bool) {

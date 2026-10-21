@@ -1,7 +1,7 @@
 import AppKit
 
 /// A main menu that is never shown (the app is a menu bar agent) but gives every window the standard editing and
-/// window shortcuts (⌘C, ⌘V, ⌘A, ⌘Z, ⌘W, ⌘Q).
+/// window shortcuts (⌘C, ⌘V, ⌘A, ⌘Z, ⌘W, ⌘Q) plus Settings (⌘,) and Usage History (⌘Y).
 @MainActor
 enum MainMenu {
     static func install(model: AppModel) {
@@ -11,6 +11,7 @@ enum MainMenu {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: l10n("menu.settings"), action: #selector(AppDelegate.openSettingsFromMenu(_:)), keyEquivalent: ",")
+        appMenu.addItem(withTitle: l10n("history.open"), action: #selector(AppDelegate.openHistoryFromMenu(_:)), keyEquivalent: "y")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: l10n("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu

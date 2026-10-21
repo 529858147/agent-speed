@@ -4,6 +4,9 @@ import SwiftUI
 struct GeneralPane: View {
     let model: AppModel
 
+    /// The speed title hovered or focused in the ladder under the redline; its tick on the heat strip lights up.
+    @State private var highlightedTitle: SpeedTitle?
+
     var body: some View {
         @Bindable var settings = model.settings
         let l10n = model.l10n
@@ -39,9 +42,14 @@ struct GeneralPane: View {
                 }
                 .pickerStyle(.menu)
 
-                RedlineControl(settings: settings, l10n: l10n, reduceMotion: model.accessibility.reduceMotion)
+                RedlineControl(
+                    settings: settings,
+                    l10n: l10n,
+                    reduceMotion: model.accessibility.reduceMotion,
+                    highlightedTitle: highlightedTitle
+                )
             } footer: {
-                RedlineHint(settings: settings, l10n: l10n)
+                RedlineFooter(settings: settings, l10n: l10n, highlightedTitle: $highlightedTitle)
             }
         }
         .settingsForm()

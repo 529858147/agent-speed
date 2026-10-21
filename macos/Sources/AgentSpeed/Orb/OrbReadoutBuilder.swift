@@ -1,9 +1,14 @@
 import SwiftUI
 
 /// The centered readout drawn on the GPU (DESIGN section 2, layers 6 and 8): rolling value with heat glow, forward
-/// lean and redline jitter, the unit, the tier label (or the hover info line) and the new-peak pill.
+/// lean and redline jitter, the unit, the speed title (or the hover info line) and the new-peak pill.
 @MainActor
 enum OrbReadoutBuilder {
+    /// Duration of the title slide (DESIGN section 2, layer 6).
+    static let titleSlide: TimeInterval = 0.35
+    /// Widest the title may be, in diameters: the chord inside the gauge ring at the label's height, with margin.
+    static let titleWidth: CGFloat = 0.58
+
     private struct Layout {
         let valueBaseline: CGFloat
         let unitBaseline: CGFloat
@@ -128,17 +133,20 @@ enum OrbReadoutBuilder {
         if frame.content.increaseContrast && !frame.dark { color = color.darkened(0.12) }
 
         if labelAlpha > 0.01 {
-            let elapsed = frame.time - frame.tierChangedAt
-            let transitioning = elapsed >= 0 && elapsed < 0.35 && frame.content.previousTierLabel != frame.content.tierLabel
-            let q = transitioning ? Easing.easeInOut(elapsed / 0.35) : 1
+            let elapsed = frame.time - frame.titleChangedAt
+            let transitioning = elapsed >= 0 && elapsed < titleSlide && frame.content.previousTitleLabel != frame.content.titleLabel
+            let q = transitioning ? Easing.easeInOut(elapsed / titleSlide) : 1
             let travel = frame.effects.reduceMotion ? 0 : 0.045 * frame.s
-            if let texture = animator.textCache.texture(frame.content.tierLabel, style: style, language: frame.content.language, scale: scale) {
-                scene.texts.append(OrbTextDraw(texture, centerX: x + tracking / 2, baseline: layout.labelBaseline + travel * (1 - q),
-                                               color: color.opacity(labelAlpha * q)))
+            let limit = titleWidth * frame.s
+            func draw(_ label: String, offset: CGFloat, alpha: Double) {
+                guard alpha > 0.01, let (texture, labelTracking) = fittedTitle(label, style: style, limit: limit, frame: frame,
+                                                                                  animator: animator, scale: scale) else { return }
+                scene.texts.append(OrbTextDraw(texture, centerX: x + labelTracking / 2, baseline: layout.labelBaseline + offset,
+                                               color: color.opacity(alpha)))
             }
-            if transitioning, let texture = animator.textCache.texture(frame.content.previousTierLabel, style: style, language: frame.content.language, scale: scale) {
-                scene.texts.append(OrbTextDraw(texture, centerX: x + tracking / 2, baseline: layout.labelBaseline - travel * q,
-                                               color: color.opacity(labelAlpha * (1 - q))))
+            draw(frame.content.titleLabel, offset: travel * (1 - q), alpha: labelAlpha * q)
+            if transitioning {
+                draw(frame.content.previousTitleLabel, offset: -travel * q, alpha: labelAlpha * (1 - q))
             }
         }
         if hover > 0.01 {
@@ -149,6 +157,24 @@ enum OrbReadoutBuilder {
             scene.texts.append(OrbTextDraw(texture, centerX: x, baseline: layout.labelBaseline, color: secondary(frame).opacity(1.25 * hover),
                                            scale: fit, pivot: CGPoint(x: x, y: layout.labelBaseline)))
         }
+    }
+
+    /// The title rasterized at its own size when it fits, else at a smaller size (down to 80 %) so it stays crisp;
+    /// it is never cut.
+    private static func fittedTitle(
+        _ label: String, style: OrbTextStyle, limit: CGFloat, frame: OrbFrame, animator: OrbAnimator, scale: CGFloat
+    ) -> (OrbTextTexture, CGFloat)? {
+        let language = frame.content.language
+        guard let natural = animator.textCache.texture(label, style: style, language: language, scale: scale) else { return nil }
+        let fit = TitleFit.scale(width: natural.advance - style.tracking, limit: limit)
+        guard fit < 1 else { return (natural, style.tracking) }
+        var smaller = style
+        smaller.size = style.size * fit
+        smaller.tracking = style.tracking * fit
+        guard let texture = animator.textCache.texture(label, style: smaller, language: language, scale: scale) else {
+            return (natural, style.tracking)
+        }
+        return (texture, smaller.tracking)
     }
 
     private static func addOverflow(_ scene: inout OrbScene, _ frame: OrbFrame, animator: OrbAnimator, scale: CGFloat) {
