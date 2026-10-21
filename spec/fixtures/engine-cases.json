@@ -438,6 +438,39 @@
       ]
     },
     {
+      "name": "estimates never overlap the agent's own measured responses",
+      "agents": [
+        {
+          "id": "a1",
+          "source": "claudeCode",
+          "model": "m1",
+          "phase": "generating",
+          "inFlightStartMs": 1000000000000,
+          "lastLineMs": 1000000002000
+        }
+      ],
+      "responses": [
+        {
+          "key": "r1",
+          "agentId": "a1",
+          "source": "claudeCode",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000002000,
+          "input": 0,
+          "output": 100
+        }
+      ],
+      "queries": [
+        {
+          "nowMs": 1000000003000,
+          "liveOutput": 50.0,
+          "liveTotal": 50.0,
+          "estimatedShare": 0.3333333333333333
+        }
+      ]
+    },
+    {
       "name": "today totals, average, peak and history",
       "todayStartMs": 999996400000,
       "agents": [

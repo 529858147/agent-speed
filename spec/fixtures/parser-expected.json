@@ -48,9 +48,9 @@
       "project": "rocket",
       "model": "gpt-6.1-sol",
       "isSubagent": true,
-      "phase": "generating",
-      "inFlightStartMs": 1792490430000,
-      "lastLineMs": 1792490430000,
+      "phase": "tools",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792490447000,
       "malformedLines": 0,
       "responses": [
         {
@@ -62,6 +62,17 @@
           "cacheWriteInput": 0,
           "output": 120,
           "reasoning": 40,
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "key": "resp-4",
+          "startMs": 1792490440000,
+          "endMs": 1792490447000,
+          "input": 5200,
+          "cachedInput": 5000,
+          "cacheWriteInput": 0,
+          "output": 60,
+          "reasoning": 10,
           "model": "gpt-6.1-sol"
         }
       ]

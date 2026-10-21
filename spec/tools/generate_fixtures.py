@@ -107,6 +107,8 @@ write_jsonl(rel, [
                                       "source": {"subagent": {"thread_spawn": {"parent_thread_id": "thread-main",
                                                                                "depth": 1,
                                                                                "agent_path": "/root/worker"}}}}),
+    codex(at(0, 20), "session_meta", {"id": "thread-main", "session_id": "sess-1", "timestamp": ts(at(0, 0)),
+                                      "cwd": "/Users/dev/projects/rocket", "source": "cli"}),
     codex(at(0, 1, 10), "response_item", {"type": "message", "role": "user",
                                           "content": [{"type": "input_text", "text": "Ship it"}]}),
     codex(at(0, 5, 10), "token_usage_record", {"thread_id": "thread-main", "session_id": "sess-1",
@@ -124,10 +126,18 @@ write_jsonl(rel, [
     codex(at(0, 24), "token_usage_record", {"thread_id": "thread-worker", "session_id": "sess-1",
                                             "response_id": "resp-3", "usage": u3}),
     codex(at(0, 30), "response_item", {"type": "custom_tool_call_output", "call_id": "call-9", "output": "a b"}),
+    codex(at(0, 31), "response_item", {"type": "reasoning", "summary": []}),
+    codex(at(0, 32), "event_msg", {"type": "token_count", "info": {"total_token_usage": u3, "last_token_usage": u3}}),
+    codex(at(0, 40), "response_item", {"type": "agent_message", "author": "/root", "recipient": "/root/worker",
+                                       "content": [{"type": "input_text", "text": "Next"}]}),
+    codex(at(0, 45), "response_item", {"type": "reasoning", "summary": []}),
+    codex(at(0, 47), "token_usage_record", {"thread_id": "thread-worker", "session_id": "sess-1",
+                                            "response_id": "resp-4", "usage": cx(5200, 5000, 60, 10)}),
 ])
 expect(rel, source="codex", project="rocket", model="gpt-6.1-sol", isSubagent=True,
-       phase="generating", inFlightStartMs=at(0, 30), lastLineMs=at(0, 30), malformedLines=0,
-       responses=[resp("resp-3", at(0, 21), at(0, 24), 5000, 0, 0, 120, 40, "gpt-6.1-sol")])
+       phase="tools", inFlightStartMs=None, lastLineMs=at(0, 47), malformedLines=0,
+       responses=[resp("resp-3", at(0, 21), at(0, 24), 5000, 0, 0, 120, 40, "gpt-6.1-sol"),
+                  resp("resp-4", at(0, 40), at(0, 47), 5200, 5000, 0, 60, 10, "gpt-6.1-sol")])
 
 # --- Codex, legacy token_count only -------------------------------------------
 rel = "codex/sessions/2026/10/20/rollout-2026-10-20T10-01-00-legacy.jsonl"
@@ -302,6 +312,10 @@ cases = [
                    er("r3", "a1", "codex", "m1", B + 4000, B + 5000, 50),
                    er("r4", "a1", "codex", "m1", B + 6000, B + 7000, 50)],
      "queries": [{"nowMs": B + 9000, "liveOutput": 50.0, "liveTotal": 50.0, "estimatedShare": 100 / 150}]},
+    {"name": "estimates never overlap the agent's own measured responses",
+     "agents": [agent("a1", "claudeCode", "m1", "generating", B, B + 2000)],
+     "responses": [er("r1", "a1", "claudeCode", "m1", B, B + 2000, 100)],
+     "queries": [{"nowMs": B + 3000, "liveOutput": 50.0, "liveTotal": 50.0, "estimatedShare": 1 / 3}]},
     {"name": "today totals, average, peak and history",
      "todayStartMs": DAY,
      "agents": [agent("a1", "codex", "m1", last=B + 4000)],

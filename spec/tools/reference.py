@@ -113,6 +113,8 @@ def codex_line(state, obj, dedupe):
     kind = obj.get("type")
     payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
     if kind == "session_meta":
+        if state.file_created is not None:
+            return
         state.file_created = ts
         state.last_line = ts if state.last_line is None else max(state.last_line, ts)
         state.project = basename(payload.get("cwd")) or state.project
@@ -142,7 +144,10 @@ def codex_line(state, obj, dedupe):
         return
     if kind == "event_msg":
         if ptype == "token_count":
-            legacy(state, ts, payload, dedupe)
+            if state.saw_modern and state.streaming:
+                after_usage(state, ts)
+            else:
+                legacy(state, ts, payload, dedupe)
         elif ptype in ("task_complete", "turn_aborted"):
             state.phase, state.pending, state.streaming, state.in_flight = "idle", None, False, None
         elif ptype in ("task_started", "user_message"):
@@ -156,9 +161,11 @@ def codex_line(state, obj, dedupe):
             state.phase = "generating"
             state.in_flight = state.pending if state.pending is not None else ts
         elif (isinstance(ptype, str) and ptype.endswith("_output")) or (
-                ptype == "message" and role in ("user", "developer", "system")) or (
-                ptype == "agent_message" and payload.get("recipient") == state.my_agent_path):
+                ptype == "message" and role in ("user", "developer", "system")):
             input_line(state, ts)
+        elif ptype == "agent_message" and payload.get("recipient") == state.my_agent_path:
+            if not state.streaming:
+                state.pending = ts
 
 
 def input_line(state, ts):
@@ -351,7 +358,9 @@ def live_rate(responses, agents, now):
               or recent(valid, now, lambda r: r["source"] == a["source"], 10, 1_800_000))
         if sp is None:
             continue
-        secs = overlap(w0, now, a["inFlightStartMs"], now) / 1000
+        own_ends = [r["endMs"] for r in responses if r["agentId"] == a["id"]]
+        start = max([a["inFlightStartMs"]] + own_ends)
+        secs = overlap(w0, now, start, now) / 1000
         estimated[0] += sp[0] * secs
         estimated[1] += sp[1] * secs
     out = (measured[0] + estimated[0]) / (WINDOW_MS / 1000)

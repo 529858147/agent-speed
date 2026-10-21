@@ -110,18 +110,22 @@ State: `fileCreatedMs`, `myAgentPath`, `pendingStartMs`, `streaming` (bool), `sa
 
 | Line | Action |
 | --- | --- |
-| `session_meta` | `fileCreatedMs = ts`; `project` from `payload.cwd`; `myAgentPath = payload.agent_path ?? "/root"`; `isSubagent = payload.thread_source == "subagent"` or `payload.source.subagent` exists |
+| first `session_meta` of the file | `fileCreatedMs = ts`; `project` from `payload.cwd`; `myAgentPath = payload.agent_path ?? "/root"`; `isSubagent = payload.thread_source == "subagent"` or `payload.source.subagent` exists; `threadId = payload.id`. Later `session_meta` lines (sub-agents copy their parent's) are ignored entirely. |
 | `turn_context` | `model = payload.model`; `project` from `payload.cwd` when present |
 | input (see below) | if not `streaming`: `pendingStartMs = ts`; phase `generating` (`inFlightStartMs = pendingStartMs`) |
+| mailbox input (see below) | if not `streaming`: `pendingStartMs = ts`; the phase does not change |
 | output (see below) | `streaming = true`; phase `generating` (`inFlightStartMs = pendingStartMs ?? ts`) |
 | `token_usage_record` | modern usage (below) |
-| `event_msg` + `payload.type == "token_count"` | legacy usage (below) |
+| `event_msg` + `payload.type == "token_count"` | if `sawModernUsage` and `streaming`: the response ended without a usage record — `streaming = false`, `pendingStartMs = ts`, phase `tools`. Otherwise legacy usage (below). |
 | `event_msg` + `payload.type` in `task_complete`, `turn_aborted` | phase `idle`, `pendingStartMs = null`, `streaming = false` |
 
 Input lines:
 - `event_msg` with `payload.type` in `task_started`, `user_message`
 - `response_item` with `payload.type` ending in `_output`
 - `response_item` with `payload.type == "message"` and `payload.role` in `user`, `developer`, `system`
+
+Mailbox input (a message from another agent; an orchestrator may receive it while it is blocked, so it marks a
+possible request start but is not proof that a request is in flight):
 - `response_item` with `payload.type == "agent_message"` and `payload.recipient == myAgentPath`
 
 Output lines:
@@ -159,7 +163,8 @@ emissions with the same key in the same file are *updates*: the engine replaces 
 - While running: read appended bytes. Changes are detected with the OS file watcher (FSEvents on macOS,
   `FileSystemWatcher` on Windows) plus a 1-second fallback that stats files modified in the last 2 minutes, plus a full
   rediscovery every 10 seconds. Newly discovered files are read from offset 0.
-- Incomplete trailing lines are buffered until their newline arrives.
+- Incomplete trailing lines are buffered until their newline arrives. A file that starts being read at its end
+  (older files, or the tail rule) skips the fragment before the first newline it reads.
 - If a file shrinks or its identity changes, reset its offset and its parser state (keep the global dedupe set).
 - Reading never blocks the UI thread. Steady-state CPU target: < 1% on an idle machine.
 
@@ -172,7 +177,8 @@ All engine functions take an explicit `nowMs` so they are deterministic and test
 500 ms and after each batch of file changes.
 
 ### 6.1 Retention
-Keep responses with `endMs >= nowMs - 15 min` for speed computation. Today totals are aggregated incrementally.
+Keep responses with `endMs >= nowMs - 30 min` for speed computation (the fallbacks in 6.2 look back 30 minutes).
+Today totals are aggregated incrementally.
 
 ### 6.2 Agent recent speed
 For agent `a`: the up to 3 most recent valid responses ending within the last 10 minutes.
@@ -185,8 +191,10 @@ Window `W = 3000 ms`, interval `[nowMs - W, nowMs]`.
 
 - Measured: for every valid response, `output * overlap(interval, [start', end]) / (end - start')`.
 - Estimated (in-flight): for every agent in phase `generating` with `inFlightStartMs != null` and
-  `nowMs - lastLineMs <= 300 000`, add `estimatedSpeed * overlap(interval, [inFlightStartMs, nowMs]) / 1000`,
-  where `estimatedSpeed` is the agent's recent speed or its fallback (6.2). No estimate if none exists.
+  `nowMs - lastLineMs <= 300 000`, add `estimatedSpeed * overlap(interval, [estimateStart, nowMs]) / 1000`,
+  where `estimateStart = max(inFlightStartMs, latest endMs of any response of that agent)` (so a response that is
+  still being written, such as a streaming Claude message, is never counted twice) and `estimatedSpeed` is the
+  agent's recent speed or its fallback (6.2). No estimate if none exists.
 - `live.output = (measured + estimated) / (W / 1000)`. `live.total` uses `input + output` and total speeds.
 - `liveEstimatedShare = estimated / (measured + estimated)` (0 when both are 0).
 
@@ -215,8 +223,8 @@ second). `estimated` = in-flight estimates for the same buckets (up to `nowMs`).
 - On day change everything for "today" restarts at zero.
 
 ### 6.7 Agents list
-Agents whose `lastLineMs` is within the last 10 minutes, or whose phase is `generating`. Phases older than
-300 seconds without a new line are reported as `idle`. Sort: generating first, then by live output desc, then most
+First apply staleness: a phase older than 300 seconds without a new line is reported as `idle`. Then list agents
+whose `lastLineMs` is within the last 10 minutes, or whose (post-staleness) phase is `generating`. Sort: generating first, then by live output desc, then most
 recent activity.
 
 ## 7. Number formatting (both platforms)
