@@ -6,8 +6,8 @@ using AgentSpeed.Presentation.Heat;
 namespace AgentSpeed.Services;
 
 /// <summary>
-/// UI-thread view of the hub: the selected metric's live value and the shared, hysteresis-filtered tier
-/// that every surface displays.
+/// UI-thread view of the hub: the selected metric's live value, the hysteresis-filtered effect tier that drives every
+/// effect, and the speed title every surface shows as its label.
 /// </summary>
 internal sealed class SpeedModel : IDisposable
 {
@@ -47,6 +47,8 @@ internal sealed class SpeedModel : IDisposable
     public double Value => _presenter.Value;
 
     public SpeedTier Tier => _presenter.Tier;
+
+    public SpeedTitle Title => _presenter.Title;
 
     public double Redline => _presenter.Redline;
 

@@ -73,14 +73,36 @@ public static class SettingsSerializer
             w.WriteBoolean("claudeCode", s.ClaudeCodeEnabled);
             w.WriteBoolean("claudeDesktop", s.ClaudeDesktopEnabled);
             w.WriteBoolean("deepseek", s.DeepSeekEnabled);
+            w.WriteBoolean("opencode", s.OpenCodeEnabled);
+            w.WriteBoolean("gemini", s.GeminiEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
             WriteNullableString(w, "dshRoot", s.DshRoot);
+            WriteNullableString(w, "opencodeRoot", s.OpenCodeRoot);
+            WriteNullableString(w, "geminiRoot", s.GeminiRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
             w.WriteNumber("chartSeconds", s.ChartSeconds);
             w.WriteBoolean("agentsExpanded", s.AgentsExpanded);
+            w.WriteEndObject();
+
+            w.WriteStartObject("history");
+            if (s.HistoryWindow is { } frame)
+            {
+                w.WriteStartObject("window");
+                w.WriteNumber("left", Math.Round(frame.Left, 2));
+                w.WriteNumber("top", Math.Round(frame.Top, 2));
+                w.WriteNumber("width", Math.Round(frame.Width, 2));
+                w.WriteNumber("height", Math.Round(frame.Height, 2));
+                w.WriteBoolean("maximized", frame.Maximized);
+                w.WriteEndObject();
+            }
+            else
+            {
+                w.WriteNull("window");
+            }
+
             w.WriteEndObject();
 
             w.WriteStartObject("updates");
@@ -120,6 +142,7 @@ public static class SettingsSerializer
         var sources = Child(root, "sources");
         var dashboard = Child(root, "dashboard");
         var updates = Child(root, "updates");
+        var history = Child(root, "history");
 
         var settings = new AppSettings
         {
@@ -147,9 +170,14 @@ public static class SettingsSerializer
             ClaudeCodeEnabled = ReadBool(sources, "claudeCode", d.ClaudeCodeEnabled),
             ClaudeDesktopEnabled = ReadBool(sources, "claudeDesktop", d.ClaudeDesktopEnabled),
             DeepSeekEnabled = ReadBool(sources, "deepseek", d.DeepSeekEnabled),
+            OpenCodeEnabled = ReadBool(sources, "opencode", d.OpenCodeEnabled),
+            GeminiEnabled = ReadBool(sources, "gemini", d.GeminiEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             DshRoot = ReadString(sources, "dshRoot"),
+            OpenCodeRoot = ReadString(sources, "opencodeRoot"),
+            GeminiRoot = ReadString(sources, "geminiRoot"),
+            HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),
             AutoCheckUpdates = ReadBool(updates, "autoCheck", d.AutoCheckUpdates),
@@ -222,6 +250,22 @@ public static class SettingsSerializer
         return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var value)
             ? value.ToUniversalTime()
             : null;
+    }
+
+    private static WindowFrame? ReadWindowFrame(JsonElement? window)
+    {
+        if (window is null)
+        {
+            return null;
+        }
+
+        var frame = new WindowFrame(
+            ReadDouble(window, "left", double.NaN),
+            ReadDouble(window, "top", double.NaN),
+            ReadDouble(window, "width", double.NaN),
+            ReadDouble(window, "height", double.NaN),
+            ReadBool(window, "maximized", false));
+        return WindowFrame.ValidHistory(frame);
     }
 
     private static T ReadEnum<T>(JsonElement? parent, string name, T fallback)

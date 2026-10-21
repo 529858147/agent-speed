@@ -22,6 +22,9 @@ internal sealed class SourceRow : ObservableObject
     private bool _dimmed;
     private bool _showSettingsLink;
     private bool _isListed;
+    private string _accessibleName = string.Empty;
+    private LiveValueKind _liveKind = LiveValueKind.Dash;
+    private string _liveAccessibleName = string.Empty;
 
     public SourceRow(SourceKind kind)
     {
@@ -35,7 +38,12 @@ internal sealed class SourceRow : ObservableObject
 
     public string Name { get => _name; set => Set(ref _name, value); }
 
+    /// <summary>The last measurable speed; kept while a dash shows so the digits can fade out.</summary>
     public string LiveText { get => _liveText; set => Set(ref _liveText, value); }
+
+    public LiveValueKind LiveKind { get => _liveKind; set => Set(ref _liveKind, value); }
+
+    public string LiveAccessibleName { get => _liveAccessibleName; set => Set(ref _liveAccessibleName, value); }
 
     public string TodayText { get => _todayText; set => Set(ref _todayText, value); }
 
@@ -43,7 +51,23 @@ internal sealed class SourceRow : ObservableObject
 
     public bool IsDimmed { get => _dimmed; set => Set(ref _dimmed, value); }
 
-    public bool ShowSettingsLink { get => _showSettingsLink; set => Set(ref _showSettingsLink, value); }
+    public bool ShowSettingsLink
+    {
+        get => _showSettingsLink;
+        set
+        {
+            if (Set(ref _showSettingsLink, value))
+            {
+                OnPropertyChanged(nameof(ShowChevron));
+            }
+        }
+    }
+
+    /// <summary>The trailing chevron appears on hover unless the settings link takes the trailing edge.</summary>
+    public bool ShowChevron => !_showSettingsLink;
+
+    /// <summary>Name, today's output and live speed (or the status) for screen readers.</summary>
+    public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
 
     /// <summary>Only detected sources are listed on the dashboard.</summary>
     public bool IsListed { get => _isListed; set => Set(ref _isListed, value); }
@@ -59,6 +83,8 @@ internal sealed class AgentRow : ObservableObject
     private Thickness _indent;
     private TreeGuides _guides;
     private string _accessibleName = string.Empty;
+    private LiveValueKind _liveKind = LiveValueKind.Dash;
+    private string _liveAccessibleName = string.Empty;
 
     public string Project { get => _project; set => Set(ref _project, value); }
 
@@ -68,7 +94,13 @@ internal sealed class AgentRow : ObservableObject
 
     public Color Color { get => _color; set => Set(ref _color, value); }
 
+    /// <summary>The last measurable speed; kept while the dash or hourglass shows so the digits can fade out.</summary>
     public string LiveText { get => _liveText; set => Set(ref _liveText, value); }
+
+    public LiveValueKind LiveKind { get => _liveKind; set => Set(ref _liveKind, value); }
+
+    /// <summary>The speed with its unit, or the phase name when no number is shown.</summary>
+    public string LiveAccessibleName { get => _liveAccessibleName; set => Set(ref _liveAccessibleName, value); }
 
     /// <summary>Left margin for the row's depth in the agent tree.</summary>
     public Thickness Indent { get => _indent; set => Set(ref _indent, value); }
@@ -86,8 +118,8 @@ internal sealed class DashboardViewModel : ObservableObject
 
     private string _valueText = "0";
     private string _unitText = "tok/s";
-    private string _tierText = string.Empty;
-    private Brush _tierBrush = Brushes.Gray;
+    private string _titleText = string.Empty;
+    private Brush _titleBrush = Brushes.Gray;
     private string _contextText = string.Empty;
     private bool _isLoading;
     private bool _isNoSources;
@@ -133,9 +165,9 @@ internal sealed class DashboardViewModel : ObservableObject
 
     public string UnitText { get => _unitText; private set => Set(ref _unitText, value); }
 
-    public string TierText { get => _tierText; private set => Set(ref _tierText, value); }
+    public string TitleText { get => _titleText; private set => Set(ref _titleText, value); }
 
-    public Brush TierBrush { get => _tierBrush; private set => Set(ref _tierBrush, value); }
+    public Brush TitleBrush { get => _titleBrush; private set => Set(ref _titleBrush, value); }
 
     public string ContextText { get => _contextText; private set => Set(ref _contextText, value); }
 
@@ -221,20 +253,21 @@ internal sealed class DashboardViewModel : ObservableObject
 
     public string HeroAccessibleName { get => _heroAccessibleName; private set => Set(ref _heroAccessibleName, value); }
 
-    public void Update(SpeedSnapshot snapshot, double value, SpeedTier tier, double redline, SpeedMetric metric,
+    /// <param name="title">The speed title shown under the hero value.</param>
+    public void Update(SpeedSnapshot snapshot, double value, SpeedTitle title, double redline, SpeedMetric metric,
         Localizer loc, bool darkTheme)
     {
         var unit = loc["unit.tokS"];
         ValueText = SpeedFormat.Speed(value);
         UnitText = unit;
-        TierText = DisplayText.TierLabel(tier, loc);
+        TitleText = DisplayText.TitleLabel(title, loc);
         var heat = HeatMath.Heat(value, redline);
-        var tierColor = tier == SpeedTier.Idle
+        var titleColor = title == SpeedTitle.Idle
             ? HeatPalette.Stops[0].Color
             : darkTheme ? HeatPalette.Sample(Math.Max(heat, 0.08)) : OrbTokens.Light.TierLabel(Math.Max(heat, 0.08));
-        TierBrush = MediaColors.Frozen(tierColor.ToColor());
+        TitleBrush = MediaColors.Frozen(titleColor.ToColor());
         ContextText = DisplayText.AgentContext(snapshot, loc);
-        HeroAccessibleName = DisplayText.Accessibility(value, tier, loc);
+        HeroAccessibleName = DisplayText.Accessibility(value, title, loc);
 
         IsLoading = snapshot.State.Kind == MonitorStateKind.Starting;
         LoadingProgress = Math.Clamp(snapshot.State.Progress, 0, 1);
@@ -275,18 +308,32 @@ internal sealed class DashboardViewModel : ObservableObject
             var status = snapshot.Sources.FirstOrDefault(s => s.Kind == row.Kind);
             if (status is null)
             {
-                row.LiveText = "0";
+                row.LiveKind = LiveValueKind.Dash;
+                row.LiveAccessibleName = loc["phase.idle"];
                 row.TodayText = string.Empty;
                 row.Status = string.Empty;
                 row.IsDimmed = false;
                 row.ShowSettingsLink = false;
                 row.IsListed = false;
+                row.AccessibleName = row.Name;
                 continue;
             }
 
             row.IsListed = SourceDetection.IsDetected(status);
 
-            row.LiveText = $"{SpeedFormat.Speed(status.Live.ValueFor(metric))} {unit}";
+            var live = status.Live.ValueFor(metric);
+            if (DisplayText.IsNegligibleSpeed(live))
+            {
+                row.LiveKind = LiveValueKind.Dash;
+                row.LiveAccessibleName = loc["phase.idle"];
+            }
+            else
+            {
+                row.LiveText = $"{SpeedFormat.Speed(live)} {unit}";
+                row.LiveKind = LiveValueKind.Number;
+                row.LiveAccessibleName = row.LiveText;
+            }
+
             row.TodayText = SpeedFormat.Tokens(status.Today.Output);
             if (!status.Enabled)
             {
@@ -306,6 +353,10 @@ internal sealed class DashboardViewModel : ObservableObject
                 row.IsDimmed = false;
                 row.ShowSettingsLink = false;
             }
+
+            row.AccessibleName = row.IsDimmed
+                ? $"{row.Name}, {row.Status}"
+                : $"{row.Name}, {loc["today.output"]} {row.TodayText}, {row.LiveAccessibleName}";
         }
     }
 
@@ -343,11 +394,24 @@ internal sealed class DashboardViewModel : ObservableObject
             row.Phase = agent.Phase;
             row.Color = HeatPalette.SourceColor(agent.Source).ToColor();
             var live = agent.Live.ValueFor(metric);
-            row.LiveText = live > 0 ? SpeedFormat.Speed(live) : agent.Phase == AgentPhase.Generating ? "…" : "0";
+            var phase = loc[DisplayText.PhaseKey(agent.Phase)];
+            if (DisplayText.IsNegligibleSpeed(live))
+            {
+                row.LiveKind = agent.Phase == AgentPhase.Tools ? LiveValueKind.Waiting : LiveValueKind.Dash;
+                row.LiveAccessibleName = phase;
+            }
+            else
+            {
+                row.LiveText = SpeedFormat.Speed(live);
+                row.LiveKind = LiveValueKind.Number;
+                row.LiveAccessibleName = $"{row.LiveText} {loc["unit.tokS"]}";
+            }
+
             row.Indent = new Thickness(rows[i].Indent * TreeConnectors.LevelWidth, 0, 0, 0);
             row.Guides = rows[i].Guides;
-            row.AccessibleName = string.Create(CultureInfo.InvariantCulture,
-                $"{row.Project}, {row.Detail}, {loc[DisplayText.PhaseKey(agent.Phase)]}, {row.LiveText} {loc["unit.tokS"]}");
+            row.AccessibleName = row.LiveKind == LiveValueKind.Number
+                ? string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}, {phase}, {row.LiveAccessibleName}")
+                : string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}, {phase}");
         }
 
         HasAgents = rows.Count > 0;

@@ -18,11 +18,14 @@ internal sealed record OrbConfig(
     double Redline,
     string UnitText,
     string PeakText,
-    IReadOnlyList<string> TierLabels)
+    IReadOnlyList<string> TitleLabels)
 {
     public static OrbConfig Default { get; } = new(
         AppSettings.DefaultOrbSize, OrbAppearance.Dark, 1, new EffectsPolicy(EffectsIntensity.Standard), false, false,
-        true, true, HeatMath.DefaultRedline, "tok/s", "NEW PEAK", ["IDLE", "CRUISE", "BOOST", "OVERDRIVE", "REDLINE"]);
+        true, true, HeatMath.DefaultRedline, "tok/s", "NEW PEAK",
+        ["IDLE", "WALKING", "BICYCLE", "E-BIKE", "MOTORCYCLE", "CAR", "SPORTS CAR", "BULLET TRAIN", "RACE CAR", "MAGLEV", "JETLINER",
+            "FIGHTER JET", "HYPERSONIC", "ROCKET"]);
 
-    public string TierLabel(SpeedTier tier) => (int)tier < TierLabels.Count ? TierLabels[(int)tier] : string.Empty;
+    /// <summary>The label for a speed title, indexed by <see cref="SpeedTitle"/>.</summary>
+    public string TitleLabel(SpeedTitle title) => (int)title < TitleLabels.Count ? TitleLabels[(int)title] : string.Empty;
 }

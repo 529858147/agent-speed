@@ -267,6 +267,18 @@
         </Setter>
     </Style>
 
+    <!-- Keyboard focus ring for compact rounded controls; WPF shows it for keyboard navigation only, never on a click. -->
+    <Style x:Key="RoundedFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border CornerRadius="4" BorderThickness="2" SnapsToDevicePixels="True"
+                            BorderBrush="{DynamicResource KeyboardFocusBorderColorBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Segmented control item (RadioButton in a SegmentedPanel border) -->
     <Style x:Key="SegmentedContainer" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource ControlAltFillColorSecondaryBrush}" />
@@ -283,14 +295,12 @@
         <Setter Property="Height" Value="24" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
                         <Border x:Name="Chip" CornerRadius="4" Background="Transparent" BorderThickness="1" BorderBrush="Transparent" />
-                        <Border x:Name="Focus" CornerRadius="4" BorderThickness="2" Visibility="Collapsed"
-                                BorderBrush="{DynamicResource KeyboardFocusBorderColorBrush}" />
                         <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
                                           TextElement.Foreground="{TemplateBinding Foreground}" />
                     </Grid>
@@ -303,9 +313,6 @@
                             <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                             <Setter Property="FontWeight" Value="SemiBold" />
-                        </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -572,4 +579,5 @@
             </Setter.Value>
         </Setter>
     </Style>
+
 </ResourceDictionary>

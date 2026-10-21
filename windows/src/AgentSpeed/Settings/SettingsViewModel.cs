@@ -41,6 +41,47 @@ internal sealed class SourceSettingsRow(SourceKind kind) : ObservableObject
     public string Status { get => _status; set => Set(ref _status, value); }
 }
 
+/// <summary>One rung of the speed-title list under the redline slider: title, then its threshold at the current redline.</summary>
+internal sealed class TitleLadderRow(SpeedTitle title, int index, bool isLast) : ObservableObject
+{
+    private string _name = string.Empty;
+    private string _value = string.Empty;
+    private string _accessibleName = string.Empty;
+    private System.Windows.Media.Brush _valueBrush = System.Windows.Media.Brushes.Gray;
+
+    public SpeedTitle Title { get; } = title;
+
+    /// <summary>Position of the title's tick on the heat strip.</summary>
+    public int Index { get; } = index;
+
+    /// <summary>The last rung has no trailing separator.</summary>
+    public bool IsLast { get; } = isLast;
+
+    public string Name { get => _name; private set => Set(ref _name, value); }
+
+    /// <summary>Threshold in tok/s, compact and without the unit: <c>48</c>, <c>24k</c>.</summary>
+    public string Value { get => _value; private set => Set(ref _value, value); }
+
+    /// <summary>The heat color of the threshold (darkened on light backgrounds for contrast).</summary>
+    public System.Windows.Media.Brush ValueBrush { get => _valueBrush; private set => Set(ref _valueBrush, value); }
+
+    public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
+
+    public void Refresh(Localizer loc, double redline, bool dark)
+    {
+        Name = Presentation.Formatting.DisplayText.TitleName(Title, loc);
+        Value = Presentation.Formatting.DisplayText.TitleThreshold(Title, redline);
+        AccessibleName = $"{Name} {Value} {loc["unit.tokS"]}";
+        var heat = SpeedTitles.HeatAt(Title, redline);
+        var rgba = dark ? Presentation.Colors.HeatPalette.Sample(heat) : Presentation.Colors.OrbTokens.Light.TierLabel(heat);
+        var color = Theme.MediaColors.ToColor(rgba);
+        if (_valueBrush is not System.Windows.Media.SolidColorBrush { } current || current.Color != color)
+        {
+            ValueBrush = Theme.MediaColors.Frozen(color);
+        }
+    }
+}
+
 /// <summary>Live-applied settings. Every setter writes through <see cref="SettingsService"/> immediately.</summary>
 internal sealed class SettingsViewModel : ObservableObject
 {
@@ -55,9 +96,13 @@ internal sealed class SettingsViewModel : ObservableObject
     private SpeedSnapshot _snapshot = SpeedSnapshot.Empty;
     private TaskbarPresence _taskbarPresence = TaskbarPresence.Hidden;
     private bool _reduceMotion;
+    private bool _darkTheme;
 
+    /// <param name="openHistory">Opens the Usage History window for all sources.</param>
+    /// <param name="confirmClearHistory">Asks the user to confirm clearing the history; true to go ahead.</param>
+    /// <param name="clearHistory">Deletes the stored daily history so it is recomputed from the logs.</param>
     public SettingsViewModel(SettingsService settings, PreviewService preview, Localizer localizer, Func<string?, string?> pickFolder,
-        UpdateService updates, Action openUpdate)
+        UpdateService updates, Action openUpdate, Action openHistory, Func<bool> confirmClearHistory, Action clearHistory)
     {
         _settings = settings;
         _preview = preview;
@@ -100,6 +145,18 @@ internal sealed class SettingsViewModel : ObservableObject
         ResetCodexCommand = new RelayCommand(() => _settings.Update(s => s with { CodexRoot = null }), () => _settings.Current.CodexRoot is not null);
         ResetClaudeCommand = new RelayCommand(() => _settings.Update(s => s with { ClaudeRoot = null }), () => _settings.Current.ClaudeRoot is not null);
         ResetDshCommand = new RelayCommand(() => _settings.Update(s => s with { DshRoot = null }), () => _settings.Current.DshRoot is not null);
+        ChangeOpenCodeCommand = new RelayCommand(() => ChangeFolder(OpenCodePath, (s, path) => s with { OpenCodeRoot = path }));
+        ChangeGeminiCommand = new RelayCommand(() => ChangeFolder(GeminiPath, (s, path) => s with { GeminiRoot = path }));
+        ResetOpenCodeCommand = new RelayCommand(() => _settings.Update(s => s with { OpenCodeRoot = null }), () => _settings.Current.OpenCodeRoot is not null);
+        ResetGeminiCommand = new RelayCommand(() => _settings.Update(s => s with { GeminiRoot = null }), () => _settings.Current.GeminiRoot is not null);
+        OpenHistoryCommand = new RelayCommand(openHistory);
+        ClearHistoryCommand = new RelayCommand(() =>
+        {
+            if (confirmClearHistory())
+            {
+                clearHistory();
+            }
+        });
         OpenRepositoryCommand = new RelayCommand(() => OpenUrl(AppPaths.RepositoryUrl));
         OpenLicenseCommand = new RelayCommand(() => OpenUrl(AppPaths.LicenseUrl));
         OpenLogsCommand = new RelayCommand(OpenLogs);
@@ -115,12 +172,37 @@ internal sealed class SettingsViewModel : ObservableObject
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         };
         _launchAtLogin = AutoStart.IsEnabled;
+        for (var i = 0; i < SpeedTitles.Scaled.Count; i++)
+        {
+            TitleLadder.Add(new TitleLadderRow(SpeedTitles.Scaled[i].Title, i, i == SpeedTitles.Scaled.Count - 1));
+        }
+
         Relocalize(localizer);
+        Sync();
     }
 
     public ObservableCollection<NavItem> Pages { get; } = new();
 
     public ObservableCollection<SourceSettingsRow> Sources { get; } = new();
+
+    /// <summary>The speed titles that scale with the redline, climbing (DESIGN section 5, General).</summary>
+    public ObservableCollection<TitleLadderRow> TitleLadder { get; } = new();
+
+    /// <summary>Heat positions of the title ticks under the redline slider; they do not move with the redline.</summary>
+    public IReadOnlyList<double> TitleTicks { get; } = SpeedTitles.Scaled.Select(step => SpeedTitles.HeatAt(step.Title, 1)).ToArray();
+
+    /// <summary>Selects the threshold colors that keep their contrast on the current background.</summary>
+    public bool DarkTheme
+    {
+        get => _darkTheme;
+        set
+        {
+            if (Set(ref _darkTheme, value))
+            {
+                RefreshTitleLadder();
+            }
+        }
+    }
 
     public NavItem SelectedPage
     {
@@ -154,6 +236,19 @@ internal sealed class SettingsViewModel : ObservableObject
     public RelayCommand ResetClaudeCommand { get; }
 
     public RelayCommand ResetDshCommand { get; }
+
+    public RelayCommand ChangeOpenCodeCommand { get; }
+
+    public RelayCommand ChangeGeminiCommand { get; }
+
+    public RelayCommand ResetOpenCodeCommand { get; }
+
+    public RelayCommand ResetGeminiCommand { get; }
+
+    public RelayCommand OpenHistoryCommand { get; }
+
+    /// <summary>Asks for confirmation, then clears the stored history.</summary>
+    public RelayCommand ClearHistoryCommand { get; }
 
     public RelayCommand OpenRepositoryCommand { get; }
 
@@ -223,17 +318,7 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string RedlineText => $"{SpeedFormat.Speed(S.Redline)} {_loc["unit.tokS"]}";
 
-    public string RedlineHint
-    {
-        get
-        {
-            var r = S.Redline;
-            return _loc.Format("settings.redline.hint",
-                SpeedFormat.Speed(HeatMath.Threshold(SpeedTier.Boost, r)),
-                SpeedFormat.Speed(HeatMath.Threshold(SpeedTier.Overdrive, r)),
-                SpeedFormat.Speed(HeatMath.Threshold(SpeedTier.Redline, r)));
-        }
-    }
+    public string RedlineHint => _loc["settings.redline.hint"];
 
     public bool ShowOnTaskbar
     {
@@ -348,6 +433,20 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public bool DshIsCustom => S.DshRoot is not null;
 
+    /// <summary>The folder that contains opencode.db.</summary>
+    public string OpenCodePath => S.OpenCodeRoot ?? LiveMonitor.DefaultOpenCodeRoot;
+
+    /// <summary>One Gemini CLI <c>tmp</c> folder.</summary>
+    public string GeminiPath => S.GeminiRoot ?? LiveMonitor.DefaultGeminiRoot;
+
+    public bool OpenCodeIsCustom => S.OpenCodeRoot is not null;
+
+    public bool GeminiIsCustom => S.GeminiRoot is not null;
+
+    public string OpenCodeStatus => StatusFor(SourceKind.OpenCode);
+
+    public string GeminiStatus => StatusFor(SourceKind.Gemini);
+
     public string CodexStatus => StatusFor(SourceKind.Codex);
 
     public string DshStatus => StatusFor(SourceKind.DeepSeek);
@@ -425,6 +524,7 @@ internal sealed class SettingsViewModel : ObservableObject
             row.Name = localizer[Presentation.Formatting.DisplayText.SourceKey(row.Kind)];
         }
 
+        RefreshTitleLadder();
         OnPropertyChanged(string.Empty);
     }
 
@@ -446,6 +546,8 @@ internal sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(CodexStatus));
         OnPropertyChanged(nameof(ClaudeStatus));
         OnPropertyChanged(nameof(DshStatus));
+        OnPropertyChanged(nameof(OpenCodeStatus));
+        OnPropertyChanged(nameof(GeminiStatus));
         OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 
@@ -508,11 +610,20 @@ internal sealed class SettingsViewModel : ObservableObject
                 row.Enabled = S.IsSourceEnabled(row.Kind);
             }
 
+            RefreshTitleLadder();
             OnPropertyChanged(string.Empty);
         }
         finally
         {
             _syncing = false;
+        }
+    }
+
+    private void RefreshTitleLadder()
+    {
+        foreach (var row in TitleLadder)
+        {
+            row.Refresh(_loc, S.Redline, _darkTheme);
         }
     }
 

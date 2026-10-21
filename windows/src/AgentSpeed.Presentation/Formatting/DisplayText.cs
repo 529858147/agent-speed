@@ -25,6 +25,35 @@ public static class DisplayText
         return localizer.UsesLatinScript ? name.ToUpper(localizer.Culture) : name;
     }
 
+    public static string TitleKey(SpeedTitle title) => SpeedTitles.Key(title);
+
+    public static string TitleName(SpeedTitle title, Localizer localizer) => localizer[TitleKey(title)];
+
+    /// <summary>Speed title as drawn under the value: uppercase for Latin scripts.</summary>
+    public static string TitleLabel(SpeedTitle title, Localizer localizer)
+    {
+        var name = TitleName(title, localizer);
+        return localizer.UsesLatinScript ? name.ToUpper(localizer.Culture) : name;
+    }
+
+    /// <summary>
+    /// Where a title starts at <paramref name="redline"/>, compact and without the unit: <c>8</c>, <c>4.5</c>, <c>48</c>,
+    /// <c>24k</c>. Thresholds are exact, so a whole number below 10 drops the speed formatter's trailing <c>.0</c>.
+    /// </summary>
+    public static string TitleThreshold(SpeedTitle title, double redline)
+    {
+        var threshold = SpeedTitles.Threshold(title, redline);
+        return threshold is >= 1 and < 10 && Math.Abs(threshold - Math.Round(threshold)) < 1e-9
+            ? Math.Round(threshold).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : SpeedFormat.Speed(threshold);
+    }
+
+    /// <summary>Live values below this would display as <c>0</c> and are shown as a dash or a phase glyph instead.</summary>
+    public const double ZeroSpeedThreshold = 0.05;
+
+    /// <summary>The live value is too small to show as a number (DESIGN section 4, items 3–4).</summary>
+    public static bool IsNegligibleSpeed(double value) => !double.IsFinite(value) || value < ZeroSpeedThreshold;
+
     public static string SourceKey(SourceKind source) => source switch
     {
         SourceKind.Codex => "source.codex",
@@ -43,13 +72,13 @@ public static class DisplayText
         _ => "phase.idle",
     };
 
-    /// <summary><c>128 tok/s · 加速</c></summary>
-    public static string SpeedLine(double value, SpeedTier tier, Localizer localizer) =>
-        $"{SpeedFormat.Speed(value)} {localizer["unit.tokS"]} · {TierName(tier, localizer)}";
+    /// <summary><c>128 tok/s · 噴射客機</c></summary>
+    public static string SpeedLine(double value, SpeedTitle title, Localizer localizer) =>
+        $"{SpeedFormat.Speed(value)} {localizer["unit.tokS"]} · {TitleName(title, localizer)}";
 
-    /// <summary><c>每秒 128 個 token，加速</c></summary>
-    public static string Accessibility(double value, SpeedTier tier, Localizer localizer) =>
-        localizer.Format("a11y.orb", SpeedFormat.Speed(value), TierName(tier, localizer));
+    /// <summary><c>每秒 128 個 token，噴射客機</c></summary>
+    public static string Accessibility(double value, SpeedTitle title, Localizer localizer) =>
+        localizer.Format("a11y.orb", SpeedFormat.Speed(value), TitleName(title, localizer));
 
     /// <summary><c>今日 1.2M · 3 個 agent</c></summary>
     public static string TodaySummary(SpeedSnapshot snapshot, Localizer localizer)
@@ -92,6 +121,7 @@ public static class DisplayText
         MonitorWarning.UnreadableFiles u => localizer.Format("warning.unreadable", u.Count),
         MonitorWarning.MalformedLines m => localizer.Format("warning.malformed", m.Count),
         MonitorWarning.UnfinalizedUsage u => localizer.Format("warning.unfinalized", u.Count),
+        MonitorWarning.UnsupportedFormat f => localizer.Format("warning.unsupportedFormat", localizer[SourceKey(f.Source)]),
         _ => string.Empty,
     };
 }

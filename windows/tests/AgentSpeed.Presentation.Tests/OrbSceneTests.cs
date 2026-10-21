@@ -121,6 +121,34 @@ public class OrbSceneTests
     }
 
     [Fact]
+    public void TitleChangeSlidesTheLabelWithoutFlashingTheGauge()
+    {
+        var rig = Create();
+        rig.Run(1);
+        rig.Scene.SetTarget(100, SpeedTier.Boost, SpeedTitle.Maglev);
+        rig.Frames(30);
+        Assert.Equal(new TitleTransition(SpeedTitle.Idle, SpeedTitle.Maglev, 1), rig.Scene.TitleTransition);
+        Assert.Equal(0, rig.Scene.Flash);
+
+        // A new title inside the same effect tier: the label slides, the gauge does not flash.
+        rig.Scene.SetTarget(140, SpeedTier.Boost, SpeedTitle.Jetliner);
+        Assert.Equal(new TitleTransition(SpeedTitle.Maglev, SpeedTitle.Jetliner, 0), rig.Scene.TitleTransition);
+        Assert.Equal(0, rig.Scene.Flash);
+        Assert.Equal(FrameDemand.Full, rig.Scene.Demand);
+        rig.Frames(12);
+        Assert.Equal(0.2 / OrbScene.TierTransitionDuration, rig.Scene.TitleTransition.Progress, 6);
+        Assert.Equal(1, rig.Scene.Transition.Progress);
+        rig.Frames(15);
+        Assert.Equal(1, rig.Scene.TitleTransition.Progress);
+
+        // An effect-tier change flashes, whether or not the title changes with it.
+        rig.Scene.SetTarget(160, SpeedTier.Overdrive, SpeedTitle.Jetliner);
+        Assert.Equal(1, rig.Scene.Flash);
+        Assert.Equal(1, rig.Scene.TitleTransition.Progress);
+        Assert.Equal(SpeedTitle.Jetliner, rig.Scene.Title);
+    }
+
+    [Fact]
     public void FlashDecaysMonotonically()
     {
         var rig = Create();

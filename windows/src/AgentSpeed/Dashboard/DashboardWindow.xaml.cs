@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using AgentSpeed.Core;
 using AgentSpeed.Interop;
 using AgentSpeed.Orb;
 using AgentSpeed.Presentation.Layout;
@@ -85,6 +86,9 @@ internal sealed partial class DashboardWindow : Window
     public event EventHandler? SettingsRequested;
 
     public event EventHandler? SourcesRequested;
+
+    /// <summary>A source row (that source) or the Today header's history button (null, all sources) was clicked.</summary>
+    public event EventHandler<SourceKind?>? HistoryRequested;
 
     public event EventHandler? QuitRequested;
 
@@ -565,6 +569,22 @@ internal sealed partial class DashboardWindow : Window
     {
         Dismiss();
         SourcesRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnSourceRow(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: SourceRow row })
+        {
+            RequestHistory(row.Kind);
+        }
+    }
+
+    private void OnHistory(object sender, RoutedEventArgs e) => RequestHistory(null);
+
+    private void RequestHistory(SourceKind? source)
+    {
+        Dismiss();
+        HistoryRequested?.Invoke(this, source);
     }
 
     private void OnQuit(object sender, RoutedEventArgs e) => QuitRequested?.Invoke(this, EventArgs.Empty);

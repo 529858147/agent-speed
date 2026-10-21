@@ -4,9 +4,40 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:AgentSpeed.Localization"
              xmlns:controls="clr-namespace:AgentSpeed.Controls"
+             xmlns:settings="clr-namespace:AgentSpeed.Settings"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
+
+        <!-- One rung of the speed-title list: the title (secondary), then its threshold (semibold, tabular, heat color).
+             Items wrap as wholes, each carrying its trailing separator. -->
+        <DataTemplate x:Key="TitleLadderItem" DataType="{x:Type settings:TitleLadderRow}">
+            <Border x:Name="Chip" Background="Transparent" CornerRadius="4" Padding="3,1,3,1" Margin="-3,0,0,0"
+                    Focusable="True" FocusVisualStyle="{x:Null}" AutomationProperties.Name="{Binding AccessibleName}"
+                    MouseEnter="OnLadderItemEnter" MouseLeave="OnLadderItemLeave"
+                    GotKeyboardFocus="OnLadderItemEnter" LostKeyboardFocus="OnLadderItemLeave">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="Name" Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{Binding Value}" FontSize="12" FontWeight="SemiBold" Margin="4,0,0,0" Foreground="{Binding ValueBrush}"
+                               Typography.NumeralAlignment="Tabular" />
+                    <TextBlock x:Name="Separator" Text="·" FontSize="12" Margin="7,0,4,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsLast}" Value="True">
+                    <Setter TargetName="Separator" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <Trigger SourceName="Chip" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Name" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </Trigger>
+                <Trigger SourceName="Chip" Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Name" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource KeyboardFocusBorderColorBrush}" />
+                    <Setter TargetName="Chip" Property="BorderThickness" Value="1" />
+                    <Setter TargetName="Chip" Property="Padding" Value="2,0,2,0" />
+                </Trigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
     </UserControl.Resources>
     <StackPanel>
         <controls:SettingsCard Header="{loc:Loc settings.appearance}" Icon="&#xE790;" Description="{loc:Loc win.settings.appearance.description}">
@@ -34,12 +65,19 @@
                 <ComboBoxItem Content="{loc:Loc metric.total}" />
             </ComboBox>
         </controls:SettingsCard>
-        <controls:SettingsCard Header="{loc:Loc settings.redline}" Icon="&#xE945;" Description="{Binding RedlineHint}" ContentBelow="True">
+        <controls:SettingsCard Header="{loc:Loc settings.redline}" Icon="&#xE945;" ContentBelow="True">
+            <!-- Slider, then the heat strip with one tick per speed title, then the hint and every title with its threshold
+                 (DESIGN 5). Strip and list share the slider's column, so they line up with its track at any width. -->
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Slider Grid.Column="0" VerticalAlignment="Center" MaxWidth="520" HorizontalAlignment="Stretch"
                         Minimum="100" Maximum="2000" SmallChange="50" LargeChange="200" TickFrequency="50" IsSnapToTickEnabled="True"
                         Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
@@ -52,6 +90,23 @@
                         Visibility="{Binding IsTotalMetric, Converter={StaticResource Visible}}" />
                 <TextBlock Grid.Column="1" Text="{Binding RedlineText}" MinWidth="96" TextAlignment="Right" VerticalAlignment="Center"
                            Margin="16,0,0,0" Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                <controls:HeatStrip x:Name="TitleStrip" Grid.Row="1" Grid.Column="0" MaxWidth="500" HorizontalAlignment="Stretch"
+                                    Margin="10,4,10,0" Ticks="{Binding TitleTicks}" TickBrush="{DynamicResource TextFillColorTertiaryBrush}"
+                                    HighlightBrush="{DynamicResource TextFillColorPrimaryBrush}" />
+
+                <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Left" Margin="0,10,0,0">
+                    <TextBlock Text="{Binding RedlineHint}" Style="{StaticResource CaptionText}" />
+                    <ItemsControl ItemsSource="{Binding TitleLadder}" ItemTemplate="{StaticResource TitleLadderItem}" Margin="0,8,0,0"
+                                  Focusable="False" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle"
+                                  AutomationProperties.Name="{loc:Loc title.ladder}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </StackPanel>
             </Grid>
         </controls:SettingsCard>
     </StackPanel>

@@ -33,11 +33,16 @@ public class SettingsSerializerTests
             ClaudeCodeEnabled = true,
             ClaudeDesktopEnabled = false,
             DeepSeekEnabled = false,
+            OpenCodeEnabled = false,
+            GeminiEnabled = true,
             CodexRoot = Path.Combine(Path.GetTempPath(), "codex sessions"),
             ClaudeRoot = Path.Combine(Path.GetTempPath(), "claude", "projects"),
             DshRoot = Path.Combine(Path.GetTempPath(), "dsh", "sessions"),
+            OpenCodeRoot = Path.Combine(Path.GetTempPath(), "opencode data"),
+            GeminiRoot = Path.Combine(Path.GetTempPath(), ".gemini", "tmp"),
             ChartSeconds = 300,
             AgentsExpanded = true,
+            HistoryWindow = new WindowFrame(-1600.5, 120.25, 1040, 720, Maximized: true),
         })
         .WithOrbAnchor(@"\\.\DISPLAY2", new OrbAnchor(0.5, 0.125))
         .WithOrbAnchor("Display 1 \"quoted\" ü", new OrbAnchor(0.25, 0.75));
@@ -259,9 +264,12 @@ public class SettingsSerializerTests
         Assert.True(settings.IsSourceEnabled(SourceKind.ClaudeDesktop));
 
         Assert.True(settings.IsSourceEnabled(SourceKind.DeepSeek));
+        Assert.True(settings.IsSourceEnabled(SourceKind.OpenCode));
+        Assert.True(settings.IsSourceEnabled(SourceKind.Gemini));
 
         var config = (settings with { CodexRoot = Path.Combine(Path.GetTempPath(), "c") }).ToMonitorConfiguration();
-        Assert.True(config.EnabledSources.SetEquals([SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek]));
+        Assert.True(config.EnabledSources.SetEquals(
+            [SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek, SourceKind.OpenCode, SourceKind.Gemini]));
         Assert.Equal(Path.Combine(Path.GetTempPath(), "c"), config.CodexRoot);
         Assert.Null(config.ClaudeRoot);
         Assert.Null(config.DshRoot);
@@ -277,7 +285,8 @@ public class SettingsSerializerTests
         Assert.True(settings.WithSourceEnabled(SourceKind.DeepSeek, true).IsSourceEnabled(SourceKind.DeepSeek));
 
         var config = settings.ToMonitorConfiguration();
-        Assert.True(config.EnabledSources.SetEquals([SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop]));
+        Assert.True(config.EnabledSources.SetEquals(
+            [SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop, SourceKind.OpenCode, SourceKind.Gemini]));
         Assert.Equal(dsh, config.DshRoot);
         Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { DshRoot = dsh }).ToMonitorConfiguration());
 

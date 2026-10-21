@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Threading;
+using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Dashboard;
+using AgentSpeed.History;
 using AgentSpeed.Interop;
 using AgentSpeed.Localization;
 using AgentSpeed.Menus;
@@ -36,6 +38,11 @@ internal sealed class AppController : IAppCommands, IDisposable
     private ThemeService _theme = null!;
     private SettingsService _settings = null!;
     private SpeedHub _hub = null!;
+    private HistoryHub _historyHub = null!;
+    private HistoryController? _history;
+    private HistoryService? _historyService;
+    private DispatcherTimer? _historyStartFallback;
+    private bool _historyStarted;
     private SpeedModel _speed = null!;
     private PreviewService _preview = null!;
     private LiveMonitor? _monitor;
@@ -93,6 +100,15 @@ internal sealed class AppController : IAppCommands, IDisposable
         phases.Mark("styles");
 
         _hub = new SpeedHub(new DispatcherSynchronizationContext(_ui));
+        _historyHub = new HistoryHub(new DispatcherSynchronizationContext(_ui));
+        _history = new HistoryController(_historyHub, _settings, _theme, _loc);
+        _hub.SnapshotChanged += (_, snapshot) =>
+        {
+            if (!_hub.IsPreviewing)
+            {
+                _historyService?.ObserveLive(snapshot);
+            }
+        };
         _speed = new SpeedModel(_hub, _ui);
         _speed.Configure(Settings.Metric, Settings.Redline);
         _preview = new PreviewService(_hub, _ui);
@@ -158,6 +174,14 @@ internal sealed class AppController : IAppCommands, IDisposable
             AutoStart.Refresh();
             AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
             StartUpdates();
+            if (_launch.PreviewHistory)
+            {
+                StartHistoryPreview();
+            }
+            else
+            {
+                ScheduleHistoryStart();
+            }
         });
     }
 
@@ -175,7 +199,20 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     public void ToggleDashboardFromMenu() => ShowDashboard(CursorAnchor());
 
+    /// <summary>Opens (or focuses) the Usage History window, filtered to <paramref name="source"/> or all sources.</summary>
+    public void OpenHistory(SourceKind? source = null) => ShowHistory(source);
+
+    /// <summary>Deletes the stored daily history and recomputes it from the logs that still exist.</summary>
+    public void ClearHistory()
+    {
+        StartHistory();
+        _historyHub.Clear();
+    }
+
     public void UpdateSettings(Func<AppSettings, AppSettings> change) => _settings.Update(change);
+
+    private bool ConfirmClearHistory() => ConfirmDialog.Show(_settingsWindow, _loc["app.name"], _loc["win.history.clear.title"],
+        _loc["history.clear.confirm"], _loc["history.clear.action"], _loc["history.cancel"]);
 
     public void OpenSettings(string? page = null)
     {
@@ -183,8 +220,9 @@ internal sealed class AppController : IAppCommands, IDisposable
         if (_settingsWindow is null)
         {
             _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
-                _updates, OpenUpdate);
+                _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory);
             _settingsModel.ReduceMotion = _theme.ReduceMotion;
+            _settingsModel.DarkTheme = _theme.IsDark;
             _settingsModel.UpdateLive(_speed.Snapshot, _taskbar?.Presence ?? TaskbarPresence.Hidden);
             _settingsWindow = new SettingsWindow(_settingsModel) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
@@ -240,6 +278,9 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         _disposed = true;
+        Try(() => _historyStartFallback?.Stop());
+        Try(() => _history?.Dispose());
+        Try(() => _historyService?.Dispose());
         Try(() => _settings.Flush());
         Try(() => _preview.Stop());
         Try(() => _monitor?.Dispose());
@@ -293,19 +334,20 @@ internal sealed class AppController : IAppCommands, IDisposable
         var snapshot = _speed.Snapshot;
         var value = _speed.Value;
         var tier = _speed.Tier;
+        var title = _speed.Title;
         var generating = snapshot.Agents.Where(a => a.Phase == AgentPhase.Generating).Select(a => a.Source).ToArray();
-        var accessible = DisplayText.Accessibility(value, tier, _loc);
+        var accessible = DisplayText.Accessibility(value, title, _loc);
 
         if (_orb is { } orb)
         {
-            orb.View.SetData(value, tier, generating, accessible);
+            orb.View.SetData(value, tier, title, generating, accessible);
             orb.View.SetInfoLine(DisplayText.TodaySummary(snapshot, _loc));
             orb.NoteActivity(tier != SpeedTier.Idle);
         }
 
         if (_dashboard is { IsShown: true } dashboard)
         {
-            dashboard.Hero.SetData(value, tier, generating, accessible);
+            dashboard.Hero.SetData(value, tier, title, generating, accessible);
             _dashboardDirty = true;
             if (!_dashboardTimer!.IsEnabled)
             {
@@ -319,7 +361,12 @@ internal sealed class AppController : IAppCommands, IDisposable
 
         if (_tooltipShown)
         {
-            _tooltip?.SetText(DisplayText.SpeedLine(value, tier, _loc), DisplayText.TodaySummary(snapshot, _loc));
+            _tooltip?.SetText(DisplayText.SpeedLine(value, title, _loc), DisplayText.TodaySummary(snapshot, _loc));
+        }
+
+        if (!_historyStarted && snapshot.State.Kind != MonitorStateKind.Starting && _historyStartFallback is not null)
+        {
+            StartHistory();
         }
 
         if (_settingsModel is not null && _settingsWindow is not null && Environment.TickCount64 - _lastSettingsLiveUpdate > 1000)
@@ -379,9 +426,9 @@ internal sealed class AppController : IAppCommands, IDisposable
         var snapshot = _speed.Snapshot;
         _dashboardModel.ReduceMotion = _theme.ReduceMotion;
         _dashboardModel.AgentsExpanded = Settings.AgentsExpanded;
-        _dashboardModel.Update(snapshot, _speed.Value, _speed.Tier, _speed.Redline, _speed.Metric, _loc, _theme.IsDark);
+        _dashboardModel.Update(snapshot, _speed.Value, _speed.Title, _speed.Redline, _speed.Metric, _loc, _theme.IsDark);
         var peak = snapshot.PeakToday.ValueFor(_speed.Metric);
-        var summary = $"{DisplayText.SpeedLine(_speed.Value, _speed.Tier, _loc)} · {_loc["today.peak"]} {SpeedFormat.Speed(peak)}";
+        var summary = $"{DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc)} · {_loc["today.peak"]} {SpeedFormat.Speed(peak)}";
         dashboard.LiveChart.SetData(snapshot.History, _speed.Metric, _speed.Redline, peak, Settings.ChartSeconds,
             _loc["win.chart.peak"], _loc["unit.tokS"], summary);
     }
@@ -436,7 +483,7 @@ internal sealed class AppController : IAppCommands, IDisposable
             policy = policy.CappedAt(c);
         }
 
-        var labels = Enum.GetValues<SpeedTier>().Select(t => DisplayText.TierLabel(t, _loc)).ToArray();
+        var labels = Enum.GetValues<SpeedTitle>().Select(t => DisplayText.TitleLabel(t, _loc)).ToArray();
         return new OrbConfig(diameter, _theme.IsDark ? OrbAppearance.Dark : OrbAppearance.Light, s.OrbOpacity, policy,
             _theme.HighContrast, !_theme.TransparencyEnabled, s.ResponsePulses, s.CelebratePeaks, _speed.Redline,
             _loc["unit.tokS"], _loc["peak.new"], labels);
@@ -462,7 +509,7 @@ internal sealed class AppController : IAppCommands, IDisposable
             _theme.HighContrast,
             _theme.ReduceMotion,
             _loc["unit.tokS"],
-            $"{_loc["app.name"]}: {DisplayText.Accessibility(_speed.Value, _speed.Tier, _loc)}"));
+            $"{_loc["app.name"]}: {DisplayText.Accessibility(_speed.Value, _speed.Title, _loc)}"));
     }
 
     private TrayVisualState TrayState() => new(
@@ -470,7 +517,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         _theme.TaskbarIsDark,
         _theme.HighContrast,
         !Settings.BarColoredGlyph,
-        $"{_loc["app.name"]}\n{DisplayText.SpeedLine(_speed.Value, _speed.Tier, _loc)}");
+        $"{_loc["app.name"]}\n{DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc)}");
 
     private void ShowMenu()
     {
@@ -518,6 +565,7 @@ internal sealed class AppController : IAppCommands, IDisposable
             _dashboard = new DashboardWindow(_dashboardModel, () => _speed.Now) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
             _dashboard.SettingsRequested += (_, _) => OpenSettings();
             _dashboard.SourcesRequested += (_, _) => OpenSettings("sources");
+            _dashboard.HistoryRequested += (_, source) => OpenHistory(source);
             _dashboard.QuitRequested += (_, _) => Quit();
             _dashboard.OrbToggled += (_, visible) => _settings.Update(s => s with { ShowOrb = visible });
             _dashboard.RangeChanged += (_, seconds) => _settings.Update(s => s with { ChartSeconds = seconds });
@@ -565,7 +613,7 @@ internal sealed class AppController : IAppCommands, IDisposable
 
         _tooltipShown = true;
         _tooltip.Language = AppFonts.XmlLanguageFor(_loc.LanguageCode);
-        _tooltip.ShowFor(bounds, DisplayText.SpeedLine(_speed.Value, _speed.Tier, _loc), DisplayText.TodaySummary(_speed.Snapshot, _loc),
+        _tooltip.ShowFor(bounds, DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc), DisplayText.TodaySummary(_speed.Snapshot, _loc),
             _theme.ReduceMotion);
     }
 
@@ -573,6 +621,64 @@ internal sealed class AppController : IAppCommands, IDisposable
     {
         _tooltipShown = false;
         _tooltip?.HideTip();
+    }
+
+    // ---- Usage history ----
+
+    private void ShowHistory(SourceKind? source)
+    {
+        if (_quitting)
+        {
+            return;
+        }
+
+        _dashboard?.Dismiss();
+        StartHistory();
+        _history?.Open(source);
+    }
+
+    /// <summary>
+    /// The daily history analysis starts once the live monitor has finished seeding today, when the history is first
+    /// needed, or after 20 s at the latest, so it never competes with the first live numbers.
+    /// </summary>
+    private void ScheduleHistoryStart()
+    {
+        _historyStartFallback = new DispatcherTimer(TimeSpan.FromSeconds(20), DispatcherPriority.Background, (_, _) => StartHistory(), _ui);
+        _historyStartFallback.Start();
+        if (_speed.Snapshot.State.Kind != MonitorStateKind.Starting)
+        {
+            StartHistory();
+        }
+    }
+
+    private void StartHistory()
+    {
+        _historyStartFallback?.Stop();
+        if (_historyStarted || _quitting)
+        {
+            return;
+        }
+
+        _historyStarted = true;
+        try
+        {
+            _historyService = new HistoryService(_historyHub, Settings.ToMonitorConfiguration());
+            _historyService.Start();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("The daily history analysis failed to start.", ex);
+            _historyHub.Publish(HistoryState.Failed(ex.GetType().Name));
+        }
+    }
+
+    /// <summary>Developer option <c>--preview-history</c>: generated days instead of the real analysis, then the window.</summary>
+    private void StartHistoryPreview()
+    {
+        _historyStarted = true;
+        AppLog.Info("--preview-history: showing generated usage history.");
+        _history?.StartPreview();
+        ShowHistory(null);
     }
 
     // ---- Changes ----
@@ -606,6 +712,15 @@ internal sealed class AppController : IAppCommands, IDisposable
             {
                 AppLog.Error("Updating the live monitor configuration failed.", ex);
             }
+
+            try
+            {
+                _historyService?.Update(current.ToMonitorConfiguration());
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("Updating the history configuration failed.", ex);
+            }
         }
 
         if (current.ShowOrb && _orb is null)
@@ -636,9 +751,11 @@ internal sealed class AppController : IAppCommands, IDisposable
         UpdateTaskbar();
         _tray?.Update(TrayState());
         _dashboard?.ApplyBackground();
+        _history?.OnThemeChanged();
         if (_settingsModel is not null)
         {
             _settingsModel.ReduceMotion = _theme.ReduceMotion;
+            _settingsModel.DarkTheme = _theme.IsDark;
         }
 
         _dashboardDirty = true;
@@ -656,6 +773,7 @@ internal sealed class AppController : IAppCommands, IDisposable
 
         _settingsModel?.Relocalize(_loc);
         _updateWindowModel?.Relocalize(_loc);
+        _history?.OnLanguageChanged();
         _dashboard?.SetUpdate(UpdatePillText());
         ConfigureOrb();
         UpdateTaskbar();

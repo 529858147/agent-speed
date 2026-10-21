@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Shapes;
+using AgentSpeed.Core;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Updates;
@@ -12,6 +13,9 @@ namespace AgentSpeed.Menus;
 internal interface IAppCommands
 {
     void ToggleDashboardFromMenu();
+
+    /// <summary>Opens the Usage History window, filtered to one source or (null) all sources.</summary>
+    void OpenHistory(SourceKind? source = null);
 
     void UpdateSettings(Func<AppSettings, AppSettings> change);
 
@@ -49,6 +53,7 @@ internal static class AppMenu
         var dashboard = Item(loc["menu.dashboard"], "", commands.ToggleDashboardFromMenu);
         dashboard.FontWeight = FontWeights.SemiBold;
         menu.Items.Add(dashboard);
+        menu.Items.Add(Item(loc["history.open"], "\uE81C", () => commands.OpenHistory(null)));
         menu.Items.Add(new Separator());
 
         var size = new MenuItem { Header = loc["menu.size"] };

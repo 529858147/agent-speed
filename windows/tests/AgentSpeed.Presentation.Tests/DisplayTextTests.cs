@@ -15,28 +15,84 @@ public class DisplayTextTests
         $"/tmp/agent-{i}.jsonl", SourceKind.ClaudeCode, "proj", null, AgentPhase.Generating, false, Rate.Zero, null, DateTimeOffset.UnixEpoch);
 
     [Fact]
-    public void SpeedLineInTraditionalChinese()
+    public void SpeedLineUsesTheSpeedTitleInTraditionalChinese()
     {
-        Assert.Equal("128 tok/s · 加速", DisplayText.SpeedLine(128, SpeedTier.Boost, For(LanguageCodes.ZhHant)));
-        Assert.Equal("1.28k tok/s · 極限", DisplayText.SpeedLine(1280, SpeedTier.Redline, For(LanguageCodes.ZhHant)));
-        Assert.Equal("0 tok/s · 待機", DisplayText.SpeedLine(0, SpeedTier.Idle, For(LanguageCodes.ZhHant)));
+        Assert.Equal("128 tok/s · 噴射客機", DisplayText.SpeedLine(128, SpeedTitle.Jetliner, For(LanguageCodes.ZhHant)));
+        Assert.Equal("1.28k tok/s · 火箭", DisplayText.SpeedLine(1280, SpeedTitle.Rocket, For(LanguageCodes.ZhHant)));
+        Assert.Equal("0 tok/s · 待機", DisplayText.SpeedLine(0, SpeedTitle.Idle, For(LanguageCodes.ZhHant)));
     }
 
     [Fact]
-    public void SpeedLineInOtherLanguages()
+    public void SpeedLineUsesTheSpeedTitleInOtherLanguages()
     {
-        Assert.Equal("4.2 tok/s · CRUISE", DisplayText.SpeedLine(4.2, SpeedTier.Cruise, For(LanguageCodes.En)));
-        Assert.Equal("200 tok/s · 狂飙", DisplayText.SpeedLine(200, SpeedTier.Overdrive, For(LanguageCodes.ZhHans)));
-        Assert.Equal("200 tok/s · 爆速", DisplayText.SpeedLine(200, SpeedTier.Overdrive, For(LanguageCodes.Ja)));
+        Assert.Equal("4.2 tok/s · WALKING", DisplayText.SpeedLine(4.2, SpeedTitle.Walk, For(LanguageCodes.En)));
+        Assert.Equal("200 tok/s · 战斗机", DisplayText.SpeedLine(200, SpeedTitle.FighterJet, For(LanguageCodes.ZhHans)));
+        Assert.Equal("200 tok/s · 戦闘機", DisplayText.SpeedLine(200, SpeedTitle.FighterJet, For(LanguageCodes.Ja)));
     }
 
     [Fact]
-    public void AccessibilityLabel()
+    public void AccessibilityLabelReadsTheSpeedTitle()
     {
-        Assert.Equal("每秒 128 個 token，加速", DisplayText.Accessibility(128, SpeedTier.Boost, For(LanguageCodes.ZhHant)));
-        Assert.Equal("每秒 128 个 token，加速", DisplayText.Accessibility(128, SpeedTier.Boost, For(LanguageCodes.ZhHans)));
-        Assert.Equal("128 tokens per second, BOOST", DisplayText.Accessibility(128, SpeedTier.Boost, For(LanguageCodes.En)));
-        Assert.Equal("毎秒 4.2 トークン、巡航", DisplayText.Accessibility(4.2, SpeedTier.Cruise, For(LanguageCodes.Ja)));
+        Assert.Equal("每秒 128 個 token，噴射客機", DisplayText.Accessibility(128, SpeedTitle.Jetliner, For(LanguageCodes.ZhHant)));
+        Assert.Equal("每秒 128 个 token，喷气客机", DisplayText.Accessibility(128, SpeedTitle.Jetliner, For(LanguageCodes.ZhHans)));
+        Assert.Equal("128 tokens per second, JETLINER", DisplayText.Accessibility(128, SpeedTitle.Jetliner, For(LanguageCodes.En)));
+        Assert.Equal("毎秒 4.2 トークン、徒歩", DisplayText.Accessibility(4.2, SpeedTitle.Walk, For(LanguageCodes.Ja)));
+        Assert.Equal("每秒 0 個 token，待機", DisplayText.Accessibility(0, SpeedTitle.Idle, For(LanguageCodes.ZhHant)));
+    }
+
+    [Theory]
+    [InlineData(SpeedTitle.Idle, "IDLE", "待機")]
+    [InlineData(SpeedTitle.Walk, "WALKING", "步行")]
+    [InlineData(SpeedTitle.EBike, "E-BIKE", "電動自行車")]
+    [InlineData(SpeedTitle.SportsCar, "SPORTS CAR", "跑車")]
+    [InlineData(SpeedTitle.BulletTrain, "BULLET TRAIN", "高鐵")]
+    [InlineData(SpeedTitle.Hypersonic, "HYPERSONIC", "極音速飛機")]
+    [InlineData(SpeedTitle.Rocket, "ROCKET", "火箭")]
+    public void TitleLabelIsUppercaseInEnglishAndUnchangedInChinese(SpeedTitle title, string english, string traditional)
+    {
+        Assert.Equal(english, DisplayText.TitleLabel(title, For(LanguageCodes.En)));
+        Assert.Equal(traditional, DisplayText.TitleLabel(title, For(LanguageCodes.ZhHant)));
+        Assert.Equal(traditional, DisplayText.TitleName(title, For(LanguageCodes.ZhHant)));
+    }
+
+    [Fact]
+    public void EveryTitleKeyHasAllFourLanguages()
+    {
+        foreach (var title in Enum.GetValues<SpeedTitle>())
+        {
+            var key = DisplayText.TitleKey(title);
+            Assert.True(Embedded.Contains(key), key);
+            foreach (var language in LanguageCodes.All)
+            {
+                Assert.True(Embedded.TryGet(key, language, out var text) && text.Length > 0, $"{key} [{language}]");
+            }
+        }
+    }
+
+    [Fact]
+    public void TitleThresholdsFollowTheRedlineCompactAndWithoutUnit()
+    {
+        Assert.Equal("48", DisplayText.TitleThreshold(SpeedTitle.BulletTrain, 400));
+        Assert.Equal("0.5", DisplayText.TitleThreshold(SpeedTitle.Walk, 400));
+        Assert.Equal("8", DisplayText.TitleThreshold(SpeedTitle.Bicycle, 400));
+        Assert.Equal("2", DisplayText.TitleThreshold(SpeedTitle.Bicycle, 100));
+        Assert.Equal("4.5", DisplayText.TitleThreshold(SpeedTitle.EBike, 150));
+        Assert.Equal("1.00k", DisplayText.TitleThreshold(SpeedTitle.Rocket, 1000));
+        Assert.Equal("4.00k", DisplayText.TitleThreshold(SpeedTitle.Bicycle, 200_000));
+        Assert.Equal("200k", DisplayText.TitleThreshold(SpeedTitle.Rocket, 200_000));
+        Assert.Equal("1.40M", DisplayText.TitleThreshold(SpeedTitle.Hypersonic, 2_000_000));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(0.049, true)]
+    [InlineData(0.05, false)]
+    [InlineData(0.2, false)]
+    [InlineData(double.NaN, true)]
+    [InlineData(-1, true)]
+    public void NegligibleSpeedIsNeverShownAsZero(double value, bool negligible)
+    {
+        Assert.Equal(negligible, DisplayText.IsNegligibleSpeed(value));
     }
 
     [Theory]
@@ -171,5 +227,9 @@ public class DisplayTextTests
         Assert.StartsWith("4 ", unfinalized, StringComparison.Ordinal);
         Assert.DoesNotContain("%d", unfinalized, StringComparison.Ordinal);
         Assert.NotEqual("warning.unfinalized", unfinalized);
+
+        Assert.Equal("OpenCode 的紀錄格式太舊，請更新該工具", DisplayText.Warning(new MonitorWarning.UnsupportedFormat(SourceKind.OpenCode), zh));
+        Assert.Equal("Gemini CLI uses a log format that is too old; please update it",
+            DisplayText.Warning(new MonitorWarning.UnsupportedFormat(SourceKind.Gemini), For(LanguageCodes.En)));
     }
 }

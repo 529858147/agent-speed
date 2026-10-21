@@ -12,6 +12,18 @@
     "en": "Live speed chart",
     "ja": "ライブ速度チャート"
   },
+  "win.dashboard.history": {
+    "zh-Hant": "歷史",
+    "zh-Hans": "历史",
+    "en": "History",
+    "ja": "履歴"
+  },
+  "win.dashboard.historyHint": {
+    "zh-Hant": "顯示所有來源的用量歷史",
+    "zh-Hans": "显示所有来源的用量历史",
+    "en": "Show usage history for all sources",
+    "ja": "すべてのソースの使用履歴を表示"
+  },
   "win.dashboard.metricInfo": {
     "zh-Hant": "速度的計算方式",
     "zh-Hans": "速度的计算方式",
@@ -41,6 +53,132 @@
     "zh-Hans": "5 分",
     "en": "5m",
     "ja": "5 分"
+  },
+  "win.dashboard.sourceHint": {
+    "zh-Hant": "顯示用量歷史",
+    "zh-Hans": "显示用量历史",
+    "en": "Show usage history",
+    "ja": "使用履歴を表示"
+  },
+  "win.history.a11y.item": {
+    "zh-Hant": "%@：%@",
+    "zh-Hans": "%@：%@",
+    "en": "%@: %@",
+    "ja": "%@：%@"
+  },
+  "win.history.a11y.join": {
+    "zh-Hant": "，",
+    "zh-Hans": "，",
+    "en": ", ",
+    "ja": "、"
+  },
+  "win.history.clear.title": {
+    "zh-Hant": "清除歷史統計",
+    "zh-Hans": "清除历史统计",
+    "en": "Clear History",
+    "ja": "履歴をクリア"
+  },
+  "win.history.copyRow": {
+    "zh-Hant": "複製這一列",
+    "zh-Hans": "复制此行",
+    "en": "Copy Row",
+    "ja": "行をコピー"
+  },
+  "win.history.csvFilter": {
+    "zh-Hant": "CSV 檔案",
+    "zh-Hans": "CSV 文件",
+    "en": "CSV file",
+    "ja": "CSV ファイル"
+  },
+  "win.history.days": {
+    "zh-Hant": "%d 天",
+    "zh-Hans": "%d 天",
+    "en": "%d days",
+    "ja": "%d 日間"
+  },
+  "win.history.days.one": {
+    "zh-Hant": "%d 天",
+    "zh-Hans": "%d 天",
+    "en": "%d day",
+    "ja": "%d 日間"
+  },
+  "win.history.export.failed": {
+    "zh-Hant": "無法儲存這個檔案。",
+    "zh-Hans": "无法保存这个文件。",
+    "en": "The file could not be saved.",
+    "ja": "ファイルを保存できませんでした。"
+  },
+  "win.history.failed": {
+    "zh-Hant": "無法分析歷史紀錄。",
+    "zh-Hans": "无法分析历史记录。",
+    "en": "History could not be analyzed.",
+    "ja": "履歴を分析できませんでした。"
+  },
+  "win.history.format.date": {
+    "zh-Hant": "yyyy/M/d",
+    "zh-Hans": "yyyy/M/d",
+    "en": "MMM d, yyyy",
+    "ja": "yyyy/M/d"
+  },
+  "win.history.format.month": {
+    "zh-Hant": "M月",
+    "zh-Hans": "M月",
+    "en": "MMM",
+    "ja": "M月"
+  },
+  "win.history.format.monthDay": {
+    "zh-Hant": "M/d",
+    "zh-Hans": "M/d",
+    "en": "MMM d",
+    "ja": "M/d"
+  },
+  "win.history.format.rangeEnd": {
+    "zh-Hant": "M/d",
+    "zh-Hans": "M/d",
+    "en": "MMM d, yyyy",
+    "ja": "M/d"
+  },
+  "win.history.format.rangeStart": {
+    "zh-Hant": "yyyy/M/d",
+    "zh-Hans": "yyyy/M/d",
+    "en": "MMM d",
+    "ja": "yyyy/M/d"
+  },
+  "win.history.format.yearMonth": {
+    "zh-Hant": "yyyy年M月",
+    "zh-Hans": "yyyy年M月",
+    "en": "MMM yyyy",
+    "ja": "yyyy年M月"
+  },
+  "win.history.models.more": {
+    "zh-Hant": "+%d",
+    "zh-Hans": "+%d",
+    "en": "+%d",
+    "ja": "+%d"
+  },
+  "win.history.range": {
+    "zh-Hant": "日期範圍",
+    "zh-Hans": "日期范围",
+    "en": "Date range",
+    "ja": "期間"
+  },
+  "win.history.sorted.asc": {
+    "zh-Hant": "遞增排序",
+    "zh-Hans": "升序排列",
+    "en": "Sorted ascending",
+    "ja": "昇順"
+  },
+  "win.history.sorted.desc": {
+    "zh-Hant": "遞減排序",
+    "zh-Hans": "降序排列",
+    "en": "Sorted descending",
+    "ja": "降順"
+  },
+  "win.history.table": {
+    "zh-Hant": "每日明細",
+    "zh-Hans": "每日明细",
+    "en": "Daily breakdown",
+    "ja": "日別の内訳"
   },
   "win.settings.about.license": {
     "zh-Hant": "MIT 授權條款",

@@ -51,6 +51,7 @@ internal sealed class OrbView : FrameworkElement
     private double _lastReadoutTime;
     private bool _hovering;
     private SpeedTier _lastTier = (SpeedTier)(-1);
+    private SpeedTitle _lastTitle = (SpeedTitle)(-1);
     private string _lastText = string.Empty;
     private double _lastValue = double.NaN;
     private SourceKind[] _lastAgents = [];
@@ -144,7 +145,9 @@ internal sealed class OrbView : FrameworkElement
         _overlayEmpty = false;
     }
 
-    public void SetData(double value, SpeedTier tier, IEnumerable<SourceKind> generating, string accessibleName)
+    /// <param name="tier">Effect tier: drives effects and the gauge flash.</param>
+    /// <param name="title">Speed title: the label under the value.</param>
+    public void SetData(double value, SpeedTier tier, SpeedTitle title, IEnumerable<SourceKind> generating, string accessibleName)
     {
         _pendingAccessibleName = accessibleName;
         if (_pendingAccessibleName != _accessibleName && !_accessibilityTimer.IsEnabled)
@@ -157,18 +160,19 @@ internal sealed class OrbView : FrameworkElement
         var agents = generating as IReadOnlyCollection<SourceKind> ?? generating.ToArray();
         var target = double.IsFinite(value) && value > 0 ? value : 0;
         var text = SpeedFormat.Speed(target);
-        if (tier == _lastTier && text == _lastText && Math.Abs(target - _lastValue) <= 1e-6 * Math.Max(1, target)
+        if (tier == _lastTier && title == _lastTitle && text == _lastText && Math.Abs(target - _lastValue) <= 1e-6 * Math.Max(1, target)
             && agents.SequenceEqual(_lastAgents))
         {
             return;
         }
 
         _lastTier = tier;
+        _lastTitle = title;
         _lastText = text;
         _lastValue = target;
         _lastAgents = agents.ToArray();
         Scene.Update(_clock());
-        Scene.SetTarget(value, tier);
+        Scene.SetTarget(value, tier, title);
         Scene.SetAgents(_lastAgents);
         _driver.Kick();
     }
@@ -359,6 +363,7 @@ internal sealed class OrbView : FrameworkElement
         var now = Scene.Time;
         var animated = Scene.Readout.IsAnimating(now)
             || Scene.Transition.Progress < 1
+            || Scene.TitleTransition.Progress < 1
             || Scene.PeakPillAge is not null
             || Scene.JitterX != 0 || Scene.JitterY != 0
             || (Scene.AgentDots.Count > 0 && Scene.Effects.AuraBreathing)
@@ -372,6 +377,7 @@ internal sealed class OrbView : FrameworkElement
         var hash = new HashCode();
         hash.Add(Scene.Readout.Current);
         hash.Add(Scene.Tier);
+        hash.Add(Scene.Title);
         hash.Add(Math.Round(Scene.Heat * 63));
         hash.Add(Math.Round(Scene.Overdrive * 63));
         hash.Add(Math.Round(Scene.SkewDegrees * 20));
@@ -772,7 +778,7 @@ internal sealed class OrbView : FrameworkElement
         var unitStyle = _text.Style(UnitFace, 0.072 * s, _brushes.Solid.Get(secondary));
         DrawTracked(dc, _config.UnitText, unitStyle, c.X, baseline + 0.105 * s, 0.5 * s / 148, 1);
 
-        DrawTierLabel(dc, c, baseline + 0.19 * s, hc);
+        DrawTitleLabel(dc, c, baseline + 0.19 * s, hc);
         DrawAgentDots(dc, c, s, hc);
         DrawPeakPill(dc, c, s, baseline - capHeight - 0.075 * s);
     }
@@ -867,31 +873,27 @@ internal sealed class OrbView : FrameworkElement
         }
     }
 
-    private void DrawTierLabel(DrawingContext dc, Point c, double baseline, bool hc)
+    private void DrawTitleLabel(DrawingContext dc, Point c, double baseline, bool hc)
     {
         var s = Diameter;
-        var size = 0.062 * s;
+        var size = OrbLabelFit.Size * s;
         var tracking = 1.6 * s / 148;
+        var available = OrbLabelFit.AvailableWidth((baseline - c.Y) / s) * s;
         var heat = Math.Round(Scene.Heat * 31) / 31;
-        var labelColor = hc ? SystemColors.WindowTextColor.ToRgba()
-            : Scene.Tier == SpeedTier.Idle ? _tokens.SecondaryText : _tokens.TierLabel(Math.Max(heat, 0.08));
-        var style = _text.Style(LabelFace, size, _brushes.Solid.Get(labelColor));
         var hoverBlend = Scene.HoverBlend;
         var labelAlpha = 1 - hoverBlend;
 
-        var transition = Scene.Transition;
+        var transition = Scene.TitleTransition;
         if (transition.Progress < 1 && transition.From != transition.To)
         {
             var t = Easing.OutCubic(transition.Progress);
             var rise = Scene.Effects.SlideTransitions ? size * 1.1 : 0;
-            var fromColor = hc ? labelColor : transition.From == SpeedTier.Idle ? _tokens.SecondaryText : _tokens.TierLabel(Math.Max(heat, 0.08));
-            var fromStyle = _text.Style(LabelFace, size, _brushes.Solid.Get(fromColor));
-            DrawTracked(dc, _config.TierLabel(transition.From), fromStyle, c.X, baseline - rise * t, tracking, (1 - t) * labelAlpha);
-            DrawTracked(dc, _config.TierLabel(transition.To), style, c.X, baseline + rise * (1 - t), tracking, t * labelAlpha);
+            DrawFittedTitle(dc, transition.From, c.X, baseline - rise * t, size, tracking, available, heat, hc, (1 - t) * labelAlpha);
+            DrawFittedTitle(dc, transition.To, c.X, baseline + rise * (1 - t), size, tracking, available, heat, hc, t * labelAlpha);
         }
         else
         {
-            DrawTracked(dc, _config.TierLabel(Scene.Tier), style, c.X, baseline, tracking, labelAlpha);
+            DrawFittedTitle(dc, Scene.Title, c.X, baseline, size, tracking, available, heat, hc, labelAlpha);
         }
 
         if (hoverBlend > 0.01 && !string.IsNullOrEmpty(_infoLine))
@@ -912,6 +914,41 @@ internal sealed class OrbView : FrameworkElement
             dc.DrawText(info, new Point(c.X - width / 2, baseline - info.Baseline));
             dc.Pop();
         }
+    }
+
+    /// <summary>A title in the heat color, shrunk (never below 80 %) when it would reach the gauge ring.</summary>
+    private void DrawFittedTitle(DrawingContext dc, SpeedTitle title, double centerX, double baseline, double size, double tracking,
+        double available, double heat, bool hc, double alpha)
+    {
+        var text = _config.TitleLabel(title);
+        if (string.IsNullOrEmpty(text) || alpha <= 0.01)
+        {
+            return;
+        }
+
+        var color = hc ? SystemColors.WindowTextColor.ToRgba()
+            : title == SpeedTitle.Idle ? _tokens.SecondaryText : _tokens.TierLabel(Math.Max(heat, 0.08));
+        var brush = _brushes.Solid.Get(color);
+        var natural = TrackedWidth(text, _text.Style(LabelFace, size, brush), tracking);
+        var scale = OrbLabelFit.Scale(natural, available);
+        var style = scale < 0.999 ? _text.Style(LabelFace, size * scale, brush) : _text.Style(LabelFace, size, brush);
+        DrawTracked(dc, text, style, centerX, baseline, tracking * scale, alpha);
+    }
+
+    private double TrackedWidth(string text, int style, double tracking)
+    {
+        if (!(tracking > 0.01 && IsLatin(text)))
+        {
+            return _text.Get(text, style).WidthIncludingTrailingWhitespace;
+        }
+
+        var width = -tracking;
+        foreach (var ch in text)
+        {
+            width += _text.Get(ch.ToString(), style).WidthIncludingTrailingWhitespace + tracking;
+        }
+
+        return width;
     }
 
     private void DrawAgentDots(DrawingContext dc, Point c, double s, bool hc)

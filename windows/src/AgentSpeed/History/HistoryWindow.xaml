@@ -1,0 +1,393 @@
+<Window x:Class="AgentSpeed.History.HistoryWindow"
+        x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:AgentSpeed.Localization"
+        xmlns:controls="clr-namespace:AgentSpeed.Controls"
+        xmlns:history="clr-namespace:AgentSpeed.History"
+        Title="{loc:Loc history.title}"
+        Width="920" Height="680" MinWidth="720" MinHeight="540"
+        WindowStartupLocation="Manual"
+        ShowInTaskbar="True"
+        UseLayoutRounding="True"
+        FontFamily="{DynamicResource AppFontFamily}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+        AutomationProperties.Name="{loc:Loc history.title}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible" />
+        <controls:InverseBoolToVisibilityConverter x:Key="Hidden" />
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <!-- The custom range item: looks like a segmented item, but opens the flyout instead of selecting. -->
+        <Style x:Key="SegmentedToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
+                            <Border x:Name="Chip" CornerRadius="4" Background="Transparent" BorderThickness="1" BorderBrush="Transparent" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Sortable table header: secondary text, primary when sorted; numbers right-aligned like their column. -->
+        <Style x:Key="HeaderButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Chip" CornerRadius="4" Background="{TemplateBinding Background}" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="SourceOptionTemplate" DataType="{x:Type history:SourceOption}">
+            <StackPanel Orientation="Horizontal" AutomationProperties.Name="{Binding Name}">
+                <history:SourceDot Width="10" Height="10" VerticalAlignment="Center" Colors="{Binding Colors}" />
+                <TextBlock Text="{Binding Name}" Margin="9,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SummaryCardTemplate" DataType="{x:Type history:SummaryCardView}">
+            <Border Style="{StaticResource Card}" Margin="6" Padding="16,13,16,14" ToolTip="{Binding Tooltip}"
+                    AutomationProperties.Name="{Binding AccessibleName}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Grid Grid.Row="1" Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <TextBlock Text="{Binding Value}" FontSize="26" FontWeight="SemiBold" FontFamily="{DynamicResource AppDisplayFontFamily}"
+                                       Typography.NumeralAlignment="Tabular" LineHeight="32" LineStackingStrategy="BlockLineHeight" />
+                            <TextBlock Text="{Binding Unit}" FontSize="12" Margin="5,0,0,5" VerticalAlignment="Bottom"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Visibility="{Binding HasUnit, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                        <history:Sparkline Grid.Column="1" Width="76" Height="28" Margin="10,0,0,3" VerticalAlignment="Bottom"
+                                           Values="{Binding Spark}">
+                            <history:Sparkline.Style>
+                                <Style TargetType="history:Sparkline">
+                                    <Setter Property="Stroke" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSparkBrush}" Value="True">
+                                            <Setter Property="Stroke" Value="{Binding SparkBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </history:Sparkline.Style>
+                        </history:Sparkline>
+                    </Grid>
+                    <TextBlock Grid.Row="2" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" MinHeight="16">
+                        <Run Text="{Binding SecondaryLead, Mode=OneWay}" /><Run Text="{Binding SecondaryChange, Mode=OneWay}" FontWeight="SemiBold">
+                            <Run.Style>
+                                <Style TargetType="Run">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsUp}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsDown}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Run.Style>
+                        </Run><Run Text="{Binding SecondaryTail, Mode=OneWay}" />
+                    </TextBlock>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title and the resolved range -->
+        <StackPanel Grid.Row="0" Margin="24,16,24,0">
+            <TextBlock Text="{loc:Loc history.title}" Style="{StaticResource SubtitleText}" AutomationProperties.HeadingLevel="Level1" />
+            <TextBlock Text="{Binding Subtitle}" FontSize="13" Margin="0,3,0,0" Typography.NumeralAlignment="Tabular"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+        </StackPanel>
+
+        <!-- Toolbar: source, range, export -->
+        <Grid x:Name="Toolbar" Grid.Row="1" Margin="24,16,24,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Name="SourcePicker" MinWidth="184" MaxWidth="240" VerticalAlignment="Center"
+                      ItemsSource="{Binding SourceOptions}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                      ItemTemplate="{StaticResource SourceOptionTemplate}" AutomationProperties.Name="{loc:Loc dashboard.sources}" />
+
+            <Border x:Name="RangeGroup" Grid.Column="1" Style="{StaticResource SegmentedContainer}" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Margin="12,0" AutomationProperties.Name="{loc:Loc win.history.range}"
+                    KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="Range7" Style="{StaticResource SegmentedItem}" GroupName="HistoryRange" Tag="Days7"
+                                 Content="{loc:Loc history.range.7d}" Checked="OnRangeChecked" />
+                    <RadioButton x:Name="Range30" Style="{StaticResource SegmentedItem}" GroupName="HistoryRange" Tag="Days30"
+                                 Content="{loc:Loc history.range.30d}" Checked="OnRangeChecked" />
+                    <RadioButton x:Name="Range90" Style="{StaticResource SegmentedItem}" GroupName="HistoryRange" Tag="Days90"
+                                 Content="{loc:Loc history.range.90d}" Checked="OnRangeChecked" />
+                    <RadioButton x:Name="RangeYear" Style="{StaticResource SegmentedItem}" GroupName="HistoryRange" Tag="Year"
+                                 Content="{loc:Loc history.range.year}" Checked="OnRangeChecked" />
+                    <RadioButton x:Name="RangeAll" Style="{StaticResource SegmentedItem}" GroupName="HistoryRange" Tag="All"
+                                 Content="{loc:Loc history.range.all}" Checked="OnRangeChecked" />
+                    <ToggleButton x:Name="CustomToggle" Style="{StaticResource SegmentedToggle}" Click="OnCustomClick"
+                                  Content="{loc:Loc history.range.custom}" AutomationProperties.Name="{loc:Loc history.range.custom}" />
+                </StackPanel>
+            </Border>
+
+            <Button x:Name="ExportButton" Grid.Column="2" VerticalAlignment="Center" Click="OnExport" Padding="11,5,12,6"
+                    ToolTip="{loc:Loc history.export}" AutomationProperties.Name="{loc:Loc history.export}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xEDE1;" FontSize="14" />
+                    <TextBlock x:Name="ExportLabel" Text="{loc:Loc history.export}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
+            <Popup x:Name="CustomFlyout" PlacementTarget="{Binding ElementName=CustomToggle}" Placement="Custom" StaysOpen="False"
+                   AllowsTransparency="True" PopupAnimation="Fade" Closed="OnCustomClosed" KeyDown="OnFlyoutKeyDown">
+                <Border Margin="12" Padding="16,14,16,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource FlyoutBackground}" BorderBrush="{DynamicResource FlyoutBorderBrush}"
+                        TextElement.FontFamily="{DynamicResource AppFontFamily}"
+                        TextElement.Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.2" />
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="200" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="8" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="16" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="{loc:Loc history.range.from}" VerticalAlignment="Center" FontSize="13"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <DatePicker x:Name="FromPicker" Grid.Column="2" SelectedDateFormat="Short" SelectedDateChanged="OnFromChanged"
+                                    AutomationProperties.Name="{loc:Loc history.range.from}" />
+                        <TextBlock Grid.Row="2" Text="{loc:Loc history.range.to}" VerticalAlignment="Center" FontSize="13"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <DatePicker x:Name="ToPicker" Grid.Row="2" Grid.Column="2" SelectedDateFormat="Short" SelectedDateChanged="OnToChanged"
+                                    AutomationProperties.Name="{loc:Loc history.range.to}" />
+                        <Button x:Name="ApplyCustomButton" Grid.Row="4" Grid.ColumnSpan="3" HorizontalAlignment="Right" MinWidth="96"
+                                Style="{DynamicResource AccentButtonStyle}" Content="{loc:Loc history.range.apply}" Click="OnApplyCustom" />
+                    </Grid>
+                </Border>
+            </Popup>
+        </Grid>
+
+        <!-- Content -->
+        <ScrollViewer x:Name="PageScroller" Grid.Row="2" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly" Focusable="False">
+            <Grid x:Name="PageContent" Margin="24,6,24,24">
+                <StackPanel x:Name="Body" Visibility="{Binding IsEmpty, Converter={StaticResource Hidden}}">
+                    <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource SummaryCardTemplate}" Margin="-6"
+                                  Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Rows="0" Columns="{Binding CardColumns, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Chart -->
+                    <Border x:Name="ChartCard" Style="{StaticResource Card}" Margin="0,20,0,0" Padding="16,14,16,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc history.chart.output}" Style="{StaticResource BodyStrongText}" FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Legend}" Margin="14,0,8,0" Focusable="False" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type history:LegendItem}">
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,14,2">
+                                                <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Name}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Grid Width="18" Height="10" VerticalAlignment="Center">
+                                        <Rectangle Height="1.5" VerticalAlignment="Center" Fill="{DynamicResource TextFillColorPrimaryBrush}" Opacity="0.85" />
+                                        <Ellipse Width="5" Height="5" Fill="{DynamicResource TextFillColorPrimaryBrush}" Opacity="0.85" />
+                                    </Grid>
+                                    <TextBlock FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                        <Run Text="{loc:Loc history.chart.speed}" /><Run Text=" · " /><Run Text="{loc:Loc unit.tokS}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Grid>
+                            <history:HistoryChart x:Name="Chart" Grid.Row="1" Height="260" Margin="0,10,0,0"
+                                                  LabelBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                  MutedBrush="{DynamicResource TextFillColorTertiaryBrush}"
+                                                  GridBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                                  LineBrush="{DynamicResource TextFillColorPrimaryBrush}"
+                                                  HighlightBrush="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                  FocusBrush="{DynamicResource KeyboardFocusBorderColorBrush}"
+                                                  AutomationProperties.Name="{loc:Loc history.chart.output}" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Daily table -->
+                    <Border x:Name="TableCard" Style="{StaticResource Card}" Margin="0,20,0,0" Padding="0,6,0,8">
+                        <StackPanel>
+                            <history:TableHeaderPanel x:Name="TableHeader" Height="30" Margin="0,0,0,2" />
+                            <Rectangle Style="{StaticResource Hairline}" Margin="12,2,12,4" />
+                            <history:DailyTable x:Name="Table"
+                                                TextBrush="{DynamicResource TextFillColorPrimaryBrush}"
+                                                SecondaryBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                MutedBrush="{DynamicResource TextFillColorTertiaryBrush}"
+                                                AltRowBrush="{DynamicResource SubtleFillColorTertiaryBrush}"
+                                                HoverBrush="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                SelectedBrush="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                FocusBrush="{DynamicResource KeyboardFocusBorderColorBrush}"
+                                                AccentBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                                AutomationProperties.Name="{loc:Loc win.history.table}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Empty state -->
+                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,72,0,72"
+                            Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}">
+                    <controls:GaugeGlyph Width="44" Height="44" HorizontalAlignment="Center" Opacity="0.5"
+                                         TextElement.Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{loc:Loc history.empty}" Style="{StaticResource BodyStrongText}" HorizontalAlignment="Center"
+                               TextAlignment="Center" Margin="0,16,0,0" />
+                    <TextBlock Text="{loc:Loc history.empty.hint}" Style="{StaticResource CaptionText}" HorizontalAlignment="Center"
+                               TextAlignment="Center" Margin="0,6,0,0" MaxWidth="360" />
+                </StackPanel>
+
+                <!-- Hover card layer, above every card -->
+                <Canvas x:Name="Overlay" IsHitTestVisible="False" Panel.ZIndex="10" ClipToBounds="False">
+                    <history:HistoryTooltip x:Name="HoverCard" />
+                </Canvas>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Appears once the page scrolls under the toolbar -->
+        <Rectangle x:Name="ScrollDivider" Grid.Row="2" Style="{StaticResource Hairline}" VerticalAlignment="Top" Margin="0,14,0,0"
+                   Opacity="0" IsHitTestVisible="False" />
+
+        <!-- Footer -->
+        <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="24,9,24,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+                            Visibility="{Binding HasMessage, Converter={StaticResource Hidden}}">
+                    <TextBlock Text="{Binding StateText}" FontSize="12" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+                    <ProgressBar Width="120" Height="3" MinHeight="3" Margin="10,1,0,0" Minimum="0" Maximum="1" VerticalAlignment="Center"
+                                 Value="{Binding Progress, Mode=OneWay}" AutomationProperties.Name="{Binding StateText}"
+                                 Visibility="{Binding IsAnalyzing, Converter={StaticResource Visible}}" />
+                    <TextBlock Text="{Binding FilesText}" FontSize="12" Margin="10,0,0,0" Typography.NumeralAlignment="Tabular"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                               Visibility="{Binding IsAnalyzing, Converter={StaticResource Visible}}" />
+                    <Button Style="{StaticResource LinkButton}" Height="22" Margin="6,0,0,0" FontSize="12" Command="{Binding RetryCommand}"
+                            Content="{loc:Loc update.retry}" Visibility="{Binding IsFailed, Converter={StaticResource Visible}}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+                            Visibility="{Binding HasMessage, Converter={StaticResource Visible}}">
+                    <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE783;" FontSize="12" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <TextBlock Text="{Binding Message}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Assertive" />
+                </StackPanel>
+                <DockPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{loc:Loc history.privacy}">
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE72E;" FontSize="11" Margin="0,1,6,0"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    <TextBlock Text="{loc:Loc history.privacy}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </DockPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

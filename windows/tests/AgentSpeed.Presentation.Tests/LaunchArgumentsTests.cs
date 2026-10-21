@@ -87,6 +87,16 @@ public class LaunchArgumentsTests
     }
 
     [Fact]
+    public void PreviewHistory()
+    {
+        var args = LaunchArguments.Parse(["--Preview-History", "--check-updates-now"]);
+        Assert.True(args.PreviewHistory);
+        Assert.Equal(new LaunchArguments(false, null, null, true) { PreviewHistory = true }, args);
+        Assert.False(LaunchArguments.None.PreviewHistory);
+        Assert.False(LaunchArguments.Parse(["--check-updates-now"]).PreviewHistory);
+    }
+
+    [Fact]
     public void UnknownArgumentsAreIgnored()
     {
         var args = LaunchArguments.Parse(["--verbose", "C:\\file.txt", "--after-update=1.0.0", "-after-update", "--wait-pid=5", "--after-update", "1.2.0", "extra"]);

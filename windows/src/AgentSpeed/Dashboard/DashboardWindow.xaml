@@ -32,6 +32,67 @@
             <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
         </Style>
+
+        <!-- Source row: a full-width button whose hover plate bleeds 8 DIP into the padding, so the row's content stays
+             aligned with the sections around it. Hover and focus only change opacity and render transforms. -->
+        <Style x:Key="SourceRowButton" TargetType="dash:SourceRowButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,0,8,0" />
+            <Setter Property="Margin" Value="-8,0,-8,0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="dash:SourceRowButton">
+                        <Grid Background="Transparent" SnapsToDevicePixels="True">
+                            <Border x:Name="PART_Plate" CornerRadius="5" Opacity="0"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            <Border x:Name="Pressed" CornerRadius="5" Visibility="Collapsed"
+                                    Background="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                            <Border x:Name="Focus" CornerRadius="5" BorderThickness="2" Visibility="Collapsed"
+                                    BorderBrush="{DynamicResource KeyboardFocusBorderColorBrush}" />
+                            <Grid Margin="{TemplateBinding Padding}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="False" />
+                                <ContentPresenter x:Name="PART_Trailing" Grid.Column="1" VerticalAlignment="Center"
+                                                  Content="{TemplateBinding Trailing}" />
+                                <TextBlock x:Name="PART_Chevron" Grid.Column="1" Text="&#xE76C;" FontSize="10" Opacity="0"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" IsHitTestVisible="False"
+                                           FontFamily="{DynamicResource AppSymbolFontFamily}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Pressed" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Small secondary text button in a section header; its negative margins keep the header line's height. -->
+        <Style x:Key="HeaderTextButton" TargetType="Button" BasedOn="{StaticResource DisclosureButton}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Margin" Value="0,-4,-6,-4" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Window.Resources>
 
     <Border x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,1">
@@ -59,7 +120,7 @@
                             <TextBlock Text="{Binding UnitText}" Margin="6,0,0,7" VerticalAlignment="Bottom" FontSize="14"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
-                        <TextBlock Text="{Binding TierText}" Foreground="{Binding TierBrush}" FontSize="13" FontWeight="SemiBold" Margin="1,2,0,0" />
+                        <TextBlock Text="{Binding TitleText}" Foreground="{Binding TitleBrush}" FontSize="13" FontWeight="SemiBold" Margin="1,2,0,0" />
                         <TextBlock Text="{Binding ContextText}" Style="{StaticResource CaptionText}" Margin="1,3,0,0" />
                         <Border x:Name="PreviewBadge" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8,2"
                                 CornerRadius="10" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
@@ -119,24 +180,41 @@
                     <ItemsControl ItemsSource="{Binding Sources}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type dash:SourceRow}">
+                                <!-- Exactly 30 DIP in every state; the settings link is a sibling over the trailing edge, never
+                                     a button nested inside the row button. -->
                                 <Grid Height="30" Visibility="{Binding IsListed, Converter={StaticResource Visible}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="18" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="86" />
-                                    </Grid.ColumnDefinitions>
-                                    <Ellipse Width="8" Height="8" Fill="{Binding DotBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                             Opacity="{Binding IsDimmed, Converter={StaticResource Dim}}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                               Opacity="{Binding IsDimmed, Converter={StaticResource Dim}}" />
-                                    <TextBlock Grid.Column="2" Text="{Binding TodayText}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
-                                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                               Visibility="{Binding IsDimmed, Converter={StaticResource Hidden}}" />
-                                    <TextBlock Grid.Column="3" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
-                                               VerticalAlignment="Center" Typography.NumeralAlignment="Tabular"
-                                               Visibility="{Binding IsDimmed, Converter={StaticResource Hidden}}" />
-                                    <Button Grid.Column="2" Grid.ColumnSpan="2" Style="{StaticResource LinkButton}" HorizontalAlignment="Right"
+                                    <dash:SourceRowButton Style="{StaticResource SourceRowButton}" Click="OnSourceRow"
+                                                          ShowChevron="{Binding ShowChevron}"
+                                                          ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          AutomationProperties.Name="{Binding AccessibleName}"
+                                                          AutomationProperties.HelpText="{loc:Loc win.dashboard.sourceHint}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="18" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Width="8" Height="8" Fill="{Binding DotBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                     Opacity="{Binding IsDimmed, Converter={StaticResource Dim}}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" Opacity="{Binding IsDimmed, Converter={StaticResource Dim}}" />
+                                        </Grid>
+                                        <dash:SourceRowButton.Trailing>
+                                            <Grid Visibility="{Binding IsDimmed, Converter={StaticResource Hidden}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="86" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding TodayText}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <dash:LiveValue Grid.Column="1" Text="{Binding LiveText}" Kind="{Binding LiveKind}"
+                                                                TextElement.FontSize="13" TextElement.FontWeight="SemiBold"
+                                                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                                AutomationProperties.Name="{Binding LiveAccessibleName}"
+                                                                ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            </Grid>
+                                        </dash:SourceRowButton.Trailing>
+                                    </dash:SourceRowButton>
+                                    <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Right" Margin="0,0,-4,0"
                                             Content="{Binding Status}" FontSize="12" Click="OnOpenSources"
                                             Visibility="{Binding ShowSettingsLink, Converter={StaticResource Visible}}" />
                                 </Grid>
@@ -174,8 +252,12 @@
                                             </StackPanel>
                                             <dash:PhaseBadge Grid.Column="1" Phase="{Binding Phase}" Color="{Binding Color}"
                                                              ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding LiveText}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
-                                                       VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                                            <!-- Below 0.05 tok/s the slot shows a dash or, while tools run, an hourglass (DESIGN 4.4). -->
+                                            <dash:LiveValue Grid.Column="2" Text="{Binding LiveText}" Kind="{Binding LiveKind}"
+                                                            TextElement.FontSize="13" TextElement.FontWeight="SemiBold"
+                                                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                            AutomationProperties.Name="{Binding LiveAccessibleName}"
+                                                            ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
                                         </Grid>
                                     </Grid>
                                 </DataTemplate>
@@ -198,7 +280,19 @@
 
                     <!-- Today -->
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />
-                    <TextBlock Text="{loc:Loc dashboard.today}" Style="{StaticResource BodyStrongText}" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,8">
+                        <TextBlock Text="{loc:Loc dashboard.today}" Style="{StaticResource BodyStrongText}" />
+                        <Button Style="{StaticResource HeaderTextButton}" Click="OnHistory"
+                                ToolTip="{loc:Loc win.dashboard.historyHint}"
+                                AutomationProperties.Name="{loc:Loc win.dashboard.history}"
+                                AutomationProperties.HelpText="{loc:Loc win.dashboard.historyHint}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE81C;" FontSize="12" VerticalAlignment="Center" Margin="0,1,5,0"
+                                           FontFamily="{DynamicResource AppSymbolFontFamily}" />
+                                <TextBlock Text="{loc:Loc win.dashboard.history}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

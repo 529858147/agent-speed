@@ -10,6 +10,8 @@ public readonly record struct Shockwave(double Progress, double Strength, double
 
 public readonly record struct TierTransition(SpeedTier From, SpeedTier To, double Progress);
 
+public readonly record struct TitleTransition(SpeedTitle From, SpeedTitle To, double Progress);
+
 public enum FrameDemand
 {
     None,
@@ -60,6 +62,9 @@ public sealed class OrbScene
     private double _flashStart = double.NegativeInfinity;
     private double _transitionStart = double.NegativeInfinity;
     private SpeedTier _previousTier = SpeedTier.Idle;
+    private SpeedTitle _title = SpeedTitle.Idle;
+    private SpeedTitle _previousTitle = SpeedTitle.Idle;
+    private double _titleTransitionStart = double.NegativeInfinity;
     private double _lastPulseAt = double.NegativeInfinity;
     private double _peakStart = double.NegativeInfinity;
     private double _nextShimmerAt;
@@ -99,6 +104,9 @@ public sealed class OrbScene
 
     public SpeedTier Tier => _tier;
 
+    /// <summary>The visible label; changing it slides the label but never flashes the gauge.</summary>
+    public SpeedTitle Title => _title;
+
     public double Heat => Math.Clamp(_heat.Value, 0, 1);
 
     public double Overdrive => Math.Clamp(_overdrive.Value, 0, 1);
@@ -132,7 +140,7 @@ public sealed class OrbScene
 
     public double CometOpacity => Math.Clamp((0.25 + 0.6 * Heat) * _cometVisibility.Value, 0, 1);
 
-    /// <summary>0..1 brightness boost after a tier change.</summary>
+    /// <summary>0..1 brightness boost after an effect-tier change.</summary>
     public double Flash
     {
         get
@@ -161,6 +169,10 @@ public sealed class OrbScene
 
     public TierTransition Transition => new(_previousTier, _tier,
         Math.Clamp((_now - _transitionStart) / TierTransitionDuration, 0, 1));
+
+    /// <summary>The label slide between titles (same duration as a tier transition).</summary>
+    public TitleTransition TitleTransition => new(_previousTitle, _title,
+        Math.Clamp((_now - _titleTransitionStart) / TierTransitionDuration, 0, 1));
 
     public IEnumerable<Shockwave> Pulses => _pulses.Select(p => new Shockwave(
         Math.Clamp((_now - p.Start) / PulseDuration, 0, 1), p.Strength, p.Heat));
@@ -211,7 +223,7 @@ public sealed class OrbScene
     /// <summary>Hover spring 0..1 (may overshoot slightly).</summary>
     public double Hover => Effects.HoverScale ? _hover.Value : _hovering ? 1 : 0;
 
-    /// <summary>0..1 crossfade from the tier label to the info line.</summary>
+    /// <summary>0..1 crossfade from the title label to the info line.</summary>
     public double HoverBlend => Math.Clamp(_hoverBlend.Value, 0, 1);
 
     public IReadOnlyList<SourceKind> AgentDots => _agents;
@@ -221,6 +233,18 @@ public sealed class OrbScene
     public double SparkRate => _sparkRate;
 
     public double EmberRate => _emberRate;
+
+    /// <summary>Sets the value, the effect tier (flash, effects) and the speed title (label).</summary>
+    public void SetTarget(double value, SpeedTier tier, SpeedTitle title)
+    {
+        SetTarget(value, tier);
+        if (title != _title)
+        {
+            _previousTitle = _title;
+            _title = title;
+            _titleTransitionStart = _now;
+        }
+    }
 
     public void SetTarget(double value, SpeedTier tier)
     {
@@ -311,6 +335,7 @@ public sealed class OrbScene
         {
             _idleSince = nowSeconds;
             _transitionStart = double.NegativeInfinity;
+            _titleTransitionStart = double.NegativeInfinity;
         }
 
         _lastUpdate = nowSeconds;
@@ -363,6 +388,7 @@ public sealed class OrbScene
                 || _pulses.Count > 0 || _flare > 0
                 || _now - _peakStart < Math.Max(PeakPillDuration, PeakRayDuration)
                 || _now - _transitionStart < TierTransitionDuration
+                || _now - _titleTransitionStart < TierTransitionDuration
                 || Flash > 0
                 || Readout.IsAnimating(_now)
                 || _pendingText != Readout.Current

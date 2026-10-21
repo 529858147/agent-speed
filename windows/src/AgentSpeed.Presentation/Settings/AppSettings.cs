@@ -32,6 +32,25 @@ public enum EffectsIntensity
 /// <summary>Orb center as a fraction (0..1) of a monitor's work area, so it survives resolution and DPI changes.</summary>
 public readonly record struct OrbAnchor(double X, double Y);
 
+/// <summary>A window's restore bounds in DIPs (virtual-screen coordinates) and whether it was maximized.</summary>
+public readonly record struct WindowFrame(double Left, double Top, double Width, double Height, bool Maximized)
+{
+    public const double MinHistoryWidth = 720;
+    public const double MinHistoryHeight = 540;
+    public const double MaxExtent = 16_384;
+    public const double MaxOffset = 100_000;
+
+    /// <summary>Null unless every value is finite and inside the history window's limits.</summary>
+    public static WindowFrame? ValidHistory(WindowFrame? frame) =>
+        frame is { } f
+        && double.IsFinite(f.Left) && double.IsFinite(f.Top) && double.IsFinite(f.Width) && double.IsFinite(f.Height)
+        && f.Width is >= MinHistoryWidth and <= MaxExtent
+        && f.Height is >= MinHistoryHeight and <= MaxExtent
+        && Math.Abs(f.Left) <= MaxOffset && Math.Abs(f.Top) <= MaxOffset
+            ? f
+            : null;
+}
+
 /// <summary>All user settings (DESIGN section 5). Immutable; use <c>with</c> to change.</summary>
 public sealed record AppSettings
 {
@@ -102,6 +121,10 @@ public sealed record AppSettings
 
     public bool DeepSeekEnabled { get; init; } = true;
 
+    public bool OpenCodeEnabled { get; init; } = true;
+
+    public bool GeminiEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
@@ -111,10 +134,19 @@ public sealed record AppSettings
     /// <summary>Null uses the default DeepSeek Harness sessions folder.</summary>
     public string? DshRoot { get; init; }
 
+    /// <summary>Null uses the default OpenCode data folder (the one that contains opencode.db).</summary>
+    public string? OpenCodeRoot { get; init; }
+
+    /// <summary>Null uses the default Gemini CLI <c>tmp</c> folder.</summary>
+    public string? GeminiRoot { get; init; }
+
     public int ChartSeconds { get; init; } = 120;
 
     /// <summary>The dashboard shows every agent instead of the collapsed list.</summary>
     public bool AgentsExpanded { get; init; }
+
+    /// <summary>Last frame of the Usage History window; null opens it at its default size, centered.</summary>
+    public WindowFrame? HistoryWindow { get; init; }
 
     /// <summary>Key of the monitor the orb was last placed on.</summary>
     public string? OrbMonitor { get; init; }
@@ -140,6 +172,8 @@ public sealed record AppSettings
         SourceKind.ClaudeCode => ClaudeCodeEnabled,
         SourceKind.ClaudeDesktop => ClaudeDesktopEnabled,
         SourceKind.DeepSeek => DeepSeekEnabled,
+        SourceKind.OpenCode => OpenCodeEnabled,
+        SourceKind.Gemini => GeminiEnabled,
         _ => false,
     };
 
@@ -149,13 +183,15 @@ public sealed record AppSettings
         SourceKind.ClaudeCode => this with { ClaudeCodeEnabled = enabled },
         SourceKind.ClaudeDesktop => this with { ClaudeDesktopEnabled = enabled },
         SourceKind.DeepSeek => this with { DeepSeekEnabled = enabled },
+        SourceKind.OpenCode => this with { OpenCodeEnabled = enabled },
+        SourceKind.Gemini => this with { GeminiEnabled = enabled },
         _ => this,
     };
 
     public MonitorConfiguration ToMonitorConfiguration()
     {
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
-        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot);
+        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot);
     }
 
     public AppSettings WithOrbAnchor(string monitorKey, OrbAnchor anchor)
@@ -190,6 +226,9 @@ public sealed record AppSettings
         CodexRoot = CleanPath(CodexRoot),
         ClaudeRoot = CleanPath(ClaudeRoot),
         DshRoot = CleanPath(DshRoot),
+        OpenCodeRoot = CleanPath(OpenCodeRoot),
+        GeminiRoot = CleanPath(GeminiRoot),
+        HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),
