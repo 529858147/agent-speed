@@ -1,0 +1,555 @@
+using AgentSpeed.Core.Parsing;
+
+namespace AgentSpeed.Core.Engine;
+
+/// <summary>
+/// Pure, deterministic speed engine (METRICS 6). Every computation takes an explicit <c>nowMs</c> and
+/// <c>todayStartMs</c>. Not thread-safe: the monitor owns it on a single thread.
+/// </summary>
+internal sealed class SpeedEngine
+{
+    public const long WindowMs = 3000;
+    public const long RetentionMs = 30 * 60_000;
+    public const long RecentWindowMs = 10 * 60_000;
+    public const long FallbackWindowMs = 30 * 60_000;
+    public const long StaleMs = 300_000;
+    public const long AgentListWindowMs = 600_000;
+    public const int HistorySeconds = 300;
+    public const int RecentCount = 3;
+    public const int FallbackCount = 10;
+    public const double PeakMinimum = 20;
+    public const double PeakMargin = 1;
+    public const long PeakCooldownMs = 60_000;
+    public const int MaxEventsPerFrame = 50;
+
+    private static readonly int SourceCount = Enum.GetValues<SourceKind>().Length;
+
+    private readonly Dictionary<string, Stored> _responses = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AgentInfo> _agents = new(StringComparer.Ordinal);
+    private readonly List<ParsedResponse> _completions = [];
+    private readonly TodayLedger _today;
+    private ParsedResponse? _last;
+    private double _liveMaxOutput;
+    private double _liveMaxTotal;
+    private long? _liveMaxOutputAtMs;
+    private double? _previousPeakOutput;
+    private long? _lastPeakEventMs;
+
+    public SpeedEngine(long todayStartMs)
+    {
+        _today = new TodayLedger(todayStartMs);
+    }
+
+    public long TodayStartMs => _today.StartMs;
+
+    public void UpdateAgent(in AgentInfo agent) => _agents[agent.Id] = agent;
+
+    public void RemoveAgent(string id) => _agents.Remove(id);
+
+    /// <summary>Adds or replaces a response (METRICS 4.3). Seeded responses never produce events.</summary>
+    public void Upsert(ParsedResponse response, bool isCompletion, bool seeded)
+    {
+        _responses[response.Key] = new Stored(response);
+        _today.Upsert(response);
+        if (isCompletion && !seeded)
+        {
+            if (_completions.Count >= MaxEventsPerFrame * 4)
+            {
+                _completions.RemoveRange(0, MaxEventsPerFrame * 2);
+            }
+
+            _completions.Add(response);
+        }
+
+        if (_last is null || response.EndMs >= _last.EndMs || string.Equals(_last.Key, response.Key, StringComparison.Ordinal))
+        {
+            _last = response;
+        }
+    }
+
+    public EngineFrame Compute(long nowMs, long todayStartMs, bool observeLive)
+    {
+        if (todayStartMs != _today.StartMs)
+        {
+            RollDay(todayStartMs);
+        }
+
+        Evict(nowMs - RetentionMs);
+
+        var windowStart = nowMs - WindowMs;
+        var measured = new Accumulator(SourceCount);
+        var valid = new List<Stored>(_responses.Count);
+        var unmeasured = new List<Stored>();
+        var latestEnd = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var stored in _responses.Values)
+        {
+            var agentId = stored.Response.AgentId;
+            if (!latestEnd.TryGetValue(agentId, out var end) || stored.Response.EndMs > end)
+            {
+                latestEnd[agentId] = stored.Response.EndMs;
+            }
+
+            if (!stored.Valid)
+            {
+                continue;
+            }
+
+            if (!stored.Response.Final)
+            {
+                unmeasured.Add(stored);
+                continue;
+            }
+
+            valid.Add(stored);
+            var overlap = SpeedMath.Overlap(windowStart, nowMs, stored.Interval.StartMs, stored.Interval.EndMs);
+            if (overlap > 0)
+            {
+                var fraction = (double)overlap / stored.Interval.DurationMs;
+                measured.Add(stored.Response.Source, stored.Response.AgentId,
+                    stored.Response.Tokens.Output * fraction, stored.Response.Tokens.Total * fraction);
+            }
+        }
+
+        valid.Sort(static (a, b) => b.Response.EndMs != a.Response.EndMs
+            ? b.Response.EndMs.CompareTo(a.Response.EndMs)
+            : string.CompareOrdinal(a.Response.Key, b.Response.Key));
+
+        var recent = RecentSpeeds(valid, nowMs);
+        var estimated = new Accumulator(SourceCount);
+        var estimates = new List<(long StartMs, long EndMs, SpeedPair Speed)>();
+
+        // Unfinalized usage: the time is real, the token count is not, so it is estimated (METRICS 6.3).
+        foreach (var stored in unmeasured)
+        {
+            var response = stored.Response;
+            var owner = _agents.TryGetValue(response.AgentId, out var known)
+                ? known
+                : new AgentInfo(response.AgentId, response.Source, null, response.Model, false, AgentPhase.Idle, null, null);
+            SpeedPair? speed = recent.TryGetValue(owner.Id, out var ownSpeed) ? ownSpeed : Fallback(valid, nowMs, owner);
+            if (speed is not { } reference)
+            {
+                continue;
+            }
+
+            estimates.Add((stored.Interval.StartMs, stored.Interval.EndMs, reference));
+            var overlap = SpeedMath.Overlap(windowStart, nowMs, stored.Interval.StartMs, stored.Interval.EndMs);
+            estimated.Add(response.Source, response.AgentId, reference.Output * overlap / 1000.0, reference.Total * overlap / 1000.0);
+        }
+
+        foreach (var agent in _agents.Values)
+        {
+            if (agent.Phase != AgentPhase.Generating || agent.InFlightStartMs is not { } start
+                || agent.LastLineMs is not { } last || nowMs - last > StaleMs)
+            {
+                continue;
+            }
+
+            SpeedPair? speed = recent.TryGetValue(agent.Id, out var own) ? own : Fallback(valid, nowMs, agent);
+            if (speed is not { } estimate)
+            {
+                continue;
+            }
+
+            // Never estimate over the agent's own (possibly still streaming) responses.
+            var estimateStart = latestEnd.TryGetValue(agent.Id, out var ownEnd) ? Math.Max(start, ownEnd) : start;
+            estimates.Add((estimateStart, nowMs, estimate));
+            var overlap = SpeedMath.Overlap(windowStart, nowMs, estimateStart, nowMs);
+            estimated.Add(agent.Source, agent.Id, estimate.Output * overlap / 1000.0, estimate.Total * overlap / 1000.0);
+        }
+
+        var seconds = WindowMs / 1000.0;
+        var live = new Rate((measured.Output + estimated.Output) / seconds, (measured.Total + estimated.Total) / seconds);
+        var liveSum = measured.Output + estimated.Output;
+        var share = liveSum > 0 ? estimated.Output / liveSum : 0;
+        var sourceLive = new Rate[SourceCount];
+        for (var i = 0; i < SourceCount; i++)
+        {
+            sourceLive[i] = new Rate(
+                (measured.SourceOutput[i] + estimated.SourceOutput[i]) / seconds,
+                (measured.SourceTotal[i] + estimated.SourceTotal[i]) / seconds);
+        }
+
+        var agents = BuildAgents(nowMs, measured, estimated, recent, seconds, out var generating, out var tools);
+        var history = BuildHistory(nowMs, valid, estimates);
+        var events = DrainCompletions();
+        var peak = UpdatePeak(nowMs, live, observeLive, events);
+
+        var sourceToday = new TokenTotals[SourceCount];
+        for (var i = 0; i < SourceCount; i++)
+        {
+            sourceToday[i] = _today.ForSource((SourceKind)i);
+        }
+
+        return new EngineFrame(
+            nowMs,
+            live,
+            share,
+            sourceLive,
+            peak.Rate,
+            peak.AtMs,
+            _today.AverageOutputSpeed,
+            _today.Totals,
+            sourceToday,
+            agents,
+            generating,
+            tools,
+            history,
+            _last is null ? null : Summarize(_last),
+            events,
+            _today.UnfinalizedCount);
+    }
+
+    private void RollDay(long todayStartMs)
+    {
+        _today.Reset(todayStartMs);
+        foreach (var stored in _responses.Values)
+        {
+            if (stored.Response.EndMs >= todayStartMs)
+            {
+                _today.Upsert(stored.Response);
+            }
+        }
+
+        _liveMaxOutput = 0;
+        _liveMaxTotal = 0;
+        _liveMaxOutputAtMs = null;
+        _previousPeakOutput = null;
+    }
+
+    private void Evict(long cutoffMs)
+    {
+        List<string>? expired = null;
+        foreach (var (key, stored) in _responses)
+        {
+            if (stored.Response.EndMs < cutoffMs)
+            {
+                (expired ??= []).Add(key);
+            }
+        }
+
+        if (expired is null)
+        {
+            return;
+        }
+
+        foreach (var key in expired)
+        {
+            _responses.Remove(key);
+        }
+    }
+
+    private static Dictionary<string, SpeedPair> RecentSpeeds(List<Stored> validNewestFirst, long nowMs)
+    {
+        var sums = new Dictionary<string, (double Output, double Total, double Seconds, int Count)>(StringComparer.Ordinal);
+        var cutoff = nowMs - RecentWindowMs;
+        foreach (var stored in validNewestFirst)
+        {
+            if (stored.Response.EndMs < cutoff)
+            {
+                break;
+            }
+
+            sums.TryGetValue(stored.Response.AgentId, out var sum);
+            if (sum.Count >= RecentCount)
+            {
+                continue;
+            }
+
+            sums[stored.Response.AgentId] = (
+                sum.Output + stored.Response.Tokens.Output,
+                sum.Total + stored.Response.Tokens.Total,
+                sum.Seconds + stored.Interval.DurationMs / 1000.0,
+                sum.Count + 1);
+        }
+
+        var result = new Dictionary<string, SpeedPair>(sums.Count, StringComparer.Ordinal);
+        foreach (var (agentId, sum) in sums)
+        {
+            if (sum.Seconds > 0)
+            {
+                result[agentId] = new SpeedPair(sum.Output / sum.Seconds, sum.Total / sum.Seconds);
+            }
+        }
+
+        return result;
+    }
+
+    private static SpeedPair? Fallback(List<Stored> validNewestFirst, long nowMs, in AgentInfo agent)
+    {
+        var cutoff = nowMs - FallbackWindowMs;
+        if (agent.Model is { } model)
+        {
+            var byModel = Sum(validNewestFirst, cutoff, r => string.Equals(r.Model, model, StringComparison.Ordinal));
+            if (byModel is not null)
+            {
+                return byModel;
+            }
+        }
+
+        var source = agent.Source;
+        return Sum(validNewestFirst, cutoff, r => r.Source == source);
+
+        static SpeedPair? Sum(List<Stored> responses, long cutoffMs, Func<ParsedResponse, bool> match)
+        {
+            double output = 0, total = 0, secondsSum = 0;
+            var count = 0;
+            foreach (var stored in responses)
+            {
+                if (stored.Response.EndMs < cutoffMs)
+                {
+                    break;
+                }
+
+                if (!match(stored.Response))
+                {
+                    continue;
+                }
+
+                output += stored.Response.Tokens.Output;
+                total += stored.Response.Tokens.Total;
+                secondsSum += stored.Interval.DurationMs / 1000.0;
+                if (++count >= FallbackCount)
+                {
+                    break;
+                }
+            }
+
+            return count > 0 && secondsSum > 0 ? new SpeedPair(output / secondsSum, total / secondsSum) : null;
+        }
+    }
+
+    private List<AgentFrame> BuildAgents(
+        long nowMs,
+        Accumulator measured,
+        Accumulator estimated,
+        Dictionary<string, SpeedPair> recent,
+        double seconds,
+        out int generating,
+        out int tools)
+    {
+        var list = new List<AgentFrame>();
+        generating = 0;
+        tools = 0;
+        foreach (var agent in _agents.Values)
+        {
+            if (agent.LastLineMs is not { } last)
+            {
+                continue;
+            }
+
+            var phase = nowMs - last > StaleMs ? AgentPhase.Idle : agent.Phase;
+            if (nowMs - last > AgentListWindowMs && phase != AgentPhase.Generating)
+            {
+                continue;
+            }
+
+            measured.AgentTotals.TryGetValue(agent.Id, out var m);
+            estimated.AgentTotals.TryGetValue(agent.Id, out var e);
+            var live = new Rate((m.Output + e.Output) / seconds, (m.Total + e.Total) / seconds);
+            double? recentSpeed = recent.TryGetValue(agent.Id, out var own) ? own.Output : null;
+            list.Add(new AgentFrame(agent, phase, live, recentSpeed));
+            if (phase == AgentPhase.Generating)
+            {
+                generating++;
+            }
+            else if (phase == AgentPhase.Tools)
+            {
+                tools++;
+            }
+        }
+
+        list.Sort(static (a, b) =>
+        {
+            var aGenerating = a.Phase == AgentPhase.Generating;
+            var bGenerating = b.Phase == AgentPhase.Generating;
+            if (aGenerating != bGenerating)
+            {
+                return aGenerating ? -1 : 1;
+            }
+
+            var byLive = b.Live.Output.CompareTo(a.Live.Output);
+            if (byLive != 0)
+            {
+                return byLive;
+            }
+
+            var byActivity = (b.Info.LastLineMs ?? long.MinValue).CompareTo(a.Info.LastLineMs ?? long.MinValue);
+            return byActivity != 0 ? byActivity : string.CompareOrdinal(a.Info.Id, b.Info.Id);
+        });
+        return list;
+    }
+
+    private static List<HistoryPoint> BuildHistory(
+        long nowMs, List<Stored> measured, List<(long StartMs, long EndMs, SpeedPair Speed)> estimates)
+    {
+        var lastSecond = SpeedMath.FloorDiv(nowMs, 1000);
+        var firstSecond = lastSecond - HistorySeconds + 1;
+        var measuredOutput = new double[HistorySeconds];
+        var measuredTotal = new double[HistorySeconds];
+        var estimatedOutput = new double[HistorySeconds];
+        var estimatedTotal = new double[HistorySeconds];
+
+        foreach (var stored in measured)
+        {
+            var interval = stored.Interval;
+            var duration = (double)interval.DurationMs;
+            var from = Math.Max(firstSecond, SpeedMath.FloorDiv(interval.StartMs, 1000));
+            var to = Math.Min(lastSecond, SpeedMath.FloorDiv(interval.EndMs, 1000));
+            for (var second = from; second <= to; second++)
+            {
+                var overlap = SpeedMath.Overlap(interval.StartMs, interval.EndMs, second * 1000, second * 1000 + 1000);
+                if (overlap <= 0)
+                {
+                    continue;
+                }
+
+                var index = (int)(second - firstSecond);
+                measuredOutput[index] += stored.Response.Tokens.Output * overlap / duration;
+                measuredTotal[index] += stored.Response.Tokens.Total * overlap / duration;
+            }
+        }
+
+        foreach (var (start, end, speed) in estimates)
+        {
+            var from = Math.Max(firstSecond, SpeedMath.FloorDiv(start, 1000));
+            var to = Math.Min(lastSecond, SpeedMath.FloorDiv(end, 1000));
+            for (var second = from; second <= to; second++)
+            {
+                var overlap = SpeedMath.Overlap(start, end, second * 1000, second * 1000 + 1000);
+                if (overlap <= 0)
+                {
+                    continue;
+                }
+
+                var index = (int)(second - firstSecond);
+                estimatedOutput[index] += speed.Output * overlap / 1000.0;
+                estimatedTotal[index] += speed.Total * overlap / 1000.0;
+            }
+        }
+
+        var points = new List<HistoryPoint>(HistorySeconds);
+        for (var i = 0; i < HistorySeconds; i++)
+        {
+            points.Add(new HistoryPoint(
+                DateTimeOffset.FromUnixTimeMilliseconds((firstSecond + i) * 1000),
+                new Rate(measuredOutput[i], measuredTotal[i]),
+                new Rate(estimatedOutput[i], estimatedTotal[i])));
+        }
+
+        return points;
+    }
+
+    private List<SpeedEvent> DrainCompletions()
+    {
+        var events = new List<SpeedEvent>();
+        var skip = Math.Max(0, _completions.Count - MaxEventsPerFrame);
+        for (var i = skip; i < _completions.Count; i++)
+        {
+            events.Add(new SpeedEvent.ResponseCompleted(Summarize(_completions[i])));
+        }
+
+        _completions.Clear();
+        return events;
+    }
+
+    private (Rate Rate, long? AtMs) UpdatePeak(long nowMs, Rate live, bool observeLive, List<SpeedEvent> events)
+    {
+        var (bucketOutput, bucketAt, bucketTotal) = _today.Peak();
+        _previousPeakOutput ??= Math.Max(bucketOutput, _liveMaxOutput);
+        if (observeLive)
+        {
+            if (live.Output >= PeakMinimum
+                && live.Output - _previousPeakOutput.Value >= PeakMargin
+                && (_lastPeakEventMs is not { } lastEvent || nowMs - lastEvent >= PeakCooldownMs))
+            {
+                events.Add(new SpeedEvent.NewPeak(live.Output));
+                _lastPeakEventMs = nowMs;
+            }
+
+            if (live.Output > _liveMaxOutput)
+            {
+                _liveMaxOutput = live.Output;
+                _liveMaxOutputAtMs = nowMs;
+            }
+
+            _liveMaxTotal = Math.Max(_liveMaxTotal, live.Total);
+        }
+
+        var output = Math.Max(bucketOutput, _liveMaxOutput);
+        long? at = output <= 0 ? null : _liveMaxOutput > bucketOutput ? _liveMaxOutputAtMs : bucketAt;
+        _previousPeakOutput = output;
+        return (new Rate(output, Math.Max(bucketTotal, _liveMaxTotal)), at);
+    }
+
+    private ResponseSummary Summarize(ParsedResponse response)
+    {
+        var project = _agents.TryGetValue(response.AgentId, out var agent) ? agent.Project ?? string.Empty : string.Empty;
+        TimeSpan? duration = null;
+        double? speed = null;
+        if (SpeedMath.TryGetSpeedInterval(response, out var interval))
+        {
+            duration = TimeSpan.FromMilliseconds(interval.DurationMs);
+            speed = response.Final ? response.Tokens.Output / (interval.DurationMs / 1000.0) : null;
+        }
+        else if (response.StartMs is { } start && response.EndMs >= start)
+        {
+            duration = TimeSpan.FromMilliseconds(response.EndMs - start);
+        }
+
+        return new ResponseSummary(
+            response.Source,
+            project,
+            response.Model,
+            response.Tokens.Output,
+            response.Tokens.Total,
+            duration,
+            speed,
+            DateTimeOffset.FromUnixTimeMilliseconds(response.EndMs));
+    }
+
+    private readonly record struct SpeedPair(double Output, double Total);
+
+    private sealed class Stored
+    {
+        public Stored(ParsedResponse response)
+        {
+            Response = response;
+            Valid = SpeedMath.TryGetSpeedInterval(response, out var interval);
+            Interval = interval;
+        }
+
+        public ParsedResponse Response { get; }
+
+        public bool Valid { get; }
+
+        public Interval Interval { get; }
+    }
+
+    private sealed class Accumulator(int sourceCount)
+    {
+        public double Output { get; private set; }
+
+        public double Total { get; private set; }
+
+        public double[] SourceOutput { get; } = new double[sourceCount];
+
+        public double[] SourceTotal { get; } = new double[sourceCount];
+
+        public Dictionary<string, (double Output, double Total)> AgentTotals { get; } = new(StringComparer.Ordinal);
+
+        public void Add(SourceKind source, string agentId, double output, double total)
+        {
+            if (output == 0 && total == 0)
+            {
+                return;
+            }
+
+            Output += output;
+            Total += total;
+            SourceOutput[(int)source] += output;
+            SourceTotal[(int)source] += total;
+            AgentTotals.TryGetValue(agentId, out var sum);
+            AgentTotals[agentId] = (sum.Output + output, sum.Total + total);
+        }
+    }
+}

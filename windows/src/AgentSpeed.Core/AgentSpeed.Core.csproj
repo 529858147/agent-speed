@@ -4,5 +4,10 @@
     <RootNamespace>AgentSpeed.Core</RootNamespace>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsTrimmable>true</IsTrimmable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgentSpeed.Core.Tests" />
+    <InternalsVisibleTo Include="AgentSpeed.Probe" />
+  </ItemGroup>
 </Project>

@@ -102,6 +102,9 @@ public abstract record MonitorWarning
     public sealed record UnreadableFiles(int Count) : MonitorWarning;
 
     public sealed record MalformedLines(int Count) : MonitorWarning;
+
+    /// <summary>Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.</summary>
+    public sealed record UnfinalizedUsage(int Count) : MonitorWarning;
 }
 
 /// <param name="LiveEstimatedShare">Share of <paramref name="Live"/> (0..1) that is an in-flight estimate.</param>

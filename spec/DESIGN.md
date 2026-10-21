@@ -17,8 +17,10 @@ this document wins for the orb, the bar widget and all speed visuals.
 
 ## 1. Speed → heat
 
-`R` = redline speed (setting, default **400 tok/s**, range 100–2000). `v` = live value of the selected metric
-(output by default).
+`R` = redline speed of the selected metric. Output speed (default metric): setting default **400 tok/s**, range
+100–2000, step 50. Total throughput (includes cached input, typically ~1000× larger): its own setting, default
+**200k tok/s**, range 20k–2M. The redline slider edits the value of the current metric. `v` = live value of the
+selected metric.
 
 - Heat `h = min(1, (v / R) ^ 0.6)`.
 - Overdrive `o = clamp((v - R) / R, 0, 1)` — extra intensity beyond the redline.
