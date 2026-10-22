@@ -724,8 +724,10 @@ An orb never deletes or rewrites its sources because of that.
 
 ### Context menu (right-click on an orb)
 
-Native menu (macOS `NSMenu`, Windows Fluent context menu), check marks on the leading side, submenus open away from the
-screen edge:
+Native menu (macOS `NSMenu` with leading check marks; Windows Fluent context menu), submenus open away from the screen
+edge. Windows (this menu and the tray quick menu): every label starts in one text column whether or not the item has an
+icon (icons sit in a fixed leading column), and toggle items show their check mark trailing, right-aligned in the same
+column as submenu chevrons, so checked and unchecked items never shift the text:
 
 1. Header (disabled): the orb's colour dots and name.
 2. `orbs.style` ▸ the five style names, check on the current one.
