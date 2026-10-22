@@ -69,7 +69,6 @@ internal sealed class HistoryChart : FrameworkElement
     private readonly DrawingVisual _back = new();
     private readonly DrawingVisual _main = new();
     private readonly DrawingVisual _front = new();
-    private readonly Dictionary<(Color, bool, bool), Brush> _barBrushes = new();
 
     private HistoryBars _target = HistoryBars.Empty(DayRange.Single(DateOnly.MinValue));
     private HistoryBars _shown;
@@ -167,7 +166,6 @@ internal sealed class HistoryChart : FrameworkElement
             if (field != value)
             {
                 field = value;
-                _barBrushes.Clear();
                 RenderAll();
             }
         }
@@ -941,52 +939,8 @@ internal sealed class HistoryChart : FrameworkElement
         }
     }
 
-    private Brush BarBrush(SourceKind source, bool gradient, bool hatched)
-    {
-        var color = HighContrast ? SystemColors.HighlightColor : HeatPalette.SourceColor(source).ToColor();
-        if (_barBrushes.TryGetValue((color, gradient, hatched), out var cached))
-        {
-            return cached;
-        }
-
-        Brush brush;
-        if (hatched)
-        {
-            var tile = new DrawingGroup();
-            using (var g = tile.Open())
-            {
-                g.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(color.A * 0.38), color.R, color.G, color.B)), null, new Rect(0, 0, 6, 6));
-                var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)(color.A * 0.9), color.R, color.G, color.B)), 1.4);
-                g.DrawLine(pen, new Point(-1.5, 7.5), new Point(7.5, -1.5));
-                g.DrawLine(pen, new Point(-1.5, 1.5), new Point(1.5, -1.5));
-                g.DrawLine(pen, new Point(4.5, 7.5), new Point(7.5, 4.5));
-            }
-
-            brush = new DrawingBrush(tile)
-            {
-                TileMode = TileMode.Tile,
-                Viewport = new Rect(0, 0, 6, 6),
-                ViewportUnits = BrushMappingMode.Absolute,
-                Viewbox = new Rect(0, 0, 6, 6),
-                ViewboxUnits = BrushMappingMode.Absolute,
-                Stretch = Stretch.None,
-            };
-        }
-        else if (gradient)
-        {
-            brush = new LinearGradientBrush(
-                [new GradientStop(color, 0), new GradientStop(Color.FromArgb((byte)(color.A * 0.62), color.R, color.G, color.B), 1)],
-                new Point(0, 0), new Point(0, 1));
-        }
-        else
-        {
-            brush = new SolidColorBrush(color);
-        }
-
-        brush.Freeze();
-        _barBrushes[(color, gradient, hatched)] = brush;
-        return brush;
-    }
+    private Brush BarBrush(SourceKind source, bool gradient, bool hatched) =>
+        BarBrushes.For(HighContrast ? SystemColors.HighlightColor : HeatPalette.SourceColor(source).ToColor(), gradient, hatched);
 
     private static StreamGeometry RoundedTop(Rect rect, double radius)
     {

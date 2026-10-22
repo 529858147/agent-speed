@@ -57,7 +57,12 @@ internal static class DumpHistory
             var models = new JsonLine();
             foreach (var model in day.Models.OrderBy(m => m.Model, StringComparer.Ordinal))
             {
-                models.Raw(model.Model, new JsonLine().Add("requests", model.Requests).Add("output", model.Output).Text);
+                models.Raw(model.Model, new JsonLine()
+                    .Add("requests", model.Requests)
+                    .Add("output", model.Output)
+                    .Add("measuredOutput", model.MeasuredOutput)
+                    .Add("measuredMs", model.MeasuredMs)
+                    .Text);
             }
 
             output.Line(new JsonLine()

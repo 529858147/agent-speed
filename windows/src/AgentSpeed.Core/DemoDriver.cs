@@ -13,7 +13,9 @@ public sealed class DemoDriver : IDisposable
         new("demo-rocket", SourceKind.Codex, "rocket", "gpt-6.1-sol", false, 0.34),
         new("demo-nova", SourceKind.ClaudeCode, "nova", "claude-opus-5-5", false, 0.3),
         new("demo-nova-sub", SourceKind.ClaudeCode, "nova", "claude-sonnet-5-5", true, 0.16),
+        new("demo-halo", SourceKind.Antigravity, "halo", "gemini-3.1-pro", false, 0.22),
         new("demo-quasar", SourceKind.DeepSeek, "quasar", "deepseek-flash", false, 0.24),
+        new("demo-meridian", SourceKind.Omp, "meridian", "claude-opus-5-5", false, 0.18),
         new("demo-orbit", SourceKind.ClaudeDesktop, "orbit", "claude-fable-5-1", false, 0.2),
     ];
 

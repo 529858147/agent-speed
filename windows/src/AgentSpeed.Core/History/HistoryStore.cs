@@ -31,7 +31,8 @@ internal sealed class StoredFile
 /// </summary>
 internal sealed class HistoryStore : IDisposable
 {
-    public const int SchemaVersion = 1;
+    /// <summary>2 adds measured output and time per model (METRICS 8).</summary>
+    public const int SchemaVersion = 2;
 
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -65,6 +66,8 @@ internal sealed class HistoryStore : IDisposable
             model TEXT NOT NULL,
             requests INTEGER NOT NULL,
             output INTEGER NOT NULL,
+            measured_output INTEGER NOT NULL DEFAULT 0,
+            measured_ms INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (file_id, day, source, model)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
         """;
@@ -181,7 +184,7 @@ internal sealed class HistoryStore : IDisposable
         }
 
         using (var models = _connection.Prepare(
-            "SELECT file_id, day, source, model, requests, output FROM contribution_models"))
+            "SELECT file_id, day, source, model, requests, output, measured_output, measured_ms FROM contribution_models"))
         {
             while (models.Step())
             {
@@ -189,7 +192,8 @@ internal sealed class HistoryStore : IDisposable
                     && Key(models.GetString(1), models.GetString(2)) is { } key
                     && entry.Days.TryGetValue(key, out var day))
                 {
-                    day.Models[models.GetString(3) ?? string.Empty] = (models.GetInt64(4), models.GetInt64(5));
+                    day.Models[models.GetString(3) ?? string.Empty] =
+                        new ModelTotals(models.GetInt64(4), models.GetInt64(5), models.GetInt64(6), models.GetInt64(7));
                 }
             }
         }
@@ -246,7 +250,8 @@ internal sealed class HistoryStore : IDisposable
             "reasoning, measured_output, measured_ms, unfinalized, agents) " +
             "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)");
         using var insertModel = _connection.Prepare(
-            "INSERT INTO contribution_models (file_id, day, source, model, requests, output) VALUES (?1, ?2, ?3, ?4, ?5, ?6)");
+            "INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms) " +
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)");
         _connection.Transaction(() =>
         {
             foreach (var (entry, keys) in batch)
@@ -278,7 +283,7 @@ internal sealed class HistoryStore : IDisposable
                     foreach (var (model, usage) in day.Models)
                     {
                         insertModel.Bind(1, entry.Id).Bind(2, key.Day).Bind(3, source).Bind(4, model)
-                            .Bind(5, usage.Requests).Bind(6, usage.Output).Run();
+                            .Bind(5, usage.Requests).Bind(6, usage.Output).Bind(7, usage.MeasuredOutput).Bind(8, usage.MeasuredMs).Run();
                     }
                 }
             }
@@ -336,6 +341,14 @@ internal sealed class HistoryStore : IDisposable
                 connection.Transaction(() =>
                 {
                     connection.Execute(Schema);
+                    if (version == 1)
+                    {
+                        // Stored models gain measured totals; AnalysisVersion 2 analyses every file again to fill them.
+                        connection.Execute(
+                            "ALTER TABLE contribution_models ADD COLUMN measured_output INTEGER NOT NULL DEFAULT 0; " +
+                            "ALTER TABLE contribution_models ADD COLUMN measured_ms INTEGER NOT NULL DEFAULT 0;");
+                    }
+
                     connection.Execute($"PRAGMA user_version = {SchemaVersion}");
                 });
             }
@@ -398,6 +411,8 @@ internal static class SourceNames
         SourceKind.DeepSeek => "deepseek",
         SourceKind.OpenCode => "opencode",
         SourceKind.Gemini => "gemini",
+        SourceKind.Omp => "omp",
+        SourceKind.Antigravity => "antigravity",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -409,6 +424,8 @@ internal static class SourceNames
         "deepseek" => SourceKind.DeepSeek,
         "opencode" => SourceKind.OpenCode,
         "gemini" => SourceKind.Gemini,
+        "omp" => SourceKind.Omp,
+        "antigravity" => SourceKind.Antigravity,
         _ => null,
     };
 }

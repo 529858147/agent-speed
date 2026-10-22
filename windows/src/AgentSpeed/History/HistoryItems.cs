@@ -1,7 +1,11 @@
 using System.Windows.Media;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Colors;
+using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.History;
+using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Theme;
 
 namespace AgentSpeed.History;
 
@@ -37,6 +41,7 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
     private bool _isUp;
     private bool _isDown;
     private IReadOnlyList<double?> _spark = [];
+    private int _sparkHighlight = -1;
     private Brush? _sparkBrush;
     private string _accessibleName = string.Empty;
 
@@ -69,6 +74,9 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
 
     public IReadOnlyList<double?> Spark { get => _spark; private set => Set(ref _spark, value); }
 
+    /// <summary>Index of the selected day in <see cref="Spark"/> for a single-day range; -1 otherwise.</summary>
+    public int SparkHighlight { get => _sparkHighlight; private set => Set(ref _sparkHighlight, value); }
+
     /// <summary>The source color when one source is shown; null uses the label color.</summary>
     public Brush? SparkBrush { get => _sparkBrush; private set => Set(ref _sparkBrush, value); }
 
@@ -95,11 +103,86 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
         IsUp = card.Change is > 0.0005;
         IsDown = card.Change is < -0.0005;
         Spark = card.Spark;
+        SparkHighlight = card.Highlight ?? -1;
         if (Set(ref _sparkBrush, sparkBrush, nameof(SparkBrush)))
         {
             OnPropertyChanged(nameof(HasSparkBrush));
         }
 
         AccessibleName = accessibleName;
+    }
+}
+
+/// <summary>One bar of the single-day breakdown, updated in place so its bar can grow to the new length.</summary>
+internal sealed class BreakdownRowView(string key) : ObservableObject
+{
+    private SourceKind _source;
+    private bool _isSource;
+    private string _name = string.Empty;
+    private Brush _dotBrush = Brushes.Gray;
+    private Color _barColor = Colors.Gray;
+    private bool _hatched;
+    private double _fraction;
+    private string _outputText = string.Empty;
+    private string _shareText = string.Empty;
+    private string _speedText = string.Empty;
+    private string _toolTip = string.Empty;
+    private string _helpText = string.Empty;
+    private string _accessibleName = string.Empty;
+
+    public string Key { get; } = key;
+
+    public SourceKind Source { get => _source; private set => Set(ref _source, value); }
+
+    /// <summary>A source bar: activating it shows that source's models.</summary>
+    public bool IsSource { get => _isSource; private set => Set(ref _isSource, value); }
+
+    public string Name { get => _name; private set => Set(ref _name, value); }
+
+    public Brush DotBrush { get => _dotBrush; private set => Set(ref _dotBrush, value); }
+
+    public Color BarColor { get => _barColor; private set => Set(ref _barColor, value); }
+
+    /// <summary>Today's figures are still in progress.</summary>
+    public bool Hatched { get => _hatched; private set => Set(ref _hatched, value); }
+
+    /// <summary>Length relative to the largest bar.</summary>
+    public double Fraction { get => _fraction; private set => Set(ref _fraction, value); }
+
+    public string OutputText { get => _outputText; private set => Set(ref _outputText, value); }
+
+    public string ShareText { get => _shareText; private set => Set(ref _shareText, value); }
+
+    /// <summary><c>42 tok/s</c>, or <c>history.noSpeed</c> when nothing was measured.</summary>
+    public string SpeedText { get => _speedText; private set => Set(ref _speedText, value); }
+
+    /// <summary>Exact values (and, on a source bar, what activating it does).</summary>
+    public string ToolTip { get => _toolTip; private set => Set(ref _toolTip, value); }
+
+    public string HelpText { get => _helpText; private set => Set(ref _helpText, value); }
+
+    public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
+
+    public void Apply(BreakdownRow row, BreakdownKind kind, bool inProgress, Localizer loc)
+    {
+        var color = (row.OtherModels ? HeatPalette.Neutral : HeatPalette.SourceColor(row.Source)).ToColor();
+        Source = row.Source;
+        IsSource = kind == BreakdownKind.Sources;
+        Name = HistoryText.BreakdownName(row, loc);
+        if (BarColor != color)
+        {
+            BarColor = color;
+            DotBrush = MediaColors.Frozen(color);
+        }
+
+        Hatched = inProgress;
+        Fraction = row.Fraction;
+        OutputText = SpeedFormat.Tokens(row.Output);
+        ShareText = HistoryText.Percent(row.Share);
+        SpeedText = HistoryText.Speed(row.Speed, loc);
+        var value = HistoryText.BreakdownValue(row, loc);
+        HelpText = IsSource ? loc["win.history.breakdown.sourceHint"] : string.Empty;
+        ToolTip = IsSource ? $"{value}{Environment.NewLine}{HelpText}" : value;
+        AccessibleName = HistoryText.Accessible(row, loc);
     }
 }

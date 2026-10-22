@@ -5,7 +5,10 @@ using AgentSpeed.Presentation.History;
 
 namespace AgentSpeed.History;
 
-/// <summary>A tiny line of one value per day; it breaks where a day has no value and ends in a dot.</summary>
+/// <summary>
+/// A tiny line of one value per day; it breaks where a day has no value and ends in a dot, or marks the highlighted
+/// day with a ringed dot instead.
+/// </summary>
 internal sealed class Sparkline : FrameworkElement
 {
     public static readonly DependencyProperty ValuesProperty = DependencyProperty.Register(
@@ -15,6 +18,10 @@ internal sealed class Sparkline : FrameworkElement
     public static readonly DependencyProperty StrokeProperty = DependencyProperty.Register(
         nameof(Stroke), typeof(Brush), typeof(Sparkline),
         new FrameworkPropertyMetadata(Brushes.Gray, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>Index into <see cref="Values"/> of the day to mark; -1 for none.</summary>
+    public static readonly DependencyProperty HighlightProperty = DependencyProperty.Register(
+        nameof(Highlight), typeof(int), typeof(Sparkline), new FrameworkPropertyMetadata(-1, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public IReadOnlyList<double?> Values
     {
@@ -26,6 +33,12 @@ internal sealed class Sparkline : FrameworkElement
     {
         get => (Brush)GetValue(StrokeProperty);
         set => SetValue(StrokeProperty, value);
+    }
+
+    public int Highlight
+    {
+        get => (int)GetValue(HighlightProperty);
+        set => SetValue(HighlightProperty, value);
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -93,6 +106,18 @@ internal sealed class Sparkline : FrameworkElement
             dc.DrawGeometry(null, pen, line);
         }
 
+        var highlight = Highlight >= 0 && Highlight < raw.Count ? Highlight * values.Length / raw.Count : -1;
+        if (highlight >= 0)
+        {
+            if (values[highlight] is { } h && double.IsFinite(h))
+            {
+                dc.DrawEllipse(HaloBrush(stroke), null, At(highlight), 4.5, 4.5);
+                dc.DrawEllipse(stroke, null, At(highlight), 2.25, 2.25);
+            }
+
+            return;
+        }
+
         for (var i = values.Length - 1; i >= 0; i--)
         {
             if (values[i] is { } v && double.IsFinite(v))
@@ -101,6 +126,20 @@ internal sealed class Sparkline : FrameworkElement
                 break;
             }
         }
+    }
+
+    /// <summary>A soft ring of the line color around the highlighted dot.</summary>
+    private static Brush HaloBrush(Brush stroke)
+    {
+        if (stroke is not SolidColorBrush solid)
+        {
+            return Brushes.Transparent;
+        }
+
+        var color = solid.Color;
+        var brush = new SolidColorBrush(Color.FromArgb((byte)(color.A * solid.Opacity * 0.3), color.R, color.G, color.B));
+        brush.Freeze();
+        return brush;
     }
 
     /// <summary>Averages neighbouring days so a long range reads as a trend rather than a scribble.</summary>

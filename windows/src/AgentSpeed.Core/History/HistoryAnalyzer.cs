@@ -41,12 +41,14 @@ internal sealed record HistoryReport(
 
 /// <summary>
 /// Computes the daily history (METRICS 8): every transcript of the enabled sources (plus Codex
-/// <c>archived_sessions</c>) and every OpenCode session, parsed completely with the live rules in startup order,
-/// incrementally against a <see cref="HistoryStore"/>. One owner thread.
+/// <c>archived_sessions</c>, every omp root and every Antigravity conversation database) and every OpenCode session,
+/// parsed completely with the live rules in startup order, incrementally against a <see cref="HistoryStore"/>. One
+/// owner thread.
 /// </summary>
 internal sealed class HistoryAnalyzer
 {
-    public const int AnalysisVersion = 1;
+    /// <summary>2: measured output and time per model (METRICS 8).</summary>
+    public const int AnalysisVersion = 2;
 
     private const string OpenCodeFamily = "opencode";
     private const string ZoneMeta = "timeZone";
@@ -229,6 +231,7 @@ internal sealed class HistoryAnalyzer
                 }
 
                 plan.Discovered++;
+                // An Antigravity database's size and time already combine its -wal (METRICS 8).
                 var previous = _entries.GetValueOrDefault(file.Path);
                 if (previous is not null && !zoneChanged && previous.Version == _options.Version
                     && string.Equals(previous.Family, familyName, StringComparison.Ordinal)
@@ -237,7 +240,7 @@ internal sealed class HistoryAnalyzer
                     continue;
                 }
 
-                plan.Files.Add(new PlannedFile(file.Path, family, file.Length, file.LastWriteUtc, previous));
+                plan.Files.Add(new PlannedFile(file.Path, family, root, file.Length, file.LastWriteUtc, previous));
             }
         }
 
@@ -353,7 +356,8 @@ internal sealed class HistoryAnalyzer
         }
 
         using var reader = new OrderedFileReader(
-            [.. files.Select(f => (f.Path, f.Family, f.Size))], ledger, _options.Workers, _options.MaxBufferedBytes, cancellationToken);
+            [.. files.Select(f => new ReadJob(f.Path, f.Family, f.Root, f.Size))], ledger, _options.Workers, _options.MaxBufferedBytes,
+            cancellationToken);
         foreach (var file in files)
         {
             if (cancellationToken.IsCancellationRequested || reader.Next() is not { } prepared)
@@ -497,7 +501,7 @@ internal sealed class HistoryAnalyzer
         }
     }
 
-    private sealed record PlannedFile(string Path, RootFamily Family, long Size, DateTime LastWriteUtc, StoredFile? Previous);
+    private sealed record PlannedFile(string Path, RootFamily Family, string Root, long Size, DateTime LastWriteUtc, StoredFile? Previous);
 
     private sealed record PlannedSession(OpenCodeSessionInfo Info, long Rows, long ModifiedMs, StoredFile? Previous);
 

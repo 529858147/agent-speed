@@ -15,7 +15,11 @@ internal sealed record TooltipLine(string Label, string Value, Brush? Dot = null
     public Thickness Margin => new(Indented ? 2 : 0, Indented ? 1 : 2, 0, Indented ? 1 : 2);
 }
 
-internal sealed record TooltipShare(string Name, double Share, string Percent);
+/// <summary>One of a day's top models: name, average speed (empty when not measured) and share of the output.</summary>
+internal sealed record TooltipShare(string Name, double Share, string Percent, string Speed = "")
+{
+    public bool HasSpeed => !string.IsNullOrEmpty(Speed);
+}
 
 internal sealed record TooltipModel(
     string Title,

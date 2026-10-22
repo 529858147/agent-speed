@@ -21,6 +21,12 @@ internal enum TranscriptNaming
 
     /// <summary><c>opencode.db</c> and its WAL in one folder (OpenCode, METRICS 5.2); not enumerated.</summary>
     OpenCodeDatabase,
+
+    /// <summary><c>*.jsonl</c> at least one folder below the root, nothing starting with <c>.</c> (omp, METRICS 4.7).</summary>
+    OmpSession,
+
+    /// <summary><c>&lt;uuid&gt;.db</c> directly in a <c>conversations</c> folder (Antigravity, METRICS 4.8).</summary>
+    AntigravityDatabase,
 }
 
 /// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
@@ -41,6 +47,8 @@ internal static class TranscriptDiscovery
                 || fileName.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase),
             TranscriptNaming.GeminiSession => Gemini.GeminiDiscovery.IsSessionFileName(fileName),
             TranscriptNaming.OpenCodeDatabase => false,
+            TranscriptNaming.OmpSession => Omp.OmpDiscovery.IsSessionFileName(fileName),
+            TranscriptNaming.AntigravityDatabase => Antigravity.AntigravityPaths.IsDatabaseName(fileName),
             _ => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
         };
 
@@ -80,6 +88,16 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.OpenCodeDatabase)
         {
             return [];
+        }
+
+        if (naming == TranscriptNaming.OmpSession)
+        {
+            return Omp.OmpDiscovery.Enumerate(root, limit, cancellationToken);
+        }
+
+        if (naming == TranscriptNaming.AntigravityDatabase)
+        {
+            return Antigravity.AntigravityDiscovery.Enumerate(root, limit);
         }
 
         var scanCap = limit == int.MaxValue ? int.MaxValue : MaxScannedEntries;
@@ -142,6 +160,16 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.GeminiSession)
         {
             return Gemini.GeminiDiscovery.IsSessionPath(root, path);
+        }
+
+        if (naming == TranscriptNaming.OmpSession)
+        {
+            return Omp.OmpDiscovery.IsSessionPath(root, path);
+        }
+
+        if (naming == TranscriptNaming.AntigravityDatabase)
+        {
+            return Antigravity.AntigravityDiscovery.IsDatabasePath(root, path);
         }
 
         if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan()), naming))

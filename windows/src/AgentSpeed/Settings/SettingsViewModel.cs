@@ -151,6 +151,12 @@ internal sealed class SettingsViewModel : ObservableObject
         ChangeGeminiCommand = new RelayCommand(() => ChangeFolder(GeminiPath, (s, path) => s with { GeminiRoot = path }));
         ResetOpenCodeCommand = new RelayCommand(() => _settings.Update(s => s with { OpenCodeRoot = null }), () => _settings.Current.OpenCodeRoot is not null);
         ResetGeminiCommand = new RelayCommand(() => _settings.Update(s => s with { GeminiRoot = null }), () => _settings.Current.GeminiRoot is not null);
+        ChangeOmpCommand = new RelayCommand(() => ChangeFolder(OmpPath, (s, path) => s with { OmpRoot = path }));
+        ChangeAntigravityCommand = new RelayCommand(() =>
+            ChangeFolder(AntigravityFolders.FirstOrDefault() ?? string.Empty, (s, path) => s with { AntigravityRoot = path }));
+        ResetOmpCommand = new RelayCommand(() => _settings.Update(s => s with { OmpRoot = null }), () => _settings.Current.OmpRoot is not null);
+        ResetAntigravityCommand = new RelayCommand(() => _settings.Update(s => s with { AntigravityRoot = null }),
+            () => _settings.Current.AntigravityRoot is not null);
         OpenHistoryCommand = new RelayCommand(openHistory);
         ClearHistoryCommand = new RelayCommand(() =>
         {
@@ -247,6 +253,14 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public RelayCommand ResetGeminiCommand { get; }
 
+    public RelayCommand ChangeOmpCommand { get; }
+
+    public RelayCommand ChangeAntigravityCommand { get; }
+
+    public RelayCommand ResetOmpCommand { get; }
+
+    public RelayCommand ResetAntigravityCommand { get; }
+
     public RelayCommand OpenHistoryCommand { get; }
 
     /// <summary>Asks for confirmation, then clears the stored history.</summary>
@@ -263,6 +277,9 @@ internal sealed class SettingsViewModel : ObservableObject
     public RelayCommand OpenUpdateCommand { get; }
 
     private AppSettings S => _settings.Current;
+
+    private IReadOnlyList<string> AntigravityFolders =>
+        SourceFolders.Antigravity(S.AntigravityRoot, LiveMonitor.DefaultAntigravityStores, Directory.Exists);
 
     public int AppearanceIndex
     {
@@ -449,6 +466,20 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string GeminiStatus => StatusFor(SourceKind.Gemini);
 
+    /// <summary>The default omp <c>sessions</c> root (named profiles are read too), or the one chosen folder.</summary>
+    public string OmpPath => S.OmpRoot ?? LiveMonitor.DefaultOmpRoot;
+
+    /// <summary>The chosen Antigravity folder, else the default stores found, one per line.</summary>
+    public string AntigravityPath => string.Join(Environment.NewLine, AntigravityFolders);
+
+    public bool OmpIsCustom => S.OmpRoot is not null;
+
+    public bool AntigravityIsCustom => S.AntigravityRoot is not null;
+
+    public string OmpStatus => StatusFor(SourceKind.Omp);
+
+    public string AntigravityStatus => StatusFor(SourceKind.Antigravity);
+
     public string CodexStatus => StatusFor(SourceKind.Codex);
 
     public string DshStatus => StatusFor(SourceKind.DeepSeek);
@@ -550,6 +581,9 @@ internal sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(DshStatus));
         OnPropertyChanged(nameof(OpenCodeStatus));
         OnPropertyChanged(nameof(GeminiStatus));
+        OnPropertyChanged(nameof(OmpStatus));
+        OnPropertyChanged(nameof(AntigravityStatus));
+        OnPropertyChanged(nameof(AntigravityPath));
         OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 

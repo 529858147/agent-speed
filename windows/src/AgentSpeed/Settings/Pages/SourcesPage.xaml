@@ -56,6 +56,22 @@
             </StackPanel>
         </controls:SettingsCard>
         <TextBlock Text="{loc:Loc settings.sources.geminiHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+        <controls:SettingsCard Header="{loc:Loc source.omp}" Icon="&#xE8B7;" Description="{Binding OmpPath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding OmpStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeOmpCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetOmpCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.ompHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+        <controls:SettingsCard Header="{loc:Loc source.antigravity}" Icon="&#xE8B7;" Description="{Binding AntigravityPath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding AntigravityStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeAntigravityCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetAntigravityCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.antigravityHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
 
         <controls:SettingsCard Header="{loc:Loc history.title}" Description="{loc:Loc history.privacy}" Icon="&#xE81C;" ContentBelow="True"
                                Margin="0,24,0,4">

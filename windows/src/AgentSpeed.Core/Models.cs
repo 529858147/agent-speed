@@ -8,6 +8,12 @@ public enum SourceKind
     DeepSeek,
     OpenCode,
     Gemini,
+
+    /// <summary>omp (oh-my-pi), METRICS 4.7.</summary>
+    Omp,
+
+    /// <summary>Google Antigravity (CLI, desktop app, IDE), METRICS 4.8.</summary>
+    Antigravity,
 }
 
 public enum AgentPhase
@@ -111,7 +117,7 @@ public abstract record MonitorWarning
     /// <summary>Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.</summary>
     public sealed record UnfinalizedUsage(int Count) : MonitorWarning;
 
-    /// <summary>The source's data exists but has an unsupported format (an OpenCode database without the expected tables).</summary>
+    /// <summary>The source's data exists but has an unsupported format (an OpenCode or Antigravity database without the expected tables).</summary>
     public sealed record UnsupportedFormat(SourceKind Source) : MonitorWarning;
 }
 
@@ -165,13 +171,17 @@ public abstract record SpeedEvent
 /// <param name="DshRoot">Null uses the default DeepSeek Harness sessions folder.</param>
 /// <param name="OpenCodeRoot">Null uses the default OpenCode data folder (the one that contains opencode.db).</param>
 /// <param name="GeminiRoot">Null uses the default Gemini CLI home folder.</param>
+/// <param name="OmpRoot">One omp <c>sessions</c> folder; null scans the default root and every named profile.</param>
+/// <param name="AntigravityRoot">One Antigravity store folder (or its <c>conversations</c> folder); null reads all three stores.</param>
 public sealed record MonitorConfiguration(
     IReadOnlySet<SourceKind> EnabledSources,
     string? CodexRoot = null,
     string? ClaudeRoot = null,
     string? DshRoot = null,
     string? OpenCodeRoot = null,
-    string? GeminiRoot = null)
+    string? GeminiRoot = null,
+    string? OmpRoot = null,
+    string? AntigravityRoot = null)
 {
     public static MonitorConfiguration Default { get; } =
         new(new HashSet<SourceKind>(Enum.GetValues<SourceKind>()));
@@ -183,8 +193,10 @@ public sealed record MonitorConfiguration(
         && ClaudeRoot == other.ClaudeRoot
         && DshRoot == other.DshRoot
         && OpenCodeRoot == other.OpenCodeRoot
-        && GeminiRoot == other.GeminiRoot;
+        && GeminiRoot == other.GeminiRoot
+        && OmpRoot == other.OmpRoot
+        && AntigravityRoot == other.AntigravityRoot;
 
     public override int GetHashCode() =>
-        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot);
+        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot);
 }

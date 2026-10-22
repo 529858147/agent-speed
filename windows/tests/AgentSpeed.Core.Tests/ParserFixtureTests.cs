@@ -2,6 +2,7 @@ using System.Text.Json;
 using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
+using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Tests;
@@ -116,6 +117,8 @@ public sealed class ParserFixtureTests
         SourceKind.DeepSeek => "deepseek",
         SourceKind.OpenCode => "opencode",
         SourceKind.Gemini => "gemini",
+        SourceKind.Omp => "omp",
+        SourceKind.Antigravity => "antigravity",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -173,6 +176,11 @@ public sealed class ParserFixtureTests
 
             gemini.Feed(content, sink);
             return gemini;
+        }
+
+        if (relative.StartsWith("omp/", StringComparison.Ordinal))
+        {
+            return FeedLines(new OmpParser(path, deduper, OmpFixture.RootOf(path)), content, sink, maxLines);
         }
 
         throw new InvalidOperationException("Unknown fixture source: " + relative);

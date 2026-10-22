@@ -35,11 +35,15 @@ public class SettingsSerializerTests
             DeepSeekEnabled = false,
             OpenCodeEnabled = false,
             GeminiEnabled = true,
+            OmpEnabled = false,
+            AntigravityEnabled = false,
             CodexRoot = Path.Combine(Path.GetTempPath(), "codex sessions"),
             ClaudeRoot = Path.Combine(Path.GetTempPath(), "claude", "projects"),
             DshRoot = Path.Combine(Path.GetTempPath(), "dsh", "sessions"),
             OpenCodeRoot = Path.Combine(Path.GetTempPath(), "opencode data"),
             GeminiRoot = Path.Combine(Path.GetTempPath(), ".gemini", "tmp"),
+            OmpRoot = Path.Combine(Path.GetTempPath(), ".omp", "profiles", "work", "agent", "sessions"),
+            AntigravityRoot = Path.Combine(Path.GetTempPath(), ".gemini", "antigravity-ide"),
             ChartSeconds = 300,
             AgentsExpanded = true,
             HistoryWindow = new WindowFrame(-1600.5, 120.25, 1040, 720, Maximized: true),
@@ -266,10 +270,15 @@ public class SettingsSerializerTests
         Assert.True(settings.IsSourceEnabled(SourceKind.DeepSeek));
         Assert.True(settings.IsSourceEnabled(SourceKind.OpenCode));
         Assert.True(settings.IsSourceEnabled(SourceKind.Gemini));
+        Assert.True(settings.IsSourceEnabled(SourceKind.Omp));
+        Assert.True(settings.IsSourceEnabled(SourceKind.Antigravity));
 
         var config = (settings with { CodexRoot = Path.Combine(Path.GetTempPath(), "c") }).ToMonitorConfiguration();
         Assert.True(config.EnabledSources.SetEquals(
-            [SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek, SourceKind.OpenCode, SourceKind.Gemini]));
+        [
+            SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek, SourceKind.OpenCode, SourceKind.Gemini,
+            SourceKind.Omp, SourceKind.Antigravity,
+        ]));
         Assert.Equal(Path.Combine(Path.GetTempPath(), "c"), config.CodexRoot);
         Assert.Null(config.ClaudeRoot);
         Assert.Null(config.DshRoot);
@@ -286,7 +295,10 @@ public class SettingsSerializerTests
 
         var config = settings.ToMonitorConfiguration();
         Assert.True(config.EnabledSources.SetEquals(
-            [SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop, SourceKind.OpenCode, SourceKind.Gemini]));
+        [
+            SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop, SourceKind.OpenCode, SourceKind.Gemini,
+            SourceKind.Omp, SourceKind.Antigravity,
+        ]));
         Assert.Equal(dsh, config.DshRoot);
         Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { DshRoot = dsh }).ToMonitorConfiguration());
 

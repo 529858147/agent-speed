@@ -18,16 +18,24 @@ public static class HistoryText
         return loc.Format(count == 1 ? "win.history.days.one" : "win.history.days", count);
     }
 
-    /// <summary><c>2026/9/22 – 10/21 · 30 天</c>; the year is written once when both ends share it.</summary>
-    public static string RangeSubtitle(DayRange range, Localizer loc)
+    /// <summary>
+    /// <c>2026/9/22 – 10/21 · 30 天</c>; the year is written once when both ends share it. A single day is spelled out
+    /// with its weekday: <c>今天 · 2026/10/21（週三）</c>, <c>2026/10/14（週三）</c>.
+    /// </summary>
+    public static string RangeSubtitle(DayRange range, DateOnly today, Localizer loc)
     {
         ArgumentNullException.ThrowIfNull(loc);
-        string dates;
-        if (range.DayCount == 1)
+        if (range.IsSingleDay)
         {
-            dates = Date(range.Start, loc);
+            var day = range.Start;
+            var date = LongDate(day, loc);
+            return day == today ? $"{loc["history.today"]} · {date}"
+                : day == today.AddDays(-1) ? $"{loc["history.yesterday"]} · {date}"
+                : date;
         }
-        else if (range.Start.Year == range.End.Year)
+
+        string dates;
+        if (range.Start.Year == range.End.Year)
         {
             dates = Pattern(range.Start, "win.history.format.rangeStart", loc) + RangeDash + Pattern(range.End, "win.history.format.rangeEnd", loc);
         }
@@ -147,6 +155,13 @@ public static class HistoryText
         return loc.Format("history.summary.vsPrevious", Change(ratio));
     }
 
+    /// <summary><c>比前一天 +12%</c></summary>
+    public static string VersusPreviousDay(double ratio, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(loc);
+        return loc.Format("history.summary.vsPreviousDay", Change(ratio));
+    }
+
     /// <summary><c>活躍 18 天</c></summary>
     public static string ActiveDays(int days, Localizer loc)
     {
@@ -247,11 +262,50 @@ public static class HistoryText
         parts.Add(Labelled(loc["history.table.agents"], FullNumber(day.Agents, loc), loc));
         if (day.Models.Count > 0)
         {
-            parts.Add(Labelled(loc["history.table.models"], TopModels(day.Models, loc, 3), loc));
+            var models = day.Models.Take(3).Select(m => ModelWithSpeed(m, loc)).ToList();
+            if (day.Models.Count > 3)
+            {
+                models.Add(loc.Format("win.history.models.more", day.Models.Count - 3));
+            }
+
+            parts.Add(Labelled(loc["history.table.models"], string.Join(", ", models), loc));
         }
 
         return Labelled(title, JoinParts(parts, loc), loc);
     }
+
+    /// <summary>A model with its average speed when it was measured: <c>claude-opus-5-5 · 83 tok/s</c>.</summary>
+    public static string ModelWithSpeed(ModelUsage model, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(loc);
+        return model.AverageSpeed is { } speed && double.IsFinite(speed) && speed > 0 ? $"{model.Model} · {Speed(speed, loc)}" : model.Model;
+    }
+
+    /// <summary>The values of one breakdown bar: <c>輸出：312,345，佔比：38%，平均速度：88.2 tok/s，請求：151</c>.</summary>
+    public static string BreakdownValue(BreakdownRow row, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(loc);
+        return JoinParts(
+        [
+            Labelled(loc["history.table.output"], FullNumber(row.Output, loc), loc),
+            Labelled(loc["win.history.share"], Percent(row.Share), loc),
+            Labelled(loc["history.table.speed"], Speed(row.Speed, loc), loc),
+            Labelled(loc["history.table.requests"], FullNumber(row.Requests, loc), loc),
+        ], loc);
+    }
+
+    /// <summary>The name of a breakdown bar: the source, the model, or <c>其他模型</c>.</summary>
+    public static string BreakdownName(BreakdownRow row, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(loc);
+        return row.OtherModels ? loc["win.history.breakdown.otherModels"] : row.Model ?? loc[DisplayText.SourceKey(row.Source)];
+    }
+
+    /// <summary>One breakdown bar for screen readers: its name, then its values.</summary>
+    public static string Accessible(BreakdownRow row, Localizer loc) => Labelled(BreakdownName(row, loc), BreakdownValue(row, loc), loc);
 
     private static string Pattern(DateOnly day, string key, Localizer loc)
     {

@@ -8,6 +8,8 @@ public class SourceAndWindowSettingsTests
 {
     private static readonly string OpenCode = Path.Combine(Path.GetTempPath(), "opencode");
     private static readonly string Gemini = Path.Combine(Path.GetTempPath(), ".gemini", "tmp");
+    private static readonly string Omp = Path.Combine(Path.GetTempPath(), ".omp", "profiles", "work", "agent", "sessions");
+    private static readonly string Antigravity = Path.Combine(Path.GetTempPath(), ".gemini", "antigravity-cli");
 
     [Fact]
     public void EverySourceKindHasItsOwnToggle()
@@ -62,16 +64,102 @@ public class SourceAndWindowSettingsTests
         Assert.Null(s.HistoryWindow);
     }
 
+    [Fact]
+    public void OmpAndAntigravityFoldersReachTheMonitorAndRoundTrip()
+    {
+        var settings = AppSettings.Default.WithSourceEnabled(SourceKind.Omp, false) with { OmpRoot = Omp, AntigravityRoot = Antigravity };
+        var config = settings.ToMonitorConfiguration();
+        Assert.DoesNotContain(SourceKind.Omp, config.EnabledSources);
+        Assert.Contains(SourceKind.Antigravity, config.EnabledSources);
+        Assert.Equal(Omp, config.OmpRoot);
+        Assert.Equal(Antigravity, config.AntigravityRoot);
+        Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { OmpRoot = Omp }).ToMonitorConfiguration());
+        Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(),
+            (AppSettings.Default with { AntigravityRoot = Antigravity }).ToMonitorConfiguration());
+
+        var json = SettingsSerializer.Serialize(settings);
+        using (var document = JsonDocument.Parse(json))
+        {
+            var sources = document.RootElement.GetProperty("sources");
+            Assert.False(sources.GetProperty("omp").GetBoolean());
+            Assert.True(sources.GetProperty("antigravity").GetBoolean());
+            Assert.Equal(Omp, sources.GetProperty("ompRoot").GetString());
+            Assert.Equal(Antigravity, sources.GetProperty("antigravityRoot").GetString());
+        }
+
+        var back = SettingsSerializer.Deserialize(json);
+        Assert.False(back.OmpEnabled);
+        Assert.True(back.AntigravityEnabled);
+        Assert.Equal(Omp, back.OmpRoot);
+        Assert.Equal(Antigravity, back.AntigravityRoot);
+
+        using var defaults = JsonDocument.Parse(SettingsSerializer.Serialize(AppSettings.Default));
+        var defaultSources = defaults.RootElement.GetProperty("sources");
+        Assert.True(defaultSources.GetProperty("omp").GetBoolean());
+        Assert.True(defaultSources.GetProperty("antigravity").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("ompRoot").ValueKind);
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("antigravityRoot").ValueKind);
+    }
+
+    [Fact]
+    public void OlderFilesKeepOmpAndAntigravityOnWithDefaultFolders()
+    {
+        var s = SettingsSerializer.Deserialize("""
+            { "version": 1, "sources": { "codex": true, "opencode": false, "gemini": true, "geminiRoot": null } }
+            """);
+        Assert.True(s.OmpEnabled);
+        Assert.True(s.AntigravityEnabled);
+        Assert.Null(s.OmpRoot);
+        Assert.Null(s.AntigravityRoot);
+        Assert.False(s.OpenCodeEnabled);
+
+        var config = s.ToMonitorConfiguration();
+        Assert.Contains(SourceKind.Omp, config.EnabledSources);
+        Assert.Contains(SourceKind.Antigravity, config.EnabledSources);
+        Assert.Null(config.OmpRoot);
+        Assert.Null(config.AntigravityRoot);
+    }
+
+    [Fact]
+    public void AChosenBackupStoreIsKeptForTheMonitorToSkip()
+    {
+        var backup = Path.Combine(Path.GetTempPath(), ".gemini", "antigravity-backup");
+        var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(AppSettings.Default with { AntigravityRoot = backup }));
+        Assert.Equal(backup, back.AntigravityRoot);
+        Assert.Equal(backup, back.ToMonitorConfiguration().AntigravityRoot);
+        Assert.Empty(LiveMonitor.AntigravityStores(backup));
+        Assert.Equal([Antigravity], LiveMonitor.AntigravityStores(Antigravity));
+    }
+
     [Theory]
-    [InlineData("""{ "sources": { "opencode": "no", "gemini": 0, "opencodeRoot": 5, "geminiRoot": "relative/tmp" } }""")]
-    [InlineData("""{ "sources": { "opencode": null, "gemini": [], "opencodeRoot": null, "geminiRoot": "" } }""")]
+    [InlineData("""
+        { "sources": { "opencode": "no", "gemini": 0, "omp": "off", "antigravity": 1,
+          "opencodeRoot": 5, "geminiRoot": "relative/tmp", "ompRoot": 7, "antigravityRoot": "relative/store" } }
+        """)]
+    [InlineData("""
+        { "sources": { "opencode": null, "gemini": [], "omp": null, "antigravity": {},
+          "opencodeRoot": null, "geminiRoot": "", "ompRoot": null, "antigravityRoot": "   " } }
+        """)]
     public void InvalidSourceValuesFallBackPerField(string json)
     {
         var s = SettingsSerializer.Deserialize(json);
         Assert.True(s.OpenCodeEnabled);
         Assert.True(s.GeminiEnabled);
+        Assert.True(s.OmpEnabled);
+        Assert.True(s.AntigravityEnabled);
         Assert.Null(s.OpenCodeRoot);
         Assert.Null(s.GeminiRoot);
+        Assert.Null(s.OmpRoot);
+        Assert.Null(s.AntigravityRoot);
+    }
+
+    [Fact]
+    public void OmpAndAntigravityPathsAreCleaned()
+    {
+        var s = (AppSettings.Default with { OmpRoot = $"  {Omp}  ", AntigravityRoot = $"{Antigravity}\0" }).Validated();
+        Assert.Equal(Omp, s.OmpRoot);
+        Assert.Null(s.AntigravityRoot);
+        Assert.Null((AppSettings.Default with { OmpRoot = Path.Combine("relative", "sessions") }).Validated().OmpRoot);
     }
 
     [Fact]

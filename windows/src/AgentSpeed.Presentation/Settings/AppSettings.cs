@@ -126,6 +126,10 @@ public sealed record AppSettings
 
     public bool GeminiEnabled { get; init; } = true;
 
+    public bool OmpEnabled { get; init; } = true;
+
+    public bool AntigravityEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
@@ -140,6 +144,12 @@ public sealed record AppSettings
 
     /// <summary>Null uses the default Gemini CLI <c>tmp</c> folder.</summary>
     public string? GeminiRoot { get; init; }
+
+    /// <summary>One omp <c>sessions</c> folder; null reads the default root and every named profile.</summary>
+    public string? OmpRoot { get; init; }
+
+    /// <summary>One Antigravity store folder (or its <c>conversations</c> folder); null reads the three default stores.</summary>
+    public string? AntigravityRoot { get; init; }
 
     public int ChartSeconds { get; init; } = 120;
 
@@ -181,6 +191,8 @@ public sealed record AppSettings
         SourceKind.DeepSeek => DeepSeekEnabled,
         SourceKind.OpenCode => OpenCodeEnabled,
         SourceKind.Gemini => GeminiEnabled,
+        SourceKind.Omp => OmpEnabled,
+        SourceKind.Antigravity => AntigravityEnabled,
         _ => false,
     };
 
@@ -192,13 +204,15 @@ public sealed record AppSettings
         SourceKind.DeepSeek => this with { DeepSeekEnabled = enabled },
         SourceKind.OpenCode => this with { OpenCodeEnabled = enabled },
         SourceKind.Gemini => this with { GeminiEnabled = enabled },
+        SourceKind.Omp => this with { OmpEnabled = enabled },
+        SourceKind.Antigravity => this with { AntigravityEnabled = enabled },
         _ => this,
     };
 
     public MonitorConfiguration ToMonitorConfiguration()
     {
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
-        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot);
+        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot);
     }
 
     public AppSettings WithOrbAnchor(string monitorKey, OrbAnchor anchor)
@@ -235,6 +249,8 @@ public sealed record AppSettings
         DshRoot = CleanPath(DshRoot),
         OpenCodeRoot = CleanPath(OpenCodeRoot),
         GeminiRoot = CleanPath(GeminiRoot),
+        OmpRoot = CleanPath(OmpRoot),
+        AntigravityRoot = CleanPath(AntigravityRoot),
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),

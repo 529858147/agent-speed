@@ -13,13 +13,16 @@ internal sealed record PreparedFile(
     bool Oversized,
     Exception? Error);
 
+/// <summary>One file to read: its path, family, root (omp sub-agents depend on it) and size.</summary>
+internal readonly record struct ReadJob(string Path, RootFamily Family, string Root, long Size);
+
 /// <summary>
 /// Reads whole transcripts on a few below-normal-priority worker threads, at most a bounded amount ahead of the
 /// consumer, and hands them out strictly in job order (startup order decides key ownership, METRICS 5).
 /// </summary>
 internal sealed class OrderedFileReader : IDisposable
 {
-    private readonly IReadOnlyList<(string Path, RootFamily Family, long Size)> _jobs;
+    private readonly IReadOnlyList<ReadJob> _jobs;
     private readonly IDeduper _deduper;
     private readonly PreparedFile?[] _done;
     private readonly long _maxBufferedBytes;
@@ -32,7 +35,7 @@ internal sealed class OrderedFileReader : IDisposable
     private long _bufferedBytes;
 
     public OrderedFileReader(
-        IReadOnlyList<(string Path, RootFamily Family, long Size)> jobs,
+        IReadOnlyList<ReadJob> jobs,
         IDeduper deduper,
         int workers,
         long maxBufferedBytes,
@@ -104,7 +107,7 @@ internal sealed class OrderedFileReader : IDisposable
     }
 
     // Compressed rollouts decode to many times their size; one huge file must not stall the smaller ones.
-    private long Weight((string Path, RootFamily Family, long Size) job) => Math.Min(
+    private long Weight(ReadJob job) => Math.Min(
         job.Path.EndsWith(".zst", StringComparison.OrdinalIgnoreCase) ? job.Size * 12 : job.Size,
         _maxBufferedBytes / 2);
 
@@ -147,12 +150,13 @@ internal sealed class OrderedFileReader : IDisposable
 
     private PreparedFile Read(int index)
     {
-        var (path, family, _) = _jobs[index];
+        var (path, family, root, _) = _jobs[index];
         TranscriptParser? parser = null;
+        TranscriptTailer? tailer = null;
         try
         {
-            parser = Families.CreateParser(family, path, _deduper);
-            var tailer = TranscriptTailer.For(path);
+            parser = Families.CreateParser(family, path, _deduper, root);
+            tailer = Families.CreateTailer(family, path);
             tailer.StartAt(0);
             var batch = parser.NewBatch();
             var result = tailer.ReadAppended(batch, _stop.Token);
@@ -162,6 +166,10 @@ internal sealed class OrderedFileReader : IDisposable
         {
             // Including out-of-memory on one huge file: that file counts as unreadable, the app keeps running.
             return new PreparedFile(index, parser ?? new ClaudeParser(path, _deduper), null, default, false, e);
+        }
+        finally
+        {
+            (tailer as IDisposable)?.Dispose();
         }
     }
 }

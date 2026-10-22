@@ -1,6 +1,13 @@
 namespace AgentSpeed.Core;
 
-public sealed record ModelUsage(string Model, long Requests, long Output);
+/// <summary>One model's share of a source's day (METRICS 8).</summary>
+/// <param name="MeasuredOutput">Output of the model's measured responses.</param>
+/// <param name="MeasuredMs">Widened duration of the model's measured responses (METRICS 3.3).</param>
+public sealed record ModelUsage(string Model, long Requests, long Output, long MeasuredOutput = 0, long MeasuredMs = 0)
+{
+    /// <summary>Output tok/s over the model's measured responses; null when none was measured.</summary>
+    public double? AverageSpeed => MeasuredMs > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
+}
 
 /// <summary>One source's aggregates for one local calendar day (METRICS 8).</summary>
 /// <param name="Day">Local calendar date, <c>YYYY-MM-DD</c>.</param>
@@ -105,24 +112,26 @@ public static class PreviewHistory
     {
         var last = (end ?? DateTime.Now).Date;
         var random = new Random(42);
-        (SourceKind Source, double Base, double Speed, string[] Models)[] profiles =
+        // Source, base output, speed, models, and how many recent days it has data for (null: every day).
+        (SourceKind Source, double Base, double Speed, string[] Models, int? RecentDays)[] profiles =
         [
-            (SourceKind.Codex, 180_000, 42, ["gpt-6.1-sol", "gpt-6.1-sol-mini"]),
-            (SourceKind.ClaudeCode, 140_000, 70, ["claude-opus-5-5", "claude-sonnet-5-5"]),
-            (SourceKind.ClaudeDesktop, 260_000, 88, ["claude-opus-5-5"]),
-            (SourceKind.DeepSeek, 90_000, 150, ["deepseek-flash", "deepseek-pro"]),
-            (SourceKind.OpenCode, 60_000, 75, ["claude-opus-5-5"]),
-            (SourceKind.Gemini, 40_000, 120, ["gemini-3-pro"]),
+            (SourceKind.Codex, 180_000, 42, ["gpt-6.1-sol", "gpt-6.1-sol-mini"], null),
+            (SourceKind.ClaudeCode, 140_000, 70, ["claude-opus-5-5", "claude-sonnet-5-5"], null),
+            (SourceKind.ClaudeDesktop, 260_000, 88, ["claude-opus-5-5"], null),
+            (SourceKind.DeepSeek, 90_000, 150, ["deepseek-flash", "deepseek-pro"], null),
+            (SourceKind.OpenCode, 60_000, 75, ["claude-opus-5-5"], 20),
+            (SourceKind.Gemini, 40_000, 120, ["gemini-3-pro"], 0),
+            (SourceKind.Omp, 70_000, 95, ["claude-opus-5-5", "gpt-5.5"], 45),
+            (SourceKind.Antigravity, 50_000, 135, ["gemini-3.1-pro", "gemini-3.1-flash"], 30),
         ];
         var result = new List<DailyUsage>();
         for (var offset = count - 1; offset >= 0; offset--)
         {
             var date = last.AddDays(-offset);
             var weekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-            for (var index = 0; index < profiles.Length; index++)
+            foreach (var (source, baseOutput, speed, models, recentDays) in profiles)
             {
-                var (source, baseOutput, speed, models) = profiles[index];
-                if (offset > count - 20 * (index + 1) && index > 3)
+                if (recentDays is { } days && offset > days)
                 {
                     continue;
                 }
@@ -138,18 +147,23 @@ public static class PreviewHistory
                 var input = output * (long)(60 + random.NextDouble() * 90);
                 var daySpeed = speed * (0.75 + random.NextDouble() * 0.5);
                 var split = 0.55 + random.NextDouble() * 0.4;
+                var measuredMs = (long)(output / daySpeed * 1000);
+                // The first model takes a little more than its share of the time, so per-model speeds differ in previews.
+                var firstOutput = (long)(output * split);
+                var firstMs = (long)(measuredMs * Math.Min(0.98, split * 1.04));
                 IReadOnlyList<ModelUsage> usage = models.Length == 1
-                    ? [new ModelUsage(models[0], requests, output)]
+                    ? [new ModelUsage(models[0], requests, output, output, measuredMs)]
                     : [
-                        new ModelUsage(models[0], (long)(requests * split), (long)(output * split)),
-                        new ModelUsage(models[1], requests - (long)(requests * split), output - (long)(output * split)),
+                        new ModelUsage(models[0], (long)(requests * split), firstOutput, firstOutput, firstMs),
+                        new ModelUsage(models[1], requests - (long)(requests * split), output - firstOutput, output - firstOutput,
+                            measuredMs - firstMs),
                     ];
                 result.Add(new DailyUsage(
                     date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                     source,
                     new TokenTotals(requests, input, (long)(input * 0.9), input / 40, output, output / 3),
                     output,
-                    (long)(output / daySpeed * 1000),
+                    measuredMs,
                     0,
                     1 + (int)(random.NextDouble() * 6),
                     offset < 30 ? daySpeed * (2 + random.NextDouble() * 3) : null,

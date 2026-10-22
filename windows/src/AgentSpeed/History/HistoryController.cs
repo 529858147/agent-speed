@@ -80,6 +80,8 @@ internal sealed class HistoryController : IDisposable
             {
                 _window.WindowState = WindowState.Normal;
             }
+
+            _model.RefreshLiveDay();
         }
 
         _window.Activate();

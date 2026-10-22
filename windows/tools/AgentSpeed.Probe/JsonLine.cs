@@ -84,6 +84,8 @@ internal sealed class JsonLine
         SourceKind.DeepSeek => "deepseek",
         SourceKind.OpenCode => "opencode",
         SourceKind.Gemini => "gemini",
+        SourceKind.Omp => "omp",
+        SourceKind.Antigravity => "antigravity",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

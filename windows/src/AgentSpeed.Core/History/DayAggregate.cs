@@ -7,6 +7,13 @@ namespace AgentSpeed.Core.History;
 
 internal readonly record struct DayKey(string Day, SourceKind Source);
 
+/// <summary>One model's sums within a day aggregate (METRICS 8).</summary>
+internal readonly record struct ModelTotals(long Requests, long Output, long MeasuredOutput, long MeasuredMs)
+{
+    public static ModelTotals operator +(ModelTotals a, ModelTotals b) => new(
+        a.Requests + b.Requests, a.Output + b.Output, a.MeasuredOutput + b.MeasuredOutput, a.MeasuredMs + b.MeasuredMs);
+}
+
 /// <summary>Sums of one source's responses on one local day (METRICS 8), for one file or for all of them.</summary>
 internal sealed class DayAggregate
 {
@@ -31,7 +38,7 @@ internal sealed class DayAggregate
     /// <summary>Distinct agents; a file is one agent, so per-file contributions carry 1 and totals are sums.</summary>
     public int Agents { get; set; }
 
-    public Dictionary<string, (long Requests, long Output)> Models { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, ModelTotals> Models { get; } = new(StringComparer.Ordinal);
 
     public void Add(ParsedResponse response)
     {
@@ -42,10 +49,18 @@ internal sealed class DayAggregate
         CacheWriteInput += tokens.CacheWriteInput;
         Output += tokens.Output;
         Reasoning += tokens.Reasoning;
+        var model = response.Model ?? string.Empty;
+        var totals = Models.GetValueOrDefault(model);
+        totals = totals with { Requests = totals.Requests + 1, Output = totals.Output + tokens.Output };
         if (response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval))
         {
             MeasuredOutput += tokens.Output;
             MeasuredMs += interval.DurationMs;
+            totals = totals with
+            {
+                MeasuredOutput = totals.MeasuredOutput + tokens.Output,
+                MeasuredMs = totals.MeasuredMs + interval.DurationMs,
+            };
         }
 
         if (!response.Final)
@@ -53,9 +68,7 @@ internal sealed class DayAggregate
             Unfinalized++;
         }
 
-        var model = response.Model ?? string.Empty;
-        var (requests, output) = Models.GetValueOrDefault(model);
-        Models[model] = (requests + 1, output + tokens.Output);
+        Models[model] = totals;
     }
 
     public void Merge(DayAggregate other)
@@ -72,8 +85,7 @@ internal sealed class DayAggregate
         Agents += other.Agents;
         foreach (var (model, usage) in other.Models)
         {
-            var (requests, output) = Models.GetValueOrDefault(model);
-            Models[model] = (requests + usage.Requests, output + usage.Output);
+            Models[model] = Models.GetValueOrDefault(model) + usage;
         }
     }
 
@@ -90,7 +102,7 @@ internal sealed class DayAggregate
         [.. Models
             .OrderByDescending(m => m.Value.Output)
             .ThenBy(m => m.Key, StringComparer.Ordinal)
-            .Select(m => new ModelUsage(m.Key, m.Value.Requests, m.Value.Output))]);
+            .Select(m => new ModelUsage(m.Key, m.Value.Requests, m.Value.Output, m.Value.MeasuredOutput, m.Value.MeasuredMs))]);
 
     /// <summary>One file's contributions: its responses grouped by local day of <c>endMs</c>, all under the file's source.</summary>
     public static Dictionary<DayKey, DayAggregate> Contributions(

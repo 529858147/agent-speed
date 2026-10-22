@@ -88,6 +88,22 @@ public class HistoryAggregatorTests
     }
 
     [Fact]
+    public void MergedModelsAddUpTheirMeasuredOutputAndTime()
+    {
+        DailyUsage[] usage =
+        [
+            Usage("2026-10-20", SourceKind.Codex, models: [new ModelUsage("gpt", 3, 100, 100, 2_000)]),
+            Usage("2026-10-20", SourceKind.Omp, models: [new ModelUsage("gpt", 2, 50, 40, 2_000), new ModelUsage("opus", 1, 30)]),
+            Usage("2026-10-21", SourceKind.Codex, models: [new ModelUsage("gpt", 1, 900, 900, 1_000)]),
+        ];
+
+        var day = HistoryAggregator.Daily(usage, null)[0];
+        Assert.Equal([new ModelUsage("gpt", 5, 150, 140, 4_000), new ModelUsage("opus", 1, 30)], day.Models);
+        Assert.Equal(35, day.Models[0].AverageSpeed);
+        Assert.Null(day.Models[1].AverageSpeed);
+    }
+
+    [Fact]
     public void PeakIsTheHighestStoredPeak()
     {
         DailyUsage[] usage =

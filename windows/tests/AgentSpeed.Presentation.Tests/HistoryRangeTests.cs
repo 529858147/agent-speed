@@ -53,6 +53,40 @@ public class HistoryRangeTests
     }
 
     [Fact]
+    public void TodayAndYesterdayAreSingleDays()
+    {
+        var today = HistoryRanges.Resolve(HistoryRangeKind.Today, Today, D(2025, 1, 1));
+        var yesterday = HistoryRanges.Resolve(HistoryRangeKind.Yesterday, Today, D(2025, 1, 1));
+        Assert.Equal(DayRange.Single(Today), today);
+        Assert.Equal(DayRange.Single(D(2026, 10, 20)), yesterday);
+        Assert.True(today.IsSingleDay);
+        Assert.True(yesterday.IsSingleDay);
+        Assert.Equal(DayRange.Single(D(2026, 10, 19)), HistoryRanges.Previous(yesterday));
+        Assert.Equal(DayRange.Single(D(2026, 12, 31)), HistoryRanges.Resolve(HistoryRangeKind.Yesterday, D(2027, 1, 1), null));
+    }
+
+    [Fact]
+    public void OnlyOneDayIsASingleDay()
+    {
+        Assert.True(new DayRange(D(2026, 5, 3), D(2026, 5, 3)).IsSingleDay);
+        Assert.False(new DayRange(D(2026, 5, 3), D(2026, 5, 4)).IsSingleDay);
+        Assert.True(HistoryRanges.Resolve(HistoryRangeKind.Custom, Today, null, DayRange.Single(D(2026, 9, 1))).IsSingleDay);
+        Assert.False(HistoryRanges.Resolve(HistoryRangeKind.Days7, Today, null).IsSingleDay);
+    }
+
+    [Fact]
+    public void SparklinesOfOneDayCoverTheWeekEndingOnIt()
+    {
+        Assert.Equal(new DayRange(D(2026, 10, 15), Today), HistoryRanges.SparkRange(DayRange.Single(Today)));
+        Assert.Equal(new DayRange(D(2026, 9, 26), D(2026, 10, 2)), HistoryRanges.SparkRange(DayRange.Single(D(2026, 10, 2))));
+        Assert.Equal(HistoryRanges.SingleDaySparkDays, HistoryRanges.SparkRange(DayRange.Single(Today)).DayCount);
+        var week = new DayRange(D(2026, 10, 15), Today);
+        Assert.Equal(week, HistoryRanges.SparkRange(week));
+        var two = new DayRange(D(2026, 10, 20), Today);
+        Assert.Equal(two, HistoryRanges.SparkRange(two));
+    }
+
+    [Fact]
     public void YearOnNewYearsDayIsOneDay()
     {
         var range = HistoryRanges.Resolve(HistoryRangeKind.Year, D(2027, 1, 1), null);
@@ -83,6 +117,8 @@ public class HistoryRangeTests
     [InlineData(HistoryRangeKind.Days90)]
     [InlineData(HistoryRangeKind.Year)]
     [InlineData(HistoryRangeKind.All)]
+    [InlineData(HistoryRangeKind.Today)]
+    [InlineData(HistoryRangeKind.Yesterday)]
     public void PresetsIgnoreTheCustomRange(HistoryRangeKind kind)
     {
         var custom = new DayRange(D(2020, 1, 1), D(2020, 1, 2));
@@ -171,9 +207,15 @@ public class HistoryRangeTests
     public void EveryKindHasALabel()
     {
         Assert.Equal(
-            [HistoryRangeKind.Days7, HistoryRangeKind.Days30, HistoryRangeKind.Days90, HistoryRangeKind.Year, HistoryRangeKind.All],
-            HistoryRanges.Presets);
+        [
+            HistoryRangeKind.Today, HistoryRangeKind.Yesterday, HistoryRangeKind.Days7, HistoryRangeKind.Days30, HistoryRangeKind.Days90,
+            HistoryRangeKind.Year, HistoryRangeKind.All,
+        ], HistoryRanges.Presets);
         var loc = For(Localization.LanguageCodes.ZhHant);
+        Assert.Equal("今天", loc[HistoryRanges.LabelKey(HistoryRangeKind.Today)]);
+        Assert.Equal("昨天", loc[HistoryRanges.LabelKey(HistoryRangeKind.Yesterday)]);
+        Assert.Equal("Yesterday", For(Localization.LanguageCodes.En)[HistoryRanges.LabelKey(HistoryRangeKind.Yesterday)]);
+        Assert.Equal("今日", For(Localization.LanguageCodes.Ja)[HistoryRanges.LabelKey(HistoryRangeKind.Today)]);
         Assert.Equal("7 天", loc[HistoryRanges.LabelKey(HistoryRangeKind.Days7)]);
         Assert.Equal("30 天", loc[HistoryRanges.LabelKey(HistoryRangeKind.Days30)]);
         Assert.Equal("90 天", loc[HistoryRanges.LabelKey(HistoryRangeKind.Days90)]);

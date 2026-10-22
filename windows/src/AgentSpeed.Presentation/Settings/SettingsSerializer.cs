@@ -75,11 +75,15 @@ public static class SettingsSerializer
             w.WriteBoolean("deepseek", s.DeepSeekEnabled);
             w.WriteBoolean("opencode", s.OpenCodeEnabled);
             w.WriteBoolean("gemini", s.GeminiEnabled);
+            w.WriteBoolean("omp", s.OmpEnabled);
+            w.WriteBoolean("antigravity", s.AntigravityEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
             WriteNullableString(w, "dshRoot", s.DshRoot);
             WriteNullableString(w, "opencodeRoot", s.OpenCodeRoot);
             WriteNullableString(w, "geminiRoot", s.GeminiRoot);
+            WriteNullableString(w, "ompRoot", s.OmpRoot);
+            WriteNullableString(w, "antigravityRoot", s.AntigravityRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
@@ -173,11 +177,15 @@ public static class SettingsSerializer
             DeepSeekEnabled = ReadBool(sources, "deepseek", d.DeepSeekEnabled),
             OpenCodeEnabled = ReadBool(sources, "opencode", d.OpenCodeEnabled),
             GeminiEnabled = ReadBool(sources, "gemini", d.GeminiEnabled),
+            OmpEnabled = ReadBool(sources, "omp", d.OmpEnabled),
+            AntigravityEnabled = ReadBool(sources, "antigravity", d.AntigravityEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             DshRoot = ReadString(sources, "dshRoot"),
             OpenCodeRoot = ReadString(sources, "opencodeRoot"),
             GeminiRoot = ReadString(sources, "geminiRoot"),
+            OmpRoot = ReadString(sources, "ompRoot"),
+            AntigravityRoot = ReadString(sources, "antigravityRoot"),
             HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),

@@ -107,27 +107,7 @@ internal sealed class OpenCodeDatabase : IDisposable
     }
 
     /// <summary>A WAL-mode database (header bytes 18 and 19 are 2) whose <c>-wal</c> file is gone: nobody has it open.</summary>
-    internal static bool IsClosedWalDatabase(string path)
-    {
-        if (File.Exists(path + "-wal"))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var handle = IO.TranscriptTailer.Open(path);
-            Span<byte> header = stackalloc byte[20];
-            return RandomAccess.Read(handle, header, 0) == header.Length
-                && header[..16].SequenceEqual("SQLite format 3\0"u8)
-                && header[18] == 2
-                && header[19] == 2;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+    internal static bool IsClosedWalDatabase(string path) => SqliteReadOnly.IsClosedWalDatabase(path);
 
     private static OpenCodeDatabase Open(string path, SqliteOpenMode mode)
     {

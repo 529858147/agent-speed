@@ -72,6 +72,18 @@
     "en": ", ",
     "ja": "、"
   },
+  "win.history.breakdown.otherModels": {
+    "zh-Hant": "其他模型",
+    "zh-Hans": "其他模型",
+    "en": "Other models",
+    "ja": "その他のモデル"
+  },
+  "win.history.breakdown.sourceHint": {
+    "zh-Hant": "查看這個來源的模型分布",
+    "zh-Hans": "查看这个来源的模型分布",
+    "en": "Show this source by model",
+    "ja": "このソースをモデル別に表示"
+  },
   "win.history.clear.title": {
     "zh-Hant": "清除歷史統計",
     "zh-Hans": "清除历史统计",
@@ -161,6 +173,12 @@
     "zh-Hans": "日期范围",
     "en": "Date range",
     "ja": "期間"
+  },
+  "win.history.share": {
+    "zh-Hant": "佔比",
+    "zh-Hans": "占比",
+    "en": "Share",
+    "ja": "割合"
   },
   "win.history.sorted.asc": {
     "zh-Hant": "遞增排序",

@@ -64,6 +64,14 @@ internal abstract class TranscriptParser
 
     public abstract ILineBatch NewBatch();
 
+    /// <summary>
+    /// Called on the reading thread before a tailer fills <paramref name="batch"/> from <paramref name="startOffset"/>;
+    /// lets a parser read what it needs from the file start (omp reads its header, METRICS 4.7).
+    /// </summary>
+    public virtual void PrepareBatch(ILineBatch batch, long startOffset)
+    {
+    }
+
     /// <summary>Clears all per-file state after truncation or identity change; the shared deduper is kept.</summary>
     public virtual void Reset()
     {

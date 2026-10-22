@@ -137,6 +137,8 @@ public class HistoryCsvTests
     [InlineData(SourceKind.DeepSeek, "deepseek")]
     [InlineData(SourceKind.OpenCode, "opencode")]
     [InlineData(SourceKind.Gemini, "gemini")]
+    [InlineData(SourceKind.Omp, "omp")]
+    [InlineData(SourceKind.Antigravity, "antigravity")]
     [InlineData((SourceKind)99, "unknown")]
     public void SourceIdsAreStable(SourceKind? source, string id)
     {

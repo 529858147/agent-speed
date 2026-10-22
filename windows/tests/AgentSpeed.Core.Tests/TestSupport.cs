@@ -149,3 +149,15 @@ internal static class Ts
     public static string Iso(long unixMs) =>
         DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
 }
+
+/// <summary>The fixture folder <c>omp</c> plays <c>~/.omp</c>: its automatic roots are the default root and every profile.</summary>
+internal static class OmpFixture
+{
+    private static readonly Lazy<IReadOnlyList<string>> LazyRoots = new(() => Omp.OmpPaths.Roots(
+        name => name == "PI_CONFIG_DIR" ? "omp" : null, macOS: false, FixtureLocator.FixturesDirectory));
+
+    public static IReadOnlyList<string> Roots => LazyRoots.Value;
+
+    public static string RootOf(string path) =>
+        Roots.First(root => path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+}

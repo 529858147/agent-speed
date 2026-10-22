@@ -5,6 +5,8 @@ namespace AgentSpeed.Presentation.History;
 /// <summary>The range presets of the Usage History window (DESIGN 4b, toolbar).</summary>
 public enum HistoryRangeKind
 {
+    Today,
+    Yesterday,
     Days7,
     Days30,
     Days90,
@@ -35,16 +37,27 @@ public readonly record struct DayRange
 
     public DateOnly DayAt(int index) => Start.AddDays(index);
 
+    /// <summary>One calendar day: the window shows that day's breakdown instead of the daily chart.</summary>
+    public bool IsSingleDay => Start == End;
+
     public static DayRange Single(DateOnly day) => new(day, day);
 }
 
 public static class HistoryRanges
 {
+    /// <summary>Days a single day's sparklines cover, ending on that day.</summary>
+    public const int SingleDaySparkDays = 7;
+
     public static IReadOnlyList<HistoryRangeKind> Presets { get; } =
-        [HistoryRangeKind.Days7, HistoryRangeKind.Days30, HistoryRangeKind.Days90, HistoryRangeKind.Year, HistoryRangeKind.All];
+    [
+        HistoryRangeKind.Today, HistoryRangeKind.Yesterday, HistoryRangeKind.Days7, HistoryRangeKind.Days30, HistoryRangeKind.Days90,
+        HistoryRangeKind.Year, HistoryRangeKind.All,
+    ];
 
     public static string LabelKey(HistoryRangeKind kind) => kind switch
     {
+        HistoryRangeKind.Today => "history.range.today",
+        HistoryRangeKind.Yesterday => "history.range.yesterday",
         HistoryRangeKind.Days7 => "history.range.7d",
         HistoryRangeKind.Days30 => "history.range.30d",
         HistoryRangeKind.Days90 => "history.range.90d",
@@ -54,12 +67,14 @@ public static class HistoryRanges
     };
 
     /// <summary>
-    /// The days a preset covers, always ending today. <see cref="HistoryRangeKind.All"/> starts at the first day with
-    /// data (today when there is none); <see cref="HistoryRangeKind.Custom"/> uses <paramref name="custom"/>, or the last
-    /// 30 days when none was chosen.
+    /// The days a preset covers, ending today (<see cref="HistoryRangeKind.Yesterday"/> is the single day before).
+    /// <see cref="HistoryRangeKind.All"/> starts at the first day with data (today when there is none);
+    /// <see cref="HistoryRangeKind.Custom"/> uses <paramref name="custom"/>, or the last 30 days when none was chosen.
     /// </summary>
     public static DayRange Resolve(HistoryRangeKind kind, DateOnly today, DateOnly? firstDataDay, DayRange? custom = null) => kind switch
     {
+        HistoryRangeKind.Today => DayRange.Single(today),
+        HistoryRangeKind.Yesterday => DayRange.Single(today.AddDays(-1)),
         HistoryRangeKind.Days7 => Last(today, 7),
         HistoryRangeKind.Days90 => Last(today, 90),
         HistoryRangeKind.Year => new DayRange(new DateOnly(today.Year, 1, 1), today),
@@ -74,6 +89,10 @@ public static class HistoryRanges
         var end = range.Start.AddDays(-1);
         return new DayRange(end.AddDays(-(range.DayCount - 1)), end);
     }
+
+    /// <summary>The days the summary sparklines cover: the range itself, or the 7 days ending on a single day.</summary>
+    public static DayRange SparkRange(DayRange range) =>
+        range.IsSingleDay ? Last(range.Start, SingleDaySparkDays) : range;
 
     /// <summary>A custom range clamped to the days with data, with the end never before the start.</summary>
     public static DayRange Clamp(DateOnly from, DateOnly to, DateOnly minimum, DateOnly maximum)

@@ -70,6 +70,9 @@ public static class HeatPalette
     public static Rgba Highlight(double heat, double overdrive) =>
         OkLab.Mix(Sample(heat), WhiteHot, Math.Clamp(overdrive, 0, 1));
 
+    /// <summary>A neutral slate for what belongs to no source or model (other models, an unknown source).</summary>
+    public static Rgba Neutral { get; } = Rgba.FromHex("#7C8798");
+
     public static Rgba SourceColor(SourceKind source) => source switch
     {
         SourceKind.Codex => Rgba.FromHex("#34D399"),
@@ -78,7 +81,9 @@ public static class HeatPalette
         SourceKind.DeepSeek => Rgba.FromHex("#4D6BFE"),
         SourceKind.OpenCode => Rgba.FromHex("#F4B13E"),
         SourceKind.Gemini => Rgba.FromHex("#34B8F0"),
-        _ => Rgba.FromHex("#7C8798"),
+        SourceKind.Omp => Rgba.FromHex("#84CC16"),
+        SourceKind.Antigravity => Rgba.FromHex("#EC4899"),
+        _ => Neutral,
     };
 
     private static Rgba[] BuildTable()

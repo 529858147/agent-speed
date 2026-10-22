@@ -22,7 +22,8 @@ internal enum HistoryUpdate
 
 /// <summary>
 /// State of the Usage History window (DESIGN 4b): the filter, the range and everything derived from the hub's days.
-/// Live updates from the hub are coalesced to at most four recomputations per second.
+/// Live updates from the hub are coalesced to at most four recomputations per second; today shown on its own is
+/// re-read quietly every 30 seconds while the window is on screen.
 /// </summary>
 internal sealed class HistoryViewModel : ObservableObject, IDisposable
 {
@@ -32,6 +33,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _pending;
     private readonly DispatcherTimer _clock;
     private readonly DispatcherTimer _messageTimer;
+    private readonly DispatcherTimer _liveDay;
     private Localizer _loc;
     private long _lastRecompute;
     private SourceKind? _source;
@@ -50,6 +52,12 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     private string _filesText = string.Empty;
     private string _message = string.Empty;
     private IReadOnlyList<LegendItem> _legend = [];
+    private bool _isSingleDay;
+    private bool _isInProgress;
+    private string _chartTitle = string.Empty;
+    private bool _hasBreakdown;
+    private bool _shown;
+    private DateTimeOffset? _quietSince;
     private bool _disposed;
 
     public HistoryViewModel(HistoryHub hub, Localizer loc, Dispatcher dispatcher)
@@ -69,8 +77,14 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
             Message = string.Empty;
         }, dispatcher);
         _messageTimer.Stop();
+        _liveDay = new DispatcherTimer(LiveDay.RefreshInterval, DispatcherPriority.Background, (_, _) => RefreshLiveDay(), dispatcher);
+        _liveDay.Stop();
         Cards = Enum.GetValues<SummaryMetric>().Select(m => new SummaryCardView(m)).ToArray();
-        RetryCommand = new RelayCommand(() => _hub.Refresh());
+        RetryCommand = new RelayCommand(() =>
+        {
+            _quietSince = null;
+            _hub.Refresh();
+        });
         _hub.Changed += OnHubChanged;
         Recompute(HistoryUpdate.Filter);
     }
@@ -135,6 +149,21 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<LegendItem> Legend { get => _legend; private set => Set(ref _legend, value); }
 
+    /// <summary>The bars of a single day by source (all sources) or by model (one source), largest first.</summary>
+    public ObservableCollection<BreakdownRowView> Breakdown { get; } = new();
+
+    /// <summary>One day is shown: the breakdown replaces the daily chart.</summary>
+    public bool IsSingleDay { get => _isSingleDay; private set => Set(ref _isSingleDay, value); }
+
+    /// <summary>The single day shown is today, whose figures are still growing.</summary>
+    public bool IsInProgress { get => _isInProgress; private set => Set(ref _isInProgress, value); }
+
+    /// <summary><c>每日輸出</c>, or <c>來源分布</c> / <c>模型分布</c> for one day.</summary>
+    public string ChartTitle { get => _chartTitle; private set => Set(ref _chartTitle, value); }
+
+    /// <summary>The single day has bars to show (a day with input but no output has none).</summary>
+    public bool HasBreakdown { get => _hasBreakdown; private set => Set(ref _hasBreakdown, value); }
+
     public bool IsAnalyzing { get => _isAnalyzing; private set => Set(ref _isAnalyzing, value); }
 
     public bool IsFailed { get => _isFailed; private set => Set(ref _isFailed, value); }
@@ -162,6 +191,31 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
     public bool HasMessage => !string.IsNullOrEmpty(_message);
 
+    /// <summary>The window is on screen (visible and not minimized); only then is today re-read.</summary>
+    public void SetShown(bool shown)
+    {
+        if (_disposed || shown == _shown)
+        {
+            return;
+        }
+
+        _shown = shown;
+        UpdateLiveDayTimer();
+        RefreshLiveDay();
+    }
+
+    /// <summary>Re-reads today's logs quietly when today is shown on its own and the window is on screen.</summary>
+    public void RefreshLiveDay()
+    {
+        if (_disposed || !_shown || !LiveDay.Shows(Range, Today) || _hub.RefreshHandler is null || !LiveDay.CanRefreshQuietly(_hub.State))
+        {
+            return;
+        }
+
+        _quietSince = DateTimeOffset.Now;
+        _hub.Refresh();
+    }
+
     public void SetSource(SourceKind? source)
     {
         if (source == _source && _selectedSource is not null)
@@ -187,6 +241,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
         _rangeKind = kind;
         Recompute(HistoryUpdate.Filter);
+        RefreshLiveDay();
     }
 
     public void ApplyCustom(DateOnly from, DateOnly to)
@@ -195,6 +250,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         _custom = HistoryRanges.Clamp(from, to, bounds.Start < Today ? bounds.Start : Today, Today);
         _rangeKind = HistoryRangeKind.Custom;
         Recompute(HistoryUpdate.Filter);
+        RefreshLiveDay();
     }
 
     public void SortBy(HistoryColumn column)
@@ -275,15 +331,19 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         _pending.Stop();
         _clock.Stop();
         _messageTimer.Stop();
+        _liveDay.Stop();
     }
 
     private void OnHubChanged(object? sender, EventArgs e)
     {
-        if (_disposed)
+        if (!_disposed)
         {
-            return;
+            ScheduleRecompute();
         }
+    }
 
+    private void ScheduleRecompute()
+    {
         if (Environment.TickCount64 - _lastRecompute >= CoalesceInterval.TotalMilliseconds)
         {
             _pending.Stop();
@@ -319,10 +379,14 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         Bars = HistoryBars.From(Days, Range, _source);
         Rows = HistoryTable.Sort(Days, _sortColumn, _sortDescending);
         IsEmpty = Days.Count == 0;
-        Subtitle = HistoryText.RangeSubtitle(Range, _loc);
+        Subtitle = HistoryText.RangeSubtitle(Range, Today, _loc);
+        IsSingleDay = Range.IsSingleDay;
+        IsInProgress = Range.IsSingleDay && Range.Start == Today;
+        UpdateBreakdown(DayBreakdown.For(usage, Range, _source), rebuild: kind == HistoryUpdate.Filter);
 
         var sparkBrush = _source is { } one ? HeatPalette.SourceColor(one).ToBrush() : null;
-        var cards = HistorySummary.Build(Days, previous, Range, Today, _loc);
+        var sparkDays = Range.IsSingleDay ? HistoryAggregator.Daily(usage, _source, HistoryRanges.SparkRange(Range)) : null;
+        var cards = HistorySummary.Build(Days, previous, Range, Today, _loc, sparkDays);
         for (var i = 0; i < Cards.Count && i < cards.Count; i++)
         {
             var card = cards[i];
@@ -336,12 +400,55 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
             : Bars.Order.Select(s => new LegendItem(_loc[DisplayText.SourceKey(s)], HeatPalette.SourceColor(s).ToBrush())).ToArray();
         UpdateSources(usage);
         UpdateState();
+        UpdateLiveDayTimer();
         if (!_clock.IsEnabled)
         {
             _clock.Start();
         }
 
         Updated?.Invoke(this, kind);
+    }
+
+    /// <summary>
+    /// Updates the breakdown bars in place (matched by source or model) so they grow to new lengths; a new filter or range
+    /// rebuilds them so they grow from nothing.
+    /// </summary>
+    private void UpdateBreakdown(DayBreakdown? breakdown, bool rebuild)
+    {
+        ChartTitle = _loc[breakdown?.TitleKey ?? "history.chart.output"];
+        HasBreakdown = breakdown is { Rows.Count: > 0 };
+        if (rebuild || breakdown is null)
+        {
+            Breakdown.Clear();
+        }
+
+        if (breakdown is null)
+        {
+            return;
+        }
+
+        var existing = Breakdown.ToDictionary(r => r.Key, StringComparer.Ordinal);
+        var inProgress = breakdown.Day == Today;
+        for (var i = 0; i < breakdown.Rows.Count; i++)
+        {
+            var row = breakdown.Rows[i];
+            if (!existing.Remove(row.Key, out var view))
+            {
+                view = new BreakdownRowView(row.Key);
+                Breakdown.Insert(Math.Min(i, Breakdown.Count), view);
+            }
+            else if (Breakdown.IndexOf(view) is var at && at != i)
+            {
+                Breakdown.Move(at, i);
+            }
+
+            view.Apply(row, breakdown.Kind, inProgress, _loc);
+        }
+
+        foreach (var stale in existing.Values)
+        {
+            Breakdown.Remove(stale);
+        }
     }
 
     /// <summary>A stored peak is the day's overall peak, so a single source never shows it (METRICS 8).</summary>
@@ -390,9 +497,29 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void UpdateLiveDayTimer()
+    {
+        var run = _shown && !_disposed && LiveDay.Shows(Range, Today);
+        if (run != _liveDay.IsEnabled)
+        {
+            _liveDay.IsEnabled = run;
+        }
+    }
+
+    /// <summary>The footer line; a quiet refresh of today keeps the last line instead of showing its progress.</summary>
     private void UpdateState()
     {
         var state = _hub.State;
+        if (_quietSince is { } since && LiveDay.EndsQuiet(state, since, DateTimeOffset.Now))
+        {
+            _quietSince = null;
+        }
+
+        if (LiveDay.HidesState(state, _quietSince is not null))
+        {
+            return;
+        }
+
         IsAnalyzing = state.Kind == HistoryStateKind.Analyzing;
         IsFailed = state.Kind == HistoryStateKind.Failed;
         Progress = Math.Clamp(state.Progress, 0, 1);

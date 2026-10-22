@@ -64,7 +64,8 @@ internal static class DumpToday
         Console.Error.WriteLine(
             $"seeded {report.FilesRead} files, {report.BytesRead} bytes in {report.ElapsedMs} ms; " +
             $"oversized lines {core.OversizedLineCount}; average today {snapshot.AverageToday:F1} tok/s; " +
-            $"peak today {snapshot.PeakToday.Output:F1} tok/s");
+            $"peak today {snapshot.PeakToday.Output:F1} tok/s; " +
+            $"Antigravity connections {core.OpenDatabaseConnections} open, {core.ImmutableDatabaseConnections} immutable");
         return 0;
     }
 

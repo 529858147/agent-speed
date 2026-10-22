@@ -138,7 +138,16 @@ public static class HistoryAggregator
         return (now - before) / before;
     }
 
-    private static bool HasUsage(DailyUsage record) =>
+    /// <summary>One model's figures added up across sources or records; negative counts are ignored.</summary>
+    internal static ModelUsage Add(ModelUsage total, ModelUsage part) => total with
+    {
+        Requests = total.Requests + Math.Max(0, part.Requests),
+        Output = total.Output + Math.Max(0, part.Output),
+        MeasuredOutput = total.MeasuredOutput + Math.Max(0, part.MeasuredOutput),
+        MeasuredMs = total.MeasuredMs + Math.Max(0, part.MeasuredMs),
+    };
+
+    internal static bool HasUsage(DailyUsage record) =>
         record.Totals.Requests > 0 || record.Totals.Output > 0 || record.Totals.Input > 0;
 
     private static DaySummary Summarize(DateOnly day, List<DailyUsage> records)
@@ -146,7 +155,7 @@ public static class HistoryAggregator
         long requests = 0, input = 0, cached = 0, cacheWrite = 0, output = 0, reasoning = 0, measuredOutput = 0, measuredMs = 0, unfinalized = 0;
         var agents = 0;
         double? peak = null;
-        var models = new Dictionary<string, (long Requests, long Output)>(StringComparer.Ordinal);
+        var models = new Dictionary<string, ModelUsage>(StringComparer.Ordinal);
         var sources = new Dictionary<SourceKind, long>();
         foreach (var record in records)
         {
@@ -174,13 +183,11 @@ public static class HistoryAggregator
                     continue;
                 }
 
-                var current = models.GetValueOrDefault(model.Model);
-                models[model.Model] = (current.Requests + Math.Max(0, model.Requests), current.Output + Math.Max(0, model.Output));
+                models[model.Model] = Add(models.GetValueOrDefault(model.Model) ?? new ModelUsage(model.Model, 0, 0), model);
             }
         }
 
-        var modelList = models
-            .Select(m => new ModelUsage(m.Key, m.Value.Requests, m.Value.Output))
+        var modelList = models.Values
             .OrderByDescending(m => m.Output)
             .ThenByDescending(m => m.Requests)
             .ThenBy(m => m.Model, StringComparer.Ordinal)

@@ -63,9 +63,13 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Percent}" FontSize="12" Margin="12,0,0,0"
+                                    <TextBlock Grid.Column="1" Text="{Binding Speed}" FontSize="12" Margin="12,0,0,0"
+                                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Visibility="{Binding HasSpeed, Converter={StaticResource Visible}}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Percent}" FontSize="12" Margin="12,0,0,0"
                                                Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 </Grid>
                                 <history:ShareBar Height="4" Margin="0,4,0,0" Value="{Binding Share}"

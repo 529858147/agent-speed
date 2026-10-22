@@ -156,6 +156,8 @@ public class DisplayTextTests
     [InlineData(SourceKind.DeepSeek, "source.deepseek", "DeepSeek")]
     [InlineData(SourceKind.OpenCode, "source.opencode", "OpenCode")]
     [InlineData(SourceKind.Gemini, "source.gemini", "Gemini CLI")]
+    [InlineData(SourceKind.Omp, "source.omp", "omp")]
+    [InlineData(SourceKind.Antigravity, "source.antigravity", "Antigravity")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));
@@ -172,6 +174,22 @@ public class DisplayTextTests
             Assert.Contains("dsh", hint, StringComparison.Ordinal);
             Assert.True(Embedded.TryGet("state.noSources", language, out var noSources), language);
             Assert.False(string.IsNullOrWhiteSpace(noSources), language);
+        }
+    }
+
+    [Fact]
+    public void OmpAndAntigravityStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.omp", language, out var omp), language);
+            Assert.Equal("omp", omp);
+            Assert.True(Embedded.TryGet("source.antigravity", language, out var antigravity), language);
+            Assert.Equal("Antigravity", antigravity);
+            Assert.True(Embedded.TryGet("settings.sources.ompHint", language, out var ompHint), language);
+            Assert.Contains("~/.omp/agent/sessions", ompHint, StringComparison.Ordinal);
+            Assert.True(Embedded.TryGet("settings.sources.antigravityHint", language, out var antigravityHint), language);
+            Assert.Contains("~/.gemini/antigravity-cli", antigravityHint, StringComparison.Ordinal);
         }
     }
 

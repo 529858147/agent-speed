@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -15,7 +16,10 @@ using AgentSpeed.Theme;
 
 namespace AgentSpeed.History;
 
-/// <summary>The Usage History window (DESIGN 4b): summary cards, the daily chart and the daily table of one range.</summary>
+/// <summary>
+/// The Usage History window (DESIGN 4b): summary cards, the daily chart (or one day's breakdown) and the daily table of
+/// one range.
+/// </summary>
 internal sealed partial class HistoryWindow : Window
 {
     public static readonly DependencyProperty CardColumnsProperty = DependencyProperty.Register(
@@ -31,7 +35,8 @@ internal sealed partial class HistoryWindow : Window
     private bool _syncingRange;
     private bool _syncingDates;
     private bool _entered;
-    private double _exportFullWidth;
+    private ToolbarDensity _density = ToolbarDensity.Full;
+    private double _pickerWidth = HistoryToolbar.PickerMinWidth;
     private int? _hoverIndex;
     private double _dividerTarget;
 
@@ -73,13 +78,18 @@ internal sealed partial class HistoryWindow : Window
         SourcePicker.SizeChanged += (_, _) => UpdateToolbar();
         ContentRendered += OnContentRendered;
         PageScroller.ScrollChanged += (_, _) => UpdateScrollDivider();
-        Body.IsVisibleChanged += (_, _) =>
+        Chart.IsVisibleChanged += (_, _) =>
         {
-            if (Body.IsVisible && _entered)
+            if (Chart.IsVisible && _entered)
             {
-                Chart.PlayEntrance();
+                // After the new data and the first layout at full width, so the bars grow from the baseline.
+                Dispatcher.BeginInvoke(Chart.PlayEntrance, System.Windows.Threading.DispatcherPriority.Loaded);
             }
         };
+        IsVisibleChanged += (_, _) => UpdateShown();
+        StateChanged += (_, _) => UpdateShown();
+        BreakdownList.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler(OnBreakdownClick), handledEventsToo: true);
+        BreakdownList.PreviewKeyDown += OnBreakdownKeyDown;
 
         ApplyTheme(reduceMotion, highContrast);
         Relocalize();
@@ -100,6 +110,8 @@ internal sealed partial class HistoryWindow : Window
         Chart.ReduceMotion = reduceMotion;
         Chart.HighContrast = highContrast;
         Table.ReduceMotion = reduceMotion;
+        BreakdownBar.SetReduceMotion(BreakdownList, reduceMotion);
+        BreakdownBar.SetHighContrast(BreakdownList, highContrast);
     }
 
     /// <summary>Re-reads every text that is not bound to the view model (the view model relocalizes itself).</summary>
@@ -108,8 +120,6 @@ internal sealed partial class HistoryWindow : Window
         var loc = _model.Loc;
         _copyItem.Header = loc["win.history.copyRow"];
         UpdateHeader();
-        _exportFullWidth = 0;
-        ExportLabel.Visibility = Visibility.Visible;
         Dispatcher.BeginInvoke(UpdateToolbar, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
@@ -212,7 +222,7 @@ internal sealed partial class HistoryWindow : Window
         try
         {
             var kind = _model.RangeKind;
-            foreach (var radio in new[] { Range7, Range30, Range90, RangeYear, RangeAll })
+            foreach (var radio in new[] { RangeToday, RangeYesterday, Range7, Range30, Range90, RangeYear, RangeAll })
             {
                 radio.IsChecked = radio.Tag is string tag && Enum.TryParse<HistoryRangeKind>(tag, out var k) && k == kind;
             }
@@ -343,6 +353,61 @@ internal sealed partial class HistoryWindow : Window
         var max = (Root.ActualWidth - 24) * scale + shadow - popupSize.Width - target;
         var x = Math.Clamp((targetSize.Width - popupSize.Width) / 2, Math.Min(min, max), max);
         return [new CustomPopupPlacement(new Point(x, targetSize.Height - 4 * scale), PopupPrimaryAxis.Horizontal)];
+    }
+
+    /// <summary>Today is re-read only while the window is on screen.</summary>
+    private void UpdateShown() => _model.SetShown(IsVisible && WindowState != WindowState.Minimized);
+
+    // ---- Breakdown ----
+
+    private void OnBreakdownClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source
+            && ItemsControl.ContainerFromElement(BreakdownList, source) is ListBoxItem { DataContext: BreakdownRowView row })
+        {
+            ShowModelsOf(row, keyboard: false);
+        }
+    }
+
+    private void OnBreakdownKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Enter or Key.Space && Keyboard.FocusedElement is ListBoxItem { DataContext: BreakdownRowView row } && row.IsSource)
+        {
+            ShowModelsOf(row, keyboard: true);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>A source bar opens that source's models for the same day; keyboard focus moves to the first model bar.</summary>
+    private void ShowModelsOf(BreakdownRowView row, bool keyboard)
+    {
+        if (!row.IsSource)
+        {
+            return;
+        }
+
+        // Rebuilding the list inside its own input event would pull the item out from under the event route.
+        var source = row.Source;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _model.SetSource(source);
+            if (keyboard)
+            {
+                Dispatcher.BeginInvoke(FocusFirstBreakdownBar, System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void FocusFirstBreakdownBar()
+    {
+        if (BreakdownList.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem first)
+        {
+            first.Focus();
+        }
+        else
+        {
+            SourcePicker.Focus();
+        }
     }
 
     // ---- Export ----
@@ -501,7 +566,8 @@ internal sealed partial class HistoryWindow : Window
             .Select(m =>
             {
                 var share = day.Output > 0 ? (double)m.Output / day.Output : 0;
-                return new TooltipShare(m.Model, share, HistoryText.Percent(share));
+                var speed = m.AverageSpeed is { } value && double.IsFinite(value) && value > 0 ? HistoryText.Speed(value, loc) : string.Empty;
+                return new TooltipShare(m.Model, share, HistoryText.Percent(share), speed);
             })
             .ToArray();
         return new TooltipModel(
@@ -545,31 +611,52 @@ internal sealed partial class HistoryWindow : Window
         }
     }
 
+    /// <summary>Narrows the range items, the export button and the picker step by step so the toolbar never wraps.</summary>
     private void UpdateToolbar()
     {
-        if (Toolbar.ActualWidth <= 0)
+        if (Toolbar.ActualWidth <= 0 || ExportButton.ActualWidth <= 0)
         {
             return;
         }
 
-        if (ExportLabel.Visibility == Visibility.Visible && ExportButton.ActualWidth > 0)
+        var exportLabel = TextWidth(ExportLabel.Text, ExportLabel.FontFamily, ExportLabel.FontSize, ExportLabel.FontWeight);
+        var exportIcon = ExportLabel.Visibility == Visibility.Visible
+            ? ExportButton.ActualWidth - ExportLabel.ActualWidth - ExportLabel.Margin.Left
+            : ExportButton.ActualWidth;
+        if (!HistoryToolbar.NarrowsPicker(_density))
         {
-            _exportFullWidth = ExportButton.ActualWidth;
+            _pickerWidth = SourcePicker.ActualWidth;
         }
 
-        if (_exportFullWidth <= 0)
+        var items = RangeItems.Children.OfType<ToggleButton>().ToArray();
+        var labels = items.Select(item => TextWidth(item.Content as string ?? string.Empty, item.FontFamily, item.FontSize, FontWeights.SemiBold))
+            .ToArray();
+        var density = HistoryToolbar.Fit(Toolbar.ActualWidth, labels, _pickerWidth, exportIcon, exportLabel);
+        if (density == _density)
         {
             return;
         }
 
-        var needed = SourcePicker.ActualWidth + RangeGroup.DesiredSize.Width + RangeGroup.Margin.Left + RangeGroup.Margin.Right + _exportFullWidth;
-        var compact = needed > Toolbar.ActualWidth + 0.5;
-        var visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        if (ExportLabel.Visibility != visibility)
+        _density = density;
+        ExportLabel.Visibility = HistoryToolbar.ShowsExportLabel(density) ? Visibility.Visible : Visibility.Collapsed;
+        var padding = HistoryToolbar.ItemPadding(density);
+        foreach (var item in items)
         {
-            ExportLabel.Visibility = visibility;
+            item.Padding = new Thickness(padding, 0, padding, 0);
+            item.MinWidth = HistoryToolbar.ItemMinWidth(density);
         }
+
+        var margin = HistoryToolbar.RangeMargin(density);
+        RangeGroup.Margin = new Thickness(margin, 0, margin, 0);
+        var narrow = HistoryToolbar.NarrowsPicker(density);
+        SourcePicker.MinWidth = narrow ? HistoryToolbar.CompactPickerWidth : HistoryToolbar.PickerMinWidth;
+        SourcePicker.MaxWidth = narrow ? HistoryToolbar.CompactPickerWidth : HistoryToolbar.PickerMaxWidth;
     }
+
+    private double TextWidth(string text, FontFamily family, double size, FontWeight weight) =>
+        new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal), size, Brushes.Black,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
 
     // ---- Frame ----
 

@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using AgentSpeed.Core.Antigravity;
 using AgentSpeed.Core.Engine;
 using AgentSpeed.Core.IO;
+using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.OpenCode;
 using AgentSpeed.Core.Parsing;
 
@@ -24,6 +26,9 @@ internal sealed class MonitorCore : IDisposable
     public const long LargeFileTailBytes = 64L * 1024 * 1024;
     public const long RecentWriteWindowMs = 2 * 60_000;
 
+    /// <summary>A conversation database that keeps changing is read at most this often (METRICS 5.4).</summary>
+    public static readonly TimeSpan DatabaseReadInterval = TimeSpan.FromMilliseconds(500);
+
     private static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
@@ -39,6 +44,8 @@ internal sealed class MonitorCore : IDisposable
     private readonly Dictionary<TrackedFile, BackgroundRead> _wholeReads = [];
     private readonly CancellationTokenSource _backgroundStop = new();
     private readonly OpenCodeSource? _openCode;
+    private readonly AntigravityConnections _connections = new();
+    private readonly bool _ompAutomatic;
     private bool _openCodeSeeded;
     private bool _linksChanged;
     private long _removedMalformedLines;
@@ -81,6 +88,7 @@ internal sealed class MonitorCore : IDisposable
         }
 
         OpenCodeRootPath = locations.OpenCodeRoot;
+        _ompAutomatic = locations.OmpAutomatic;
         RefreshAvailability();
     }
 
@@ -121,6 +129,12 @@ internal sealed class MonitorCore : IDisposable
 
     public int TrackedFileCount => _files.Count;
 
+    /// <summary>Antigravity databases with an open connection (METRICS 5.4 caps them).</summary>
+    internal int OpenDatabaseConnections => _files.Values.Count(f => f.Tailer is AntigravityTailer { HasConnection: true });
+
+    /// <summary>Open Antigravity connections that use <c>immutable=1</c> (closed conversations, METRICS 4.5).</summary>
+    internal int ImmutableDatabaseConnections => _files.Values.Count(f => f.Tailer is AntigravityTailer { IsImmutable: true });
+
     public void RefreshAvailability()
     {
         foreach (var root in _roots)
@@ -150,6 +164,12 @@ internal sealed class MonitorCore : IDisposable
 
         _wholeReads.Clear();
         _openCode?.Dispose();
+        foreach (var tracked in _files.Values)
+        {
+            (tracked.Tailer as AntigravityTailer)?.Dispose();
+        }
+
+        _connections.CloseAll();
     }
 
     /// <summary>Applies whole-file reads that finished in the background, each in one step; true when anything changed.</summary>
@@ -270,9 +290,9 @@ internal sealed class MonitorCore : IDisposable
                 continue;
             }
 
-            if (_files.TryGetValue(path, out var tracked))
+            if (_files.TryGetValue(path, out var tracked) || _files.TryGetValue(AntigravityPaths.DatabaseOf(path), out tracked))
             {
-                if (!SafeFileExists(path))
+                if (!SafeFileExists(tracked.Path))
                 {
                     Remove(tracked);
                     changed = true;
@@ -289,7 +309,8 @@ internal sealed class MonitorCore : IDisposable
             {
                 if (root.Enabled && root.Seeded && TranscriptDiscovery.IsAcceptablePath(root.Path, path, root.Naming))
                 {
-                    changed |= AddRuntimeFile(root, path, todayStartMs);
+                    var file = root.Family == RootFamily.Antigravity ? AntigravityPaths.DatabaseOf(path) : path;
+                    changed |= AddRuntimeFile(root, file, todayStartMs);
                     break;
                 }
             }
@@ -308,10 +329,11 @@ internal sealed class MonitorCore : IDisposable
     {
         var cutoff = DateTime.UnixEpoch.AddMilliseconds(nowMs - RecentWriteWindowMs);
         var changed = _openCodeSeeded && _openCode?.RefreshIfChanged() is { } update && ApplyOpenCode(update, seeded: false);
+        _connections.CloseIdle();
         List<TrackedFile>? due = null;
         foreach (var tracked in _files.Values)
         {
-            if (tracked.KnownWriteUtc >= cutoff)
+            if (tracked.KnownWriteUtc >= cutoff || tracked.Dirty)
             {
                 (due ??= []).Add(tracked);
             }
@@ -324,13 +346,12 @@ internal sealed class MonitorCore : IDisposable
 
         foreach (var tracked in due)
         {
-            var info = new FileInfo(tracked.Path);
-            if (!info.Exists)
+            if (Stamp(tracked) is not { } stamp)
             {
                 Remove(tracked);
                 changed = true;
             }
-            else if (info.Length != tracked.KnownLength || info.LastWriteTimeUtc != tracked.KnownWriteUtc)
+            else if (tracked.Dirty || stamp.Length != tracked.KnownLength || stamp.WriteUtc != tracked.KnownWriteUtc)
             {
                 changed |= ReadLive(tracked);
             }
@@ -352,7 +373,8 @@ internal sealed class MonitorCore : IDisposable
             changed |= ApplyOpenCode(update, seeded: update.Reset);
         }
 
-        foreach (var root in _roots)
+        AddNewOmpRoots();
+        foreach (var root in _roots.ToList())
         {
             if (!root.Enabled)
             {
@@ -446,6 +468,11 @@ internal sealed class MonitorCore : IDisposable
         if (_openCode?.Status == OpenCodeStatus.Unsupported)
         {
             warnings.Add(new MonitorWarning.UnsupportedFormat(SourceKind.OpenCode));
+        }
+
+        if (_files.Values.Any(f => f.Parser is AntigravityParser { Unsupported: true }))
+        {
+            warnings.Add(new MonitorWarning.UnsupportedFormat(SourceKind.Antigravity));
         }
 
         return warnings;
@@ -591,6 +618,10 @@ internal sealed class MonitorCore : IDisposable
         {
             whole.StartAtEnd(file.Length, file.LastWriteUtc);
         }
+        else if (tracked.Tailer is AntigravityTailer database)
+        {
+            database.StartAtEnd(file.Length, file.LastWriteUtc);
+        }
         else
         {
             tracked.Tailer.StartAt(file.Length, StartAlignment.SkipPartialLine);
@@ -671,6 +702,7 @@ internal sealed class MonitorCore : IDisposable
     private static Prepared Prepare(TrackedFile tracked, CancellationToken cancellationToken)
     {
         var batch = tracked.Parser.NewBatch();
+        tracked.Parser.PrepareBatch(batch, tracked.Tailer.Offset);
         var result = tracked.Tailer.ReadAppended(batch, cancellationToken);
         return new Prepared(batch, result);
     }
@@ -703,6 +735,11 @@ internal sealed class MonitorCore : IDisposable
         tracked.KnownLength = prepared.Result.Length;
         tracked.KnownWriteUtc = prepared.Result.LastWriteUtc;
         tracked.Unreadable = false;
+        if (tracked.Tailer is AntigravityTailer database)
+        {
+            _connections.Touch(database);
+        }
+
         PushAgent(tracked);
         foreach (var (response, isCompletion) in _collector.Items)
         {
@@ -724,6 +761,25 @@ internal sealed class MonitorCore : IDisposable
         {
             StartBackgroundRead(tracked);
             return false;
+        }
+
+        if (tracked.Tailer is AntigravityTailer database)
+        {
+            // The first (complete) read of a database runs off the live loop; later reads are rate limited (METRICS 5.4).
+            if (_wholeReads.ContainsKey(tracked) || (ReadWholeFilesInBackground && database.NeedsCompleteRead))
+            {
+                tracked.Dirty = false;
+                StartBackgroundRead(tracked);
+                return false;
+            }
+
+            if (database.LastReadTimestamp != 0 && Stopwatch.GetElapsedTime(database.LastReadTimestamp) < DatabaseReadInterval)
+            {
+                tracked.Dirty = true;
+                return false;
+            }
+
+            tracked.Dirty = false;
         }
 
         try
@@ -828,7 +884,7 @@ internal sealed class MonitorCore : IDisposable
         _engine.UpdateAgent(new AgentInfo(
             parser.AgentId,
             parser.Source,
-            parser.Project,
+            parser.Project ?? DisplayProject(parser),
             parser.Model,
             parser.IsSubagent,
             parser.Phase,
@@ -887,6 +943,13 @@ internal sealed class MonitorCore : IDisposable
             _parents.GetValueOrDefault(state.Id)));
     }
 
+    /// <summary>
+    /// What the UI shows when a transcript names no project: an Antigravity conversation without a workspace shows its
+    /// store (<c>antigravity-cli</c>, <c>antigravity</c>, <c>antigravity-ide</c>). Display only; parsers keep null.
+    /// </summary>
+    private static string? DisplayProject(TranscriptParser parser) =>
+        parser is AntigravityParser ? AntigravityPaths.StoreNameOf(parser.AgentId) : null;
+
     /// <summary>Re-resolves parent links over the engine's agents after any of them changed (METRICS 6.7).</summary>
     private void ResolveParents()
     {
@@ -930,10 +993,53 @@ internal sealed class MonitorCore : IDisposable
     {
         if (_files.Remove(tracked.Path))
         {
+            if (tracked.Tailer is AntigravityTailer database)
+            {
+                _connections.Forget(database);
+                database.Dispose();
+            }
+
             _removedMalformedLines += tracked.Parser.MalformedLines;
             _removedOversizedLines += tracked.Tailer.OversizedLines;
             _engine.RemoveAgent(tracked.Parser.AgentId);
             _linksChanged |= _links.Remove(tracked.Parser.AgentId);
+        }
+    }
+
+    /// <summary>Size and time as the tracker compares them; Antigravity combines the database and its <c>-wal</c>.</summary>
+    private static (long Length, DateTime WriteUtc)? Stamp(TrackedFile tracked)
+    {
+        if (tracked.Tailer is AntigravityTailer)
+        {
+            return AntigravityStamp.Of(tracked.Path) is { } stamp ? (stamp.Length, stamp.LastWriteUtc) : null;
+        }
+
+        try
+        {
+            var info = new FileInfo(tracked.Path);
+            return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Automatic omp roots follow the profiles on disk: a profile created while running is read from then on.</summary>
+    private void AddNewOmpRoots()
+    {
+        if (!_ompAutomatic || !Families.IsEnabled(RootFamily.Omp, _enabled))
+        {
+            return;
+        }
+
+        var known = new HashSet<string>(_roots.Where(r => r.Family == RootFamily.Omp).Select(r => r.Path), PathComparer);
+        foreach (var path in SourceLocations.NormalizeAll(LiveMonitor.DefaultOmpRoots))
+        {
+            if (known.Add(path))
+            {
+                _roots.Add(new SourceRoot(RootFamily.Omp, path, enabled: true));
+            }
         }
     }
 

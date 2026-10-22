@@ -11,6 +11,8 @@ internal enum ProbeMode
 }
 
 /// <param name="GeminiRoots">Gemini CLI <c>tmp</c> folders; empty uses the defaults.</param>
+/// <param name="OmpRoots">omp <c>sessions</c> folders; empty uses the default root and every named profile.</param>
+/// <param name="AntigravityRoots">Antigravity store (or <c>conversations</c>) folders; empty uses the three default stores.</param>
 /// <param name="StorePath">History store to use and keep; null analyses into a temporary store.</param>
 /// <param name="SinceMs">Overrides the start of "today" for <c>--dump-today</c> (Unix milliseconds).</param>
 internal sealed record ProbeOptions(
@@ -23,11 +25,13 @@ internal sealed record ProbeOptions(
     IReadOnlyList<string> GeminiRoots,
     bool Utc,
     string? StorePath,
-    long? SinceMs = null)
+    long? SinceMs = null,
+    IReadOnlyList<string>? OmpRoots = null,
+    IReadOnlyList<string>? AntigravityRoots = null)
 {
     public const string Usage =
         "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N) " +
-        "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]...";
+        "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]...";
 
     public MonitorConfiguration Configuration => new(
         new HashSet<SourceKind>(Enum.GetValues<SourceKind>()),
@@ -35,15 +39,35 @@ internal sealed record ProbeOptions(
         ClaudeRoot,
         DshRoot,
         OpenCodeRoot,
-        GeminiRoots.Count > 0 ? GeminiRoots[0] : null);
+        GeminiRoots.Count > 0 ? GeminiRoots[0] : null,
+        OmpRoots is { Count: > 0 } omp ? omp[0] : null,
+        AntigravityRoots is { Count: > 0 } antigravity ? antigravity[0] : null);
 
-    /// <summary>Resolved roots; several <c>--gemini</c> folders are all read (like the reference).</summary>
+    /// <summary>Resolved roots; several <c>--gemini</c>, <c>--omp</c> or <c>--antigravity</c> folders are all read (like the reference).</summary>
     public SourceLocations Locations
     {
         get
         {
             var resolved = SourceLocations.Resolve(Configuration);
-            return GeminiRoots.Count > 1 ? resolved with { GeminiRoots = [.. GeminiRoots.Select(SourceLocations.Normalize)] } : resolved;
+            if (GeminiRoots.Count > 1)
+            {
+                resolved = resolved with { GeminiRoots = [.. GeminiRoots.Select(SourceLocations.Normalize)] };
+            }
+
+            if (OmpRoots is { Count: > 1 } omp)
+            {
+                resolved = resolved with { OmpRoots = SourceLocations.NormalizeAll(omp) };
+            }
+
+            if (AntigravityRoots is { Count: > 1 } antigravity)
+            {
+                resolved = resolved with
+                {
+                    AntigravityStores = SourceLocations.NormalizeAll(antigravity.SelectMany(LiveMonitor.AntigravityStores)),
+                };
+            }
+
+            return resolved;
         }
     }
 
@@ -56,6 +80,8 @@ internal sealed record ProbeOptions(
         string? codex = null, claude = null, dsh = null, opencode = null, store = null;
         long? since = null;
         var gemini = new List<string>();
+        var omp = new List<string>();
+        var antigravity = new List<string>();
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -89,6 +115,12 @@ internal sealed record ProbeOptions(
                 case "--gemini" when i + 1 < args.Length:
                     gemini.Add(args[++i]);
                     break;
+                case "--omp" when i + 1 < args.Length:
+                    omp.Add(args[++i]);
+                    break;
+                case "--antigravity" when i + 1 < args.Length:
+                    antigravity.Add(args[++i]);
+                    break;
                 case "--store" when i + 1 < args.Length:
                     store = args[++i];
                     break;
@@ -108,6 +140,6 @@ internal sealed record ProbeOptions(
             return null;
         }
 
-        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since);
+        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity);
     }
 }

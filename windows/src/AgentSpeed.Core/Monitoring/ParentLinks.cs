@@ -1,4 +1,6 @@
+using AgentSpeed.Core.Antigravity;
 using AgentSpeed.Core.Gemini;
+using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Monitoring;
@@ -20,6 +22,12 @@ internal enum LinkKind : byte
 
     /// <summary>Gemini CLI: by the sanitized main session id inside the same <c>chats</c> folder.</summary>
     GeminiSession,
+
+    /// <summary>omp: <c>&lt;dir&gt;/&lt;name&gt;.jsonl</c> below a session's folder belongs to <c>&lt;dir&gt;.jsonl</c>.</summary>
+    OmpPath,
+
+    /// <summary>Antigravity: by <c>parent_conversation_id</c>, compared case-insensitively.</summary>
+    AntigravityConversation,
 }
 
 /// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
@@ -33,6 +41,13 @@ internal readonly record struct AgentLink(
         CodexParser codex => new AgentLink(codex.AgentId, LinkKind.CodexThread, codex.MetaThreadId, codex.ParentThreadId, codex.CreatedMs),
         DshParser dsh => new AgentLink(dsh.AgentId, LinkKind.DshSession, dsh.SessionId, dsh.ParentSession, dsh.CreatedMs),
         GeminiParser gemini => OfGemini(gemini),
+        OmpParser omp => new AgentLink(omp.AgentId, LinkKind.OmpPath, null, omp.ParentPath, omp.HeaderMs),
+        AntigravityParser antigravity => new AgentLink(
+            antigravity.AgentId,
+            LinkKind.AntigravityConversation,
+            antigravity.ConversationId.ToLowerInvariant(),
+            antigravity.ParentConversationId?.ToLowerInvariant(),
+            antigravity.CreatedMs),
         _ => new AgentLink(parser.AgentId, LinkKind.Path, null, null, null),
     };
 
@@ -66,8 +81,8 @@ internal readonly record struct AgentLink(
 }
 
 /// <summary>
-/// Resolves parent agent ids (METRICS 6.7): Claude by path, Codex by parent thread, dsh, OpenCode and Gemini by parent
-/// session.
+/// Resolves parent agent ids (METRICS 6.7): Claude and omp by path, Codex by parent thread, dsh, OpenCode and Gemini by
+/// parent session, Antigravity by parent conversation.
 /// </summary>
 internal static class ParentLinks
 {
@@ -78,12 +93,25 @@ internal static class ParentLinks
     /// <param name="pathComparer">How transcript paths compare on this file system.</param>
     public static Dictionary<string, string> Resolve(IReadOnlyCollection<AgentLink> agents, StringComparer pathComparer)
     {
-        var byPath = new Dictionary<string, string>(agents.Count, pathComparer);
+        var byPath = new Dictionary<string, AgentLink>(agents.Count, pathComparer);
         var byThread = new Dictionary<(LinkKind, string), AgentLink>();
+        var conversations = new Dictionary<string, List<AgentLink>>(StringComparer.Ordinal);
         foreach (var agent in agents)
         {
-            byPath.TryAdd(agent.Id, agent.Id);
-            if (agent.Kind != LinkKind.Path && agent.ThreadId is { Length: > 0 } thread
+            byPath.TryAdd(agent.Id, agent);
+            if (agent.Kind == LinkKind.AntigravityConversation)
+            {
+                if (agent.ThreadId is { Length: > 0 } conversation)
+                {
+                    if (!conversations.TryGetValue(conversation, out var copies))
+                    {
+                        conversations[conversation] = copies = [];
+                    }
+
+                    copies.Add(agent);
+                }
+            }
+            else if (agent.Kind is not (LinkKind.Path or LinkKind.OmpPath) && agent.ThreadId is { Length: > 0 } thread
                 && (!byThread.TryGetValue((agent.Kind, thread), out var known) || CreatedBefore(agent, known)))
             {
                 byThread[(agent.Kind, thread)] = agent;
@@ -94,16 +122,36 @@ internal static class ParentLinks
         foreach (var agent in agents)
         {
             string? parent = null;
-            if (agent.Kind != LinkKind.Path)
+            switch (agent.Kind)
             {
-                if (agent.ParentThreadId is { Length: > 0 } thread && byThread.TryGetValue((agent.Kind, thread), out var owner))
-                {
-                    parent = owner.Id;
-                }
-            }
-            else if (ClaudeParentPath(agent.Id) is { } candidate && byPath.TryGetValue(candidate, out var tracked))
-            {
-                parent = tracked;
+                case LinkKind.Path:
+                    if (ClaudeParentPath(agent.Id) is { } candidate && byPath.TryGetValue(candidate, out var tracked))
+                    {
+                        parent = tracked.Id;
+                    }
+
+                    break;
+                case LinkKind.OmpPath:
+                    if (agent.ParentThreadId is { } folder && byPath.TryGetValue(folder, out var session) && session.Kind == LinkKind.OmpPath)
+                    {
+                        parent = session.Id;
+                    }
+
+                    break;
+                case LinkKind.AntigravityConversation:
+                    if (agent.ParentThreadId is { Length: > 0 } conversation && conversations.TryGetValue(conversation, out var copies))
+                    {
+                        parent = PreferredCopy(copies, agent.Id).Id;
+                    }
+
+                    break;
+                default:
+                    if (agent.ParentThreadId is { Length: > 0 } thread && byThread.TryGetValue((agent.Kind, thread), out var owner))
+                    {
+                        parent = owner.Id;
+                    }
+
+                    break;
             }
 
             if (parent is not null && !string.Equals(parent, agent.Id, StringComparison.Ordinal))
@@ -131,6 +179,36 @@ internal static class ParentLinks
         return start >= 0 && folder[(start + 1)..].SequenceEqual(SubagentsFolder)
             ? string.Concat(folder[..start], TranscriptExtension)
             : null;
+    }
+
+    // Copies of one conversation in several stores: the one in the child's own conversations folder, then ordinal path.
+    private static AgentLink PreferredCopy(List<AgentLink> copies, string child)
+    {
+        var folder = FolderOf(child);
+        AgentLink? best = null;
+        foreach (var copy in copies)
+        {
+            if (best is not { } current)
+            {
+                best = copy;
+                continue;
+            }
+
+            var sameFolder = string.Equals(FolderOf(copy.Id), folder, StringComparison.Ordinal);
+            var currentSameFolder = string.Equals(FolderOf(current.Id), folder, StringComparison.Ordinal);
+            if (sameFolder != currentSameFolder ? sameFolder : string.CompareOrdinal(copy.Id, current.Id) < 0)
+            {
+                best = copy;
+            }
+        }
+
+        return best!.Value;
+    }
+
+    private static string FolderOf(string path)
+    {
+        var cut = path.AsSpan().LastIndexOfAny('/', '\\');
+        return cut < 0 ? string.Empty : path[..cut];
     }
 
     private static bool CreatedBefore(in AgentLink a, in AgentLink b)

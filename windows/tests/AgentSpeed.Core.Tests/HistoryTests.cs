@@ -29,7 +29,9 @@ public sealed class HistoryTests : IDisposable
             Path.Combine(copy, "claude", "projects"),
             Path.Combine(copy, "dsh", "sessions"),
             Path.Combine(copy, "opencode"),
-            [Path.Combine(copy, "gemini", "tmp")]);
+            [Path.Combine(copy, "gemini", "tmp")],
+            Omp.OmpPaths.Roots(name => name == "PI_CONFIG_DIR" ? "omp" : null, macOS: false, copy),
+            Antigravity.AntigravityPaths.Stores(Path.Combine(copy, "antigravity"), null));
         using var store = HistoryStore.Open(StorePath);
         var analyzer = new HistoryAnalyzer(store);
 
@@ -237,7 +239,13 @@ internal static class HistoryJson
         var models = new JsonObject();
         foreach (var model in day.Models.OrderBy(m => m.Model, StringComparer.Ordinal))
         {
-            models[model.Model] = new JsonObject { ["requests"] = model.Requests, ["output"] = model.Output };
+            models[model.Model] = new JsonObject
+            {
+                ["requests"] = model.Requests,
+                ["output"] = model.Output,
+                ["measuredOutput"] = model.MeasuredOutput,
+                ["measuredMs"] = model.MeasuredMs,
+            };
         }
 
         return new JsonObject

@@ -27,6 +27,8 @@ public static class HistoryCsv
         SourceKind.DeepSeek => "deepseek",
         SourceKind.OpenCode => "opencode",
         SourceKind.Gemini => "gemini",
+        SourceKind.Omp => "omp",
+        SourceKind.Antigravity => "antigravity",
         _ => "unknown",
     };
 

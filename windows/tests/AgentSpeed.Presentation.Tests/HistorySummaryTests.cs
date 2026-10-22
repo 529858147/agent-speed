@@ -128,4 +128,56 @@ public class HistorySummaryTests
         Assert.Equal("單日最高 10/18", cards[1].Secondary);
         Assert.Equal("活躍 1 天", cards[2].Secondary);
     }
+
+    [Fact]
+    public void ASingleDayComparesEveryCardWithTheDayBefore()
+    {
+        var day = DayRange.Single(Today);
+        DaySummary[] today = [Summary(Today, output: 3000, requests: 6, input: 40_000, measuredOutput: 3000, measuredMs: 30_000)];
+        DaySummary[] yesterday = [Summary(D(2026, 10, 20), output: 2000, requests: 8, input: 40_000, measuredOutput: 2000, measuredMs: 10_000)];
+        var cards = HistorySummary.Build(today, yesterday, day, Today, For(LanguageCodes.ZhHant));
+
+        Assert.Equal(["比前一天 +50%", "比前一天 0%", "比前一天 −25%", "比前一天 −50%"], cards.Select(c => c.Secondary));
+        Assert.Equal(0.5, cards[0].Change!.Value, 9);
+        Assert.Equal(0, cards[1].Change!.Value, 9);
+        Assert.Equal(-0.25, cards[2].Change!.Value, 9);
+        Assert.Equal(-0.5, cards[3].Change!.Value, 9);
+        Assert.Equal("+50% vs the day before", HistorySummary.Build(today, yesterday, day, Today, For(LanguageCodes.En))[0].Secondary);
+    }
+
+    [Fact]
+    public void ASingleDayWithoutTheDayBeforeHasNoSecondaryLines()
+    {
+        DaySummary[] today = [Summary(Today, output: 3000)];
+        var cards = HistorySummary.Build(today, [], DayRange.Single(Today), Today, For(LanguageCodes.ZhHant));
+        Assert.All(cards, c => Assert.Equal(string.Empty, c.Secondary));
+        Assert.All(cards, c => Assert.Null(c.Change));
+    }
+
+    [Fact]
+    public void ASingleDaysSparklinesShowItsWeekWithTheDayHighlighted()
+    {
+        var day = DayRange.Single(D(2026, 10, 20));
+        DaySummary[] selected = [Summary(D(2026, 10, 20), output: 900, measuredOutput: 900, measuredMs: 9_000)];
+        DaySummary[] week =
+        [
+            Summary(D(2026, 10, 14), output: 100, measuredOutput: 100, measuredMs: 1_000),
+            Summary(D(2026, 10, 17), output: 400, measuredOutput: 0, measuredMs: 0),
+            selected[0],
+        ];
+        var cards = HistorySummary.Build(selected, [], day, Today, For(LanguageCodes.ZhHant), week);
+
+        Assert.All(cards, c => Assert.Equal(HistoryRanges.SingleDaySparkDays, c.Spark.Count));
+        Assert.All(cards, c => Assert.Equal(6, c.Highlight));
+        Assert.Equal(new double?[] { 100, 0, 0, 400, 0, 0, 900 }, cards[0].Spark);
+        Assert.Equal(new double?[] { 100, null, null, null, null, null, 100 }, cards[3].Spark);
+        Assert.Equal("900", cards[0].Value);
+    }
+
+    [Fact]
+    public void SeveralDaysHighlightNoDay()
+    {
+        var cards = HistorySummary.Build(Days, Previous, Week, Today, For(LanguageCodes.ZhHant));
+        Assert.All(cards, c => Assert.Null(c.Highlight));
+    }
 }

@@ -62,6 +62,8 @@ public static class DisplayText
         SourceKind.DeepSeek => "source.deepseek",
         SourceKind.OpenCode => "source.opencode",
         SourceKind.Gemini => "source.gemini",
+        SourceKind.Omp => "source.omp",
+        SourceKind.Antigravity => "source.antigravity",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 

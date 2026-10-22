@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using AgentSpeed.Core.Antigravity;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
+using AgentSpeed.Core.Omp;
 
 namespace AgentSpeed.Core;
 
@@ -104,6 +106,22 @@ public sealed class LiveMonitor : IDisposable
     internal static IReadOnlyList<string> DefaultGeminiRoots => OperatingSystem.IsMacOS()
         ? [DefaultGeminiRoot, Path.Combine(GeminiHome, ".cache", ".gemini", "tmp")]
         : [DefaultGeminiRoot];
+
+    /// <summary>
+    /// The default omp <c>sessions</c> folder (<c>%PI_CODING_AGENT_DIR%\sessions</c>, else <c>~/.omp/agent/sessions</c>);
+    /// unless a folder is chosen, every named profile's root is read as well (METRICS 2, 4.7).
+    /// </summary>
+    public static string DefaultOmpRoot => OmpPaths.DefaultRoot();
+
+    /// <summary>The default omp root followed by one root per named profile.</summary>
+    internal static IReadOnlyList<string> DefaultOmpRoots => OmpPaths.AutomaticRoots();
+
+    /// <summary>The three Antigravity stores below <c>~/.gemini</c>: CLI, desktop app, IDE (METRICS 2, 4.8).</summary>
+    public static IReadOnlyList<string> DefaultAntigravityStores => AntigravityPaths.DefaultStores(Path.Combine(UserHome, ".gemini"));
+
+    /// <summary>The Antigravity folders read for a setting (null: the default stores); a <c>*-backup</c> store is never read.</summary>
+    public static IReadOnlyList<string> AntigravityStores(string? setting) =>
+        AntigravityPaths.Stores(Path.Combine(UserHome, ".gemini"), setting);
 
     private static string GeminiHome
     {
