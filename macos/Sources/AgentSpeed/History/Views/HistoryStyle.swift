@@ -46,6 +46,7 @@ enum HistoryPalette {
     /// Row tints of the daily table.
     static func stripe(dark: Bool) -> Color { (dark ? Color.white : Color.black).opacity(dark ? 0.035 : 0.025) }
     static func hover(dark: Bool) -> Color { (dark ? Color.white : Color.black).opacity(dark ? 0.08 : 0.055) }
+    static func pressed(dark: Bool) -> Color { (dark ? Color.white : Color.black).opacity(dark ? 0.13 : 0.09) }
 
     /// The tint of sparklines and single-source marks: the source color, else the accent color.
     static func tint(_ source: SourceKind?, dark: Bool) -> Color {
@@ -125,4 +126,27 @@ extension ShapeStyle where Self == HistorySecondaryStyle {
 
 extension View {
     func historyCard() -> some View { modifier(HistoryCardBackground()) }
+}
+
+/// `進行中` in a small accent capsule: today's figures are still growing.
+struct InProgressBadge: View {
+    let l10n: Localizer
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Text(l10n("history.inProgress"))
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(Color.accentColor.opacity(contrast == .increased ? 0.22 : 0.14)))
+            .overlay {
+                if contrast == .increased {
+                    Capsule().strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                }
+            }
+    }
 }

@@ -18,7 +18,9 @@ struct SessionTests {
             claudeRoot: directory.file("claude/projects"),
             dshRoot: directory.file("dsh/sessions"),
             opencodeRoot: directory.file("opencode"),
-            geminiRoot: directory.file("gemini")
+            geminiRoot: directory.file("gemini"),
+            ompRoot: directory.file("missing-omp"),
+            antigravityRoot: directory.file("missing-antigravity")
         )
         return (directory, configuration)
     }

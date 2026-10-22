@@ -12,17 +12,40 @@ struct ParserFixtureTests {
     static func family(of relative: String) -> TranscriptFamily {
         if relative.hasPrefix("codex/") { return .codex }
         if relative.hasPrefix("gemini/") { return .gemini }
+        if relative.hasPrefix("omp/") { return .omp }
         return relative.hasPrefix("dsh/") ? .dsh : .claude
     }
 
+    /// The fixture folder `omp` plays `~/.omp`: its automatic roots are the default root and every profile.
+    static var ompRoots: [String] {
+        TranscriptLocations.ompRoots(environment: ["PI_CONFIG_DIR": "omp"], home: Fixtures.root).map(\.path)
+    }
+
+    /// The root an omp fixture was found under; nil for other families.
+    static func root(of relative: String) -> String? {
+        guard family(of: relative) == .omp else { return nil }
+        let path = Fixtures.root.appendingPathComponent(relative).path
+        return ompRoots.first { path.hasPrefix($0 + "/") }
+    }
+
+    static func parser(for relative: String, fileID: FileID) -> TranscriptParser {
+        TranscriptParser(family: family(of: relative), agentId: Fixtures.root.appendingPathComponent(relative).path,
+                         fileID: fileID, root: root(of: relative))
+    }
+
     static func runFixtures() throws -> (expected: [String: Any], results: [String: FileResult]) {
+        var deduper = Deduper()
+        return try runFixtures(deduper: &deduper)
+    }
+
+    /// Every file of `order` with one shared dedupe set, which the caller keeps (the Antigravity databases follow).
+    static func runFixtures(deduper: inout Deduper) throws -> (expected: [String: Any], results: [String: FileResult]) {
         let expected = try Fixtures.json("parser-expected.json")
         let order = try #require(expected["order"] as? [String])
-        var deduper = Deduper()
         var results: [String: FileResult] = [:]
         for (index, relative) in order.enumerated() {
             let url = Fixtures.root.appendingPathComponent(relative)
-            var parser = TranscriptParser(family: family(of: relative), agentId: url.path, fileID: FileID(index))
+            var parser = Self.parser(for: relative, fileID: FileID(index))
             var keys: [String] = []
             var latest: [String: ResponseRecord] = [:]
             let consume = { (line: UnsafeRawBufferPointer) in

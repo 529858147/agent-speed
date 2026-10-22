@@ -1,8 +1,8 @@
 import Foundation
 
-/// Computes the daily history (METRICS 8): every transcript of the enabled sources (plus Codex `archived_sessions`)
-/// and every OpenCode session, parsed completely with the live rules, in startup order, incrementally against a
-/// `HistoryDatabase`.
+/// Computes the daily history (METRICS 8): every transcript of the enabled sources (plus Codex `archived_sessions`,
+/// every omp root and every Antigravity conversation database) and every OpenCode session, parsed completely with
+/// the live rules, in startup order, incrementally against a `HistoryDatabase`.
 ///
 /// Not thread-safe: one owner (a serial queue) drives it.
 final class HistoryAnalyzer {
@@ -66,6 +66,8 @@ final class HistoryAnalyzer {
     private struct PlannedFile {
         var path: String
         var family: TranscriptFamily
+        var root: String
+        /// For an Antigravity database, the `.db` with its `-wal` folded in.
         var stat: FileStat
         var previous: HistoryDatabase.Entry?
     }
@@ -97,14 +99,14 @@ final class HistoryAnalyzer {
             let paths = index.scan()
             indexes[root] = index
             for path in paths where seen.insert(path).inserted {
-                guard let stat = FileStat.lstat(path), stat.isRegularFile else { continue }
+                guard let stat = family.stat(path) else { continue }
                 plan.discovered += 1
                 let previous = entries[path]
                 if let previous, !zoneChanged, previous.version == options.analysisVersion,
                    previous.family == family.rawValue, previous.size == stat.size, previous.modified == stat.modifiedNs {
                     continue
                 }
-                plan.files.append(PlannedFile(path: path, family: family, stat: stat, previous: previous))
+                plan.files.append(PlannedFile(path: path, family: family, root: root, stat: stat, previous: previous))
             }
         }
         plan.files.sort { lhs, rhs in
@@ -143,12 +145,14 @@ final class HistoryAnalyzer {
         plan.opencode = (opencode, sessions, identity)
     }
 
-    /// Transcript roots of the enabled sources (both Gemini CLI roots); Codex also contributes its `archived_sessions`
-    /// sibling.
+    /// Transcript roots of the enabled sources (both Gemini CLI roots, every omp root, every readable Antigravity
+    /// store); Codex also contributes its `archived_sessions` sibling.
     static func roots(_ configuration: MonitorConfiguration) -> [(TranscriptFamily, String)] {
         var roots: [(TranscriptFamily, String)] = []
         for family in TranscriptFamily.allCases where configuration.reads(family) {
-            for root in configuration.resolvedRoots(for: family) { roots.append((family, root)) }
+            for root in configuration.resolvedRoots(for: family) where MonitorConfiguration.isReadable(root: root, family: family) {
+                roots.append((family, root))
+            }
             if family == .codex { roots.append((family, configuration.resolvedCodexArchiveRoot)) }
         }
         return roots
@@ -223,7 +227,8 @@ final class HistoryAnalyzer {
                 }
                 // Parsers bridge paths through NSString; drain those per file on this long-running thread.
                 let (days, keys) = autoreleasepool { () -> ([UsageKey: DayAggregate], [UInt64]) in
-                    var parser = TranscriptParser(family: file.family, agentId: file.path, fileID: FileID(truncatingIfNeeded: index))
+                    var parser = TranscriptParser(
+                        family: file.family, agentId: file.path, fileID: FileID(truncatingIfNeeded: index), root: file.root)
                     var latest: [String: ResponseRecord] = [:]
                     parser.consume(output.lines, deduper: &deduper) { latest[$0.record.key] = $0.record }
                     let days = DayAggregate.contributions(of: latest.values, source: parser.state.source, labeler: &labeler)

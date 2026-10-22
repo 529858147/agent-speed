@@ -64,4 +64,25 @@ public final class LiveMonitor {
     public nonisolated static var defaultOpencodeRoot: URL {
         TranscriptLocations.defaultOpencodeRoot
     }
+
+    /// omp's automatic `sessions` roots: the default root first, then one per named profile (a configured root
+    /// replaces all of them).
+    public nonisolated static var defaultOmpRoots: [URL] {
+        TranscriptLocations.defaultOmpRoots
+    }
+
+    /// omp's default `sessions` root (the first of `defaultOmpRoots`).
+    public nonisolated static var defaultOmpRoot: URL {
+        TranscriptLocations.defaultOmpRoots[0]
+    }
+
+    /// Antigravity's store folders, each containing `conversations` (a configured store replaces all three).
+    public nonisolated static var defaultAntigravityStores: [URL] {
+        TranscriptLocations.defaultAntigravityStores
+    }
+
+    /// False for a `*-backup` store (or its `conversations` folder), which is never read.
+    public nonisolated static func isReadableAntigravityStore(_ folder: URL) -> Bool {
+        TranscriptLocations.isReadableAntigravityRoot(TranscriptLocations.antigravityConversations(folder).path)
+    }
 }

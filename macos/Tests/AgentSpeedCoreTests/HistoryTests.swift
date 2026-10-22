@@ -6,14 +6,23 @@ import Testing
 struct HistoryTests {
     static let utc = TimeZone(identifier: "UTC")!
 
+    /// The fixtures folder as every source's data; `omp` plays `~/.omp` and `antigravity` plays `~/.gemini`, so their
+    /// automatic roots (every profile, the three stores) are used.
     static func configuration(fixtures root: URL) -> MonitorConfiguration {
-        MonitorConfiguration(
+        var configuration = MonitorConfiguration(
             codexRoot: root.appendingPathComponent("codex/sessions", isDirectory: true),
             claudeRoot: root.appendingPathComponent("claude/projects", isDirectory: true),
             dshRoot: root.appendingPathComponent("dsh/sessions", isDirectory: true),
             opencodeRoot: root.appendingPathComponent("opencode/opencode.db"),
             geminiRoot: root.appendingPathComponent("gemini/tmp", isDirectory: true)
         )
+        configuration.automaticRoots = [
+            .omp: TranscriptLocations.ompRoots(environment: ["PI_CONFIG_DIR": "omp"], home: root),
+            .antigravity: ["antigravity-cli", "antigravity", "antigravity-ide"].map {
+                root.appendingPathComponent("antigravity", isDirectory: true).appendingPathComponent($0, isDirectory: true)
+            },
+        ]
+        return configuration
     }
 
     static var fixtureConfiguration: MonitorConfiguration { configuration(fixtures: Fixtures.root) }
@@ -31,9 +40,6 @@ struct HistoryTests {
         return (directory, copy)
     }
 
-    /// Sources this core reads; expected rows of other sources are not compared yet.
-    static let supportedSources = Set(SourceKind.allCases.filter { TranscriptFamily($0) != nil || $0 == .opencode })
-
     /// The JSON shape of `reference.py --dump-history`.
     static func json(_ day: DailyUsage) -> [String: Any] {
         var models: [String: Any] = [:]
@@ -47,8 +53,8 @@ struct HistoryTests {
     }
 
     @Test func fixturesMatchExpectedHistory() throws {
-        let all = try #require(try Fixtures.json("history-expected.json")["days"] as? [[String: Any]])
-        let expected = all.filter { ($0["source"] as? String).flatMap(SourceKind.init(rawValue:)).map(Self.supportedSources.contains) ?? false }
+        let expected = try #require(try Fixtures.json("history-expected.json")["days"] as? [[String: Any]])
+        #expect(Set(expected.compactMap { $0["source"] as? String }) == Set(SourceKind.allCases.map(\.rawValue)))
         let (directory, copy) = try Self.fixtureCopy()
         let report = try HistoryScan.run(configuration: Self.configuration(fixtures: copy), timeZone: Self.utc)
         #expect(report.days.count == expected.count)
@@ -56,7 +62,10 @@ struct HistoryTests {
             let got = Self.json(day) as NSDictionary
             #expect(got.isEqual(to: want), "\(day.day) \(day.source.rawValue): \(got) != \(want)")
         }
-        #expect(report.filesAnalyzed == (try Fixtures.json("parser-expected.json")["order"] as? [String])?.count)
+        let parserExpected = try Fixtures.json("parser-expected.json")
+        let files = try #require(parserExpected["order"] as? [String]).count
+        let databases = try #require((parserExpected["antigravity"] as? [String: Any])?["order"] as? [String]).count
+        #expect(report.filesAnalyzed == files + databases)
         #expect(report.sessionsAnalyzed == 2)
         #expect(report.days.allSatisfy { $0.peak == nil })
         _ = directory

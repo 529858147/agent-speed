@@ -180,6 +180,7 @@ final class MonitorCore: @unchecked Sendable {
 
     private func publish() {
         guard let session, isLive else { return }
+        session.readDirtyDatabases()
         let now = Date()
         let todayStartMs = Self.todayStartMs(for: now)
         let (output, events) = session.advance(nowMs: Clock.milliseconds(now), todayStartMs: todayStartMs, emitsEvents: true)

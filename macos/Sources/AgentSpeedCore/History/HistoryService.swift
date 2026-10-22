@@ -47,7 +47,7 @@ public final class HistoryService {
             store?.publish(state: state, days: days)
         }
         self.worker = worker
-        store.refreshHandler = { [weak self] in self?.refresh() }
+        store.refreshHandler = { [weak self] showsProgress in self?.refresh(showsProgress: showsProgress) }
         store.clearHandler = { [weak self] in self?.clear() }
         worker.start()
         if liveStore != nil {
@@ -76,9 +76,9 @@ public final class HistoryService {
         worker?.update(configuration: configuration)
     }
 
-    /// Analyses new and changed logs now.
-    public func refresh() {
-        worker?.requestRun(visible: true)
+    /// Analyses new and changed logs now; without `showsProgress`, only a large run reports `.analyzing`.
+    public func refresh(showsProgress: Bool = true) {
+        worker?.requestRun(visible: showsProgress)
     }
 
     /// Deletes the store and analyses the current logs from scratch.

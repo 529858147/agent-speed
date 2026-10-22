@@ -10,6 +10,8 @@ extension SourceKind {
         case .deepseek: RGBColor(hex: 0x4D6BFE)
         case .opencode: RGBColor(hex: 0xF4B13E)
         case .gemini: RGBColor(hex: 0x34B8F0)
+        case .omp: RGBColor(hex: 0x84CC16)
+        case .antigravity: RGBColor(hex: 0xEC4899)
         }
     }
 

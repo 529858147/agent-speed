@@ -54,3 +54,36 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
         )
     }
 }
+
+/// Audio graph of a single day's breakdown: output per source or model, most first.
+struct HistoryBreakdownDescriptor: AXChartDescriptorRepresentable {
+    let title: String
+    let summary: String
+    let nameTitle: String
+    let outputTitle: String
+    let names: [String]
+    let outputs: [Double]
+
+    @MainActor
+    init(breakdown: DayBreakdown, l10n: Localizer) {
+        title = l10n(breakdown.titleKey)
+        summary = HistoryText.longDate(breakdown.day, l10n)
+        nameTitle = l10n(breakdown.kind == .bySource ? "dashboard.sources" : "history.table.models")
+        outputTitle = l10n("history.table.output")
+        names = breakdown.items.map { HistoryText.breakdownName($0.subject, l10n) }
+        outputs = breakdown.items.map { Double($0.output) }
+    }
+
+    func makeChartDescriptor() -> AXChartDescriptor {
+        let xAxis = AXCategoricalDataAxisDescriptor(title: nameTitle, categoryOrder: names)
+        let yAxis = AXNumericDataAxisDescriptor(title: outputTitle, range: 0...max(outputs.max() ?? 0, 1), gridlinePositions: []) { value in
+            SpeedFormat.tokens(Int(value.rounded()))
+        }
+        let output = AXDataSeriesDescriptor(
+            name: outputTitle,
+            isContinuous: false,
+            dataPoints: zip(names, outputs).map { AXDataPoint(x: $0, y: $1) }
+        )
+        return AXChartDescriptor(title: title, summary: summary, xAxis: xAxis, yAxis: yAxis, additionalAxes: [], series: [output])
+    }
+}

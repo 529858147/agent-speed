@@ -312,6 +312,18 @@
     "en": "Choose the Gemini CLI tmp folder",
     "ja": "Gemini CLI の tmp フォルダを選択"
   },
+  "mac.settings.sources.chooseOmp": {
+    "zh-Hant": "選擇 omp 的 sessions 資料夾",
+    "zh-Hans": "选择 omp 的 sessions 文件夹",
+    "en": "Choose the omp sessions folder",
+    "ja": "omp の sessions フォルダを選択"
+  },
+  "mac.settings.sources.chooseAntigravity": {
+    "zh-Hant": "選擇內含 conversations 的 Antigravity 資料夾",
+    "zh-Hans": "选择包含 conversations 的 Antigravity 文件夹",
+    "en": "Choose the Antigravity folder that contains conversations",
+    "ja": "conversations を含む Antigravity のフォルダを選択"
+  },
   "mac.history.days": {
     "zh-Hant": "%d 天",
     "zh-Hans": "%d 天",
@@ -395,6 +407,54 @@
     "zh-Hans": "降序排列",
     "en": "Sorted descending",
     "ja": "降順"
+  },
+  "mac.history.range.7d.short": {
+    "zh-Hant": "7 天",
+    "zh-Hans": "7 天",
+    "en": "7D",
+    "ja": "7日"
+  },
+  "mac.history.range.30d.short": {
+    "zh-Hant": "30 天",
+    "zh-Hans": "30 天",
+    "en": "30D",
+    "ja": "30日"
+  },
+  "mac.history.range.90d.short": {
+    "zh-Hant": "90 天",
+    "zh-Hans": "90 天",
+    "en": "90D",
+    "ja": "90日"
+  },
+  "mac.history.range.year.short": {
+    "zh-Hant": "今年",
+    "zh-Hans": "今年",
+    "en": "YTD",
+    "ja": "今年"
+  },
+  "mac.history.breakdown.share": {
+    "zh-Hant": "佔比",
+    "zh-Hans": "占比",
+    "en": "Share",
+    "ja": "割合"
+  },
+  "mac.history.breakdown.otherModels": {
+    "zh-Hant": "其他模型",
+    "zh-Hans": "其他模型",
+    "en": "Other models",
+    "ja": "その他のモデル"
+  },
+  "mac.history.breakdown.noModelSpeed": {
+    "zh-Hant": "生成時間沒有依模型分開記錄",
+    "zh-Hans": "生成时间没有按模型分别记录",
+    "en": "Generation time isn't recorded per model",
+    "ja": "生成時間はモデルごとに記録されていません"
+  },
+  "mac.history.breakdown.sourceHint": {
+    "zh-Hant": "查看這個來源的模型分布",
+    "zh-Hans": "查看这个来源的模型分布",
+    "en": "Show this source by model",
+    "ja": "このソースをモデル別に表示"
   },
   "mac.history.chart.hint": {
     "zh-Hant": "用左右方向鍵逐日查看；按一下長條或按 Return 可在表格中顯示該日。",

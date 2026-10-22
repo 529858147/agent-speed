@@ -55,11 +55,18 @@ final class TranscriptSession {
         var canonicalPath: String
         var enabled: Bool
         var available: Bool
+        /// False for roots that are never read (an Antigravity `*-backup` store).
+        var readable = true
     }
 
     static let startupLookbackMs: Int64 = 15 * 60_000
     static let hotWindowMs: Int64 = 120_000
     static let maxDecodeWorkers = 8
+    /// A changed Antigravity database is read at most this often; its WAL is written continuously (METRICS 5.4).
+    static let databaseReadIntervalNs: UInt64 = 500_000_000
+    /// Database connections unused this long are closed, and at most `maxOpenDatabases` stay open (METRICS 5.4).
+    static let databaseIdleNs: UInt64 = 60_000_000_000
+    static let maxOpenDatabases = 16
     /// Deduplication owner of every OpenCode row; transcript files count up from 0.
     static let opencodeFileID: FileID = -1
 
@@ -101,7 +108,8 @@ final class TranscriptSession {
         self.clock = clock
         roots = TranscriptFamily.allCases.flatMap { family in
             configuration.resolvedRoots(for: family).map { path in
-                Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false)
+                Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false,
+                     readable: MonitorConfiguration.isReadable(root: path, family: family))
             }
         }
         opencodeRoot = configuration.resolvedOpencodeRoot
@@ -135,7 +143,7 @@ final class TranscriptSession {
             opencodeNeedsSeed = true
         }
         for index in roots.indices {
-            let available = TranscriptDiscovery.isAvailable(root: roots[index].path)
+            let available = roots[index].readable && TranscriptDiscovery.isAvailable(root: roots[index].path)
             if available != roots[index].available { changed = true }
             roots[index].available = available
             if available, let resolved = realpath(roots[index].path, nil) {
@@ -146,7 +154,7 @@ final class TranscriptSession {
         return changed
     }
 
-    /// The family's first available root, else its first root (Gemini CLI has two).
+    /// The family's first available root, else its first root (Gemini CLI, omp and Antigravity can have several).
     func root(for family: TranscriptFamily) -> Root {
         roots.first { $0.family == family && $0.available } ?? roots.first { $0.family == family }!
     }
@@ -166,12 +174,16 @@ final class TranscriptSession {
         var backlog: [(file: DiscoveredFile, tracked: TrackedFile)] = []
         let threshold = todayStartMs - Self.startupLookbackMs
         for root in roots where root.enabled && root.available {
-            for file in TranscriptDiscovery.mostRecent(TranscriptDiscovery.files(at: scan(root))) where files[file.path] == nil {
+            let discovered = TranscriptDiscovery.files(at: scan(root), family: root.family)
+            for file in TranscriptDiscovery.mostRecent(discovered) where files[file.path] == nil {
                 summary.filesDiscovered += 1
                 var readsBacklog = file.stat.modifiedMs >= threshold
                 let start: FileTailer.Start
                 if !readsBacklog {
                     start = .end(file.stat.size)
+                } else if root.family.isDatabase {
+                    // A conversation database is read completely; the size rules of section 5 do not apply.
+                    start = .beginning
                 } else if TranscriptReader.isDocument(file.path), file.stat.size > DocumentReader.defaultMaxBytes {
                     // Whole-document sessions this large are not read at all (METRICS 4.6).
                     partialHistory = true
@@ -190,7 +202,7 @@ final class TranscriptSession {
                 } else {
                     start = .beginning
                 }
-                let tracked = track(file, family: root.family, start: start)
+                let tracked = track(file, family: root.family, root: root.path, start: start)
                 if readsBacklog { backlog.append((file, tracked)) }
             }
         }
@@ -199,17 +211,21 @@ final class TranscriptSession {
 
         let jobs = ordered.map { DecodeJob(family: $0.family, reader: $0.reader, size: $0.lastStat.size) }
         let decoded = Self.decodeInParallel(jobs, progress: progress, isCancelled: isCancelled)
+        let seededAt = DispatchTime.now().uptimeNanoseconds
         for (file, result) in zip(ordered, decoded) {
             guard let result else { continue }
             file.reader = result.reader
+            if file.family.isDatabase { file.lastReadNs = seededAt }
             summary.filesRead += 1
             summary.bytesRead += Int64(result.read.bytesRead)
+            if result.read.didReset { file.resetParser() }
             var upserts: [ResponseUpsert] = []
             file.parser.consume(result.lines, deduper: &deduper) { upserts.append($0) }
             let project = projectName(of: file)
             for upsert in upserts { deliver(upsert, project: project, live: false) }
             finishRead(of: file, result: result.read)
         }
+        closeIdleDatabases(nowNs: seededAt)
         if let opencode, opencode.exists {
             summary.filesDiscovered += 1
             if opencode.isReady {
@@ -289,16 +305,40 @@ final class TranscriptSession {
         if let opencode, paths.contains(where: opencode.matches(canonicalPath:)) {
             changed = apply(opencode.refresh(deduper: &deduper), live: true)
         }
+        var handled: Set<String> = []
         for path in paths.sorted() {
-            guard let (localPath, family) = localPath(forCanonical: path) else { continue }
+            guard let (localPath, root) = localPath(forCanonical: path), handled.insert(localPath).inserted else { continue }
             if let file = files[localPath] {
                 changed = read(file, live: true) || changed
-            } else if let stat = FileStat.lstat(localPath), stat.isRegularFile {
-                let file = track(DiscoveredFile(path: localPath, stat: stat), family: family, start: .beginning)
+            } else if let stat = root.family.stat(localPath) {
+                let file = track(DiscoveredFile(path: localPath, stat: stat), family: root.family, root: root.path, start: .beginning)
                 changed = read(file, live: true) || changed
             }
         }
         return changed
+    }
+
+    /// Reads the databases whose changes arrived while their reads were throttled (METRICS 5.4).
+    @discardableResult
+    func readDirtyDatabases() -> Bool {
+        let now = DispatchTime.now().uptimeNanoseconds
+        var changed = false
+        for file in files.values.filter(\.isDirty).sorted(by: { $0.path < $1.path })
+        where now &- file.lastReadNs >= Self.databaseReadIntervalNs {
+            changed = read(file, live: true) || changed
+        }
+        return changed
+    }
+
+    /// Closes database connections idle for a minute, then the least recently changed beyond the limit.
+    private func closeIdleDatabases(nowNs: UInt64) {
+        var open = files.values.filter { $0.family.isDatabase && !$0.wholeReadInFlight && $0.reader.hasOpenConnection }
+        guard !open.isEmpty else { return }
+        for file in open where nowNs &- file.lastReadNs >= Self.databaseIdleNs { file.reader.closeConnection() }
+        open = open.filter { $0.reader.hasOpenConnection }
+        guard open.count > Self.maxOpenDatabases else { return }
+        open.sort { $0.lastStat.modifiedNs != $1.lastStat.modifiedNs ? $0.lastStat.modifiedNs < $1.lastStat.modifiedNs : $0.path < $1.path }
+        for file in open.prefix(open.count - Self.maxOpenDatabases) { file.reader.closeConnection() }
     }
 
     /// The 1-second fallback: stat files modified in the last two minutes.
@@ -310,13 +350,15 @@ final class TranscriptSession {
         }
         let hot = files.values.filter { nowMs - $0.lastStat.modifiedMs <= Self.hotWindowMs }
         for file in hot.sorted(by: { $0.path < $1.path }) {
-            guard let stat = FileStat.lstat(file.path), stat.isRegularFile else {
+            guard let stat = file.family.stat(file.path) else {
                 untrack(file.path)
                 changed = true
                 continue
             }
             if file.hasChanged(comparedTo: stat) { changed = read(file, live: true) || changed }
         }
+        changed = readDirtyDatabases() || changed
+        closeIdleDatabases(nowNs: DispatchTime.now().uptimeNanoseconds)
         return changed
     }
 
@@ -326,16 +368,15 @@ final class TranscriptSession {
     func rediscover(todayStartMs: Int64) -> Bool {
         var changed = refreshAvailability()
         var seen: Set<String> = []
-        var fresh: [(DiscoveredFile, TranscriptFamily)] = []
+        var fresh: [(DiscoveredFile, Root)] = []
         let activeSince = todayStartMs - Self.startupLookbackMs
         for root in roots where root.enabled && root.available {
-            for path in boundedCandidates(root) {
-                seen.insert(path)
+            for path in boundedCandidates(root) where seen.insert(path).inserted {
                 if let file = files[path] {
-                    guard file.lastStat.modifiedMs >= activeSince, let stat = FileStat.lstat(path) else { continue }
+                    guard file.lastStat.modifiedMs >= activeSince, let stat = root.family.stat(path) else { continue }
                     if file.hasChanged(comparedTo: stat) { changed = read(file, live: true) || changed }
-                } else if let stat = FileStat.lstat(path), stat.isRegularFile {
-                    fresh.append((DiscoveredFile(path: path, stat: stat), root.family))
+                } else if let stat = root.family.stat(path) {
+                    fresh.append((DiscoveredFile(path: path, stat: stat), root))
                 }
             }
         }
@@ -344,8 +385,8 @@ final class TranscriptSession {
             changed = true
         }
         fresh.sort { TranscriptDiscovery.startupOrder($0.0, $1.0) }
-        for (discovered, family) in fresh {
-            let file = track(discovered, family: family, start: .beginning)
+        for (discovered, root) in fresh {
+            let file = track(discovered, family: root.family, root: root.path, start: .beginning)
             changed = read(file, live: true) || changed
         }
         if let opencode {
@@ -365,7 +406,7 @@ final class TranscriptSession {
         guard candidates.count > TranscriptDiscovery.maxFiles else { return candidates }
         let ranked = candidates.compactMap { path -> DiscoveredFile? in
             if let file = files[path] { return DiscoveredFile(path: path, stat: file.lastStat) }
-            guard let stat = FileStat.lstat(path), stat.isRegularFile else { return nil }
+            guard let stat = root.family.stat(path) else { return nil }
             return DiscoveredFile(path: path, stat: stat)
         }
         return TranscriptDiscovery.mostRecent(ranked).map(\.path)
@@ -386,10 +427,12 @@ final class TranscriptSession {
                 return false
             }
             file.wholeReadInFlight = true
-            if let stat = FileStat.lstat(file.path) { file.lastStat = stat }
+            file.isDirty = false
+            if let stat = file.family.stat(file.path) { file.lastStat = stat }
             schedule(WholeFileRead(path: file.path, family: file.family, fileID: file.fileID, reader: file.reader))
             return false
         }
+        if file.family.isDatabase { return readDatabase(file, live: live) }
         var upserts: [ResponseUpsert] = []
         let result = file.reader.read(onReset: { file.resetParser() }, onMalformed: { file.parser.noteMalformedLine() }) { bytes in
             file.parser.consume(rawLine: bytes, deduper: &deduper) { upserts.append($0) }
@@ -406,6 +449,29 @@ final class TranscriptSession {
         return result.bytesRead > 0 || result.didReset
     }
 
+    /// One read of an Antigravity database, throttled while live (METRICS 5.4).
+    private func readDatabase(_ file: TrackedFile, live: Bool) -> Bool {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if live, file.lastReadNs != 0, now &- file.lastReadNs < Self.databaseReadIntervalNs {
+            file.isDirty = true
+            return false
+        }
+        file.isDirty = false
+        file.lastReadNs = now
+        let (batch, result) = file.reader.readDatabase()
+        if result.failed, file.family.stat(file.path) == nil {
+            untrack(file.path)
+            return true
+        }
+        if result.didReset { file.resetParser() }
+        var upserts: [ResponseUpsert] = []
+        file.parser.consume(.antigravity(batch), deduper: &deduper) { upserts.append($0) }
+        let project = projectName(of: file)
+        for upsert in upserts { deliver(upsert, project: project, live: live) }
+        finishRead(of: file, result: result)
+        return result.bytesRead > 0 || result.didReset
+    }
+
     /// Applies a whole-file read in one step. A key another file emitted first in the meantime stays that file's.
     /// Returns true when anything changed.
     @discardableResult
@@ -413,7 +479,8 @@ final class TranscriptSession {
         guard let file = files[result.path], file.fileID == result.fileID else { return false }
         file.wholeReadInFlight = false
         file.reader = result.reader
-        if result.read.failed, FileStat.lstat(file.path) == nil {
+        if file.family.isDatabase { file.lastReadNs = DispatchTime.now().uptimeNanoseconds }
+        if result.read.failed, file.family.stat(file.path) == nil {
             untrack(file.path)
             return true
         }
@@ -463,6 +530,21 @@ final class TranscriptSession {
     }
 
     var unreadableFileCount: Int { unreadablePaths.count + (opencode?.status == .unreadable ? 1 : 0) }
+
+    /// Antigravity databases whose connection is open.
+    var openDatabaseCount: Int {
+        files.values.filter { $0.family.isDatabase && $0.reader.hasOpenConnection }.count
+    }
+
+    /// Sources with data this version cannot read: OpenCode, or an Antigravity database without its tables.
+    var unsupportedSources: [SourceKind] {
+        var sources: [SourceKind] = []
+        if opencode?.status == .unsupported { sources.append(.opencode) }
+        if enabledSources.contains(.antigravity), files.values.contains(where: { $0.family.isDatabase && $0.parser.isUnsupported }) {
+            sources.append(.antigravity)
+        }
+        return sources
+    }
 
     /// Agents of each source with at least one line today.
     func sessionCounts(todayStartMs: Int64) -> [SourceKind: Int] {
@@ -536,9 +618,9 @@ final class TranscriptSession {
 
     // MARK: - Tracking
 
-    private func track(_ file: DiscoveredFile, family: TranscriptFamily, start: FileTailer.Start) -> TrackedFile {
+    private func track(_ file: DiscoveredFile, family: TranscriptFamily, root: String, start: FileTailer.Start) -> TrackedFile {
         let tracked = TrackedFile(
-            path: file.path, family: family, fileID: nextFileID, stat: file.stat, start: start,
+            path: file.path, family: family, root: root, fileID: nextFileID, stat: file.stat, start: start,
             maxLineBytes: limits.maxLineBytes
         )
         nextFileID &+= 1
@@ -553,10 +635,12 @@ final class TranscriptSession {
         removeAgent(path)
     }
 
-    /// Maps an FSEvents (canonical) path to the configured-root path, if it names a candidate transcript.
-    private func localPath(forCanonical path: String) -> (String, TranscriptFamily)? {
-        let name = (path as NSString).lastPathComponent
-        for root in roots where root.enabled && root.available && root.family.names.matches(name) {
+    /// Maps an FSEvents (canonical) path to the configured-root path, if it names a candidate transcript (an
+    /// Antigravity `-wal` names its database).
+    private func localPath(forCanonical changed: String) -> (String, Root)? {
+        for root in roots where root.enabled && root.available {
+            let path = root.family.transcriptPath(forChanged: changed)
+            guard root.family.names.matches((path as NSString).lastPathComponent) else { continue }
             let prefix = root.canonicalPath == "/" ? "/" : root.canonicalPath + "/"
             guard path.hasPrefix(prefix) else { continue }
             let relative = path.dropFirst(prefix.count)
@@ -564,7 +648,7 @@ final class TranscriptSession {
             guard !components.isEmpty, root.family.names.accepts(relativeComponents: components),
                   !relative.contains("/../") else { return nil }
             let localPrefix = root.path == "/" ? "/" : root.path + "/"
-            return (localPrefix + relative, root.family)
+            return (localPrefix + relative, root)
         }
         return nil
     }

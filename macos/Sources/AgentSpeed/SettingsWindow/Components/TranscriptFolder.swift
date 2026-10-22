@@ -2,13 +2,16 @@ import AgentSpeedCore
 import AppKit
 
 /// A data folder the user can relocate. Claude Code and Claude Desktop share the Claude root; OpenCode's folder is the
-/// one that contains `opencode.db`; Gemini CLI reads one `tmp` folder, or by default two (an override replaces both).
+/// one that contains `opencode.db`; Gemini CLI reads one `tmp` folder, or by default two (an override replaces both);
+/// omp reads its default `sessions` root and one per named profile, Antigravity three stores (an override replaces all).
 enum TranscriptFolder: CaseIterable {
     case codex
     case claude
     case dsh
     case opencode
     case gemini
+    case omp
+    case antigravity
 
     /// Every default location, in reading order.
     var defaultURLs: [URL] {
@@ -18,6 +21,8 @@ enum TranscriptFolder: CaseIterable {
         case .dsh: [LiveMonitor.defaultDshRoot]
         case .opencode: [LiveMonitor.defaultOpencodeRoot]
         case .gemini: LiveMonitor.defaultGeminiRoots
+        case .omp: LiveMonitor.defaultOmpRoots
+        case .antigravity: LiveMonitor.defaultAntigravityStores
         }
     }
 
@@ -30,6 +35,8 @@ enum TranscriptFolder: CaseIterable {
         case .dsh: "mac.settings.sources.chooseDsh"
         case .opencode: "mac.settings.sources.chooseOpencode"
         case .gemini: "mac.settings.sources.chooseGemini"
+        case .omp: "mac.settings.sources.chooseOmp"
+        case .antigravity: "mac.settings.sources.chooseAntigravity"
         }
     }
 
@@ -41,6 +48,8 @@ enum TranscriptFolder: CaseIterable {
         case .dsh: "settings.sources.dshHint"
         case .opencode: "settings.sources.opencodeHint"
         case .gemini: "settings.sources.geminiHint"
+        case .omp: "settings.sources.ompHint"
+        case .antigravity: "settings.sources.antigravityHint"
         }
     }
 
@@ -52,6 +61,8 @@ enum TranscriptFolder: CaseIterable {
         case .dsh: settings.dshRoot
         case .opencode: settings.opencodeRoot
         case .gemini: settings.geminiRoot
+        case .omp: settings.ompRoot
+        case .antigravity: settings.antigravityRoot
         }
     }
 
@@ -66,18 +77,44 @@ enum TranscriptFolder: CaseIterable {
         customURL(in: settings).map { [$0] } ?? defaultURLs
     }
 
-    /// Stores a custom folder; choosing the (first) default location, or nil, clears the override.
+    /// The folders the settings row names (DESIGN section 5): the custom one, else the defaults. omp names only its
+    /// default root although profiles are read too; Antigravity names the stores found, or all three when none is.
+    @MainActor
+    func shownURLs(in settings: AppSettings) -> [URL] {
+        if let custom = customURL(in: settings) { return [custom] }
+        switch self {
+        case .omp:
+            return [LiveMonitor.defaultOmpRoot]
+        case .antigravity:
+            let found = defaultURLs.filter(isReadable)
+            return found.isEmpty ? defaultURLs : found
+        case .codex, .claude, .dsh, .opencode, .gemini:
+            return defaultURLs
+        }
+    }
+
+    /// An existing folder the app reads; an Antigravity `*-backup` store never is.
+    func isReadable(_ url: URL) -> Bool {
+        Self.exists(url) && (self != .antigravity || LiveMonitor.isReadableAntigravityStore(url))
+    }
+
+    /// Stores a custom folder; nil clears the override. Choosing the (first) default location clears it too, except
+    /// for omp and Antigravity, where one chosen folder is narrower than the automatic set.
     @MainActor
     func setURL(_ url: URL?, in settings: AppSettings) {
-        let value = url.flatMap { Self.isSameFolder($0, defaultURL) ? nil : $0 }
+        let value = url.flatMap { replacesAutomaticSet || !Self.isSameFolder($0, defaultURL) ? $0 : nil }
         switch self {
         case .codex: settings.codexRoot = value
         case .claude: settings.claudeRoot = value
         case .dsh: settings.dshRoot = value
         case .opencode: settings.opencodeRoot = value
         case .gemini: settings.geminiRoot = value
+        case .omp: settings.ompRoot = value
+        case .antigravity: settings.antigravityRoot = value
         }
     }
+
+    private var replacesAutomaticSet: Bool { self == .omp || self == .antigravity }
 
     static func isSameFolder(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.standardizedFileURL.path == rhs.standardizedFileURL.path

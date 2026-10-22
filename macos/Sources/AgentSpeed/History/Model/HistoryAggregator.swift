@@ -72,7 +72,12 @@ enum HistoryAggregator {
         return (current - previous) / previous
     }
 
-    private static func hasUsage(_ record: DailyUsage) -> Bool {
+    /// Output tok/s over measured responses (METRICS 8); nil when nothing was measured.
+    static func speed(measuredOutput: Int, measuredMs: Int64) -> Double? {
+        measuredMs > 0 && measuredOutput > 0 ? Double(measuredOutput) / (Double(measuredMs) / 1000) : nil
+    }
+
+    static func hasUsage(_ record: DailyUsage) -> Bool {
         record.totals.requests > 0 || record.totals.output > 0 || record.totals.input > 0
     }
 

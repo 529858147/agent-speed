@@ -2,12 +2,14 @@ import Foundation
 
 /// The range presets of the Usage History toolbar (DESIGN 4b, item 1).
 enum HistoryRangeKind: String, CaseIterable, Identifiable, Sendable {
-    case days7, days30, days90, year, all, custom
+    case today, yesterday, days7, days30, days90, year, all, custom
 
     var id: String { rawValue }
 
     var titleKey: String {
         switch self {
+        case .today: "history.range.today"
+        case .yesterday: "history.range.yesterday"
         case .days7: "history.range.7d"
         case .days30: "history.range.30d"
         case .days90: "history.range.90d"
@@ -16,13 +18,29 @@ enum HistoryRangeKind: String, CaseIterable, Identifiable, Sendable {
         case .custom: "history.range.custom"
         }
     }
+
+    /// The label a narrow toolbar uses; presets without a shorter form keep their label.
+    var shortTitleKey: String {
+        switch self {
+        case .days7: "mac.history.range.7d.short"
+        case .days30: "mac.history.range.30d.short"
+        case .days90: "mac.history.range.90d.short"
+        case .year: "mac.history.range.year.short"
+        case .today, .yesterday, .all, .custom: titleKey
+        }
+    }
 }
 
 enum HistoryRanges {
-    /// The days a preset covers, always ending today. `.all` starts at the first day with data (today when there is
-    /// none); `.custom` uses `custom`, or the last 30 days when none was chosen.
+    /// How many days the sparklines of a single-day range cover, ending on that day.
+    static let singleDaySparkDays = 7
+
+    /// The days a preset covers, ending today except for `.yesterday`. `.all` starts at the first day with data (today
+    /// when there is none); `.custom` uses `custom`, or the last 30 days when none was chosen.
     static func resolve(_ kind: HistoryRangeKind, today: DayKey, firstDataDay: DayKey?, custom: DayRange? = nil) -> DayRange {
         switch kind {
+        case .today: .single(today)
+        case .yesterday: .single(today.adding(days: -1))
         case .days7: last(7, endingAt: today)
         case .days30: last(30, endingAt: today)
         case .days90: last(90, endingAt: today)
@@ -32,10 +50,16 @@ enum HistoryRanges {
         }
     }
 
-    /// The equally long period that ends the day before `range` starts.
+    /// The equally long period that ends the day before `range` starts; for a single day, the day before.
     static func previous(_ range: DayRange) -> DayRange {
         let end = range.start.adding(days: -1)
         return DayRange(end.adding(days: -(range.count - 1)), end)
+    }
+
+    /// The days the summary sparklines cover: the range itself, or for a single day the week ending on it.
+    static func sparkRange(_ range: DayRange) -> DayRange {
+        guard range.isSingleDay else { return range }
+        return DayRange(range.end.adding(days: -(singleDaySparkDays - 1)), range.end)
     }
 
     /// A custom range clamped to `bounds`, with the end never before the start.

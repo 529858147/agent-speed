@@ -45,13 +45,77 @@ enum TranscriptLocations {
         ]
     }
 
-    /// Default roots of a family; Gemini CLI has two.
+    /// omp's automatic roots (METRICS 2, 4.7): the default root, then one per named profile, without duplicates.
+    static var defaultOmpRoots: [URL] {
+        ompRoots(environment: ProcessInfo.processInfo.environment, home: home)
+    }
+
+    /// `<cfg>` = `$PI_CONFIG_DIR`, else `.omp`. The default root is `$PI_CODING_AGENT_DIR/sessions`, else
+    /// `$XDG_DATA_HOME/omp/sessions` when `$XDG_DATA_HOME/omp` exists, else `~/<cfg>/agent/sessions`. Profiles are the
+    /// folders in `~/<cfg>/profiles` and `$XDG_DATA_HOME/omp/profiles`; each reads `$XDG_DATA_HOME/omp/profiles/<name>/
+    /// sessions` when that folder exists, else `~/<cfg>/profiles/<name>/agent/sessions`.
+    static func ompRoots(environment: [String: String], home: URL) -> [URL] {
+        func value(_ name: String) -> String? {
+            guard let value = environment[name], !value.isEmpty else { return nil }
+            return value
+        }
+        let configName = String((value("PI_CONFIG_DIR") ?? ".omp").drop(while: { $0 == "/" || $0 == "\\" }))
+        let config = home.appendingPathComponent(configName, isDirectory: true)
+        let xdg = value("XDG_DATA_HOME").map {
+            URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent("omp", isDirectory: true)
+        }
+        var roots: [URL]
+        if let agent = value("PI_CODING_AGENT_DIR") {
+            roots = [URL(fileURLWithPath: agent, isDirectory: true).appendingPathComponent("sessions", isDirectory: true)]
+        } else if let xdg, isDirectory(xdg.path) {
+            roots = [xdg.appendingPathComponent("sessions", isDirectory: true)]
+        } else {
+            roots = [config.appendingPathComponent("agent/sessions", isDirectory: true)]
+        }
+        var names = Set(subdirectories(of: config.appendingPathComponent("profiles", isDirectory: true)))
+        if let xdg { names.formUnion(subdirectories(of: xdg.appendingPathComponent("profiles", isDirectory: true))) }
+        for name in names.sorted(by: { $0.unicodeScalars.lexicographicallyPrecedes($1.unicodeScalars) }) {
+            if let profile = xdg?.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(name, isDirectory: true),
+               isDirectory(profile.path) {
+                roots.append(profile.appendingPathComponent("sessions", isDirectory: true))
+            } else {
+                roots.append(config.appendingPathComponent("profiles", isDirectory: true)
+                    .appendingPathComponent(name, isDirectory: true).appendingPathComponent("agent/sessions", isDirectory: true))
+            }
+        }
+        var seen: Set<String> = []
+        return roots.filter { seen.insert(TranscriptDiscovery.normalizedRoot($0.standardizedFileURL.path)).inserted }
+    }
+
+    /// Antigravity's store folders (METRICS 2, 4.8): CLI, desktop app and IDE extensions, IDE 2.x. No environment
+    /// variable moves them.
+    static var defaultAntigravityStores: [URL] {
+        let gemini = home.appendingPathComponent(".gemini", isDirectory: true)
+        return ["antigravity-cli", "antigravity", "antigravity-ide"].map { gemini.appendingPathComponent($0, isDirectory: true) }
+    }
+
+    /// The `conversations` folder of a store; a folder that is itself called `conversations` is used directly.
+    static func antigravityConversations(_ folder: URL) -> URL {
+        let normalized = URL(fileURLWithPath: TranscriptDiscovery.normalizedRoot(folder.path), isDirectory: true)
+        if normalized.lastPathComponent == "conversations" { return normalized }
+        return normalized.appendingPathComponent("conversations", isDirectory: true)
+    }
+
+    /// False for the `conversations` folder of a `*-backup` store, which is never read (METRICS 4.8).
+    static func isReadableAntigravityRoot(_ conversations: String) -> Bool {
+        let store = (TranscriptDiscovery.normalizedRoot(conversations) as NSString).deletingLastPathComponent
+        return !(store as NSString).lastPathComponent.hasSuffix("-backup")
+    }
+
+    /// Default roots of a family; Gemini CLI has two, omp one per profile, Antigravity one per store.
     static func defaultRoots(for family: TranscriptFamily) -> [URL] {
         switch family {
         case .codex: [defaultCodexRoot]
         case .claude: [defaultClaudeRoot]
         case .dsh: [defaultDshRoot]
         case .gemini: defaultGeminiRoots
+        case .omp: defaultOmpRoots
+        case .antigravity: defaultAntigravityStores.map(antigravityConversations)
         }
     }
 
@@ -60,6 +124,16 @@ enum TranscriptLocations {
     private static func environment(_ name: String) -> String? {
         guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return nil }
         return value
+    }
+
+    private static func isDirectory(_ path: String) -> Bool {
+        FileStat.stat(path)?.isDirectory == true
+    }
+
+    /// Names of the real (not symlinked) folders inside `folder`.
+    private static func subdirectories(of folder: URL) -> [String] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+        return names.filter { FileStat.lstat(folder.appendingPathComponent($0).path)?.isDirectory == true }
     }
 }
 
@@ -71,12 +145,17 @@ extension MonitorConfiguration {
         case .claude: claudeRoot
         case .dsh: dshRoot
         case .gemini: geminiRoot
+        case .omp: ompRoot
+        case .antigravity: antigravityRoot.map(TranscriptLocations.antigravityConversations)
         }
     }
 
     /// Every root of a family: the configured one, else the defaults.
     func resolvedRoots(for family: TranscriptFamily) -> [String] {
-        let urls = configuredRoot(for: family).map { [$0] } ?? TranscriptLocations.defaultRoots(for: family)
+        let automatic = automaticRoots[family].map { urls in
+            family == .antigravity ? urls.map(TranscriptLocations.antigravityConversations) : urls
+        }
+        let urls = configuredRoot(for: family).map { [$0] } ?? automatic ?? TranscriptLocations.defaultRoots(for: family)
         var roots: [String] = []
         for url in urls {
             let root = TranscriptDiscovery.normalizedRoot(url.path)
@@ -88,6 +167,11 @@ extension MonitorConfiguration {
     /// The first root of a family.
     func resolvedRoot(for family: TranscriptFamily) -> String {
         resolvedRoots(for: family)[0]
+    }
+
+    /// Whether a resolved root may be read at all: an Antigravity `*-backup` store never is (METRICS 4.8).
+    static func isReadable(root: String, family: TranscriptFamily) -> Bool {
+        family != .antigravity || TranscriptLocations.isReadableAntigravityRoot(root)
     }
 
     func reads(_ family: TranscriptFamily) -> Bool {

@@ -100,6 +100,9 @@ struct DayRange: Hashable, Sendable {
 
     var count: Int { end.ordinal - start.ordinal + 1 }
 
+    /// 今天, 昨天 or a one-day custom range: compared with the day before and broken down instead of charted.
+    var isSingleDay: Bool { start == end }
+
     func contains(_ day: DayKey) -> Bool { day >= start && day <= end }
 
     /// Position of `day` in the range (0 = `start`).

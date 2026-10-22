@@ -72,7 +72,8 @@ public final class HistoryStore {
     /// Every stored day of every source, sorted by day then source.
     public private(set) var days: [DailyUsage] = []
 
-    @ObservationIgnored public var refreshHandler: (@MainActor () -> Void)?
+    /// Called with whether the run shows its progress (`.analyzing`) regardless of its size.
+    @ObservationIgnored public var refreshHandler: (@MainActor (_ showsProgress: Bool) -> Void)?
     @ObservationIgnored public var clearHandler: (@MainActor () -> Void)?
 
     public init() {}
@@ -84,8 +85,10 @@ public final class HistoryStore {
         }
     }
 
-    public func refresh() {
-        refreshHandler?()
+    /// Analyses new and changed logs now; a quiet refresh (`showsProgress: false`) only reports progress for a large
+    /// run, which keeps a live view of today calm.
+    public func refresh(showsProgress: Bool = true) {
+        refreshHandler?(showsProgress)
     }
 
     public func clear() {
@@ -101,13 +104,16 @@ public enum PreviewHistory {
         formatter.calendar = calendar
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        let profiles: [(SourceKind, Double, Double, [String])] = [
-            (.codex, 180_000, 42, ["gpt-6.1-sol", "gpt-6.1-sol-mini"]),
-            (.claudeCode, 140_000, 70, ["claude-opus-5-5", "claude-sonnet-5-5"]),
-            (.claudeDesktop, 260_000, 88, ["claude-opus-5-5"]),
-            (.deepseek, 90_000, 150, ["deepseek-flash", "deepseek-pro"]),
-            (.opencode, 60_000, 75, ["claude-opus-5-5"]),
-            (.gemini, 40_000, 120, ["gemini-3-pro"]),
+        // Source, base output, speed, models, and how many recent days it has data for (nil: every day).
+        let profiles: [(SourceKind, Double, Double, [String], Int?)] = [
+            (.codex, 180_000, 42, ["gpt-6.1-sol", "gpt-6.1-sol-mini"], nil),
+            (.claudeCode, 140_000, 70, ["claude-opus-5-5", "claude-sonnet-5-5"], nil),
+            (.claudeDesktop, 260_000, 88, ["claude-opus-5-5"], nil),
+            (.deepseek, 90_000, 150, ["deepseek-flash", "deepseek-pro"], nil),
+            (.opencode, 60_000, 75, ["claude-opus-5-5"], 20),
+            (.gemini, 40_000, 120, ["gemini-3-pro"], 0),
+            (.omp, 70_000, 95, ["claude-opus-5-5", "gpt-5.5"], 45),
+            (.antigravity, 50_000, 135, ["gemini-3.1-pro", "gemini-3.1-flash"], 30),
         ]
         var result: [DailyUsage] = []
         for offset in stride(from: count - 1, through: 0, by: -1) {
@@ -115,9 +121,9 @@ public enum PreviewHistory {
             let day = formatter.string(from: date)
             let weekday = calendar.component(.weekday, from: date)
             let weekend = weekday == 1 || weekday == 7
-            for (index, profile) in profiles.enumerated() {
-                let (source, base, speed, models) = profile
-                if offset > count - 20 * (index + 1) && index > 3 { continue }
+            for profile in profiles {
+                let (source, base, speed, models, recentDays) = profile
+                if let recentDays, offset > recentDays { continue }
                 if generator.unit() < (weekend ? 0.45 : 0.12) { continue }
                 let trend = 0.6 + 0.8 * Double(count - offset) / Double(count)
                 let output = Int(base * trend * (0.4 + generator.unit() * 1.2))

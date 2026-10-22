@@ -52,8 +52,25 @@ struct HistoryView: View {
                         wide: contentWidth >= HistoryLayout.wideCards
                     )
                     .padding(.bottom, HistoryLayout.sectionSpacing)
-                    HistoryChartCard(model: model)
-                        .padding(.bottom, HistoryLayout.sectionSpacing + Spacing.xxs)
+                    Group {
+                        if let breakdown = content.breakdown {
+                            HistoryBreakdownCard(
+                                breakdown: breakdown,
+                                today: content.today,
+                                source: content.source,
+                                l10n: model.l10n,
+                                reduceMotion: model.accessibility.reduceMotion
+                            ) { source in
+                                model.select(source: source)
+                            }
+                            .transition(.opacity)
+                        } else {
+                            HistoryChartCard(model: model)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(HistoryMotion.fade, value: content.breakdown == nil)
+                    .padding(.bottom, HistoryLayout.sectionSpacing + Spacing.xxs)
                     Text(model.l10n("mac.history.table"))
                         .font(HistoryFont.sectionTitle)
                         .accessibilityAddTraits(.isHeader)
@@ -201,6 +218,9 @@ struct HistoryHeader: View {
                 }
                 Text(HistoryText.rangeSubtitle(content.range, l10n))
                     .contentTransition(.numericText())
+                if content.range.isSingleDay, content.range.start == content.today {
+                    InProgressBadge(l10n: l10n)
+                }
             }
             .font(HistoryFont.subtitle)
             .foregroundStyle(.historySecondary)

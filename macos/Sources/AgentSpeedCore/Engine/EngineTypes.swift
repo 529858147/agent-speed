@@ -50,13 +50,19 @@ struct EngineAgent: Equatable, Sendable {
     }
 
     /// Project name from the transcript location when the transcript never named a working directory. Gemini CLI
-    /// sessions (`<project>/chats/[<dir>/]<file>`) use the project folder.
+    /// sessions (`<project>/chats/[<dir>/]<file>`) use the project folder, Antigravity conversations without a
+    /// workspace (`<store>/conversations/<id>.db`) their store.
     static func fallbackProject(for path: String) -> String {
         if let project = GeminiProjects.projectDirectory(ofSessionAt: path) {
             let name = (project as NSString).lastPathComponent
             if !name.isEmpty { return name }
         }
         let parent = (path as NSString).deletingLastPathComponent
+        if TranscriptNames.isConversationDatabase((path as NSString).lastPathComponent),
+           (parent as NSString).lastPathComponent == "conversations" {
+            let store = ((parent as NSString).deletingLastPathComponent as NSString).lastPathComponent
+            if !store.isEmpty { return store }
+        }
         let name = (parent as NSString).lastPathComponent
         return name.isEmpty ? (path as NSString).lastPathComponent : name
     }

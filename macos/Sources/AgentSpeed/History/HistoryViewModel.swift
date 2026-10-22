@@ -59,6 +59,8 @@ final class HistoryViewModel {
         rangeKind = kind
         interaction.reset()
         rebuild()
+        // Today is still being written: bring in what the logs hold now, the view follows as the store publishes.
+        if kind == .today { refreshToday() }
     }
 
     func applyCustom(from: DayKey, to: DayKey) {
@@ -75,6 +77,16 @@ final class HistoryViewModel {
 
     func refresh() {
         store.refresh()
+    }
+
+    /// The range is the single day that is still being written (DESIGN 4b: today's figures update live).
+    var showsLiveDay: Bool {
+        content.range.isSingleDay && content.range.start == content.today
+    }
+
+    /// Re-reads today's logs without the analysing progress, so the live day updates in place.
+    func refreshToday() {
+        store.refresh(showsProgress: false)
     }
 
     private func rebuild() {

@@ -57,6 +57,8 @@ struct HistoryContent: Equatable, Sendable {
     let days: [DaySummary]
     let cards: [SummaryCard]
     let chart: HistoryChartModel
+    /// The single day split by source or model; nil for ranges of more than one day, which are charted instead.
+    let breakdown: DayBreakdown?
     let columns: [HistoryColumn]
     let sort: HistorySort
     /// The table rows in the chosen order.
@@ -82,10 +84,12 @@ struct HistoryContent: Equatable, Sendable {
         let bounds = HistoryAggregator.bounds(usage, source: source)
         let range = HistoryRanges.resolve(rangeKind, today: today, firstDataDay: bounds?.start, custom: customRange)
         let previousRange = HistoryRanges.previous(range)
-        let window = DayRange(previousRange.start, range.end)
-        let both = HistoryAggregator.daily(usage, source: source, range: window)
-        let days = both.filter { range.contains($0.day) }
-        let previous = both.filter { previousRange.contains($0.day) }
+        let sparkRange = HistoryRanges.sparkRange(range)
+        let window = DayRange(min(previousRange.start, sparkRange.start), range.end)
+        let loaded = HistoryAggregator.daily(usage, source: source, range: window)
+        let days = loaded.filter { range.contains($0.day) }
+        let previous = loaded.filter { previousRange.contains($0.day) }
+        let sparkDays = loaded.filter { sparkRange.contains($0.day) }
 
         var pickerSources = HistoryAggregator.sourcesWithHistory(usage)
         if let source, !pickerSources.contains(source) {
@@ -101,8 +105,9 @@ struct HistoryContent: Equatable, Sendable {
             dataBounds: bounds,
             pickerSources: pickerSources,
             days: days,
-            cards: HistorySummary.build(days: days, previous: previous, range: range, today: today, l10n),
+            cards: HistorySummary.build(days: days, previous: previous, sparkDays: sparkDays, range: range, today: today, l10n),
             chart: chartModel(days: days, range: range, today: today, source: source),
+            breakdown: range.isSingleDay ? HistoryBreakdown.build(usage, day: range.start, source: source) : nil,
             columns: columns,
             sort: effectiveSort,
             rows: HistoryTable.sort(days, by: effectiveSort)
@@ -115,7 +120,7 @@ struct HistoryContent: Equatable, Sendable {
         let sort = columns.contains(sort.column) ? sort : HistorySort()
         return HistoryContent(
             today: today, source: source, rangeKind: rangeKind, range: range, dataBounds: dataBounds,
-            pickerSources: pickerSources, days: days, cards: cards, chart: chart, columns: columns, sort: sort,
+            pickerSources: pickerSources, days: days, cards: cards, chart: chart, breakdown: breakdown, columns: columns, sort: sort,
             rows: HistoryTable.sort(days, by: sort)
         )
     }

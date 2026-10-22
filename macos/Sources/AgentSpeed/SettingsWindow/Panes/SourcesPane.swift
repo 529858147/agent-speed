@@ -59,6 +59,8 @@ extension SourceKind {
         case .deepseek: .dsh
         case .opencode: .opencode
         case .gemini: .gemini
+        case .omp: .omp
+        case .antigravity: .antigravity
         }
     }
 }
@@ -156,8 +158,8 @@ private struct SourceStatusLabel: View {
     }
 }
 
-/// The folder a source reads from: abbreviated path (Gemini CLI lists both default folders), default/custom badge,
-/// and Show in Finder / Reset / Change….
+/// The folder a source reads from: abbreviated path (Gemini CLI lists both default folders, Antigravity the stores
+/// found), default/custom badge, and Show in Finder / Reset / Change….
 private struct SourceFolderRow: View {
     let folder: TranscriptFolder
     let model: AppModel
@@ -169,24 +171,28 @@ private struct SourceFolderRow: View {
         let settings = model.settings
         let l10n = model.l10n
         let urls = folder.urls(in: settings)
-        let url = urls.first(where: TranscriptFolder.exists) ?? urls[0]
+        let shown = folder.shownURLs(in: settings)
+        let url = urls.first(where: folder.isReadable) ?? urls.first(where: TranscriptFolder.exists) ?? shown[0]
         let isCustom = folder.customURL(in: settings) != nil
-        let exists = urls.contains(where: TranscriptFolder.exists)
-        let paths = urls.map(TranscriptFolder.displayPath)
+        let readable = urls.contains(where: folder.isReadable)
+        let exists = TranscriptFolder.exists(url)
+        let paths = shown.map(TranscriptFolder.displayPath)
         HStack(spacing: Spacing.s) {
             Image(nsImage: Self.folderIcon)
                 .resizable()
                 .frame(width: 28, height: 28)
-                .opacity(exists ? 1 : 0.45)
+                .opacity(readable ? 1 : 0.45)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(urls.enumerated()), id: \.offset) { _, candidate in
-                    Text(verbatim: TranscriptFolder.displayPath(candidate))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .foregroundStyle(urls.count > 1 && !TranscriptFolder.exists(candidate) ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                        .help(candidate.path)
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(shown.enumerated()), id: \.offset) { _, candidate in
+                        Text(verbatim: TranscriptFolder.displayPath(candidate))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .foregroundStyle(shown.count > 1 && !folder.isReadable(candidate) ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                            .help(candidate.path)
+                    }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(l10n("mac.settings.sources.folder"))

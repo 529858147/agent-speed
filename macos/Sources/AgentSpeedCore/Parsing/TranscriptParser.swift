@@ -9,6 +9,10 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
     case dsh
     /// Gemini CLI.
     case gemini
+    /// omp (oh-my-pi).
+    case omp
+    /// Antigravity: one SQLite database per conversation, read as a whole unit per change (METRICS 4.8, 5.4).
+    case antigravity
 
     /// Nil for sources that are not read from transcript files: OpenCode is a database (`OpencodeSource`).
     init?(_ source: SourceKind) {
@@ -17,6 +21,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .claudeCode, .claudeDesktop: self = .claude
         case .deepseek: self = .dsh
         case .gemini: self = .gemini
+        case .omp: self = .omp
+        case .antigravity: self = .antigravity
         case .opencode: return nil
         }
     }
@@ -28,17 +34,38 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .claude: [.claudeCode, .claudeDesktop]
         case .dsh: [.deepseek]
         case .gemini: [.gemini]
+        case .omp: [.omp]
+        case .antigravity: [.antigravity]
         }
     }
 
-    /// File names (and for Gemini CLI, folder layout) of this family's transcripts (METRICS 2, 4.6).
+    /// File names (and for Gemini CLI, omp and Antigravity, folder layout) of this family's transcripts
+    /// (METRICS 2, 4.6 – 4.8).
     var names: TranscriptNames {
         switch self {
         case .codex: .codexSession
         case .claude: .jsonl
         case .dsh: .dshSession
         case .gemini: .geminiSession
+        case .omp: .ompSession
+        case .antigravity: .antigravityDatabase
         }
+    }
+
+    /// An Antigravity database is one SQLite file plus its `-wal`; every other family is a single file.
+    var isDatabase: Bool { self == .antigravity }
+
+    /// The stat that identifies one transcript of this family; nil unless it is a regular file.
+    func stat(_ path: String) -> FileStat? {
+        if isDatabase { return FileStat.databaseStat(path) }
+        guard let stat = FileStat.lstat(path), stat.isRegularFile else { return nil }
+        return stat
+    }
+
+    /// The transcript a changed path belongs to: an Antigravity `<id>.db-wal` stands for `<id>.db`.
+    func transcriptPath(forChanged path: String) -> String {
+        guard isDatabase, path.hasSuffix(".db-wal") else { return path }
+        return String(path.dropLast(4))
     }
 }
 
@@ -47,14 +74,18 @@ enum DecodedLine: Sendable {
     case claude(LineExtraction<ClaudeLine>)
     case dsh(LineExtraction<DshLine>)
     case gemini(LineExtraction<GeminiLine>)
+    case omp(LineExtraction<OmpLine>)
 }
 
-/// Lines decoded ahead of time (off the state-machine thread) so seeding can extract in parallel.
+/// Lines decoded ahead of time (off the state-machine thread) so seeding can extract in parallel. An Antigravity read
+/// is one batch of database rows.
 enum DecodedLines: Sendable {
     case codex([LineExtraction<CodexLine>])
     case claude([LineExtraction<ClaudeLine>])
     case dsh([LineExtraction<DshLine>])
     case gemini([LineExtraction<GeminiLine>])
+    case omp([LineExtraction<OmpLine>])
+    case antigravity(AntigravityBatch?)
 }
 
 /// A family-agnostic per-file parser. Exactly one of the machines is set.
@@ -64,29 +95,40 @@ struct TranscriptParser: Sendable {
     private var claude: ClaudeParser?
     private var dsh: DshParser?
     private var gemini: GeminiParser?
+    private var omp: OmpParser?
+    private var antigravity: AntigravityParser?
 
-    init(family: TranscriptFamily, agentId: String, fileID: FileID) {
+    /// `root` is the root folder the file was discovered under (omp derives `isSubagent` from it, METRICS 4.7).
+    init(family: TranscriptFamily, agentId: String, fileID: FileID, root: String? = nil) {
         self.family = family
         switch family {
         case .codex: codex = CodexParser(agentId: agentId, fileID: fileID)
         case .claude: claude = ClaudeParser(agentId: agentId, fileID: fileID)
         case .dsh: dsh = DshParser(agentId: agentId, fileID: fileID)
         case .gemini: gemini = GeminiParser(agentId: agentId, fileID: fileID)
+        case .omp: omp = OmpParser(agentId: agentId, fileID: fileID, root: root)
+        case .antigravity: antigravity = AntigravityParser(agentId: agentId, fileID: fileID)
         }
     }
 
     var state: AgentState {
-        codex?.state ?? claude?.state ?? dsh?.state ?? gemini!.state
+        codex?.state ?? claude?.state ?? dsh?.state ?? gemini?.state ?? omp?.state ?? antigravity!.state
     }
 
-    /// Decodes one unit of input: a line, or a whole document for Gemini CLI legacy `.json` files.
-    func decode(_ bytes: UnsafeRawBufferPointer) -> DecodedLine {
+    /// An Antigravity database without the expected tables (`unsupportedFormat`).
+    var isUnsupported: Bool { antigravity?.isUnsupported ?? false }
+
+    /// Decodes one unit of input: a line, or a whole document for Gemini CLI legacy `.json` files. Antigravity
+    /// databases are never fed bytes; their reads arrive as batches.
+    func decode(_ bytes: UnsafeRawBufferPointer) -> DecodedLine? {
         switch family {
         case .codex: .codex(CodexLineExtractor.extract(bytes))
         case .claude: .claude(ClaudeLineExtractor.extract(bytes))
         case .dsh: .dsh(DshLineExtractor.extract(bytes))
         case .gemini:
             .gemini(gemini?.isDocument == true ? GeminiLineExtractor.extractDocument(bytes) : GeminiLineExtractor.extract(bytes))
+        case .omp: .omp(OmpLineExtractor.extract(bytes))
+        case .antigravity: nil
         }
     }
 
@@ -96,6 +138,8 @@ struct TranscriptParser: Sendable {
         claude?.noteMalformedLine()
         dsh?.noteMalformedLine()
         gemini?.noteMalformedLine()
+        omp?.noteMalformedLine()
+        antigravity?.noteMalformedLine()
     }
 
     mutating func consume(_ line: DecodedLine, deduper: inout Deduper, emit: (ResponseUpsert) -> Void) {
@@ -104,11 +148,13 @@ struct TranscriptParser: Sendable {
         case .claude(let extraction): claude?.consume(extraction, deduper: &deduper, emit: emit)
         case .dsh(let extraction): dsh?.consume(extraction, deduper: &deduper, emit: emit)
         case .gemini(let extraction): gemini?.consume(extraction, deduper: &deduper, emit: emit)
+        case .omp(let extraction): omp?.consume(extraction, deduper: &deduper, emit: emit)
         }
     }
 
     mutating func consume(rawLine bytes: UnsafeRawBufferPointer, deduper: inout Deduper, emit: (ResponseUpsert) -> Void) {
-        consume(decode(bytes), deduper: &deduper, emit: emit)
+        guard let line = decode(bytes) else { return }
+        consume(line, deduper: &deduper, emit: emit)
     }
 
     mutating func consume(_ lines: DecodedLines, deduper: inout Deduper, emit: (ResponseUpsert) -> Void) {
@@ -121,6 +167,10 @@ struct TranscriptParser: Sendable {
             for extraction in extractions { dsh?.consume(extraction, deduper: &deduper, emit: emit) }
         case .gemini(let extractions):
             for extraction in extractions { gemini?.consume(extraction, deduper: &deduper, emit: emit) }
+        case .omp(let extractions):
+            for extraction in extractions { omp?.consume(extraction, deduper: &deduper, emit: emit) }
+        case .antigravity(let batch):
+            if let batch { antigravity?.consume(batch, deduper: &deduper, emit: emit) }
         }
     }
 }
@@ -142,6 +192,12 @@ enum TranscriptDecoder {
             let extractor = reader.isDocument ? GeminiLineExtractor.extractDocument : GeminiLineExtractor.extract
             let (lines, read) = extract(extractor, reader: &reader)
             return (.gemini(lines), read)
+        case .omp:
+            let (lines, read) = extract(OmpLineExtractor.extract, reader: &reader)
+            return (.omp(lines), read)
+        case .antigravity:
+            let (batch, read) = reader.readDatabase()
+            return (.antigravity(batch), read)
         }
     }
 

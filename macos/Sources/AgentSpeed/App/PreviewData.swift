@@ -7,7 +7,7 @@ enum PreviewData {
         case standard
         /// Nested groups, a sub-agent whose parent is not listed, and a group cut by the row limit.
         case grouped
-        /// The first `count` (up to 24) agents of a busy machine, for the expandable list.
+        /// The first `count` (up to 27) agents of a busy machine, for the expandable list.
         case crowd(Int)
     }
 
@@ -40,6 +40,8 @@ enum PreviewData {
             source(.deepseek, speed * 0.14, TokenTotals(requests: 164, input: 5_200_000, output: 160_000), 1),
             source(.opencode, 0, TokenTotals(requests: 36, input: 1_100_000, output: 38_000), 0),
             source(.gemini, speed * 0.04, TokenTotals(requests: 22, input: 700_000, output: 24_000), 1),
+            source(.omp, 0, TokenTotals(requests: 64, input: 2_400_000, output: 58_000), 0),
+            source(.antigravity, speed * 0.05, TokenTotals(requests: 41, input: 1_600_000, output: 46_000), 1),
         ]
         return SpeedSnapshot(
             timestamp: now,
@@ -67,11 +69,11 @@ enum PreviewData {
             agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.15, now, parent: "nova"),
             agent("quasar", .deepseek, "quasar", "deepseek-v4-pro", .generating, false, speed * 0.14, now),
             agent("orbit", .claudeDesktop, "orbit", "claude-fable-5-1", .generating, false, speed * 0.10, now),
-            agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-220)),
+            agent("lumen", .omp, "lumen", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-220)),
         ]
     }
 
-    /// Twenty-four agents in engine order: groups of every source, then tools and idle stragglers.
+    /// Twenty-seven agents in engine order: groups of every source, then tools and idle stragglers.
     private static func crowdAgents(speed: Double, now: Date) -> [AgentStatus] {
         [
             agent("orbit", .claudeDesktop, "orbit", "claude-opus-5-5", .generating, false, speed * 0.16, now),
@@ -82,8 +84,11 @@ enum PreviewData {
             agent("rocket", .codex, "rocket", "gpt-6.1-sol", .generating, false, speed * 0.12, now),
             agent("rocket-worker", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.06, now, parent: "rocket"),
             agent("rocket-review", .codex, "rocket", "gpt-6.1-sol-mini", .generating, true, speed * 0.04, now, parent: "rocket"),
+            agent("halo", .antigravity, "halo", "gemini-3.1-pro", .generating, false, speed * 0.12, now),
+            agent("halo-research", .antigravity, "halo", "gemini-3.1-flash", .generating, true, speed * 0.06, now, parent: "halo"),
             agent("nova", .claudeCode, "nova", "claude-opus-5-5", .generating, false, speed * 0.1, now),
             agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.05, now, parent: "nova"),
+            agent("meridian", .omp, "meridian", "claude-opus-5-5", .generating, false, speed * 0.08, now),
             agent("atlas", .codex, "atlas-web", "gpt-6.1-sol", .generating, false, speed * 0.07, now),
             agent("vega", .deepseek, "vega", "deepseek-v4-flash", .generating, false, speed * 0.05, now),
             agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .tools, false, 0, now.addingTimeInterval(-9)),
@@ -92,6 +97,7 @@ enum PreviewData {
             agent("cinder", .claudeCode, "cinder", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-420)),
             agent("delta", .deepseek, "delta", "deepseek-v4-pro", .idle, false, 0, now.addingTimeInterval(-480)),
             agent("helix", .codex, "helix", "gpt-6.1-sol", .idle, false, 0, now.addingTimeInterval(-540)),
+            agent("cairn", .omp, "cairn", "gpt-5.5", .idle, false, 0, now.addingTimeInterval(-570)),
             agent("prism", .claudeDesktop, "prism", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-600)),
             agent("zenith", .claudeCode, "zenith", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-660)),
             agent("cobalt", .codex, "cobalt", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-720)),
@@ -141,7 +147,7 @@ enum PreviewData {
             switch source.kind {
             case .deepseek: source.available = false
             case .claudeDesktop: source.enabled = false
-            case .codex, .claudeCode, .opencode, .gemini: return source
+            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity: return source
             }
             source.sessionCount = 0
             source.live = .zero
@@ -175,6 +181,8 @@ enum PreviewData {
         case .dsh: 46
         case .opencode: 1
         case .gemini: 23
+        case .omp: 17
+        case .antigravity: 9
         }
     }
 }

@@ -71,6 +71,10 @@ final class AppSettings {
     var opencodeRoot: URL? { didSet { store(opencodeRoot?.path, .opencodeRoot) } }
     /// One Gemini CLI `tmp` folder, replacing both defaults.
     var geminiRoot: URL? { didSet { store(geminiRoot?.path, .geminiRoot) } }
+    /// One omp `sessions` folder, replacing the default root and every named profile.
+    var ompRoot: URL? { didSet { store(ompRoot?.path, .ompRoot) } }
+    /// One Antigravity store folder (or its `conversations` folder), replacing the three default stores.
+    var antigravityRoot: URL? { didSet { store(antigravityRoot?.path, .antigravityRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -125,6 +129,8 @@ final class AppSettings {
         dshRoot = Self.url(defaults.string(forKey: Key.dshRoot.rawValue))
         opencodeRoot = Self.url(defaults.string(forKey: Key.opencodeRoot.rawValue))
         geminiRoot = Self.url(defaults.string(forKey: Key.geminiRoot.rawValue))
+        ompRoot = Self.url(defaults.string(forKey: Key.ompRoot.rawValue))
+        antigravityRoot = Self.url(defaults.string(forKey: Key.antigravityRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
         heroLastTitle = defaults.string(forKey: Key.heroLastTitle.rawValue)
     }
@@ -136,7 +142,9 @@ final class AppSettings {
             claudeRoot: claudeRoot,
             dshRoot: dshRoot,
             opencodeRoot: opencodeRoot,
-            geminiRoot: geminiRoot
+            geminiRoot: geminiRoot,
+            ompRoot: ompRoot,
+            antigravityRoot: antigravityRoot
         )
     }
 
@@ -187,7 +195,8 @@ final class AppSettings {
         case orbVisible, orbSize, orbOpacity, orbAlwaysOnTop, orbClickThrough, orbFadeWhenIdle, orbAllSpaces
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
-        case enabledSources, knownSources, codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot
+        case enabledSources, knownSources
+        case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot
         case autoCheckUpdates
         case heroLastTitle
     }

@@ -16,6 +16,10 @@ enum TranscriptNames: Sendable {
     case dshSession
     /// `*.jsonl` or legacy `*.json`, only at `<project>/chats/<file>` and `<project>/chats/<dir>/<file>` (Gemini CLI).
     case geminiSession
+    /// `*.jsonl` at least one folder below the root; names starting with `.` are skipped, files and folders (omp).
+    case ompSession
+    /// `<uuid>.db` directly in a `conversations` folder (Antigravity).
+    case antigravityDatabase
 
     func matches(_ name: String) -> Bool {
         switch self {
@@ -25,6 +29,10 @@ enum TranscriptNames: Sendable {
             return name.hasSuffix(".jsonl") || name.hasSuffix(".jsonl.zst")
         case .geminiSession:
             return name.hasSuffix(".jsonl") || name.hasSuffix(".json")
+        case .ompSession:
+            return name.hasSuffix(".jsonl") && !name.hasPrefix(".")
+        case .antigravityDatabase:
+            return Self.isConversationDatabase(name)
         case .dshSession:
             let prefix = "session.v"
             guard name.hasPrefix(prefix) else { return false }
@@ -38,24 +46,63 @@ enum TranscriptNames: Sendable {
 
     /// Whether a directory listed at `depth` (the root is 0) may hold transcripts.
     func acceptsFiles(inDirectoryAtDepth depth: Int) -> Bool {
-        self == .geminiSession ? depth == 2 || depth == 3 : true
+        switch self {
+        case .geminiSession: depth == 2 || depth == 3
+        case .ompSession: depth >= 1
+        case .antigravityDatabase: depth == 0
+        case .jsonl, .codexSession, .dshSession: true
+        }
     }
 
     /// Whether the walk descends into the directory `name` found at `depth`.
     func descends(into name: String, fromDepth depth: Int) -> Bool {
-        guard self == .geminiSession else { return true }
-        switch depth {
-        case 0, 2: return true
-        case 1: return name == "chats"
-        default: return false
+        switch self {
+        case .geminiSession:
+            switch depth {
+            case 0, 2: return true
+            case 1: return name == "chats"
+            default: return false
+            }
+        case .ompSession:
+            return !name.hasPrefix(".")
+        case .antigravityDatabase:
+            return false
+        case .jsonl, .codexSession, .dshSession:
+            return true
         }
     }
 
     /// Whether a path relative to the root (its components) can name a transcript.
     func accepts(relativeComponents components: [Substring]) -> Bool {
         guard let name = components.last, matches(String(name)) else { return false }
-        guard self == .geminiSession else { return components.count <= TranscriptDiscovery.maxDepth + 1 }
-        return (components.count == 3 || components.count == 4) && components[1] == "chats"
+        switch self {
+        case .geminiSession:
+            return (components.count == 3 || components.count == 4) && components[1] == "chats"
+        case .ompSession:
+            return components.count >= 2 && components.count <= TranscriptDiscovery.maxDepth + 1
+                && !components.contains { $0.hasPrefix(".") }
+        case .antigravityDatabase:
+            return components.count == 1
+        case .jsonl, .codexSession, .dshSession:
+            return components.count <= TranscriptDiscovery.maxDepth + 1
+        }
+    }
+
+    /// 8-4-4-4-12 hexadecimal digits (any case) followed by `.db`.
+    static func isConversationDatabase(_ name: String) -> Bool {
+        let bytes = Array(name.utf8)
+        guard bytes.count == 39, bytes.suffix(3).elementsEqual(".db".utf8) else { return false }
+        for (index, byte) in bytes.prefix(36).enumerated() {
+            if index == 8 || index == 13 || index == 18 || index == 23 {
+                guard byte == UInt8(ascii: "-") else { return false }
+            } else {
+                let isHex = (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+                    || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+                    || (UInt8(ascii: "A")...UInt8(ascii: "F")).contains(byte)
+                guard isHex else { return false }
+            }
+        }
+        return true
     }
 }
 
@@ -96,10 +143,11 @@ enum TranscriptDiscovery {
         }.prefix(limit))
     }
 
-    /// Stats candidate paths, keeping regular files only.
-    static func files(at paths: [String]) -> [DiscoveredFile] {
+    /// Stats candidate paths, keeping regular files only (an Antigravity database's time includes its `-wal`).
+    static func files(at paths: [String], family: TranscriptFamily? = nil) -> [DiscoveredFile] {
         paths.compactMap { path in
-            guard let stat = FileStat.lstat(path), stat.isRegularFile else { return nil }
+            let stat = family.map { $0.stat(path) } ?? FileStat.lstat(path)
+            guard let stat, stat.isRegularFile else { return nil }
             return DiscoveredFile(path: path, stat: stat)
         }
     }

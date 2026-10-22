@@ -23,7 +23,9 @@ struct LiveMonitorTests {
             claudeRoot: directory.file("missing-claude"),
             dshRoot: directory.file("missing-dsh"),
             opencodeRoot: directory.file("missing-opencode"),
-            geminiRoot: directory.file("missing-gemini")
+            geminiRoot: directory.file("missing-gemini"),
+            ompRoot: directory.file("missing-omp"),
+            antigravityRoot: directory.file("missing-antigravity")
         ))
         monitor.start()
         defer { monitor.stop() }
@@ -66,6 +68,35 @@ struct LiveMonitorTests {
         #expect(completions.first?.outputTokens == 200)
         #expect(await Self.waitUntil { store.snapshot.live.output > 0 })
         #expect(store.snapshot.agents.contains { $0.id.hasSuffix("s-desk.jsonl") })
+    }
+
+    @Test func streamsAntigravityCompletionsFromTheWAL() async throws {
+        let directory = try TempDirectory()
+        let store = directory.file("antigravity-cli")
+        let folder = store.appendingPathComponent("conversations")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let now = Clock.milliseconds(Date())
+        let writer = try ConversationWriter(path: folder.appendingPathComponent("6f0e0d0c-0b0a-4908-8706-050403020100.db").path,
+                                            trajectory: AntigravityBlobEncoder.trajectory(created: now - 60_000, uris: ["file:///w/comet"]))
+        defer { try? writer.close() }
+        try writer.step(0, type: AntigravityStep.userInput, status: 3, AntigravityBlobEncoder.step(created: now - 5000, completed: now - 4990))
+        let speeds = SpeedStore()
+        var completions: [ResponseSummary] = []
+        speeds.addEventListener { event in
+            if case .responseCompleted(let summary) = event { completions.append(summary) }
+        }
+        let monitor = LiveMonitor(store: speeds, configuration: MonitorConfiguration(enabledSources: [.antigravity], antigravityRoot: store))
+        monitor.start()
+        defer { monitor.stop() }
+        #expect(await Self.waitUntil { speeds.snapshot.state == .running })
+        #expect(speeds.snapshot.agents.first?.phase == .generating, "a user input starts the model call")
+
+        try writer.step(1, type: AntigravityStep.plannerResponse, status: 3,
+                        AntigravityTests.plannerDone(now - 4900, Clock.milliseconds(Date()), output: 250, id: "live-ag-1"))
+        #expect(await Self.waitUntil { !completions.isEmpty })
+        #expect(completions.first?.source == .antigravity && completions.first?.project == "comet")
+        #expect(completions.first?.outputTokens == 250)
+        #expect(speeds.snapshot.sources.first { $0.kind == .antigravity }?.today.output == 250)
     }
 
     @Test func streamsOpencodeCompletionsFromTheDatabase() async throws {

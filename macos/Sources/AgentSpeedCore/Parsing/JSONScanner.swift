@@ -2,6 +2,16 @@ import Foundation
 
 struct JSONScanError: Error, Equatable {}
 
+/// A number value with the facts Python-style checks need (`math.isfinite`, `> 0`, `>= 0`, `int()`).
+struct JSONNumber: Equatable, Sendable {
+    /// Truncated toward zero, saturated to `Int64`.
+    var truncated: Int64
+    /// False for a literal beyond the `Double` range.
+    var isFinite: Bool
+    var isPositive: Bool
+    var isNonNegative: Bool
+}
+
 /// A member key inside the scanned buffer.
 struct JSONKey {
     let start: Int
@@ -276,6 +286,33 @@ struct JSONScanner {
         let start = position
         let isInteger = try skipNumber()
         return Self.integerValue(base: base, start: start, end: position, isInteger: isInteger)
+    }
+
+    /// Reads a number the way Python's `json` does: integer literals are exact (saturated here), every other literal
+    /// is the nearest `Double`, so it can be `-0.0` or infinite. Non-numbers are skipped and give nil.
+    mutating func readNumber() throws(JSONScanError) -> JSONNumber? {
+        skipWhitespace()
+        guard position < end else { throw JSONScanError() }
+        let first = base[position]
+        guard first == UInt8(ascii: "-") || Self.isDigit(first) else {
+            try skipValue()
+            return nil
+        }
+        let start = position
+        if try skipNumber() {
+            let value = Self.integerValue(base: base, start: start, end: position, isInteger: true)
+            return JSONNumber(truncated: value, isFinite: true, isPositive: value > 0, isNonNegative: value >= 0)
+        }
+        let text = String(decoding: UnsafeBufferPointer(start: base + start, count: position - start), as: UTF8.self)
+        guard let value = Double(text) else { return nil }
+        let truncated: Int64 = if value >= 0x1p63 {
+            .max
+        } else if value < -0x1p63 {
+            .min
+        } else {
+            Int64(value.rounded(.towardZero))
+        }
+        return JSONNumber(truncated: truncated, isFinite: value.isFinite, isPositive: value > 0, isNonNegative: value >= 0)
     }
 
     /// Reads `true`/`false`. Other values are skipped and give nil.

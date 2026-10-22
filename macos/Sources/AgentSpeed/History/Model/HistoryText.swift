@@ -12,13 +12,13 @@ enum HistoryText {
         l10n(count == 1 ? "mac.history.days.one" : "mac.history.days", count)
     }
 
-    /// `2026/9/22 – 10/21 · 30 天`; the year is written once when both ends share it.
+    /// `2026/9/22 – 10/21 · 30 天`; the year is written once when both ends share it. A single day reads
+    /// `2026/10/21（週三）`.
     static func rangeSubtitle(_ range: DayRange, _ l10n: Localizer) -> String {
+        if range.isSingleDay { return longDate(range.start, l10n) }
         let language = l10n.language
         let dates: String
-        if range.count == 1 {
-            dates = date(range.start, l10n)
-        } else if range.start.year == range.end.year {
+        if range.start.year == range.end.year {
             // Spelled-out English puts the year last ("Sep 22 – Oct 21, 2026"); numeric forms put it first.
             dates = language == .en
                 ? HistoryDates.string(range.start, .monthDay, language: language) + rangeDash + date(range.end, l10n)
@@ -124,6 +124,11 @@ enum HistoryText {
         l10n("history.summary.vsPrevious", change(ratio))
     }
 
+    /// `比前一天 +12%`
+    static func versusPreviousDay(_ ratio: Double, _ l10n: Localizer) -> String {
+        l10n("history.summary.vsPreviousDay", change(ratio))
+    }
+
     /// `活躍 18 天`
     static func activeDays(_ days: Int, _ l10n: Localizer) -> String {
         l10n("history.summary.activeDays", days)
@@ -198,6 +203,30 @@ enum HistoryText {
             parts.append(labelled(l10n("history.table.models"), topModels(day.models, l10n, max: 3), l10n))
         }
         return labelled(dayTitle(day.day, today: today, l10n), join(parts, l10n), l10n)
+    }
+
+    /// A breakdown bar's name: the source, the model, or `其他模型`.
+    static func breakdownName(_ subject: BreakdownItem.Subject, _ l10n: Localizer) -> String {
+        switch subject {
+        case .source(let source): l10n(source.titleKey)
+        case .model(let model): model
+        case .otherModels: l10n("mac.history.breakdown.otherModels")
+        }
+    }
+
+    /// What a missing breakdown speed means: not measured, or not stored per model.
+    static func breakdownSpeedNote(_ item: BreakdownItem, _ l10n: Localizer) -> String {
+        item.speedNotAttributable ? l10n("mac.history.breakdown.noModelSpeed") : l10n("history.noSpeed")
+    }
+
+    /// One breakdown bar for screen readers: `輸出：312,345，佔比：38%，平均速度：88.2 tok/s，請求：151`.
+    static func accessible(_ item: BreakdownItem, _ l10n: Localizer) -> String {
+        join([
+            labelled(l10n("history.table.output"), fullNumber(item.output, l10n), l10n),
+            labelled(l10n("mac.history.breakdown.share"), percent(item.share), l10n),
+            labelled(l10n("history.table.speed"), item.averageSpeed == nil ? breakdownSpeedNote(item, l10n) : fullSpeed(item.averageSpeed, l10n), l10n),
+            labelled(l10n("history.table.requests"), fullNumber(item.requests, l10n), l10n),
+        ], l10n)
     }
 
     /// The day's long date, with `進行中` for today.

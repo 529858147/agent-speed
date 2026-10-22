@@ -20,6 +20,8 @@ enum HistoryCSV {
         case .deepseek: "deepseek"
         case .opencode: "opencode"
         case .gemini: "gemini"
+        case .omp: "omp"
+        case .antigravity: "antigravity"
         }
     }
 

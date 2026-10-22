@@ -10,7 +10,8 @@ final class OrderedDecoder: @unchecked Sendable {
         var family: TranscriptFamily
         var size: Int64
 
-        /// Compressed sessions decode to several times their size; the window counts that.
+        /// Compressed sessions decode to several times their size; the window counts that. A database's size is its
+        /// `.db` plus `-wal`.
         var weight: Int64 { TranscriptReader.isCompressedStream(path) ? size &* 8 : size }
     }
 

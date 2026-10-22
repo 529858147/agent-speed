@@ -3,13 +3,41 @@ import AppKit
 import SwiftUI
 
 /// The window's unified toolbar (DESIGN 4b, item 1): source picker leading, range control centered, CSV export
-/// trailing. Native AppKit items, kept in sync with the view model and the app language.
+/// trailing. Native AppKit items, kept in sync with the view model and the app language. It never wraps or hides an
+/// item in the overflow menu: as the window narrows it tightens the range segments, shows export as an icon, then
+/// shortens the range labels (`Fit.ladder`).
 @MainActor
 final class HistoryToolbar: NSObject, NSToolbarDelegate {
     private static let sourceID = NSToolbarItem.Identifier("history.source")
     private static let rangeID = NSToolbarItem.Identifier("history.range")
     private static let exportID = NSToolbarItem.Identifier("history.export")
     private static let ranges: [HistoryRangeKind] = HistoryRangeKind.allCases
+
+    /// What the toolbar gives up to stay on one line.
+    private struct Fit: Equatable {
+        /// Short range labels (`7D`, `YTD`) and a calendar for 自訂…; the full labels stay in the tooltips.
+        var shortLabels = false
+        /// Room around a label in a segment that hugs it; nil keeps the control's own widths. Whether hugging is
+        /// narrower depends on how the system insets toolbar segments, so both are measured.
+        var segmentPadding: CGFloat?
+        var iconExport = false
+
+        /// Least given up first.
+        static let ladder: [Fit] = [
+            Fit(),
+            Fit(segmentPadding: 8),
+            Fit(iconExport: true),
+            Fit(segmentPadding: 8, iconExport: true),
+            Fit(shortLabels: true, iconExport: true),
+            Fit(shortLabels: true, segmentPadding: 4, iconExport: true),
+        ]
+    }
+
+    /// Room the toolbar needs beyond its items: the gaps between them and the trailing margin.
+    private static let gaps: CGFloat = 32
+    /// Where the first item starts when it has not been laid out yet (after the window buttons).
+    private static let defaultLeading: CGFloat = 96
+    private static let iconExportWidth: CGFloat = 40
 
     private let model: HistoryViewModel
     private let onExport: () -> Void
@@ -22,6 +50,12 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
     private var loop: ObservationLoop?
     private var shownSources: [SourceKind?] = []
     private var shownLanguage: AppLanguage?
+    private var fit = Fit.ladder[0]
+    /// Extra room learned when the toolbar still overflowed at a fit the estimate allowed.
+    private var learnedSlack: CGFloat = 0
+    /// The range control's width at each rung of the ladder, for a language and whether it sat in the toolbar.
+    private var measured: (key: String, widths: [CGFloat])?
+    nonisolated(unsafe) private var resizeObserver: NSObjectProtocol?
 
     let toolbar: NSToolbar
 
@@ -44,8 +78,21 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         rangeControl.segmentDistribution = .fit
         rangeControl.target = self
         rangeControl.action = #selector(rangeChanged(_:))
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let window = notification.object as? NSWindow
+            MainActor.assumeIsolated {
+                guard let self, let window, window.toolbar === self.toolbar else { return }
+                self.refit()
+            }
+        }
 
         loop = ObservationLoop { [weak self] in self?.sync() }
+    }
+
+    deinit {
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
     }
 
     // MARK: NSToolbarDelegate
@@ -56,6 +103,11 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    /// Items are added as the toolbar joins a window; fit it once it is there.
+    func toolbarWillAddItem(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.refit() }
     }
 
     func toolbar(
@@ -102,6 +154,7 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         if language != shownLanguage {
             shownLanguage = language
             applyLabels(l10n)
+            refit()
         }
         if let index = Self.ranges.firstIndex(of: model.rangeKind), rangeControl.selectedSegment != index {
             rangeControl.selectedSegment = index
@@ -111,22 +164,104 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         _ = model.accessibility.reduceMotion
     }
 
-    /// Localized labels of the controls and items; runs on a language change and for every new item.
+    /// Localized labels of the controls and items at the current fit; runs on a language or fit change and for every
+    /// new item.
     private func applyLabels(_ l10n: Localizer) {
-        for (index, kind) in Self.ranges.enumerated() {
-            rangeControl.setLabel(l10n(kind.titleKey), forSegment: index)
-            rangeControl.setWidth(0, forSegment: index)
-        }
+        Self.configure(rangeControl, fit: fit, l10n: l10n)
         rangeControl.setAccessibilityLabel(l10n("mac.history.range"))
         sourcePopup.setAccessibilityLabel(l10n("dashboard.sources"))
         sourceItem?.label = l10n("dashboard.sources")
         sourceItem?.toolTip = l10n("dashboard.sources")
         rangeItem?.label = l10n("mac.history.range")
-        exportItem?.label = l10n("history.export")
-        exportItem?.title = l10n("history.export")
-        exportItem?.toolTip = l10n("history.export")
+        let export = l10n("history.export")
+        exportItem?.label = export
+        exportItem?.toolTip = export
+        if fit.iconExport {
+            exportItem?.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: export)
+            exportItem?.title = ""
+        } else {
+            exportItem?.image = nil
+            exportItem?.title = export
+        }
         sourcePopup.sizeToFit()
         rangeControl.sizeToFit()
+    }
+
+    /// Range labels and segment widths of `fit`; a shortened label keeps the full one as the segment's tooltip.
+    private static func configure(_ control: NSSegmentedControl, fit: Fit, l10n: Localizer) {
+        let font = control.font ?? .systemFont(ofSize: NSFont.systemFontSize)
+        for (index, kind) in ranges.enumerated() {
+            let full = l10n(kind.titleKey)
+            let icon = fit.shortLabels && kind == .custom
+                ? NSImage(systemSymbolName: "calendar", accessibilityDescription: full)
+                : nil
+            let label = icon != nil ? "" : (fit.shortLabels ? l10n(kind.shortTitleKey) : full)
+            control.setLabel(label, forSegment: index)
+            control.setImage(icon, forSegment: index)
+            control.setToolTip(label == full ? nil : full, forSegment: index)
+            if let padding = fit.segmentPadding {
+                let content = icon?.size.width ?? (label as NSString).size(withAttributes: [.font: font]).width
+                control.setWidth(ceil(content + padding), forSegment: index)
+            } else {
+                control.setWidth(0, forSegment: index)
+            }
+        }
+        control.sizeToFit()
+    }
+
+    // MARK: Fit
+
+    /// The window showing this toolbar. An item in the overflow menu has no window, so it is looked up by toolbar.
+    private var window: NSWindow? {
+        NSApp.windows.first { $0.toolbar === toolbar }
+    }
+
+    /// Picks the most generous fit the window's width allows, then makes sure nothing went to the overflow menu.
+    private func refit() {
+        guard let window else { return }
+        let width = window.frame.width
+        let l10n = model.l10n
+        let required = requiredWidths(l10n)
+        let index = required.firstIndex { $0 + learnedSlack <= width } ?? Fit.ladder.count - 1
+        if Fit.ladder[index] != fit {
+            fit = Fit.ladder[index]
+            applyLabels(l10n)
+        }
+        DispatchQueue.main.async { [weak self] in self?.checkOverflow() }
+    }
+
+    /// The toolbar hid an item although the estimate said it fits (another system's metrics): learn the difference and
+    /// step down.
+    private func checkOverflow() {
+        guard let window, let visible = toolbar.visibleItems?.map(\.itemIdentifier), fit != Fit.ladder.last else { return }
+        guard ![Self.sourceID, Self.rangeID, Self.exportID].allSatisfy(visible.contains),
+              let index = Fit.ladder.firstIndex(of: fit) else { return }
+        learnedSlack = max(learnedSlack, requiredWidths(model.l10n)[index] - window.frame.width + 8)
+        refit()
+    }
+
+    /// The width the toolbar needs at each rung of the ladder. The range control is measured in place (a toolbar insets
+    /// its segments) and only once per language; the current fit is restored before anything is drawn.
+    private func requiredWidths(_ l10n: Localizer) -> [CGFloat] {
+        let key = "\(l10n.language)-\(rangeControl.window != nil)"
+        let ranges: [CGFloat]
+        if let measured, measured.key == key {
+            ranges = measured.widths
+        } else {
+            ranges = Fit.ladder.map { candidate in
+                Self.configure(rangeControl, fit: candidate, l10n: l10n)
+                return rangeControl.fittingSize.width
+            }
+            Self.configure(rangeControl, fit: fit, l10n: l10n)
+            measured = (key, ranges)
+        }
+        let popupFrame = sourcePopup.window == nil ? nil : sourcePopup.convert(sourcePopup.bounds, to: nil)
+        let leading = popupFrame.map(\.minX).flatMap { $0 > 0 ? $0 : nil } ?? Self.defaultLeading
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let textExport = ceil((l10n("history.export") as NSString).size(withAttributes: [.font: font]).width) + 28
+        return zip(Fit.ladder, ranges).map { candidate, range in
+            leading + sourcePopup.frame.width + range + (candidate.iconExport ? Self.iconExportWidth : textExport) + Self.gaps
+        }
     }
 
     private func rebuildSourceMenu(_ sources: [SourceKind?], l10n: Localizer) {
@@ -233,13 +368,14 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         popover.show(relativeTo: customSegmentRect(), of: rangeControl, preferredEdge: rangeControl.isFlipped ? .maxY : .minY)
     }
 
-    /// The custom segment is the last one; its width follows its label.
+    /// The custom segment is the last one; its width is set when the segments are tight, else follows its label.
     private func customSegmentRect() -> NSRect {
         let bounds = rangeControl.bounds
         let index = Self.ranges.count - 1
         let label = rangeControl.label(forSegment: index) ?? ""
         let font = rangeControl.font ?? .systemFont(ofSize: NSFont.systemFontSize)
-        let width = min(bounds.width, (label as NSString).size(withAttributes: [.font: font]).width + 24)
+        let set = rangeControl.width(forSegment: index)
+        let width = min(bounds.width, set > 0 ? set : (label as NSString).size(withAttributes: [.font: font]).width + 24)
         return NSRect(x: bounds.maxX - width, y: bounds.minY, width: width, height: bounds.height)
     }
 }

@@ -32,6 +32,18 @@ enum HistoryLogicChecks {
         let clamped = HistoryRanges.clamp(from: DayKey("2026-01-01")!, to: DayKey("2026-02-01")!, within: bounds)
         check("custom clamps to data, end never before start", clamped == .single(first))
 
+        // Single days: 今天, 昨天 and one-day custom ranges compare with the day before over a week of sparkline.
+        let yesterday = today.adding(days: -1)
+        check("today is a single day", HistoryRanges.resolve(.today, today: today, firstDataDay: first) == .single(today))
+        check("yesterday is the day before", HistoryRanges.resolve(.yesterday, today: today, firstDataDay: first) == .single(yesterday))
+        check("one-day custom range is a single day",
+              HistoryRanges.resolve(.custom, today: today, firstDataDay: first, custom: .single(first)).isSingleDay
+              && !HistoryRanges.resolve(.days7, today: today, firstDataDay: first).isSingleDay)
+        check("single day compares with the day before", HistoryRanges.previous(.single(today)) == .single(yesterday))
+        check("single-day sparkline is the week ending on the day",
+              HistoryRanges.sparkRange(.single(yesterday)) == DayRange(today.adding(days: -7), yesterday))
+        check("longer ranges keep their own sparkline", HistoryRanges.sparkRange(custom) == custom)
+
         // Aggregation: speed is Σ measured output ÷ Σ measured time; peaks combine with max, all sources only.
         func usage(_ day: String, _ source: SourceKind, output: Int, ms: Int64, peak: Double?) -> DailyUsage {
             DailyUsage(
@@ -58,6 +70,60 @@ enum HistoryLogicChecks {
         check("stack order largest first", HistoryChartMath.stackOrder(all) == [.claudeCode, .codex])
         check("change", HistoryAggregator.change(120, from: 100).map { abs($0 - 0.2) < 1e-9 } == true)
         check("no change without a previous period", HistoryAggregator.change(120, from: 0) == nil)
+
+        // Single-day cards: every card against the day before, sparklines over seven days with the day highlighted.
+        let week = (0..<7).map { usage(today.adding(days: -$0).description, .codex, output: 1000 + $0 * 100, ms: 10_000, peak: nil) }
+        let todayContent = HistoryContent.build(
+            usage: week, source: nil, rangeKind: .today, customRange: nil, sort: HistorySort(), today: today, l10n: l10n
+        )
+        let outputCard = todayContent.cards.first { $0.metric == .output }
+        check("single day: output against the day before",
+              outputCard?.change.map { abs($0 - (1000.0 - 1100) / 1100) < 1e-9 } == true
+              && outputCard?.secondary == HistoryText.versusPreviousDay((1000.0 - 1100) / 1100, l10n))
+        check("single day: seven-day sparkline ending on the day",
+              todayContent.cards.allSatisfy { $0.spark.count == 7 && $0.sparkHighlight == 6 }
+              && outputCard?.spark.last == 1000 && outputCard?.spark.first == 1600)
+        check("ranges of several days have no highlighted point", HistoryContent.build(
+            usage: week, source: nil, rangeKind: .days7, customRange: nil, sort: HistorySort(), today: today, l10n: l10n
+        ).cards.allSatisfy { $0.sparkHighlight == nil })
+        check("single day: breakdown instead of the chart, one table row",
+              todayContent.breakdown?.day == today && todayContent.rows.map(\.day) == [today])
+        let dayCSV = HistoryCSV.build(todayContent.rows, source: nil).components(separatedBy: "\r\n").filter { !$0.isEmpty }
+        check("single day: CSV holds that day only", dayCSV.count == 2 && dayCSV[1].hasPrefix("2026-10-21,all,"))
+
+        // Breakdown of one day.
+        func record(_ source: SourceKind, output: Int, requests: Int, measured: Int, ms: Int64, models: [(String, Int, Int)]) -> DailyUsage {
+            DailyUsage(
+                day: "2026-10-21", source: source,
+                totals: TokenTotals(requests: requests, input: output * 20, output: output),
+                measuredOutput: measured, measuredMs: ms, unfinalized: 0, agents: 1, peak: nil,
+                models: models.map { ModelUsage(model: $0.0, requests: $0.1, output: $0.2) }
+            )
+        }
+        let dayRecords = [
+            record(.codex, output: 3000, requests: 6, measured: 3000, ms: 30_000, models: [("gpt-a", 4, 2000), ("gpt-b", 2, 1000)]),
+            record(.claudeCode, output: 5000, requests: 5, measured: 4000, ms: 20_000, models: [("opus", 5, 5000)]),
+            record(.omp, output: 2000, requests: 2, measured: 0, ms: 0, models: [("opus", 1, 1500)]),
+            record(.codex, output: 999, requests: 1, measured: 999, ms: 1000, models: []).with(day: "2026-10-20"),
+        ]
+        let bySource = HistoryBreakdown.build(dayRecords, day: today, source: nil)
+        check("breakdown by source, most output first", bySource.kind == .bySource
+              && bySource.items.map(\.subject) == [.source(.claudeCode), .source(.codex), .source(.omp)])
+        check("breakdown shares add up to 1", abs(bySource.items.reduce(0) { $0 + $1.share } - 1) < 1e-9
+              && abs(bySource.items[0].share - 0.5) < 1e-9 && bySource.items[0].scale == 1)
+        check("breakdown speed is measured output ÷ measured time", bySource.items[0].averageSpeed == 200
+              && bySource.items[1].averageSpeed == 100 && bySource.items[2].averageSpeed == nil)
+        let byModel = HistoryBreakdown.build(dayRecords, day: today, source: .codex)
+        check("breakdown by model, most output first", byModel.kind == .byModel
+              && byModel.items.map(\.subject) == [.model("gpt-a"), .model("gpt-b")]
+              && abs(byModel.items.reduce(0) { $0 + $1.share } - 1) < 1e-9)
+        check("model speed only when time is not shared", byModel.items.allSatisfy { $0.averageSpeed == nil && $0.speedNotAttributable }
+              && HistoryBreakdown.build(dayRecords, day: today, source: .claudeCode).items.first?.averageSpeed == 200)
+        let withRest = HistoryBreakdown.build(dayRecords, day: today, source: .omp)
+        check("output without a model name is gathered last", withRest.items.map(\.subject) == [.model("opus"), .otherModels]
+              && withRest.items.last?.output == 500 && abs(withRest.items.reduce(0) { $0 + $1.share } - 1) < 1e-9)
+        check("breakdown of a day without usage is empty", HistoryBreakdown.build(dayRecords, day: today.adding(days: -5), source: nil).isEmpty
+              && HistoryBreakdown.build(dayRecords, day: today, source: .gemini).isEmpty)
 
         // Chart math.
         check("nice ticks", HistoryChartMath.ticks(1_380_000) == AxisTicks(step: 500_000, intervals: 3))
@@ -92,6 +158,9 @@ enum HistoryLogicChecks {
         check("csv row", lines[1].hasPrefix("2026-10-20,all,2,40000,36000,0,4000,0,90.0,4000,20000,200.0,300.0,2,0,"))
         check("csv bom", HistoryCSV.encode(csv).prefix(3) == Data([0xEF, 0xBB, 0xBF]))
         check("csv file name", HistoryCSV.fileName(custom, source: .claudeCode) == "agent-speed-history-claude-code-2026-09-01-2026-09-10.csv")
+        let sourceIDs = SourceKind.allCases.map { HistoryCSV.sourceID($0) }
+        check("csv source ids are distinct", Set(sourceIDs).count == sourceIDs.count && !sourceIDs.contains("all"))
+        check("csv source ids of omp and Antigravity", HistoryCSV.sourceID(.omp) == "omp" && HistoryCSV.sourceID(.antigravity) == "antigravity")
         let risky = DaySummary(
             day: today, requests: 0, input: 0, cachedInput: 0, cacheWriteInput: 0, output: 0, reasoning: 0,
             measuredOutput: 0, measuredMs: 0, unfinalized: 0, agents: 0, peak: nil,
@@ -111,5 +180,13 @@ enum HistoryLogicChecks {
         for (name, passed) in results where !passed {
             FileHandle.standardError.write(Data("history check failed: \(name)\n".utf8))
         }
+    }
+}
+
+private extension DailyUsage {
+    func with(day: String) -> DailyUsage {
+        var copy = self
+        copy.day = day
+        return copy
     }
 }

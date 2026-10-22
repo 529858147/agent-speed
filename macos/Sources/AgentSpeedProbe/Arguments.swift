@@ -18,6 +18,7 @@ struct ProbeArguments {
     static let usage = """
         usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS)
                                [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]
+                               [--omp PATH] [--antigravity PATH]
         """
 
     static func parse(_ arguments: [String]) -> ProbeArguments? {
@@ -53,6 +54,14 @@ struct ProbeArguments {
                 // One Gemini CLI `tmp` folder; it replaces both defaults.
                 guard let path = iterator.next() else { return nil }
                 configuration.geminiRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--omp":
+                // One omp `sessions` folder; it replaces the default root and every profile.
+                guard let path = iterator.next() else { return nil }
+                configuration.ompRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--antigravity":
+                // One Antigravity store folder or its `conversations` folder; it replaces the three default stores.
+                guard let path = iterator.next() else { return nil }
+                configuration.antigravityRoot = URL(fileURLWithPath: path, isDirectory: true)
             case "--opencode":
                 // The database file (as in reference.py) or the folder that contains it.
                 guard let path = iterator.next() else { return nil }

@@ -50,6 +50,17 @@ struct FileStat: Equatable, Sendable {
         return FileStat(info)
     }
 
+    /// An Antigravity conversation database: the `.db` with its `-wal` folded in, size the sum and modification time
+    /// the newer of the two (METRICS 5.4, 8). Nil unless the `.db` is a regular file.
+    static func databaseStat(_ path: String) -> FileStat? {
+        guard var stat = lstat(path), stat.isRegularFile else { return nil }
+        if let wal = lstat(path + "-wal"), wal.isRegularFile {
+            stat.size += wal.size
+            stat.modifiedNs = max(stat.modifiedNs, wal.modifiedNs)
+        }
+        return stat
+    }
+
     static func fstat(_ descriptor: Int32) -> FileStat? {
         var info = Darwin.stat()
         guard Darwin.fstat(descriptor, &info) == 0 else { return nil }

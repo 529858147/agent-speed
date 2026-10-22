@@ -9,6 +9,8 @@ enum LineExtraction<Line: Sendable>: Sendable {
     case blank
 }
 
+extension LineExtraction: Equatable where Line: Equatable {}
+
 extension JSONScanner {
     /// Skips the current value when it is not an object; otherwise enters it.
     mutating func beginObjectIfPresent() throws(JSONScanError) -> Bool {

@@ -27,11 +27,14 @@ enum AgentParents {
     /// Parent id of every member that has one. Self references and cycles resolve to no parent.
     static func resolve(_ members: [Member]) -> [String: String] {
         var ids = Set<String>()
+        var ompIds = Set<String>()
         // Codex threads and DeepSeek sessions, each by family: the earliest created file names a thread.
         var threads: [TranscriptFamily: [String: (createdMs: Int64, id: String)]] = [:]
         let geminiMains = geminiMainSessions(members)
+        let conversations = antigravityConversations(members)
         for member in members {
             ids.insert(member.id)
+            if member.family == .omp { ompIds.insert(member.id) }
             guard member.family == .codex || member.family == .dsh,
                   let thread = member.thread, let threadId = thread.id else { continue }
             if let earliest = threads[member.family]?[threadId],
@@ -51,6 +54,11 @@ enum AgentParents {
                 parent = claudeParentPath(of: member.id).flatMap { ids.contains($0) ? $0 : nil }
             case .gemini:
                 parent = geminiSessionKey(ofSubagent: member).flatMap { geminiMains[$0] }
+            case .omp:
+                // `thread.parentId` is the path `<dir>.jsonl` of a sub-agent's starter (METRICS 6.7).
+                parent = member.thread?.parentId.flatMap { ompIds.contains($0) ? $0 : nil }
+            case .antigravity:
+                parent = antigravityParent(of: member, in: conversations)
             }
             if let parent, parent != member.id { parents[member.id] = parent }
         }
@@ -79,6 +87,30 @@ enum AgentParents {
         let lhsCreated = lhs.thread?.createdMs ?? 0, rhsCreated = rhs.thread?.createdMs ?? 0
         if lhsCreated != rhsCreated { return lhsCreated < rhsCreated }
         return ordinal(lhs.id, precedes: rhs.id)
+    }
+
+    /// Antigravity databases by lower-cased conversation id (`thread.id`).
+    private static func antigravityConversations(_ members: [Member]) -> [String: [String]] {
+        var byId: [String: [String]] = [:]
+        for member in members where member.family == .antigravity {
+            guard let id = member.thread?.id, !id.isEmpty else { continue }
+            byId[id.lowercased(), default: []].append(member.id)
+        }
+        return byId
+    }
+
+    /// The database whose conversation id equals `parent_conversation_id` (case-insensitively); with copies in
+    /// several stores the one in the same `conversations` folder wins, then the ordinally smallest path.
+    private static func antigravityParent(of member: Member, in conversations: [String: [String]]) -> String? {
+        guard let parent = member.thread?.parentId, !parent.isEmpty,
+              let candidates = conversations[parent.lowercased()] else { return nil }
+        let folder = (member.id as NSString).deletingLastPathComponent
+        return candidates.min { lhs, rhs in
+            let lhsElsewhere = (lhs as NSString).deletingLastPathComponent != folder
+            let rhsElsewhere = (rhs as NSString).deletingLastPathComponent != folder
+            if lhsElsewhere != rhsElsewhere { return !lhsElsewhere }
+            return ordinal(lhs, precedes: rhs)
+        }
     }
 
     /// `<chats>/<dir>/<file>` → the key of the main session named `<dir>`.

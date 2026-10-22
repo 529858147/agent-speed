@@ -9,12 +9,15 @@ import UniformTypeIdentifiers
 final class HistoryWindowController: NSObject, NSWindowDelegate {
     nonisolated static let defaultSize = NSSize(width: 920, height: 680)
     nonisolated static let minimumSize = NSSize(width: 720, height: 540)
+    /// While today is shown on its own, its logs are re-read this often (quietly).
+    nonisolated static let liveDayInterval: TimeInterval = 30
     private static let autosaveName = "AgentSpeedHistoryWindow"
 
     private let model: AppModel
     private var window: NSWindow?
     private var toolbar: HistoryToolbar?
     private var titleLoop: ObservationLoop?
+    private var liveDayTimer: Timer?
     private(set) var viewModel: HistoryViewModel?
 
     init(model: AppModel) {
@@ -27,6 +30,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     func show(source: SourceKind?) {
         let (window, viewModel) = ensureWindow()
         viewModel.select(source: source)
+        if viewModel.showsLiveDay { viewModel.refreshToday() }
+        startLiveDayTimer()
         if !window.isVisible, !window.setFrameUsingName(Self.autosaveName) {
             window.setContentSize(Self.defaultSize)
             window.center()
@@ -38,6 +43,26 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
 
     func close() {
         window?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        liveDayTimer?.invalidate()
+        liveDayTimer = nil
+    }
+
+    /// Keeps a single-day view of today current while the window is on screen.
+    private func startLiveDayTimer() {
+        guard liveDayTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.liveDayInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let window = self.window, window.isVisible, window.occlusionState.contains(.visible),
+                      let viewModel = self.viewModel, viewModel.showsLiveDay else { return }
+                viewModel.refreshToday()
+            }
+        }
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        liveDayTimer = timer
     }
 
     private func ensureWindow() -> (NSWindow, HistoryViewModel) {

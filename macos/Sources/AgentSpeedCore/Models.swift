@@ -7,6 +7,10 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case deepseek
     case opencode
     case gemini
+    /// omp (oh-my-pi).
+    case omp
+    /// Google Antigravity (CLI, desktop app, IDE).
+    case antigravity
 
     public var id: String { rawValue }
 }
@@ -198,7 +202,7 @@ public enum MonitorWarning: Equatable, Sendable {
     case malformedLines(Int)
     /// Claude responses whose final usage was never written (METRICS 3.3); today's output is a lower bound.
     case unfinalizedUsage(Int)
-    /// The source's data uses a format this version cannot read (METRICS 4.5); it contributes nothing.
+    /// The source's data uses a format this version cannot read (METRICS 4.5, 4.8); it contributes nothing.
     case unsupportedFormat(SourceKind)
 }
 
@@ -292,6 +296,13 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var opencodeRoot: URL?
     /// Nil uses the default Gemini CLI home folder.
     public var geminiRoot: URL?
+    /// One omp `sessions` folder; nil reads the default root and every named profile (METRICS 2, 4.7).
+    public var ompRoot: URL?
+    /// One Antigravity store folder (or its `conversations` folder); nil reads the three default stores (METRICS 4.8).
+    public var antigravityRoot: URL?
+    /// Tests: replaces the automatic roots of a family that are otherwise derived from the environment and the home
+    /// folder (omp `sessions` roots, Antigravity store folders).
+    var automaticRoots: [TranscriptFamily: [URL]] = [:]
 
     public init(
         enabledSources: Set<SourceKind> = Set(SourceKind.allCases),
@@ -299,7 +310,9 @@ public struct MonitorConfiguration: Equatable, Sendable {
         claudeRoot: URL? = nil,
         dshRoot: URL? = nil,
         opencodeRoot: URL? = nil,
-        geminiRoot: URL? = nil
+        geminiRoot: URL? = nil,
+        ompRoot: URL? = nil,
+        antigravityRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
@@ -307,5 +320,7 @@ public struct MonitorConfiguration: Equatable, Sendable {
         self.dshRoot = dshRoot
         self.opencodeRoot = opencodeRoot
         self.geminiRoot = geminiRoot
+        self.ompRoot = ompRoot
+        self.antigravityRoot = antigravityRoot
     }
 }

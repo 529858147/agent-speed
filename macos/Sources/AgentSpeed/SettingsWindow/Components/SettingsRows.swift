@@ -173,6 +173,8 @@ struct SectionFootnote: View {
 
     var body: some View {
         Footnote(text)
+            // Form footers otherwise align wrapped lines to the trailing edge.
+            .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

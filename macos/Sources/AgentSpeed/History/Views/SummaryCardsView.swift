@@ -43,7 +43,7 @@ private struct SummaryCardView: View {
             if compact {
                 HStack(alignment: .bottom, spacing: Spacing.m) {
                     value
-                    Sparkline(values: card.spark, tint: HistoryPalette.tint(source, dark: dark))
+                    Sparkline(values: card.spark, highlight: card.sparkHighlight, tint: HistoryPalette.tint(source, dark: dark))
                         .frame(height: 26)
                         .padding(.bottom, 4)
                 }
@@ -51,7 +51,7 @@ private struct SummaryCardView: View {
             } else {
                 value
                     .padding(.top, 4)
-                Sparkline(values: card.spark, tint: HistoryPalette.tint(source, dark: dark))
+                Sparkline(values: card.spark, highlight: card.sparkHighlight, tint: HistoryPalette.tint(source, dark: dark))
                     .frame(height: 24)
                     .padding(.top, 10)
             }
@@ -107,11 +107,14 @@ private struct SummaryCardView: View {
 }
 
 /// A tiny line with a soft fill over one value per day; days without a value are skipped, so the trend stays one line.
+/// The highlighted point (the selected day of a single-day range) is drawn as a ringed dot.
 struct Sparkline: View {
     let values: [Double?]
+    var highlight: Int?
     let tint: Color
 
     var body: some View {
+        let ring = Color(nsColor: .windowBackgroundColor)
         Canvas { context, size in
             let values = Self.bridged(values)
             let points = values.enumerated().compactMap { index, value in value.map { (index, $0) } }
@@ -149,6 +152,13 @@ struct Sparkline: View {
                     startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)
                 ))
                 context.stroke(line, with: .color(tint), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+            if let highlight, values.indices.contains(highlight), let value = values[highlight] {
+                let p = point(highlight, value)
+                // Kept inside the canvas so the ring is never clipped at the trailing edge.
+                let center = CGPoint(x: min(max(p.x, 4), size.width - 4), y: min(max(p.y, 4), size.height - 4))
+                context.fill(Path(ellipseIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)), with: .color(ring))
+                context.fill(Path(ellipseIn: CGRect(x: center.x - 2.75, y: center.y - 2.75, width: 5.5, height: 5.5)), with: .color(tint))
             }
         }
         .accessibilityHidden(true)

@@ -30,7 +30,7 @@ struct SnapshotContext: Sendable {
         self.sources = sources
         var warnings: [MonitorWarning] = []
         if session.partialHistory { warnings.append(.partialHistory) }
-        if session.opencodeLocation.status == .unsupported { warnings.append(.unsupportedFormat(.opencode)) }
+        for source in session.unsupportedSources { warnings.append(.unsupportedFormat(source)) }
         if session.unreadableFileCount > 0 { warnings.append(.unreadableFiles(session.unreadableFileCount)) }
         let malformed = session.malformedLines
         if malformed > 0 { warnings.append(.malformedLines(malformed)) }
