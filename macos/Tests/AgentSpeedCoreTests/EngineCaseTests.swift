@@ -40,7 +40,8 @@ struct EngineCaseTests {
                 startMs: response.int64("startMs"),
                 endMs: try #require(response.int64("endMs")),
                 usage: TokenUsage(input: response.int("input"), output: response.int("output")),
-                isFinal: response["final"] as? Bool ?? true
+                isFinal: response["final"] as? Bool ?? true,
+                costMicroUsd: response.int64("costMicroUsd")
             )
             engine.upsert(record, project: "fixture", isCompletion: true, emitsEvents: false)
         }
@@ -79,6 +80,21 @@ struct EngineCaseTests {
             if let peak = query.double("peakTodayOutput") {
                 Self.expectClose(output.peakToday.output, peak, "\(label) peakTodayOutput")
             }
+            if query.keys.contains("liveCost") {
+                Self.expectClose(output.liveCost.microUsdPerSecond, query.double("liveCost"), "\(label) liveCost")
+                Self.expectClose(
+                    output.liveCost.knownShare(liveOutput: output.live.output), query.double("liveCostKnownShare"),
+                    "\(label) liveCostKnownShare"
+                )
+                let snapshot = SnapshotBuilder.running(output, context: .fixture(todayStartMs: output.todayStartMs))
+                let reading = OrbSubset.cost(snapshot, sources: nil, billable: .everything)
+                Self.expectClose(reading.microUsdPerSecond, query.double("liveCost"), "\(label) reading liveCost")
+                Self.expectClose(reading.knownShare, query.double("liveCostKnownShare"), "\(label) reading knownShare")
+            }
+            if let cost = query["todayCostMicroUsd"] as? NSNumber {
+                #expect(output.todayCost.costMicroUsd == cost.int64Value, "\(label) todayCostMicroUsd")
+                #expect(output.todayCost.unpricedRequests == query.int("todayUnpricedRequests"), "\(label) todayUnpricedRequests")
+            }
             if let buckets = query["historyMeasuredOutput"] as? [String: NSNumber] {
                 #expect(output.history.count == SpeedEngine.historySeconds)
                 for (startText, value) in buckets {
@@ -94,6 +110,7 @@ struct EngineCaseTests {
         var sources: SourceSet
         var liveOutput: Double?
         var peakTodayOutput: Double?
+        var liveCost: Double?
     }
 
     static func subset(_ spec: [String: Any]) throws -> SubsetQuery {
@@ -102,7 +119,8 @@ struct EngineCaseTests {
         return SubsetQuery(
             sources: SourceSet(kinds),
             liveOutput: spec.double("liveOutput"),
-            peakTodayOutput: spec.double("peakTodayOutput")
+            peakTodayOutput: spec.double("peakTodayOutput"),
+            liveCost: spec.double("liveCost")
         )
     }
 
@@ -118,14 +136,22 @@ struct EngineCaseTests {
             let reading = OrbSubset.reading(snapshot, sources: subset.sources)
             expectClose(reading.live.output, live, "\(label) [\(kinds)] reading.live")
             #expect(reading.state == .available, "\(label) [\(kinds)] state")
-            var tracker = SubsetPeakTracker()
-            _ = tracker.update(
-                liveOutput: reading.live.output,
-                measuredPeakOutput: output.subsetPeaks[subset.sources],
-                dayStartMs: output.todayStartMs,
-                nowMs: output.nowMs
-            )
-            expectClose(tracker.peakTodayOutput, subset.peakTodayOutput, "\(label) [\(kinds)] peakTodayOutput")
+            if let peak = subset.peakTodayOutput {
+                var tracker = SubsetPeakTracker()
+                _ = tracker.update(
+                    liveOutput: reading.live.output,
+                    measuredPeakOutput: output.subsetPeaks[subset.sources],
+                    dayStartMs: output.todayStartMs,
+                    nowMs: output.nowMs
+                )
+                expectClose(tracker.peakTodayOutput, peak, "\(label) [\(kinds)] peakTodayOutput")
+            }
+            if let liveCost = subset.liveCost {
+                let sum = subset.sources.kinds.reduce(0) { $0 + (output.sourceLiveCost[$1]?.microUsdPerSecond ?? 0) }
+                expectClose(sum, liveCost, "\(label) [\(kinds)] liveCost")
+                let cost = OrbSubset.cost(snapshot, sources: subset.sources, billable: .everything)
+                expectClose(cost.microUsdPerSecond, liveCost, "\(label) [\(kinds)] reading liveCost")
+            }
         }
     }
 

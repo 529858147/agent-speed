@@ -6,6 +6,8 @@ struct GeneralPane: View {
 
     /// The speed title hovered or focused in the ladder under the redline; its tick on the heat strip lights up.
     @State private var highlightedTitle: SpeedTitle?
+    /// Whether the pane can be seen (the title editor's previews run only then).
+    @State private var activity = OrbPaneActivity()
 
     var body: some View {
         @Bindable var settings = model.settings
@@ -49,10 +51,15 @@ struct GeneralPane: View {
                     highlightedTitle: highlightedTitle
                 )
             } footer: {
-                RedlineFooter(settings: settings, l10n: l10n, highlightedTitle: $highlightedTitle)
+                RedlineFooter(settings: settings, l10n: l10n, highlightedTitle: $highlightedTitle, theme: model.titles.general)
             }
+
+            TitleThemeSection(model: model, active: activity.visible)
         }
         .settingsForm()
+        .background(OrbPaneActivityReader(activity: $activity))
+        .animation(model.accessibility.reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.86),
+                   value: model.titles.document.selected)
         .onAppear { model.launchAtLogin.refresh() }
     }
 

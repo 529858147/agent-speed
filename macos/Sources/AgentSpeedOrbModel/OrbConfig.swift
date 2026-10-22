@@ -23,6 +23,10 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
     /// nil = the General redline of that metric. Stored as given; the app snaps it to its slider steps.
     public var redlineOutput: Double?
     public var redlineTotal: Double?
+    /// nil = the General title theme; else a preset id or a custom set id (DESIGN 2b; an unknown id counts as nil).
+    public var titleTheme: String?
+    /// tok/s or the money unit (DESIGN 2b, 9).
+    public var unit: OrbUnit
 
     public init(
         id: String,
@@ -37,7 +41,9 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
         allSpaces: Bool = true,
         visible: Bool = true,
         redlineOutput: Double? = nil,
-        redlineTotal: Double? = nil
+        redlineTotal: Double? = nil,
+        titleTheme: String? = nil,
+        unit: OrbUnit = .tokens
     ) {
         self.id = id
         self.name = Self.cleanName(name)
@@ -52,6 +58,8 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
         self.visible = visible
         self.redlineOutput = Self.cleanRedline(redlineOutput)
         self.redlineTotal = Self.cleanRedline(redlineTotal)
+        self.titleTheme = Self.cleanThemeID(titleTheme)
+        self.unit = unit
     }
 
     /// The orb of a fresh install: all sources, `led`, 148 pt, at the default position.
@@ -78,6 +86,11 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
         opacity.isFinite ? opacity.clampedToRange(OrbSizes.opacityRange) : 1
     }
 
+    static func cleanThemeID(_ id: String?) -> String? {
+        guard let trimmed = id?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
     static func cleanRedline(_ value: Double?) -> Double? {
         guard let value, value.isFinite, value > 0 else { return nil }
         return value
@@ -87,7 +100,7 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
 extension OrbConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case id, name, sources, style, size, opacity, alwaysOnTop, clickThrough, fadeWhenIdle, allSpaces, visible
-        case redlineOutput, redlineTotal
+        case redlineOutput, redlineTotal, titleTheme, unit
     }
 
     public init(from decoder: Decoder) throws {
@@ -112,7 +125,9 @@ extension OrbConfig: Codable {
             allSpaces: value(Bool.self, .allSpaces) ?? true,
             visible: value(Bool.self, .visible) ?? true,
             redlineOutput: value(Double.self, .redlineOutput),
-            redlineTotal: value(Double.self, .redlineTotal)
+            redlineTotal: value(Double.self, .redlineTotal),
+            titleTheme: value(String.self, .titleTheme),
+            unit: value(OrbUnit.self, .unit) ?? .tokens
         )
     }
 
@@ -131,5 +146,7 @@ extension OrbConfig: Codable {
         try container.encode(visible, forKey: .visible)
         try container.encode(redlineOutput, forKey: .redlineOutput)
         try container.encode(redlineTotal, forKey: .redlineTotal)
+        try container.encode(titleTheme, forKey: .titleTheme)
+        try container.encode(unit, forKey: .unit)
     }
 }

@@ -455,5 +455,11 @@
     "zh-Hans": "用左右方向键逐日查看；点按条形或按 Return 可在表格中显示该日。",
     "en": "Use the left and right arrow keys to move between days. Click a bar or press Return to show the day in the table.",
     "ja": "左右の矢印キーで日を移動し、バーのクリックか Return で表の該当日を表示します。"
+  },
+  "mac.titles.preview.dashboard": {
+    "zh-Hant": "面板",
+    "zh-Hans": "面板",
+    "en": "Dashboard",
+    "ja": "ダッシュボード"
   }
 }

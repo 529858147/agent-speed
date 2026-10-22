@@ -157,7 +157,7 @@ enum HistoryLogicChecks {
         check("default order is newest first", HistoryTable.sort(all, by: HistorySort()).first?.day == today)
         check("sort toggles", HistorySort().toggled(.date) == HistorySort(column: .date, descending: false)
             && HistorySort().toggled(.models) == HistorySort(column: .models, descending: false))
-        let copied = HistoryTable.copyText(all, columns: HistoryColumn.visible(allSources: true), today: today, l10n)
+        let copied = HistoryTable.copyText(all, columns: HistoryColumn.visible(allSources: true), today: today, money: .usd, l10n)
         check("copy has a header and one line per row", copied.split(separator: "\n").count == 3)
 
         // CSV.
@@ -177,12 +177,102 @@ enum HistoryLogicChecks {
         )
         check("csv neutralizes formulas and quotes", HistoryCSV.build([risky], source: nil).contains("\"'=cmd,\"\"x\"\"\""))
 
+        // Cost (DESIGN 9, METRICS 9.4, 9.7, 9.8).
+        func priced(_ day: String, _ source: SourceKind, requests: Int, cost: CostTally?, model: String = "m") -> DailyUsage {
+            DailyUsage(
+                day: day, source: source, totals: TokenTotals(requests: requests, input: 100, output: 10),
+                measuredOutput: 0, measuredMs: 0, unfinalized: 0, agents: 1, peak: nil,
+                models: [ModelUsage(model: model, requests: requests, output: 10, cost: cost)], cost: cost,
+                priceVersion: cost == nil ? nil : 3
+            )
+        }
+        let costRecords = [
+            priced("2026-10-20", .codex, requests: 4, cost: CostTally(costMicroUsd: 4_000_000)),
+            priced("2026-10-20", .claudeCode, requests: 2, cost: CostTally(costMicroUsd: 1_500_000, unpricedRequests: 1), model: "mystery"),
+            priced("2026-10-21", .codex, requests: 3, cost: CostTally(costMicroUsd: 2_250_000)),
+            priced("2026-10-21", .claudeCode, requests: 5, cost: nil),
+            priced("2026-10-19", .codex, requests: 2, cost: CostTally(unpricedRequests: 2)),
+            priced("2026-10-18", .claudeCode, requests: 1, cost: nil),
+        ]
+        let costDays = HistoryAggregator.daily(costRecords, source: nil)
+        func day(_ text: String, _ days: [DaySummary]) -> DaySummary? { days.first { $0.day == DayKey(text) } }
+        check("cost: a day mixing stored rows without cost counts their requests as unpriced",
+              day("2026-10-21", costDays)?.cost.kind == .priced(microUsd: 2_250_000, partial: true)
+              && day("2026-10-21", costDays)?.cost.unpriced == 5)
+        check("cost: a day without cost data is unavailable, one with nothing priced is unknown",
+              day("2026-10-18", costDays)?.cost.kind == .unavailable && day("2026-10-19", costDays)?.cost.kind == .unknown)
+        let rangeTotals = HistoryAggregator.totals(costDays)
+        check("cost: a range total is the sum of its days",
+              rangeTotals.cost.microUsd == costDays.reduce(0) { $0 + $1.cost.microUsd } && rangeTotals.cost.microUsd == 7_750_000
+              && rangeTotals.costDays == 3)
+        let excludedDays = HistoryAggregator.daily(costRecords, source: nil, excluded: [.claudeCode])
+        check("cost: subscription sources keep their tokens but add no cost",
+              day("2026-10-20", excludedDays)?.cost.kind == .priced(microUsd: 4_000_000, partial: false)
+              && day("2026-10-20", excludedDays)?.output == 20
+              && day("2026-10-18", excludedDays)?.cost.kind == .subscription([.claudeCode])
+              && day("2026-10-20", excludedDays)?.sources.first { $0.source == .claudeCode }?.cost.microUsd == 0)
+        let options = HistoryCostOptions(marked: [.claudeCode], includeSubscriptions: false)
+        check("cost: a subscription source selected directly shows its API-equivalent cost",
+              options.excluded(for: .claudeCode).isEmpty && options.excluded(for: nil) == [.claudeCode]
+              && HistoryCostOptions(marked: [.claudeCode], includeSubscriptions: true).excluded(for: nil).isEmpty)
+        let twd = HistoryMoney(currency: CurrencyTable.bundled.currencyOrUSD("TWD"), usd: CurrencyTable.bundled.currencyOrUSD("USD"),
+                               language: "zh-Hant", rate: Decimal(string: "32.4")!, currencyName: "新臺幣")
+        let costContent = HistoryContent.build(
+            usage: costRecords, source: nil, rangeKind: .days7, customRange: nil, sort: HistorySort(column: .cost, descending: true),
+            today: today, l10n: l10n, money: twd, costOptions: HistoryCostOptions(marked: [.claudeCode], metric: .cost)
+        )
+        let costCard = costContent.cards.first { $0.metric == .cost }
+        check("cost: fifth card, amount in the display currency", costContent.cards.count == 5
+              && costCard?.value == "≥NT$203" && costCard?.titleKey == "history.summary.cost"
+              && costCard?.help?.contains(l10n("history.costFrozen")) == true && costCard?.neutralChange == true)
+        check("cost: the cost card of a subscription source reads API-equivalent", HistoryContent.build(
+            usage: costRecords, source: .claudeCode, rangeKind: .days7, customRange: nil, sort: HistorySort(), today: today,
+            l10n: l10n, money: twd, costOptions: HistoryCostOptions(marked: [.claudeCode])
+        ).cards.last?.titleKey == "history.summary.costApi")
+        check("cost: chart bars in the display currency without the speed line",
+              costContent.chart.metric == .cost && costContent.chart.speeds.allSatisfy { $0 == nil }
+              && abs((costContent.chart.segments.first { $0.day == DayKey("2026-10-20") }?.value ?? 0) - 129.6) < 1e-9
+              && costContent.chart.stack == [.codex])
+        check("cost: column after input, sorted by known cost with the rest last",
+              HistoryColumn.visible(allSources: true).firstIndex(of: .cost) == HistoryColumn.visible(allSources: true).firstIndex(of: .input)! + 1
+              && costContent.rows.first?.day == DayKey("2026-10-20")
+              && costContent.rows.suffix(2).allSatisfy { $0.cost.sortValue == nil })
+        check("cost: cells read ≥, – and the subscription tag",
+              HistoryTable.cell(day("2026-10-21", costDays)!, .cost, today: today, money: .usd, l10n) == "≥$2.25"
+              && HistoryTable.cell(day("2026-10-19", costDays)!, .cost, today: today, money: .usd, l10n) == "–"
+              && HistoryTable.cell(day("2026-10-18", excludedDays)!, .cost, today: today, money: .usd, l10n) == l10n("cost.subscription.tag"))
+        check("cost: unknown models listed for the notice", costContent.unpricedModels.map(\.model) == ["m"]
+              && costContent.unpricedRequests == 2)
+        check("cost: model cost text", HistoryText.modelCost(ModelCost(cost: CostTally(), requests: 3), money: .usd, l10n) == l10n("cost.free")
+              && HistoryText.modelCost(ModelCost(cost: nil, requests: 3), money: .usd, l10n) == l10n("cost.unknown")
+              && HistoryText.modelCost(ModelCost(cost: nil, requests: 0), money: .usd, l10n) == l10n("cost.subscription.tag")
+              && HistoryText.modelCost(ModelCost(cost: CostTally(costMicroUsd: 1_234_000, unpricedRequests: 1), requests: 3), money: .usd, l10n) == "≥$1.23")
+        let costCSV = HistoryCSV.build(costDays, source: nil, money: twd).components(separatedBy: "\r\n")
+        check("cost: CSV columns", costCSV.first == (HistoryCSV.columns + ["cost_twd"]).joined(separator: ",")
+              && HistoryCSV.columns.suffix(3) == ["cost_usd", "unpriced_requests", "price_version"])
+        check("cost: CSV values are exact and ignore subscription marks",
+              costCSV.contains { $0.hasPrefix("2026-10-20,all,") && $0.hasSuffix(",5.500000,1,3,178.20") }
+              && costCSV.contains { $0.hasPrefix("2026-10-18,all,") && $0.hasSuffix(",,,,") })
+        check("cost: amounts with US dollars beside another currency", twd.amountWithUSD(1_000_000) == "NT$32（US$1.00）"
+              && HistoryMoney.usd.amountWithUSD(1_000_000) == "$1.00")
+        check("cost: axis labels", HistoryMoney.usd.axisLabel(2.5, step: 2.5) == "$2.5" && HistoryMoney.usd.axisLabel(0.25, step: 0.25) == "$0.25"
+              && HistoryMoney.usd.axisLabel(1500, step: 500) == "$1.5k" && HistoryMoney.usd.axisLabel(0, step: 1) == "$0")
+        let costBreakdown = HistoryBreakdown.build(costRecords, day: DayKey("2026-10-20")!, source: nil, metric: .cost, excluded: [.claudeCode])
+        check("cost: a breakdown by cost sorts and sizes by cost", costBreakdown.items.map(\.subject) == [.source(.codex), .source(.claudeCode)]
+              && costBreakdown.items.first?.scale == 1 && costBreakdown.items.last?.cost.kind == .subscription([.claudeCode]))
+
         // Column layout never goes below the minimums and fills the width.
         let specs = HistoryColumn.allCases.map(HistoryColumnLayout.spec)
         let wide = HistoryColumnLayout.widths(specs, width: 1200)
         check("columns fill wide tables", abs(wide.reduce(0, +) + HistoryColumnLayout.gap * Double(specs.count - 1) - 1200) < 0.5)
         let narrow = HistoryColumnLayout.widths(specs, width: 600)
         check("columns keep their minimums", zip(narrow, specs).allSatisfy { $0 >= $1.minimum - 0.001 })
+        // The minimum window (720 pt) leaves about 637 pt for the table: the gaps tighten before anything clips.
+        let tight = HistoryColumnLayout.layout(specs, width: 637)
+        check("the table fits the minimum window", abs(tight.widths.reduce(0, +) + tight.gap * Double(specs.count - 1) - 637) < 0.5
+              && tight.gap >= HistoryColumnLayout.minimumGap && tight.gap < HistoryColumnLayout.gap)
+        let roomy = HistoryColumnLayout.layout(specs, width: 900)
+        check("the full gap while the columns fit", roomy.gap == HistoryColumnLayout.gap)
 
         let report = results.map { "\($0.1 ? "PASS" : "FAIL")  \($0.0)" }.joined(separator: "\n")
         try? (report + "\n").write(to: directory.appendingPathComponent("history-checks.txt"), atomically: true, encoding: .utf8)

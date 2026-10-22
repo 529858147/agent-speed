@@ -8,9 +8,14 @@ import SwiftUI
 @MainActor
 @Observable
 final class HistoryViewModel {
+    /// The window's own `history.includeSubscriptions` choice (DESIGN 9); absent until the user changes it.
+    static let includeSubscriptionsKey = "historyIncludeSubscriptions"
+
     let store: HistoryStore
     let l10n: Localizer
     let accessibility: AccessibilityState
+    /// Currency, rates and subscription marks (DESIGN 9).
+    let cost: CostDisplay
     /// Pointer, keyboard and selection state, kept apart so hovering never rebuilds the content.
     let interaction = HistoryInteraction()
 
@@ -18,23 +23,34 @@ final class HistoryViewModel {
     private(set) var rangeKind: HistoryRangeKind = .days30
     private(set) var customRange: DayRange?
     private(set) var sort = HistorySort()
+    private(set) var chartMetric: HistoryChartMetric = .output
+    /// Whether subscription sources count at their API-equivalent cost in this window.
+    private(set) var includeSubscriptions: Bool
     private(set) var content: HistoryContent
 
     @ObservationIgnored private var dataLoop: ObservationLoop?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
-    init(store: HistoryStore, l10n: Localizer, accessibility: AccessibilityState) {
+    init(store: HistoryStore, l10n: Localizer, accessibility: AccessibilityState, cost: CostDisplay) {
         self.store = store
         self.l10n = l10n
         self.accessibility = accessibility
+        self.cost = cost
+        let stored = cost.settings.storage.object(forKey: Self.includeSubscriptionsKey) as? Bool
+        let include = stored ?? cost.settings.includeSubscriptions
+        includeSubscriptions = include
         let today = DayKey(Date(), calendar: HistoryDates.calendar)
         content = HistoryContent.build(
-            usage: store.days, source: nil, rangeKind: .days30, customRange: nil, sort: HistorySort(), today: today, l10n: l10n
+            usage: store.days, source: nil, rangeKind: .days30, customRange: nil, sort: HistorySort(), today: today, l10n: l10n,
+            money: HistoryMoney(cost), costOptions: HistoryCostOptions(marked: cost.settings.subscriptionSources,
+                                                                        includeSubscriptions: include)
         )
         dataLoop = ObservationLoop { [weak self] in
             guard let self else { return }
             _ = self.store.days
             _ = self.l10n.language
+            _ = HistoryMoney(self.cost)
+            _ = self.cost.settings.subscriptionSources
             self.rebuild()
         }
         let center = NotificationCenter.default
@@ -70,6 +86,25 @@ final class HistoryViewModel {
         rebuild()
     }
 
+    /// The chart's (and a single day's breakdown's) metric: output or cost.
+    func select(metric: HistoryChartMetric) {
+        guard metric != chartMetric else { return }
+        chartMetric = metric
+        interaction.hover(nil, from: .chart)
+        rebuild()
+    }
+
+    /// The toolbar checkbox; the window remembers its own choice.
+    func setIncludeSubscriptions(_ include: Bool) {
+        guard include != includeSubscriptions else { return }
+        includeSubscriptions = include
+        cost.settings.storage.set(include, forKey: Self.includeSubscriptionsKey)
+        rebuild()
+    }
+
+    /// `以 2026/10/22 的匯率換算` for a non-USD currency (DESIGN 9 rate note).
+    var rateNote: String? { cost.historyNote }
+
     func toggleSort(_ column: HistoryColumn) {
         sort = content.sort.toggled(column)
         content = content.sorted(by: sort)
@@ -91,9 +126,12 @@ final class HistoryViewModel {
 
     private func rebuild() {
         let today = DayKey(Date(), calendar: HistoryDates.calendar)
+        let options = HistoryCostOptions(
+            marked: cost.settings.subscriptionSources, includeSubscriptions: includeSubscriptions, metric: chartMetric
+        )
         let next = HistoryContent.build(
             usage: store.days, source: source, rangeKind: rangeKind, customRange: customRange, sort: sort,
-            today: today, l10n: l10n
+            today: today, l10n: l10n, money: HistoryMoney(cost), costOptions: options
         )
         if next != content { content = next }
     }

@@ -165,6 +165,8 @@ struct OrbVehicleLayer {
     let list: HeroDrawList
     let origin: CGPoint
     let unit: CGFloat
+    /// Opacity of the whole layer (the vehicle ↔ title badge crossfade, DESIGN 1 Title themes).
+    var alpha: Float = 1
 }
 
 /// Blending of a run of instances: light adds up on dark glass and blends normally on porcelain.
@@ -186,6 +188,8 @@ struct OrbScene {
         var pass: Pass
         /// Clip radius around the canvas center in points, 0 for none.
         var clip: Float
+        /// Width of a soft clip edge inside `clip` (0: an anti-aliased hard edge).
+        var feather: Float = 0
         var start: Int
         var count: Int
     }
@@ -202,6 +206,8 @@ struct OrbScene {
     var alphaScale: Float = 1
     /// Clip radius for shapes added from now on (0 = none).
     var clipRadius: CGFloat = 0
+    /// Soft edge of that clip: fully clear at `clipRadius`, fully kept `clipFeather` inside it.
+    var clipFeather: CGFloat = 0
     /// Scale of everything around the canvas center (the 1.03 hover scale).
     var contentScale: CGFloat = 1
     var center: CGPoint = .zero
@@ -221,6 +227,7 @@ struct OrbScene {
         texts.removeAll(keepingCapacity: true)
         alphaScale = 1
         clipRadius = 0
+        clipFeather = 0
         contentScale = 1
     }
 
@@ -228,11 +235,12 @@ struct OrbScene {
         var instance = instance
         if alphaScale < 1 { instance.scaleAlpha(alphaScale) }
         let clip = Float(clipRadius)
+        let feather = Float(clipFeather)
         if let last = batches.indices.last, batches[last].pass == .shapes(blend), batches[last].clip == clip,
-           batches[last].start + batches[last].count == instances.count {
+           batches[last].feather == feather, batches[last].start + batches[last].count == instances.count {
             batches[last].count += 1
         } else {
-            batches.append(Batch(pass: .shapes(blend), clip: clip, start: instances.count, count: 1))
+            batches.append(Batch(pass: .shapes(blend), clip: clip, feather: feather, start: instances.count, count: 1))
         }
         instances.append(instance)
     }

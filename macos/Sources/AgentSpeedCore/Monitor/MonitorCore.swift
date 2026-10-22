@@ -14,6 +14,7 @@ final class MonitorCore: @unchecked Sendable {
     static let watcherLatency: TimeInterval = 0.1
 
     private let configuration: MonitorConfiguration
+    private let pricing: PriceBook?
     private let mailbox: SnapshotMailbox
     private let queue = DispatchQueue(label: "app.agentspeed.monitor", qos: .utility)
     /// Whole-file reads (METRICS 5.3), one at a time, off the live loop.
@@ -37,9 +38,11 @@ final class MonitorCore: @unchecked Sendable {
         configuration: MonitorConfiguration,
         mailbox: SnapshotMailbox,
         subsets: Set<SourceSet> = [],
+        pricing: PriceBook? = nil,
         wholeFileReadHook: (@Sendable (String) -> Void)? = nil
     ) {
         self.configuration = configuration
+        self.pricing = pricing
         self.mailbox = mailbox
         self.subsets = OSAllocatedUnfairLock(initialState: subsets)
         self.wholeFileReadHook = wholeFileReadHook
@@ -78,7 +81,7 @@ final class MonitorCore: @unchecked Sendable {
 
     private func bootstrap() {
         guard !isCancelled else { return }
-        let session = TranscriptSession(configuration: configuration)
+        let session = TranscriptSession(configuration: configuration, pricing: pricing)
         session.wholeFileReads = { [weak self] job in self?.scheduleWholeFileRead(job) }
         self.session = session
         guard session.hasAvailableRoot else {

@@ -169,6 +169,17 @@ struct JSONScanner {
         return String(decoding: bytes, as: UTF8.self)
     }
 
+    /// Reads a string value: nil when the value is not a string, `.some(nil)` for a string longer than
+    /// `maxCapturedStringBytes`.
+    mutating func readStringValue() throws(JSONScanError) -> String?? {
+        guard let (start, count, escaped) = try readStringSpan() else { return nil }
+        guard count <= Self.maxCapturedStringBytes else { return .some(nil) }
+        if !escaped {
+            return String(decoding: UnsafeBufferPointer(start: base + start, count: count), as: UTF8.self)
+        }
+        return .some(decodeString(start: start, count: count).map { String(decoding: $0, as: UTF8.self) })
+    }
+
     /// Like `readString()`, but an empty string counts as missing.
     mutating func readNonEmptyString() throws(JSONScanError) -> String? {
         guard let value = try readString(), !value.isEmpty else { return nil }

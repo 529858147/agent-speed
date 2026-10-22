@@ -63,6 +63,20 @@ final class AppSettings {
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
 
+    /// NETWORK 1: off, nothing is ever requested (updates, prices, rates).
+    var networkEnabled: Bool { didSet { store(networkEnabled, .networkEnabled) } }
+    /// NETWORK 3: sync the price table daily.
+    var syncPrices: Bool { didSet { store(syncPrices, .syncPrices) } }
+    /// The display currency (DESIGN 9): an ISO 4217 code of `currencies.json`.
+    var currency: String { didSet { store(currency, .currency) } }
+    /// The unit of the menu bar widget and the dashboard hero (DESIGN 9); orbs choose their own.
+    var liveUnit: LiveUnit { didSet { store(liveUnit.rawValue, .liveUnit) } }
+    /// Sources used through a subscription (METRICS 9.4): left out of displayed costs unless included.
+    var subscriptionSources: Set<SourceKind> {
+        didSet { store(subscriptionSources.map(\.rawValue).sorted(), .subscriptionSources) }
+    }
+    var includeSubscriptions: Bool { didSet { store(includeSubscriptions, .includeSubscriptions) } }
+
     /// The vehicle of the last speed title other than idle (DESIGN 4c, Idle), parked in the dashboard hero while idle,
     /// also across relaunches. Nil before any title was reached.
     var heroLastTitle: String? {
@@ -115,6 +129,13 @@ final class AppSettings {
         ompRoot = Self.url(defaults.string(forKey: Key.ompRoot.rawValue))
         antigravityRoot = Self.url(defaults.string(forKey: Key.antigravityRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
+        networkEnabled = defaults.object(forKey: Key.networkEnabled.rawValue) as? Bool ?? true
+        syncPrices = defaults.object(forKey: Key.syncPrices.rawValue) as? Bool ?? true
+        currency = CurrencyTable.bundled.currencyOrUSD(defaults.string(forKey: Key.currency.rawValue) ?? "").code
+        liveUnit = LiveUnit(rawValue: defaults.string(forKey: Key.liveUnit.rawValue) ?? "") ?? .tokens
+        subscriptionSources = Set((defaults.array(forKey: Key.subscriptionSources.rawValue) as? [String] ?? [])
+            .compactMap(SourceKind.init(rawValue:)))
+        includeSubscriptions = defaults.object(forKey: Key.includeSubscriptions.rawValue) as? Bool ?? false
         heroLastTitle = defaults.string(forKey: Key.heroLastTitle.rawValue)
         if !redlinesMigrated {
             // A stored former default now reads as the new default; persist it once so a later choice of 400 stays.
@@ -138,6 +159,17 @@ final class AppSettings {
     }
 
     func isEnabled(_ source: SourceKind) -> Bool { enabledSources.contains(source) }
+
+    /// The sources whose costs are shown (METRICS 9.4): every source unless marked as a subscription and not included.
+    var billableSources: SourceSet {
+        includeSubscriptions ? .everything : SourceSet.everything.subtracting(SourceSet(subscriptionSources))
+    }
+
+    func isSubscription(_ source: SourceKind) -> Bool { subscriptionSources.contains(source) }
+
+    func setSubscription(_ source: SourceKind, _ marked: Bool) {
+        if marked { subscriptionSources.insert(source) } else { subscriptionSources.remove(source) }
+    }
 
     func setEnabled(_ source: SourceKind, _ enabled: Bool) {
         if enabled { enabledSources.insert(source) } else { enabledSources.remove(source) }
@@ -187,6 +219,7 @@ final class AppSettings {
         case enabledSources, knownSources
         case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot
         case autoCheckUpdates
+        case networkEnabled, syncPrices, currency, liveUnit, subscriptionSources, includeSubscriptions
         case heroLastTitle
     }
 }

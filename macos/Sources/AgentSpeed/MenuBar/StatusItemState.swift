@@ -24,8 +24,8 @@ struct StatusItemState: Equatable {
     init(model: AppModel, time: TimeInterval, valueWidth: CGFloat? = nil) {
         let gauge = model.gauge
         let h = gauge.heat(at: time)
-        let text = SpeedFormat.speed(gauge.readoutValue)
-        layout = StatusItemLayout(model: model, valueWidth: valueWidth ?? StatusItemLayout.valueWidth(of: text))
+        let (text, unit) = StatusItemValue.current(model)
+        layout = StatusItemLayout(model: model, unit: unit, valueWidth: valueWidth ?? StatusItemLayout.valueWidth(of: text))
         fraction = (h * Self.fractionSteps).rounded() / Self.fractionSteps
         heat = h
         fillOpacity = Self.flickers(model) && gauge.tier == .redline ? (Self.flicker(at: time) * 20).rounded() / 20 : 1

@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
 /// "Speed titles" over an aligned grid of every title that scales with the redline and the speed it starts at
@@ -11,6 +12,8 @@ struct TitleLadderList: View {
     let metric: SpeedMetric
     let l10n: Localizer
     @Binding var highlighted: SpeedTitle?
+    /// Names the titles (DESIGN 1, Title themes): presets in the current language, custom text as typed.
+    var theme: TitleTheme = .preset(.vehicles)
 
     @State private var hovered: SpeedTitle?
     @FocusState private var focused: SpeedTitle?
@@ -63,7 +66,8 @@ struct TitleLadderList: View {
     }
 
     private func name(_ title: SpeedTitle) -> String {
-        l10n(title.titleKey).capitalized(with: l10n.locale)
+        if case .custom(let set) = theme, !set.field(level: title.rawValue).isEmpty { return set.field(level: title.rawValue) }
+        return theme.text(level: title.rawValue, localized: { l10n($0) }).capitalized(with: l10n.locale)
     }
 
     private func entry(for title: SpeedTitle) -> some View {

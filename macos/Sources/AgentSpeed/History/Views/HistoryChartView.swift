@@ -13,7 +13,8 @@ struct HistoryChartCard: View {
         let chart = model.content.chart
         let l10n = model.l10n
         VStack(alignment: .leading, spacing: Spacing.s) {
-            ChartLegend(chart: chart, l10n: l10n, dark: colorScheme == .dark, increasedContrast: contrast == .increased)
+            ChartLegend(chart: chart, l10n: l10n, dark: colorScheme == .dark, increasedContrast: contrast == .increased,
+                        metric: Binding(get: { model.chartMetric }, set: { model.select(metric: $0) }))
             HistoryChartView(
                 chart: chart,
                 interaction: model.interaction,
@@ -30,13 +31,14 @@ struct HistoryChartCard: View {
     }
 }
 
-/// "每日輸出" with the source swatches in stacking order, and the speed line key on the right. When the swatches do not
-/// fit on the title line they wrap onto their own lines below it.
+/// The metric control (`每日輸出` | `費用`, DESIGN 9) with the source swatches in stacking order, and the speed line key on
+/// the right (output only). When the swatches do not fit on the title line they wrap onto their own lines below it.
 private struct ChartLegend: View {
     let chart: HistoryChartModel
     let l10n: Localizer
     let dark: Bool
     let increasedContrast: Bool
+    @Binding var metric: HistoryChartMetric
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -66,10 +68,16 @@ private struct ChartLegend: View {
     }
 
     private var title: some View {
-        Text(l10n("history.chart.output"))
-            .font(HistoryFont.sectionTitle)
-            .fixedSize()
-            .accessibilityAddTraits(.isHeader)
+        Picker(l10n(chart.metric.titleKey), selection: $metric) {
+            ForEach(HistoryChartMetric.allCases) { metric in
+                Text(l10n(metric.titleKey)).tag(metric)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .fixedSize()
+        .accessibilityLabel(l10n(chart.metric.titleKey))
     }
 
     @ViewBuilder
@@ -96,7 +104,14 @@ private struct ChartLegend: View {
         }
     }
 
+    @ViewBuilder
     private var speedKey: some View {
+        if chart.metric == .output {
+            speedLineKey
+        }
+    }
+
+    private var speedLineKey: some View {
         HStack(spacing: 6) {
             ZStack {
                 Capsule()
@@ -219,14 +234,14 @@ struct HistoryChartView: View {
         .onKeyPress(.return) { revealKeyboardDay() }
         .onKeyPress(.space) { revealKeyboardDay() }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(l10n("history.chart.output"))
+        .accessibilityLabel(l10n(chart.metric.titleKey))
         .accessibilityHint(l10n("mac.history.chart.hint"))
         .accessibilityChartDescriptor(HistoryChartDescriptor(chart: chart, l10n: l10n))
         .accessibilityChildren {
             ForEach(chart.days.values.sorted { $0.day < $1.day }) { day in
                 Rectangle()
                     .accessibilityLabel(HistoryText.dayTitle(day.day, today: chart.today, l10n))
-                    .accessibilityValue(HistoryText.accessible(day, today: chart.today, l10n))
+                    .accessibilityValue(HistoryText.accessible(day, today: chart.today, money: chart.money, l10n))
                     .accessibilityAction { interaction.revealInTable(day.day) }
             }
         }
@@ -246,10 +261,10 @@ struct HistoryChartView: View {
             ChartBar(
                 id: segment.id,
                 date: segment.day.date(in: calendar),
-                lower: Double(segment.lower),
+                lower: segment.lower,
                 // Every segment is rounded; a lower one reaches just under the one above so its rounded corners
                 // never leave a notch in the stack.
-                upper: Double(segment.upper) + geometry.overlap(below: segment.above),
+                upper: segment.upper + geometry.overlap(below: segment.above),
                 style: AnyShapeStyle(barStyle(segment.source, dark: dark).opacity(segment.day == chart.today ? 0.5 : 1))
             )
         }
@@ -288,13 +303,14 @@ struct HistoryChartView: View {
                     .foregroundStyle(grid)
                 AxisValueLabel {
                     if let output = value.as(Double.self) {
-                        Text(HistoryText.axisNumber(output))
+                        Text(axisLabel(output))
                             .font(HistoryFont.axis)
                             .foregroundStyle(.historySecondary)
                     }
                 }
             }
-            AxisMarks(position: .trailing, values: chart.outputTicks.values) { value in
+            // The cost metric has no speed line, so no right axis (DESIGN 9).
+            AxisMarks(position: .trailing, values: chart.metric == .output ? chart.outputTicks.values : []) { value in
                 AxisValueLabel {
                     if let output = value.as(Double.self) {
                         let speed = chart.outputTicks.max > 0 ? output / chart.outputTicks.max * chart.speedTicks.max : 0
@@ -323,6 +339,11 @@ struct HistoryChartView: View {
                 }
             }
         }
+    }
+
+    private func axisLabel(_ value: Double) -> String {
+        guard chart.metric == .cost, let money = chart.money else { return HistoryText.axisNumber(value) }
+        return money.axisLabel(value, step: chart.outputTicks.step)
     }
 
     private func barStyle(_ source: SourceKind, dark: Bool) -> AnyShapeStyle {
@@ -368,10 +389,10 @@ struct ChartDayGeometry {
     var cornerRadius: CGFloat { min(4, barWidth / 3) }
 
     /// How far a segment reaches under the next one: enough to fill its rounded corners, never past its top.
-    func overlap(below above: Int) -> Double {
+    func overlap(below above: Double) -> Double {
         guard above > 0 else { return 0 }
         let perPoint = chart.outputTicks.max / Double(HistoryLayout.chartHeight)
-        return min(Double(cornerRadius + 0.5) * perPoint, Double(above))
+        return min(Double(cornerRadius + 0.5) * perPoint, above)
     }
 
     func centerX(_ day: DayKey) -> CGFloat {

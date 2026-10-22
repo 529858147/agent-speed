@@ -121,6 +121,13 @@ struct MetricInfoView: View {
                 .lineSpacing(2.5)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
+            // The cost explanation follows as a second paragraph (DESIGN 9).
+            Text(l10n("cost.info"))
+                .font(.system(size: 12))
+                .foregroundStyle(.dashboardSecondary)
+                .lineSpacing(2.5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
         }
         .padding(Spacing.m)
         .frame(width: 300, alignment: .leading)

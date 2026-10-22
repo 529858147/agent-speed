@@ -62,9 +62,10 @@ enum HistoryLayout {
     static let chartHeight: CGFloat = 260
     static let rowHeight: CGFloat = 30
     static let footerHeight: CGFloat = 34
-    /// Content narrower than this shows the summary cards in two rows.
-    static let wideCards: CGFloat = 720
-    static let tooltipWidth: CGFloat = 244
+    /// From 860 pt of content width the five summary cards share one row, narrower they wrap 3 + 2 (DESIGN 9); the
+    /// threshold leaves room for a legacy scroll bar, so the default window (872 pt of content) always qualifies.
+    static let wideCards: CGFloat = 840
+    static let tooltipWidth: CGFloat = 268
 }
 
 enum HistoryFont {

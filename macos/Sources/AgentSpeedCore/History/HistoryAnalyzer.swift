@@ -7,8 +7,11 @@ import Foundation
 /// Not thread-safe: one owner (a serial queue) drives it.
 final class HistoryAnalyzer {
     /// Bumped whenever a parser change alters results; stored files of other versions are analysed again.
-    /// 2: per-model measured output and time (METRICS 8).
-    static let analysisVersion: Int64 = 2
+    /// 2: per-model measured output and time (METRICS 8). 3: cost (METRICS 9.7).
+    static let analysisVersion: Int64 = 3
+    /// The current price table version of the last complete run; when it changes, files with unpriced responses are
+    /// analysed again (METRICS 9.7).
+    static let priceVersionKey = "priceTableVersion"
     static let opencodeFamily = "opencode"
     static let maxWorkers = 4
 
@@ -52,14 +55,30 @@ final class HistoryAnalyzer {
     }
 
     let database: HistoryDatabase
+    /// Shared with the live engine in the app, so today is priced alike (METRICS 9.6).
+    let pricing: PriceBook
     private(set) var entries: [String: HistoryDatabase.Entry]
     private var peaks: [String: Double]
     private var indexes: [String: DirectoryIndex] = [:]
 
-    init(database: HistoryDatabase) throws {
+    init(database: HistoryDatabase, pricing: PriceBook = PriceBook()) throws {
         self.database = database
+        self.pricing = pricing
         entries = try database.loadEntries()
         peaks = try database.peaks()
+        let repaired = pricing.restore(bindings: try database.priceBindings(), tables: try database.priceTables())
+        if !repaired.isEmpty {
+            PricingLog.logger.notice("Price bindings without a valid table rebound to the current table: \(repaired.count, privacy: .public)")
+        }
+        try saveBindings()
+    }
+
+    /// Stores the dates bound since the last save, with a copy of each referenced table.
+    func saveBindings() throws {
+        let bindings = pricing.takeNewBindings()
+        guard !bindings.isEmpty else { return }
+        let pricing = self.pricing
+        try database.savePriceBindings(bindings) { pricing.table(version: $0)?.data }
     }
 
     // MARK: - Planning
@@ -89,8 +108,8 @@ final class HistoryAnalyzer {
     }
 
     /// The work a run would do: discovered files whose identity or analysis version changed, and changed OpenCode
-    /// sessions. Cheap when nothing changed.
-    private func plan(configuration: MonitorConfiguration, options: Options, zoneChanged: Bool) throws -> Plan {
+    /// sessions; after a price table change also those with unpriced responses. Cheap when nothing changed.
+    private func plan(configuration: MonitorConfiguration, options: Options, zoneChanged: Bool, repricing: Bool) throws -> Plan {
         var plan = Plan()
         var seen: Set<String> = []
         for (family, root) in Self.roots(configuration) {
@@ -104,7 +123,8 @@ final class HistoryAnalyzer {
                 plan.discovered += 1
                 let previous = entries[path]
                 if let previous, !zoneChanged, previous.version == options.analysisVersion,
-                   previous.family == family.rawValue, previous.size == stat.size, previous.modified == stat.modifiedNs {
+                   previous.family == family.rawValue, previous.size == stat.size, previous.modified == stat.modifiedNs,
+                   !(repricing && previous.hasUnpriced) {
                     continue
                 }
                 plan.files.append(PlannedFile(path: path, family: family, root: root, stat: stat, previous: previous))
@@ -114,19 +134,26 @@ final class HistoryAnalyzer {
             TranscriptDiscovery.startupOrder(DiscoveredFile(path: lhs.path, stat: lhs.stat), DiscoveredFile(path: rhs.path, stat: rhs.stat))
         }
         if configuration.readsOpencode {
-            try planOpencode(configuration: configuration, options: options, zoneChanged: zoneChanged, into: &plan)
+            try planOpencode(configuration: configuration, options: options, zoneChanged: zoneChanged, repricing: repricing, into: &plan)
         }
         return plan
     }
 
-    private func planOpencode(configuration: MonitorConfiguration, options: Options, zoneChanged: Bool, into plan: inout Plan) throws {
+    private func planOpencode(
+        configuration: MonitorConfiguration,
+        options: Options,
+        zoneChanged: Bool,
+        repricing: Bool,
+        into plan: inout Plan
+    ) throws {
         let path = OpencodeDatabase.databasePath(forRoot: configuration.resolvedOpencodeRoot)
         guard let stat = FileStat.stat(path), stat.isRegularFile else { return }
         plan.discovered += 1
         let wal = FileStat.stat(path + "-wal")
         let identity = [path, "\(stat.identity.device):\(stat.identity.inode)", "\(stat.size):\(stat.modifiedNs)",
                         wal.map { "\($0.size):\($0.modifiedNs)" } ?? "-", "v\(options.analysisVersion)"].joined(separator: "|")
-        if !zoneChanged, try database.meta("opencode") == identity { return }
+        let reprices = repricing && entries.contains { $0.value.family == Self.opencodeFamily && $0.value.hasUnpriced }
+        if !zoneChanged, !reprices, try database.meta("opencode") == identity { return }
         // A busy, unreadable or unsupported database is tried again on the next run.
         guard let opencode = try? OpencodeDatabase(path: path), let activity = try? opencode.sessionActivity(),
               let infos = try? opencode.sessions() else { return }
@@ -138,7 +165,7 @@ final class HistoryAnalyzer {
             let previous = entries[OpencodeRules.agentId(session: info.id)]
             let count = rows?.rows ?? 0
             if let previous, !zoneChanged, previous.version == options.analysisVersion,
-               previous.size == count, previous.modified == modified {
+               previous.size == count, previous.modified == modified, !(repricing && previous.hasUnpriced) {
                 continue
             }
             sessions.append(PlannedSession(info: info, identity: (count, modified), previous: previous))
@@ -174,7 +201,10 @@ final class HistoryAnalyzer {
         let zone = options.timeZone.identifier
         let storedZone = try database.meta("timeZone")
         let zoneChanged = !entries.isEmpty && storedZone != zone
-        let plan = try plan(configuration: configuration, options: options, zoneChanged: zoneChanged)
+        let priceVersion = String(pricing.currentVersion)
+        let storedPriceVersion = try database.meta(Self.priceVersionKey)
+        let repricing = !entries.isEmpty && storedPriceVersion != priceVersion
+        let plan = try plan(configuration: configuration, options: options, zoneChanged: zoneChanged, repricing: repricing)
         report.filesDiscovered = plan.discovered
         let sessions = plan.opencode?.sessions ?? []
         var state = Progress(filesTotal: plan.files.count + sessions.count, bytesTotal: plan.bytes)
@@ -182,7 +212,7 @@ final class HistoryAnalyzer {
         func elapsedMs() -> Double { Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000 }
 
         if plan.files.isEmpty && sessions.isEmpty {
-            try finish(plan: plan, zone: zone)
+            try finish(plan: plan, zone: zone, priceVersion: priceVersion)
             report.durationMs = elapsedMs()
             return report
         }
@@ -199,6 +229,7 @@ final class HistoryAnalyzer {
             guard !pending.isEmpty, force || Int64(now - lastSave) / 1_000_000 >= options.saveIntervalMs else { return }
             let ids = try database.save(pending)
             for (path, id) in ids { entries[path]?.id = id }
+            try saveBindings()
             pending.removeAll(keepingCapacity: true)
             lastSave = now
         }
@@ -232,7 +263,8 @@ final class HistoryAnalyzer {
                         family: file.family, agentId: file.path, fileID: FileID(truncatingIfNeeded: index), root: file.root)
                     var latest: [String: ResponseRecord] = [:]
                     parser.consume(output.lines, deduper: &deduper) { latest[$0.record.key] = $0.record }
-                    let days = DayAggregate.contributions(of: latest.values, source: parser.state.source, labeler: &labeler)
+                    let days = DayAggregate.contributions(
+                        of: latest.values, source: parser.state.source, labeler: &labeler, pricing: pricing)
                     return (days, deduper.finishFile())
                 }
                 let stat = output.read.stat ?? file.stat
@@ -282,7 +314,7 @@ final class HistoryAnalyzer {
                     size: session.identity.rows,
                     modified: session.identity.modified,
                     version: options.analysisVersion,
-                    days: DayAggregate.contributions(of: records, source: .opencode, labeler: &labeler)
+                    days: DayAggregate.contributions(of: records, source: .opencode, labeler: &labeler, pricing: pricing)
                 )
                 entries[path] = entry
                 pending.append((path, entry, keys))
@@ -294,13 +326,17 @@ final class HistoryAnalyzer {
         }
 
         try flush(force: true)
-        if !report.cancelled { try finish(plan: plan, zone: zone, opencodeComplete: unreadSessions == 0) }
+        try saveBindings()
+        if !report.cancelled {
+            try finish(plan: plan, zone: zone, priceVersion: priceVersion, opencodeComplete: unreadSessions == 0)
+        }
         report.durationMs = elapsedMs()
         return report
     }
 
-    private func finish(plan: Plan, zone: String, opencodeComplete: Bool = true) throws {
+    private func finish(plan: Plan, zone: String, priceVersion: String, opencodeComplete: Bool = true) throws {
         try database.setMeta("timeZone", zone)
+        try database.setMeta(Self.priceVersionKey, priceVersion)
         if opencodeComplete, let identity = plan.opencodeIdentity { try database.setMeta("opencode", identity) }
     }
 
@@ -318,7 +354,10 @@ final class HistoryAnalyzer {
             .sorted { lhs, rhs in
                 lhs.key.day != rhs.key.day ? lhs.key.day < rhs.key.day : lhs.key.source.rawValue < rhs.key.source.rawValue
             }
-            .map { $0.value.usage(day: $0.key.day, source: $0.key.source, peak: peaks[$0.key.day]) }
+            .map {
+                $0.value.usage(day: $0.key.day, source: $0.key.source, peak: peaks[$0.key.day],
+                               priceVersion: pricing.boundVersion(forDay: $0.key.day))
+            }
     }
 
     /// Stores a day's live peak (all sources); returns true when it raised the stored value.

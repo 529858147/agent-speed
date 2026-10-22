@@ -26,7 +26,7 @@ enum OrbShaderSource {
 
     struct Uniforms {
         float4 viewport;  // width, height (points), scale (pixels per point), clip radius (points, 0 = none)
-        float4 transform; // scale about (y, z) — the hover scale around the disc center — and unused
+        float4 transform; // scale about (y, z) — the hover scale around the disc center — and the clip's soft edge (points)
     };
 
     constant float2 corners[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
@@ -44,6 +44,10 @@ enum OrbShaderSource {
         }
         float aa = 1.0 / uniforms.viewport.z;
         float d = length(canvas - uniforms.transform.yz) - uniforms.viewport.w;
+        if (uniforms.transform.w > 0.0) {
+            // Soft edge: clear at the clip radius, solid `transform.w` inside it.
+            return clamp(-d / uniforms.transform.w, 0.0, 1.0);
+        }
         return clamp(0.5 - d / aa, 0.0, 1.0);
     }
 
@@ -284,8 +288,11 @@ enum OrbShaderSource {
         float4 rect;   // x, y (top-left), width, height in points
         float4 color;  // straight alpha
         float4 glow;   // rgb, strength
-        float4 params; // shear, shear pivot y, glow radius (points), clip mode (0 none, 1 rect, 2 above / 3 below the liquid surface)
+        float4 params; // shear, shear pivot y, glow radius (points), clip mode (0 none, 1 rect, 2 above / 3 below the liquid
+                       // surface, 4 a moving band: clip = center x, center y, half width, slope dx/dy)
         float4 clip;   // clip rect: min x, min y, max x, max y (points)
+        float4 fill2;  // a vertical gradient's bottom color (straight alpha), used when gradient.z > 0
+        float4 gradient; // top y, bottom y (points), enabled, unused
     };
 
     struct TextOut {
@@ -316,7 +323,10 @@ enum OrbShaderSource {
         float mode = item.params.w;
         float aa = 1.0 / uniforms.viewport.z;
         float keep = 1.0;
-        if (mode > 0.5) {
+        if (mode > 3.5) {
+            float dx = in.canvas.x - (item.clip.x + (in.canvas.y - item.clip.y) * item.clip.w);
+            keep = max(0.0, 1.0 - abs(dx) / max(item.clip.z, 0.0001));
+        } else if (mode > 0.5) {
             float2 lo = item.clip.xy - in.canvas;
             float2 hi = in.canvas - item.clip.zw;
             float outside = max(max(lo.x, lo.y), max(hi.x, hi.y));
@@ -331,7 +341,12 @@ enum OrbShaderSource {
             discard_fragment();
         }
         float coverage = glyphs.sample(linear_sampler, in.uv).a;
-        float text_alpha = coverage * item.color.a;
+        float4 fill = item.color;
+        if (item.gradient.z > 0.5) {
+            float t = clamp((in.canvas.y - item.gradient.x) / max(item.gradient.y - item.gradient.x, 0.0001), 0.0, 1.0);
+            fill = mix(item.color, item.fill2, t);
+        }
+        float text_alpha = coverage * fill.a;
         float glow_alpha = 0.0;
         if (item.glow.a > 0.0) {
             float2 step = item.params.z / item.rect.zw;
@@ -352,7 +367,7 @@ enum OrbShaderSource {
         if (alpha <= 0.0005) {
             discard_fragment();
         }
-        return float4((item.color.rgb * text_alpha + item.glow.rgb * glow_alpha) * keep, alpha);
+        return float4((fill.rgb * text_alpha + item.glow.rgb * glow_alpha) * keep, alpha);
     }
     """
 }

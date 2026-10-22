@@ -22,6 +22,7 @@ enum OrbMenus {
         menu.addItem(.separator())
         menu.addItem(styleItem(model: model, orb: orb))
         menu.addItem(sourcesItem(model: model, orb: orb))
+        menu.addItem(unitItem(model: model, orb: orb))
         menu.addItem(sizeItem(model: model, orb: orb))
         menu.addItem(MenuFactory.effectsItem(model: model))
 
@@ -122,6 +123,22 @@ enum OrbMenus {
         return item
     }
 
+    /// `orbs.unit` ▸ tok/s or the money unit, check on the current one (DESIGN 9).
+    static func unitItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
+        let l10n = model.l10n
+        let item = NSMenuItem(title: l10n("orbs.unit"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let titles: [(OrbUnit, String)] = [(.tokens, l10n("orbs.unit.tokens")), (.cost, l10n("orbs.unit.cost", model.cost.symbol))]
+        for (unit, title) in titles {
+            submenu.addItem(ActionMenuItem(title, state: orb.unit == unit ? .on : .off) { [weak model] in
+                model?.orbs.setUnit(unit, of: orb.id)
+            })
+        }
+        item.submenu = submenu
+        return item
+    }
+
     private static func sizeItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
         let item = NSMenuItem(title: model.l10n("menu.size"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
@@ -160,6 +177,7 @@ enum OrbMenus {
         let orbs = model.orbs
         guard orbs.orbs.count > 1 else {
             guard let orb = orbs.orbs.first else { return }
+            menu.addItem(unitItem(model: model, orb: orb))
             menu.addItem(sizeItem(model: model, orb: orb))
             menu.addItem(ActionMenuItem(l10n("menu.alwaysOnTop"), state: orb.alwaysOnTop ? .on : .off) { [weak orbs] in
                 orbs?.setAlwaysOnTop(!orb.alwaysOnTop, of: orb.id)
@@ -185,6 +203,7 @@ enum OrbMenus {
             actions.addItem(ActionMenuItem(l10n("menu.clickThrough"), state: orb.clickThrough ? .on : .off) { [weak orbs] in
                 orbs?.setClickThrough(!orb.clickThrough, of: orb.id)
             })
+            actions.addItem(unitItem(model: model, orb: orb))
             actions.addItem(.separator())
             actions.addItem(ActionMenuItem(l10n("menu.orb.settings")) { [weak model] in model?.commands?.showOrbSettings(orb.id) })
             entry.submenu = actions

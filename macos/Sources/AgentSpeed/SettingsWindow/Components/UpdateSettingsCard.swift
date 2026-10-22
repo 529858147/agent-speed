@@ -19,7 +19,7 @@ struct UpdateSettingsCard: View {
             HStack(alignment: .center, spacing: Spacing.s) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(l10n("update.auto"))
-                    Footnote(l10n("update.auto.hint"))
+                    Footnote(settings.networkEnabled ? l10n("update.auto.hint") : l10n("settings.network.offHint"))
                 }
                 .accessibilityHidden(true)
                 Spacer(minLength: Spacing.xs)
@@ -29,6 +29,8 @@ struct UpdateSettingsCard: View {
                     .accessibilityHint(l10n("update.auto.hint"))
             }
             .padding(Spacing.m)
+            // With the network master switch off, no check runs (NETWORK 2).
+            .disabled(!settings.networkEnabled)
         }
         .background(Color.primary.opacity(0.04), in: shape)
         .overlay {
@@ -71,7 +73,8 @@ private struct UpdateStatusRow: View {
                 Button(l10n("update.check")) {
                     updates.startCheck(manual: true)
                 }
-                .disabled(updates.isBusy)
+                .disabled(updates.isBusy || !model.settings.networkEnabled)
+                .help(model.settings.networkEnabled ? "" : l10n("settings.network.offHint"))
             }
         }
         .animation(Motion.fade, value: state)

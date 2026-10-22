@@ -37,19 +37,27 @@ enum OrbSceneBuilder {
         scene.center = geometry.center
         scene.backingScale = scale
         scene.contentScale = contentScale
-        if let hero = animator.hero {
-            scene.vehicle = hero.layer(model: model, content: content, geometry: geometry, time: time,
-                                       sweepEpoch: animator.idleEpoch(for: gauge))
+        if animator.hero != nil {
+            HeroCenter.build(into: &scene, animator: animator, model: model, content: content, geometry: geometry, time: time,
+                             sweepEpoch: animator.idleEpoch(for: gauge))
         }
 
         let readout = animator.readout
         let resumed = animator.isResuming
         if content.showsReadout {
-            let value = gauge.readoutValue
-            if resumed {
-                readout.reset(text: SpeedFormat.speed(value), value: value)
+            if let money = content.money {
+                if resumed {
+                    readout.reset(text: money.number, value: money.value)
+                } else {
+                    readout.update(text: money.number, value: money.value, at: time)
+                }
             } else {
-                readout.update(value: value, at: time)
+                let value = gauge.readoutValue
+                if resumed {
+                    readout.reset(text: SpeedFormat.speed(value), value: value)
+                } else {
+                    readout.update(value: value, at: time)
+                }
             }
             readout.valueGlowStrength = animator.valueGlow.value
             readout.leanAmount = animator.skew.value

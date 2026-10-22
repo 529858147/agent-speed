@@ -34,6 +34,7 @@ final class HeroTimeline {
         model.gauge.redline = model.settings.redline
         model.gauge.snap(to: value, now: time)
         hero?.reset()
+        animator.badge?.reset()
         step()
     }
 
@@ -76,8 +77,8 @@ final class HeroTimeline {
             tokens: dark ? .dark : .light,
             increaseContrast: increaseContrast,
             unit: l10n("unit.tokS"),
-            titleLabel: l10n(model.gauge.title.titleKey),
-            previousTitleLabel: l10n(model.gauge.previousTitle.titleKey),
+            titleLabel: model.titles.label(model.gauge.title, in: model.titles.general, l10n: l10n),
+            previousTitleLabel: model.titles.label(model.gauge.previousTitle, in: model.titles.general, l10n: l10n),
             infoLine: "",
             peakLabel: l10n("peak.new"),
             latinTracking: l10n.language.usesLatinCase,

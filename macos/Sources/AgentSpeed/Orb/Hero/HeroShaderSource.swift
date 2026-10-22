@@ -31,7 +31,7 @@ enum HeroShaderSource {
         float4 viewport;   // width, height (points), pixels per point, pass (0 crisp, 1 glow)
         float4 layer;      // origin x, y (points), points per unit, one pixel in units
         float4 mask;       // center x, y, solid radius, clear radius (units)
-        float4 sweepBand;  // center x, half width, strength, unused
+        float4 sweepBand;  // center x, half width, strength, layer opacity
         float4 sweepColor; // straight alpha
     };
 
@@ -217,7 +217,7 @@ enum HeroShaderSource {
             float k = band.z * max(0.0, 1.0 - abs(p.x - band.x) / max(band.y, 1e-4)) * uniforms.sweepColor.a;
             color.rgb = mix(color.rgb, uniforms.sweepColor.rgb * color.a, k);
         }
-        color *= m;
+        color *= m * uniforms.sweepBand.w;
         if (color.a < 1.0 / 512.0) {
             discard_fragment();
         }

@@ -9,6 +9,8 @@ struct OrbMetalView: NSViewRepresentable {
     /// Active frames follow the display's cadence (the refresh rate divided down to no less than 60 fps) instead of a
     /// fixed 60 fps, which a 144 Hz display can only show at 48 (the dashboard hero, DESIGN 4c).
     var followsDisplay = false
+    /// Frames per second at most while active (Settings previews); nil = no cap.
+    var frameCap: Int?
     /// Changes whenever a paused orb must redraw once (content or settled values changed).
     let redrawKey: AnyHashable
     let scene: @MainActor (inout OrbScene, CGSize, CGFloat, TimeInterval) -> Void
@@ -17,6 +19,7 @@ struct OrbMetalView: NSViewRepresentable {
         let view = OrbMTKView()
         view.sceneProvider = scene
         view.followsDisplay = followsDisplay
+        view.frameCap = frameCap
         view.apply(mode)
         return view
     }
@@ -24,6 +27,7 @@ struct OrbMetalView: NSViewRepresentable {
     func updateNSView(_ view: OrbMTKView, context: Context) {
         view.sceneProvider = scene
         view.followsDisplay = followsDisplay
+        view.frameCap = frameCap
         view.apply(mode)
         if view.redrawKey != redrawKey {
             view.redrawKey = redrawKey
@@ -42,6 +46,9 @@ final class OrbMTKView: MTKView, MTKViewDelegate {
     var redrawKey: AnyHashable?
     var followsDisplay = false {
         didSet { if followsDisplay != oldValue { reapply() } }
+    }
+    var frameCap: Int? {
+        didSet { if frameCap != oldValue { reapply() } }
     }
     private let encoder: OrbEncoder?
     private var mode: OrbAnimator.FrameMode?
@@ -79,11 +86,11 @@ final class OrbMTKView: MTKView, MTKViewDelegate {
         switch mode {
         case .active:
             enableSetNeedsDisplay = false
-            preferredFramesPerSecond = activeRate
+            preferredFramesPerSecond = min(activeRate, frameCap ?? .max)
             isPaused = false
         case .ambient(let fps):
             enableSetNeedsDisplay = false
-            preferredFramesPerSecond = fps
+            preferredFramesPerSecond = min(fps, frameCap ?? .max)
             isPaused = false
         case .paused:
             isPaused = true

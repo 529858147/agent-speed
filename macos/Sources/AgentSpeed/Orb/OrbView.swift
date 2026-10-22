@@ -25,12 +25,17 @@ struct OrbView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
-    init(model: AppModel, feed: OrbFeed? = nil, diameter: CGFloat, surface: OrbSurface = .embedded, interaction: OrbInteraction? = nil) {
+    /// Frames per second at most while active (Settings previews); nil follows the display.
+    var frameCap: Int?
+
+    init(model: AppModel, feed: OrbFeed? = nil, diameter: CGFloat, surface: OrbSurface = .embedded, interaction: OrbInteraction? = nil,
+         frameCap: Int? = nil) {
         self.model = model
         self.feed = feed ?? model.mainFeed
         self.diameter = diameter
         self.surface = surface
         self.interaction = interaction
+        self.frameCap = frameCap
         _ownAnimator = State(initialValue: OrbAnimator(surface: surface))
         injectedAnimator = nil
         fixedTime = nil
@@ -77,13 +82,15 @@ struct OrbView: View {
             .equatable()
             .drawingGroup()
             if let stillTime = fixedTime ?? environmentStillTime {
+                let _ = animator.follow(feed, model: model)
                 let _ = fixedTime == nil ? animator.primeForStill(model: model, gauge: feed.gauge) : ()
                 if let image = OrbStill.image(content: content, animator: animator, model: model, feed: feed,
                                               canvasSide: canvasSide, time: stillTime) {
                     Image(decorative: image, scale: 2)
                 }
             } else {
-                OrbMetalView(mode: animator.frameMode, followsDisplay: surface == .embedded, redrawKey: redrawKey(content: content)) { scene, size, scale, time in
+                OrbMetalView(mode: animator.frameMode, followsDisplay: surface == .embedded, frameCap: frameCap,
+                             redrawKey: redrawKey(content: content)) { scene, size, scale, time in
                     OrbSceneBuilder.build(into: &scene, content: content, animator: animator, model: model, feed: feed,
                                           canvasSide: size.width, scale: scale, time: time)
                 }
@@ -152,19 +159,23 @@ struct OrbView: View {
 /// Resolves an orb's content from observable state (read in a view body or an observation loop).
 @MainActor
 enum OrbContentBuilder {
+    /// `theme` nil = the General title theme.
     static func content(model: AppModel, feed: OrbFeed, diameter: CGFloat, dark: Bool, contrast: Bool,
-                        style: OrbStyleKind, showsReadout: Bool) -> OrbContent {
+                        style: OrbStyleKind, showsReadout: Bool, theme: TitleTheme? = nil) -> OrbContent {
         let l10n = model.l10n
         let gauge = feed.gauge
+        let titles = model.titles
+        let theme = theme ?? titles.general
+        let money = feed.money
         return OrbContent(
             diameter: diameter,
             tokens: dark ? .dark : .light,
             increaseContrast: contrast || model.accessibility.increaseContrast,
             reduceTransparency: model.accessibility.reduceTransparency,
-            unit: l10n("unit.tokS"),
-            titleLabel: l10n(gauge.title.titleKey),
-            previousTitleLabel: l10n(gauge.previousTitle.titleKey),
-            infoLine: l10n("today.summary", SpeedFormat.tokens(feed.todayTokens), feed.agentCount),
+            unit: money?.unit ?? l10n("unit.tokS"),
+            titleLabel: titles.label(gauge.title, in: theme, l10n: l10n),
+            previousTitleLabel: titles.label(gauge.previousTitle, in: theme, l10n: l10n),
+            infoLine: money?.hoverLine ?? l10n("today.summary", SpeedFormat.tokens(feed.todayTokens), feed.agentCount),
             peakLabel: l10n("peak.new"),
             latinTracking: l10n.language.usesLatinCase,
             language: l10n.language,
@@ -172,7 +183,12 @@ enum OrbContentBuilder {
             showsReadout: showsReadout,
             style: style,
             bezel: feed.bezel,
-            unavailableTitle: feed.unavailableTitleKey.map { l10n($0) }
+            unavailableTitle: feed.unavailableTitleKey.map { l10n($0) },
+            money: money.map {
+                // `minimal` has no unit line, so its value carries the symbol (DESIGN 9).
+                OrbMoneyText(number: style == .minimal ? $0.inline : $0.number, value: $0.value, atLeast: $0.atLeast,
+                             unknown: $0.unknown)
+            }
         )
     }
 }

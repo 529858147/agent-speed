@@ -154,6 +154,7 @@ struct AntigravityTests {
                 #expect(actual.usage.reasoning == wanted.int("reasoning"), "\(relative) \(actual.key) reasoning")
                 #expect(actual.model == wanted.string("model"), "\(relative) \(actual.key) model")
                 #expect(actual.source == .antigravity && actual.isFinal == (wanted["final"] as? Bool), "\(relative) \(actual.key)")
+                expectPricingFields(actual, wanted, "\(relative) \(actual.key)")
             }
         }
     }

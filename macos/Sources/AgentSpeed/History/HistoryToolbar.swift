@@ -9,6 +9,7 @@ import SwiftUI
 @MainActor
 final class HistoryToolbar: NSObject, NSToolbarDelegate {
     private static let sourceID = NSToolbarItem.Identifier("history.source")
+    private static let subscriptionsID = NSToolbarItem.Identifier("history.subscriptions")
     private static let rangeID = NSToolbarItem.Identifier("history.range")
     private static let exportID = NSToolbarItem.Identifier("history.export")
     private static let ranges: [HistoryRangeKind] = HistoryRangeKind.allCases
@@ -21,6 +22,8 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         /// narrower depends on how the system insets toolbar segments, so both are measured.
         var segmentPadding: CGFloat?
         var iconExport = false
+        /// The `history.includeSubscriptions` checkbox becomes an icon toggle, its label kept as the tooltip.
+        var iconSubscriptions = false
 
         /// Least given up first.
         static let ladder: [Fit] = [
@@ -28,8 +31,9 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
             Fit(segmentPadding: 8),
             Fit(iconExport: true),
             Fit(segmentPadding: 8, iconExport: true),
-            Fit(shortLabels: true, iconExport: true),
-            Fit(shortLabels: true, segmentPadding: 4, iconExport: true),
+            Fit(segmentPadding: 8, iconExport: true, iconSubscriptions: true),
+            Fit(shortLabels: true, iconExport: true, iconSubscriptions: true),
+            Fit(shortLabels: true, segmentPadding: 4, iconExport: true, iconSubscriptions: true),
         ]
     }
 
@@ -43,7 +47,11 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
     private let onExport: () -> Void
     private let sourcePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let rangeControl = NSSegmentedControl()
+    private let subscriptionsButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private var sourceItem: NSToolbarItem?
+    private var subscriptionsItem: NSToolbarItem?
+    /// Marked subscription sources and the language the source menu was built for.
+    private var shownMarks: Set<SourceKind> = []
     private var rangeItem: NSToolbarItem?
     private var exportItem: NSToolbarItem?
     private var popover: NSPopover?
@@ -78,6 +86,9 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         rangeControl.segmentDistribution = .fit
         rangeControl.target = self
         rangeControl.action = #selector(rangeChanged(_:))
+
+        subscriptionsButton.target = self
+        subscriptionsButton.action = #selector(subscriptionsChanged(_:))
         resizeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification, object: nil, queue: .main
         ) { [weak self] notification in
@@ -102,7 +113,7 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
+        toolbarDefaultItemIdentifiers(toolbar) + [Self.subscriptionsID]
     }
 
     /// Items are added as the toolbar joins a window; fit it once it is there.
@@ -130,6 +141,10 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
             item.target = self
             item.action = #selector(export(_:))
             exportItem = item
+        case Self.subscriptionsID:
+            item.view = subscriptionsButton
+            item.visibilityPriority = .high
+            subscriptionsItem = item
         default:
             return nil
         }
@@ -145,9 +160,12 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         let content = model.content
         let language = l10n.language
         let sources: [SourceKind?] = [nil] + content.pickerSources.map { Optional($0) }
-        if sources != shownSources || language != shownLanguage {
+        let marks = content.costOptions.marked
+        if sources != shownSources || language != shownLanguage || marks != shownMarks {
+            shownMarks = marks
             rebuildSourceMenu(sources, l10n: l10n)
         }
+        syncSubscriptions(offered: content.offersSubscriptionToggle, l10n: l10n)
         if let index = shownSources.firstIndex(of: model.source), sourcePopup.selectedTag() != index {
             sourcePopup.selectItem(withTag: index)
         }
@@ -183,8 +201,54 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
             exportItem?.image = nil
             exportItem?.title = export
         }
+        Self.configure(subscriptionsButton, icon: fit.iconSubscriptions, l10n: l10n)
+        subscriptionsItem?.label = l10n("history.includeSubscriptions")
+        subscriptionsItem?.toolTip = l10n("history.includeSubscriptions")
         sourcePopup.sizeToFit()
         rangeControl.sizeToFit()
+    }
+
+    /// A checkbox with `history.includeSubscriptions`, or an icon toggle when the toolbar is tight.
+    private static func configure(_ button: NSButton, icon: Bool, l10n: Localizer) {
+        let title = l10n("history.includeSubscriptions")
+        if icon {
+            button.setButtonType(.pushOnPushOff)
+            button.bezelStyle = .toolbar
+            button.title = ""
+            button.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: title)
+            button.alternateImage = NSImage(systemSymbolName: "creditcard.fill", accessibilityDescription: title)
+            button.imagePosition = .imageOnly
+        } else {
+            button.setButtonType(.switch)
+            button.image = nil
+            button.alternateImage = nil
+            button.imagePosition = .noImage
+            button.title = title
+        }
+        button.toolTip = title
+        button.setAccessibilityLabel(title)
+        button.sizeToFit()
+    }
+
+    /// Shows the checkbox while at least one source is marked as a subscription (DESIGN 9) and mirrors the choice.
+    /// The item is inserted or removed on the next turn, never while the toolbar is building its items.
+    private func syncSubscriptions(offered: Bool, l10n: Localizer) {
+        let state: NSControl.StateValue = model.includeSubscriptions ? .on : .off
+        if subscriptionsButton.state != state { subscriptionsButton.state = state }
+        DispatchQueue.main.async { [weak self] in self?.placeSubscriptions(offered: offered) }
+    }
+
+    private func placeSubscriptions(offered: Bool) {
+        let index = toolbar.items.firstIndex { $0.itemIdentifier == Self.subscriptionsID }
+        guard let source = toolbar.items.firstIndex(where: { $0.itemIdentifier == Self.sourceID }) else { return }
+        if offered, index == nil {
+            toolbar.insertItem(withItemIdentifier: Self.subscriptionsID, at: source + 1)
+            refit()
+        } else if !offered, let index {
+            toolbar.removeItem(at: index)
+            subscriptionsItem = nil
+            refit()
+        }
     }
 
     /// Range labels and segment widths of `fit`; a shortened label keeps the full one as the segment's tooltip.
@@ -234,7 +298,8 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
     /// step down.
     private func checkOverflow() {
         guard let window, let visible = toolbar.visibleItems?.map(\.itemIdentifier), fit != Fit.ladder.last else { return }
-        guard ![Self.sourceID, Self.rangeID, Self.exportID].allSatisfy(visible.contains),
+        let wanted = [Self.sourceID, Self.rangeID, Self.exportID] + (subscriptionsItem == nil ? [] : [Self.subscriptionsID])
+        guard !wanted.allSatisfy(visible.contains),
               let index = Fit.ladder.firstIndex(of: fit) else { return }
         learnedSlack = max(learnedSlack, requiredWidths(model.l10n)[index] - window.frame.width + 8)
         refit()
@@ -259,15 +324,26 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
         let leading = popupFrame.map(\.minX).flatMap { $0 > 0 ? $0 : nil } ?? Self.defaultLeading
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let textExport = ceil((l10n("history.export") as NSString).size(withAttributes: [.font: font]).width) + 28
+        let checkbox = ceil((l10n("history.includeSubscriptions") as NSString).size(withAttributes: [.font: font]).width) + 34
+        let offered = subscriptionsItem != nil
         return zip(Fit.ladder, ranges).map { candidate, range in
-            leading + sourcePopup.frame.width + range + (candidate.iconExport ? Self.iconExportWidth : textExport) + Self.gaps
+            let subscriptions: CGFloat = offered ? (candidate.iconSubscriptions ? Self.iconExportWidth : checkbox) + 8 : 0
+            return leading + sourcePopup.frame.width + subscriptions + range
+                + (candidate.iconExport ? Self.iconExportWidth : textExport) + Self.gaps
         }
     }
 
     private func rebuildSourceMenu(_ sources: [SourceKind?], l10n: Localizer) {
         let menu = NSMenu()
         for (index, source) in sources.enumerated() {
-            let item = NSMenuItem(title: source.map { l10n($0.titleKey) } ?? l10n("history.allSources"), action: nil, keyEquivalent: "")
+            let title = source.map { l10n($0.titleKey) } ?? l10n("history.allSources")
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            if let source, shownMarks.contains(source) {
+                // A subscription source carries `cost.subscription.tag` (DESIGN 9) as a badge, which leaves the
+                // popup's width to the names.
+                item.badge = NSMenuItemBadge(string: l10n("cost.subscription.tag"))
+                item.setAccessibilityLabel("\(title), \(l10n("cost.subscription.tag"))")
+            }
             item.image = Self.swatch(source.map { [$0] } ?? Array(sources.compactMap { $0 }.prefix(4)))
             item.tag = index
             menu.addItem(item)
@@ -329,6 +405,10 @@ final class HistoryToolbar: NSObject, NSToolbarDelegate {
 
     @objc private func export(_ sender: Any?) {
         onExport()
+    }
+
+    @objc private func subscriptionsChanged(_ sender: NSButton) {
+        model.setIncludeSubscriptions(sender.state == .on)
     }
 
     // MARK: Custom range

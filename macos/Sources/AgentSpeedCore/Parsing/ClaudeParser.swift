@@ -94,6 +94,7 @@ struct ClaudeParser: Sendable {
             existing.endMs = max(existing.endMs, timestamp)
             existing.usage = existing.usage.merged(with: line.usage)
             if let model = line.model { existing.model = model }
+            existing.fast = existing.fast || line.fast
             existing.isFinal = existing.isFinal || hasStopReason
             record = existing
         } else {
@@ -105,7 +106,8 @@ struct ClaudeParser: Sendable {
                 startMs: pendingStartMs,
                 endMs: timestamp,
                 usage: line.usage,
-                isFinal: hasStopReason
+                isFinal: hasStopReason,
+                fast: line.fast
             )
             pendingStartMs = nil
             preciseStart = false

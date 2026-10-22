@@ -77,6 +77,8 @@ struct EngineAgentStatus: Equatable, Sendable {
     var recentSpeed: Double?
     /// The parent's id when the parent is listed too; nil for a root.
     var parentId: String?
+    /// The agent's live cost rate (METRICS 9.5).
+    var liveCost: LiveCost = .zero
 }
 
 /// Everything the engine computes for one instant.
@@ -87,6 +89,9 @@ struct EngineOutput: Sendable {
     var sourceLive: [SourceKind: Rate]
     /// The estimated part of `sourceLive`.
     var sourceLiveEstimated: [SourceKind: Rate]
+    /// The live cost rate (METRICS 9.5), in total and per source.
+    var liveCost: LiveCost = .zero
+    var sourceLiveCost: [SourceKind: LiveCost] = [:]
     var agents: [EngineAgentStatus]
     var history: [HistoryPoint]
     var today: TokenTotals
@@ -94,6 +99,10 @@ struct EngineOutput: Sendable {
     var averageToday: Double?
     /// Today's responses whose final usage was never written.
     var unfinalizedToday: Int
+    /// Today's cost (METRICS 9.6): in total, per source and per source and model.
+    var todayCost: CostTally = .zero
+    var todayCostBySource: [SourceKind: CostTally] = [:]
+    var todayCostByModel: [SourceKind: [String: CostTally]] = [:]
     var peakToday: Rate
     var peakTodayAtMs: Int64?
     /// Today's measured output peak of every requested source set (METRICS 6.8).

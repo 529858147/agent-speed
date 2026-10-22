@@ -49,8 +49,102 @@ public struct SubsetReading: Equatable, Sendable {
     }
 }
 
+/// What a surface shows in the money unit for a source set (METRICS 6.8, 9.4, 9.5; DESIGN 9). Only the *billable*
+/// sources count: the available members not marked as subscriptions (unless subscriptions are included).
+public struct CostReading: Equatable, Sendable {
+    public enum State: Equatable, Sendable {
+        /// Every live token has a known price (an idle 0 included).
+        case priced
+        /// Part of the live value is missing: `liveCostKnownShare < 0.995` and the value is not 0 (`≥`).
+        case partial
+        /// Live output without any known price (`–`).
+        case nothingPriced
+        /// Every available source is a subscription and excluded (value 0).
+        case subscriptionOnly
+    }
+
+    public static let partialThreshold = 0.995
+
+    /// micro-USD per second.
+    public var microUsdPerSecond: Double
+    public var knownShare: Double
+    /// Live output (tok/s) of the billable sources.
+    public var liveOutput: Double
+    /// Today's cost of the billable sources and their request count.
+    public var today: CostTally
+    public var todayRequests: Int
+    /// Today's unpriced models of the billable sources, most unpriced first.
+    public var unpricedModels: [String]
+    /// Available members left out as subscriptions, in source order.
+    public var excluded: [SourceKind]
+    public var state: State
+
+    public init(
+        microUsdPerSecond: Double = 0,
+        knownShare: Double = 1,
+        liveOutput: Double = 0,
+        today: CostTally = .zero,
+        todayRequests: Int = 0,
+        unpricedModels: [String] = [],
+        excluded: [SourceKind] = [],
+        state: State = .priced
+    ) {
+        self.microUsdPerSecond = microUsdPerSecond
+        self.knownShare = knownShare
+        self.liveOutput = liveOutput
+        self.today = today
+        self.todayRequests = todayRequests
+        self.unpricedModels = unpricedModels
+        self.excluded = excluded
+        self.state = state
+    }
+
+    public static let zero = CostReading()
+}
+
 /// Per-orb views of a snapshot (METRICS 6.8, DESIGN 2b).
 public enum OrbSubset {
+    /// The money-unit reading of `sources` (nil = every source) counting only `billable` sources (METRICS 9.4).
+    public static func cost(_ snapshot: SpeedSnapshot, sources: SourceSet?, billable: SourceSet) -> CostReading {
+        let members = sources ?? .everything
+        var reading = CostReading()
+        var known = 0.0
+        var available = 0
+        var unpriced: [String: Int] = [:]
+        var order: [String] = []
+        for status in snapshot.sources where members.contains(status.kind) && !isUnavailable(status) {
+            available += 1
+            guard billable.contains(status.kind) else {
+                reading.excluded.append(status.kind)
+                continue
+            }
+            reading.microUsdPerSecond += status.liveCost.microUsdPerSecond
+            known += status.liveCost.knownOutput
+            reading.liveOutput += status.live.output
+            reading.today.add(status.todayCost)
+            reading.todayRequests += status.today.requests
+            for (rank, model) in status.unpricedModels.enumerated() {
+                if unpriced[model] == nil { order.append(model) }
+                unpriced[model] = min(unpriced[model] ?? .max, rank)
+            }
+        }
+        reading.unpricedModels = order.enumerated()
+            .sorted { (unpriced[$0.element]!, $0.offset) < (unpriced[$1.element]!, $1.offset) }
+            .map(\.element)
+        reading.knownShare = LiveCost(microUsdPerSecond: reading.microUsdPerSecond, knownOutput: known)
+            .knownShare(liveOutput: reading.liveOutput)
+        reading.state = if available > 0, reading.excluded.count == available {
+            .subscriptionOnly
+        } else if reading.liveOutput > 0, known <= 0 {
+            .nothingPriced
+        } else if reading.knownShare < CostReading.partialThreshold, reading.microUsdPerSecond > 0 {
+            .partial
+        } else {
+            .priced
+        }
+        return reading
+    }
+
     /// The reading of an orb tracking `sources`; nil (all sources) returns exactly the snapshot's own values.
     /// A member the snapshot does not list yet counts as available without data; a set without any known source is
     /// `.allNotFound`.

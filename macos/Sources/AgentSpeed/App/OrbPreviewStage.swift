@@ -23,6 +23,8 @@ final class OrbPreviewStage {
         didSet { interaction.isHovered = hovered }
     }
     var language: AppLanguage?
+    /// The title theme the orb names its levels with (nil = General).
+    var titleTheme: TitleTheme?
     private var nextTick: TimeInterval
     private var scene = OrbScene(capacity: 2048)
     /// The recordings' new-peak bookkeeping (`newPeakRule`).
@@ -61,7 +63,7 @@ final class OrbPreviewStage {
 
     var content: OrbContent {
         var content = OrbContentBuilder.content(model: model, feed: feed, diameter: diameter, dark: dark, contrast: increaseContrast,
-                                                style: animator.style, showsReadout: true)
+                                                style: animator.style, showsReadout: true, theme: titleTheme)
         content.isThumbnail = isThumbnail
         content.reduceTransparency = reduceTransparency
         if let language { content.language = language }

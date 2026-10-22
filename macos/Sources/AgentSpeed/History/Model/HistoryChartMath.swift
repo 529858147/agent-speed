@@ -59,11 +59,13 @@ enum HistoryChartMath {
         return AxisTicks(step: niceStep(dataMax / Double(intervals)), intervals: intervals)
     }
 
-    /// Stacking order: the source with the most output in the range first (drawn at the bottom).
-    static func stackOrder(_ days: [DaySummary]) -> [SourceKind] {
-        var totals: [SourceKind: Int] = [:]
+    /// Stacking order: the source with the most output (or cost) in the range first (drawn at the bottom).
+    static func stackOrder(_ days: [DaySummary], metric: HistoryChartMetric = .output) -> [SourceKind] {
+        var totals: [SourceKind: Int64] = [:]
         for day in days {
-            for entry in day.sources { totals[entry.source, default: 0] += entry.output }
+            for entry in day.sources {
+                totals[entry.source, default: 0] += metric == .output ? Int64(entry.output) : entry.cost.microUsd
+            }
         }
         return totals
             .filter { $0.value > 0 }

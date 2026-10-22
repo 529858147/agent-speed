@@ -1,14 +1,17 @@
 #if DEBUG
 import AgentSpeedCore
 import AgentSpeedHero
+import AgentSpeedOrbModel
 import AppKit
 import SwiftUI
 
 /// `--hero-frames DIR` (debug builds): steps the dashboard hero on a simulated clock and writes one PNG per frame of a
 /// hero mock (orb, value, sliding title), then encodes `DIR/<clip>.mp4` when ffmpeg is installed. Quits when done.
 ///
-/// `AGENT_SPEED_HERO_CLIPS` picks clips as `scenario-appearance[-level][-rm]`, comma separated (default: the tour and
-/// start-ups in dark, the tour in light, Soft, and Reduce Motion). `AGENT_SPEED_HERO_FPS` sets the frame rate (30),
+/// `AGENT_SPEED_HERO_CLIPS` picks clips as `scenario-appearance[-level][-rm][-theme][-language]`, comma separated
+/// (default: the tour and start-ups in dark, the tour in light, Soft, and Reduce Motion); a title theme other than
+/// Vehicles shows the title badge (e.g. `stairs-dark-cultivation`, `stairs-light-space-ja`; languages `hans`, `en`,
+/// `ja`, else Traditional Chinese). `AGENT_SPEED_HERO_FPS` sets the frame rate (30),
 /// `AGENT_SPEED_HERO_SECONDS` limits each clip, `AGENT_SPEED_HERO_KEEP_FRAMES=1` keeps the PNGs next to the video.
 @MainActor
 enum HeroFrameHarness {
@@ -18,6 +21,8 @@ enum HeroFrameHarness {
         let dark: Bool
         let level: HeroLevel
         let reduceMotion: Bool
+        let theme: TitlePreset
+        let language: LanguagePreference
 
         init?(_ name: String) {
             let parts = name.split(separator: "-").map(String.init)
@@ -27,6 +32,8 @@ enum HeroFrameHarness {
             dark = !parts.contains("light")
             level = parts.contains("max") ? .max : parts.contains("soft") ? .soft : parts.contains("off") ? .off : .standard
             reduceMotion = parts.contains("rm")
+            theme = parts.lazy.compactMap(TitlePreset.init(rawValue:)).first ?? .vehicles
+            language = parts.contains("hans") ? .zhHans : parts.contains("en") ? .en : parts.contains("ja") ? .ja : .zhHant
         }
     }
 
@@ -47,8 +54,6 @@ enum HeroFrameHarness {
             settings: AppSettings(defaults: defaults),
             updates: UpdateController(configuration: .current(environment: [:]), store: UpdateStore(defaults: defaults))
         )
-        model.settings.language = .zhHant
-        model.l10n.apply(.zhHant)
         // The designer's scenarios are written for R = 400 tok/s.
         model.settings.redlineOutput = 400
         var report = ""
@@ -57,6 +62,9 @@ enum HeroFrameHarness {
             try? FileManager.default.removeItem(at: frames)
             try? FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
             model.settings.heroLastTitle = nil
+            model.settings.language = clip.language
+            model.l10n.apply(clip.language)
+            model.titles.select(clip.theme.rawValue)
             let summary = record(clip, model: model, fps: fps, seconds: min(limit ?? .infinity, clip.scenario.duration), into: frames)
             report += "\(clip.name): \(summary)\n"
             if encode(frames: frames, fps: fps, to: directory.appendingPathComponent("\(clip.name).mp4")), !keep {
@@ -73,6 +81,7 @@ enum HeroFrameHarness {
         timeline.hero?.overrides.level = clip.level
         timeline.hero?.overrides.reduceMotion = clip.reduceMotion
         timeline.hero?.collectsSamples = true
+        timeline.animator.badge?.collectsSamples = true
         let start = timeline.time
         timeline.reset(value: clip.scenario.value(at: 0))
         var events: [String] = []
@@ -88,12 +97,14 @@ enum HeroFrameHarness {
             guard let image = frame(timeline, model: model, clip: clip) else { continue }
             PreviewSnapshot.write(image, to: directory.appendingPathComponent(String(format: "f%05d.png", index)))
         }
-        let samples = (timeline.hero?.stats.samples ?? []).sorted()
+        let badge = !clip.theme.showsVehicleArt
+        let samples = ((badge ? timeline.animator.badge?.samples : timeline.hero?.stats.samples) ?? []).sorted()
         func percentile(_ p: Double) -> Double {
             samples.isEmpty ? 0 : Double(samples[min(samples.count - 1, Int(Double(samples.count - 1) * p))]) / 1000
         }
-        return String(format: "%d frames, hero layer µs p50 %.0f p95 %.0f max %.0f (debug build); titles %@",
-                      count, percentile(0.5), percentile(0.95), percentile(1), events.joined(separator: " "))
+        return String(format: "%d frames, %@ µs p50 %.0f p95 %.0f max %.0f (debug build); titles %@",
+                      count, badge ? "title badge" : "hero layer", percentile(0.5), percentile(0.95), percentile(1),
+                      events.joined(separator: " "))
     }
 
     /// The dashboard hero mock: orb on the left, value, `tok/s`, the title sliding up on change, context line.
@@ -117,15 +128,21 @@ enum HeroFrameHarness {
         let heat = HeatPalette.heat(value: value, redline: model.settings.redline)
         let label = idle ? secondary : DashboardPalette.legible(HeatPalette.color(heat, dark: dark), dark: dark, minimum: 4.5).nsColor
         let elapsed = timeline.time - gauge.titleChangedAt
-        let slide = clip.reduceMotion ? 1 : HeroMath.easeOutCubic(elapsed / 0.35)
+        let p = min(1, max(0, elapsed / 0.35))
+        let travel: CGFloat = clip.reduceMotion ? 0 : 14
+        let outgoing = OrbReadoutBuilder.titleOut(p)
+        let incoming = OrbReadoutBuilder.titleIn(p)
+        let titles = model.titles
         canvas.context.saveGState()
         canvas.context.clip(to: CGRect(x: 150, y: 80, width: 214, height: 22))
-        if slide < 1, gauge.previousTitle != gauge.title {
-            canvas.text(model.l10n(gauge.previousTitle.titleKey), at: CGPoint(x: 156, y: 96 - 14 * slide), size: 15, weight: .semibold,
-                        color: label.withAlphaComponent(1 - slide))
+        if p < 1, gauge.previousTitle != gauge.title {
+            canvas.text(titles.label(gauge.previousTitle, in: titles.general, l10n: model.l10n),
+                        at: CGPoint(x: 156, y: 96 - travel * outgoing.travel), size: 15, weight: .semibold,
+                        color: label.withAlphaComponent(outgoing.alpha))
         }
-        canvas.text(model.l10n(gauge.title.titleKey), at: CGPoint(x: 156, y: 96 + 14 * (1 - min(1, slide))), size: 15,
-                    weight: .semibold, color: label.withAlphaComponent(min(1, slide)))
+        canvas.text(titles.label(gauge.title, in: titles.general, l10n: model.l10n),
+                    at: CGPoint(x: 156, y: 96 + travel * (1 - (p < 1 ? incoming.travel : 1))), size: 15,
+                    weight: .semibold, color: label.withAlphaComponent(p < 1 && gauge.previousTitle != gauge.title ? incoming.alpha : 1))
         canvas.context.restoreGState()
         let snapshot = model.snapshot
         canvas.text(model.l10n("agents.context", idle ? 0 : snapshot.generatingCount, idle ? 0 : snapshot.toolsCount),

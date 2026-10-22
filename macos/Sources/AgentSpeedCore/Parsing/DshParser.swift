@@ -10,6 +10,8 @@ struct DshParser: Sendable {
     private(set) var state = AgentState(source: .deepseek)
 
     private var pendingStartMs: Int64?
+    /// The latest `request/header` `config.provider` (METRICS 3.2).
+    private var provider: String?
 
     init(agentId: String, fileID: FileID) {
         self.agentId = agentId
@@ -48,8 +50,9 @@ struct DshParser: Sendable {
             if let created = state.thread?.createdMs, timestamp < created - Self.inheritedHistoryToleranceMs { return }
             state.noteLine(at: timestamp)
             switch kind {
-            case .requestHeader(let model):
+            case .requestHeader(let model, let provider):
                 if let model { state.model = model }
+                if let provider { self.provider = provider }
             case .stepStart:
                 pendingStartMs = timestamp
                 state.setPhase(.generating, at: timestamp, inFlightStartMs: timestamp)
@@ -82,7 +85,8 @@ struct DshParser: Sendable {
                 model: model,
                 startMs: pendingStartMs,
                 endMs: timestamp,
-                usage: usage
+                usage: usage,
+                provider: message.provider ?? provider
             )
             if let model { state.model = model }
             emit(ResponseUpsert(record: record, isCompletion: true))

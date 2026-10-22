@@ -25,6 +25,12 @@ struct MenuBarPane: View {
                 SettingToggle(title: l10n("settings.bar.unit"), isOn: $settings.barShowsUnit)
                     .disabled(!settings.barMode.showsValue)
             }
+
+            Section {
+                LiveUnitPicker(model: model)
+            } footer: {
+                SectionFootnote(l10n("settings.liveUnit.hint"))
+            }
         }
         .settingsForm()
     }

@@ -52,6 +52,8 @@ struct OpencodeMessageData: Equatable, Sendable {
     var streamed: Int64?
     var completed: Int64?
     var model: String?
+    /// `model.providerID` (METRICS 3.2).
+    var provider: String?
     var finishedWithToolCalls = false
     /// Set when `data.tokens` is an object.
     var tokens: TokenUsage?
@@ -68,7 +70,7 @@ enum OpencodeDataExtractor {
                 if scanner.key(key, is: "time") {
                     try scanTime(&scanner, into: &data)
                 } else if scanner.key(key, is: "model") {
-                    data.model = try scanModel(&scanner)
+                    (data.model, data.provider) = try scanModel(&scanner)
                 } else if scanner.key(key, is: "finish") {
                     data.finishedWithToolCalls = try scanner.readStringMatch(["tool-calls"]) == 0
                 } else if scanner.key(key, is: "tokens") {
@@ -102,17 +104,20 @@ enum OpencodeDataExtractor {
         }
     }
 
-    private static func scanModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> String? {
-        guard try scanner.beginObjectIfPresent() else { return nil }
+    private static func scanModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?) {
+        guard try scanner.beginObjectIfPresent() else { return (nil, nil) }
         var model: String?
+        var provider: String?
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "id") {
                 model = try scanner.readString()
+            } else if scanner.key(key, is: "providerID") {
+                provider = try scanner.readNonEmptyString()
             } else {
                 try scanner.skipValue()
             }
         }
-        return model
+        return (model, provider)
     }
 
     /// OpenCode reports reasoning separately from output (METRICS 4.5).

@@ -14,6 +14,8 @@ struct CodexParser: Sendable {
     private var streaming = false
     private var sawModernUsage = false
     private var previousLegacyTotals: CodexRawUsage?
+    /// `model_provider` of the first `session_meta` (METRICS 3.2).
+    private var provider: String?
 
     init(agentId: String, fileID: FileID) {
         self.agentId = agentId
@@ -50,6 +52,7 @@ struct CodexParser: Sendable {
             if let cwd = meta.cwd { state.setProject(fromWorkingDirectory: cwd) }
             myAgentPath = meta.agentPath ?? Self.defaultAgentPath
             state.isSubagent = meta.isSubagent
+            provider = meta.modelProvider
             return
         }
         if let created = state.thread?.createdMs, timestamp < created - Self.copiedHistoryToleranceMs {
@@ -132,7 +135,8 @@ struct CodexParser: Sendable {
             model: state.model,
             startMs: pendingStartMs,
             endMs: timestamp,
-            usage: usage
+            usage: usage,
+            provider: provider
         )
         finishWithoutUsage(at: timestamp)
         emit(ResponseUpsert(record: record, isCompletion: true))

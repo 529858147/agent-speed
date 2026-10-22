@@ -27,8 +27,16 @@ struct SpeedEngine: Sendable {
     private var observedPeakAtMs: Int64?
     private var previousPeakOutput = 0.0
     private var lastNewPeakMs: Int64?
+    /// Prices responses as they arrive (METRICS 9.3, 9.7); without it, records keep the cost they carry.
+    private var pricing: PriceBook?
+    /// The current table version the stored responses were last priced with.
+    private var pricedVersion: Int?
+    private var dayLabeler = DayLabeler(timeZone: .current)
 
-    init() {}
+    init(pricing: PriceBook? = nil) {
+        self.pricing = pricing
+        pricedVersion = pricing?.currentVersion
+    }
 
     // MARK: - Inputs
 
@@ -58,6 +66,10 @@ struct SpeedEngine: Sendable {
         emitsEvents: Bool,
         nowMs: Int64? = nil
     ) -> SpeedEvent? {
+        var record = record
+        if let pricing {
+            record.costMicroUsd = pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs))
+        }
         let old = responses.updateValue(record, forKey: record.key)
         projects[record.key] = project
         ledger?.replace(old, with: record)
@@ -79,6 +91,7 @@ struct SpeedEngine: Sendable {
     mutating func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool, subsets: Set<SourceSet> = []) -> EngineOutput {
         rollOverIfNeeded(todayStartMs: todayStartMs)
         prune(nowMs: nowMs, todayStartMs: todayStartMs)
+        repriceIfNeeded()
 
         let timed = recentTimedResponses(nowMs: nowMs)
         let measured = timed.filter(\.record.isFinal)
@@ -125,12 +138,17 @@ struct SpeedEngine: Sendable {
             liveEstimatedShare: window.estimatedShare,
             sourceLive: window.bySource,
             sourceLiveEstimated: window.estimatedBySource,
+            liveCost: window.cost,
+            sourceLiveCost: window.costBySource,
             agents: agentList(nowMs: nowMs, window: window, references: references),
             history: history,
             today: ledger?.totals ?? TokenTotals(),
             todayBySource: ledger?.bySource ?? [:],
             averageToday: ledger?.average,
             unfinalizedToday: ledger?.unfinalized ?? 0,
+            todayCost: ledger?.cost ?? .zero,
+            todayCostBySource: ledger?.costBySource ?? [:],
+            todayCostByModel: ledger?.costByModel ?? [:],
             peakToday: peak,
             peakTodayAtMs: peak.output > 0 ? peakAt : nil,
             subsetPeaks: subsetPeaks,
@@ -142,8 +160,23 @@ struct SpeedEngine: Sendable {
 
     // MARK: - Day and retention
 
+    /// A new current price table prices the responses no table could price before (METRICS 9.7); a day's bound
+    /// table, and so every known cost, stays as it was.
+    private mutating func repriceIfNeeded() {
+        guard let pricing, pricing.currentVersion != pricedVersion else { return }
+        pricedVersion = pricing.currentVersion
+        for (key, record) in responses where record.costMicroUsd == nil {
+            guard let cost = pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs)) else { continue }
+            var priced = record
+            priced.costMicroUsd = cost
+            responses[key] = priced
+            ledger?.replace(record, with: priced)
+        }
+    }
+
     private mutating func rollOverIfNeeded(todayStartMs: Int64) {
         guard ledger?.dayStartMs != todayStartMs else { return }
+        dayLabeler = DayLabeler(timeZone: .current)
         let isNewDay = ledger != nil
         var fresh = DayLedger(dayStartMs: todayStartMs)
         for record in responses.values where fresh.contains(record) {
@@ -231,7 +264,8 @@ struct SpeedEngine: Sendable {
                 agent: agent,
                 phase: isFresh ? agent.phase : .idle,
                 live: window.byAgent[agent.id] ?? .zero,
-                recentSpeed: references.recent(for: agent.id)?.output
+                recentSpeed: references.recent(for: agent.id)?.output,
+                liveCost: window.costByAgent[agent.id] ?? .zero
             )
         }
         var listed: [String: EngineAgentStatus] = [:]

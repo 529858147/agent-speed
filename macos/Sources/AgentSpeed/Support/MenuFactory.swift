@@ -59,7 +59,8 @@ enum MenuFactory {
         menu.addItem(settingsItem(model: model))
         menu.addItem(ActionMenuItem(l10n("menu.about")) { [weak model] in model?.commands?.showSettings(.about) })
         let check = ActionMenuItem(l10n("mac.update.checkMenu")) { [weak model] in model?.commands?.checkForUpdates() }
-        check.isEnabled = !model.updates.isBusy
+        check.isEnabled = !model.updates.isBusy && model.settings.networkEnabled
+        if !model.settings.networkEnabled { check.toolTip = l10n("settings.network.offHint") }
         menu.addItem(check)
         menu.addItem(.separator())
         menu.addItem(quitItem(model: model))

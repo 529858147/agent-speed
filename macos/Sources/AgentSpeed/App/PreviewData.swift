@@ -43,6 +43,12 @@ enum PreviewData {
             source(.omp, 0, TokenTotals(requests: 64, input: 2_400_000, output: 58_000), 0),
             source(.antigravity, speed * 0.05, TokenTotals(requests: 41, input: 1_600_000, output: 46_000), 1),
         ]
+        var liveCost = LiveCost.zero
+        var todayCost = CostTally()
+        for source in sources {
+            liveCost.add(source.liveCost)
+            todayCost.add(source.todayCost)
+        }
         return SpeedSnapshot(
             timestamp: now,
             state: .running,
@@ -58,7 +64,9 @@ enum PreviewData {
             toolsCount: agents.filter { $0.phase == .tools }.count,
             history: history,
             lastResponse: nil,
-            warnings: []
+            warnings: [],
+            liveCost: liveCost,
+            todayCost: todayCost
         )
     }
 
@@ -162,7 +170,11 @@ enum PreviewData {
     }
 
     private static func source(_ kind: SourceKind, _ live: Double, _ today: TokenTotals, _ active: Int) -> SourceStatus {
-        SourceStatus(
+        // API-equivalent costs (METRICS 9): a blended price per output token, DeepSeek partly and Antigravity not priced.
+        let microUsdPerToken: Double = kind == .deepseek ? 2.4 : kind == .gemini ? 9 : 21
+        let knownShare: Double = kind == .antigravity ? 0 : kind == .deepseek ? 0.7 : 1
+        let unpriced = kind == .antigravity ? today.requests : kind == .deepseek ? today.requests / 3 : 0
+        return SourceStatus(
             kind: kind,
             enabled: true,
             rootPath: kind.transcriptFolder.defaultURL.path,
@@ -170,7 +182,11 @@ enum PreviewData {
             sessionCount: sessionCount(kind.transcriptFolder),
             live: Rate(output: live, total: live * 26),
             today: today,
-            activeAgents: active
+            activeAgents: active,
+            liveCost: LiveCost(microUsdPerSecond: live * knownShare * microUsdPerToken, knownOutput: live * knownShare),
+            todayCost: CostTally(costMicroUsd: Int64(Double(today.output) * knownShare * microUsdPerToken * 1.6),
+                                 unpricedRequests: unpriced),
+            unpricedModels: kind == .antigravity ? ["gemini-3.1-flash"] : kind == .deepseek ? ["deepseek-pro"] : []
         )
     }
 

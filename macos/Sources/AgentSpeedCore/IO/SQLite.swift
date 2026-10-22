@@ -116,6 +116,14 @@ final class SQLiteStatement {
         sqlite3_bind_int64(statement, index, Int64(value))
     }
 
+    func bind(_ index: Int32, _ value: Int64?) {
+        if let value {
+            sqlite3_bind_int64(statement, index, value)
+        } else {
+            sqlite3_bind_null(statement, index)
+        }
+    }
+
     func bind(_ index: Int32, _ value: Double) {
         sqlite3_bind_double(statement, index, value)
     }

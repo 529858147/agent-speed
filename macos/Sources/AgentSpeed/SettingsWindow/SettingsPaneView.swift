@@ -6,11 +6,12 @@ struct SettingsPaneView: View {
     let model: AppModel
 
     static let width: CGFloat = 520
-    /// The floating orb pane lists live orbs and five style cards in a row (DESIGN 5: content up to 680 pt).
+    /// The floating orb pane lists live orbs and five style cards in a row; General holds three columns of title
+    /// theme cards and the custom set editor beside its previews (DESIGN 5: content up to 680 pt).
     static let wideWidth: CGFloat = 680
 
     static func width(for pane: SettingsPane) -> CGFloat {
-        pane == .orb ? wideWidth : width
+        pane == .orb || pane == .general ? wideWidth : width
     }
 
     var body: some View {
@@ -26,6 +27,7 @@ struct SettingsPaneView: View {
         case .menuBar: MenuBarPane(model: model)
         case .orb: OrbPane(model: model)
         case .effects: EffectsPane(model: model)
+        case .cost: CostPane(model: model)
         case .sources: SourcesPane(model: model)
         case .about: AboutPane(model: model)
         }

@@ -88,7 +88,7 @@ final class HeroLayerEncoder {
 
     /// Draws `list` with canvas unit (0, 0) at `origin` and `unit` points per canvas unit. `viewport` is the drawable
     /// size in points and `scale` its pixels per point. Leaves the encoder's pipeline and buffers changed.
-    func encode(_ list: HeroDrawList, origin: CGPoint, unit: CGFloat, viewport: CGSize, scale: CGFloat,
+    func encode(_ list: HeroDrawList, origin: CGPoint, unit: CGFloat, viewport: CGSize, scale: CGFloat, alpha: Float = 1,
                 into encoder: MTLRenderCommandEncoder) {
         let items = list.items
         let points = list.points
@@ -131,6 +131,7 @@ final class HeroLayerEncoder {
             sweepBand: list.sweep.band,
             sweepColor: list.sweep.color
         )
+        uniforms.sweepBand.w = alpha
         let uniformLength = MemoryLayout<HeroLayerUniforms>.stride
         encoder.setVertexBuffer(buffer, offset: 0, index: 0)
         encoder.setFragmentBuffer(buffer, offset: 0, index: 0)

@@ -8,9 +8,16 @@ guard let arguments = ProbeArguments.parse(Array(CommandLine.arguments.dropFirst
 
 switch arguments.mode {
 case .dumpToday:
-    DumpToday.run(configuration: arguments.configuration)
+    DumpToday.run(configuration: arguments.configuration, table: arguments.priceTable())
 case .dumpHistory:
-    DumpHistory.run(configuration: arguments.configuration, utc: arguments.utc, storePath: arguments.historyStore)
+    DumpHistory.run(
+        configuration: arguments.configuration, utc: arguments.utc, storePath: arguments.historyStore,
+        table: arguments.priceTable()
+    )
 case .watch(let seconds):
     WatchMode.run(configuration: arguments.configuration, seconds: seconds)
+case .syncPrices(let directory):
+    print(await NetworkSync.prices(directory: URL(fileURLWithPath: directory, isDirectory: true)))
+case .syncRates(let directory, let currency):
+    print(await NetworkSync.rates(directory: URL(fileURLWithPath: directory, isDirectory: true), currency: currency))
 }

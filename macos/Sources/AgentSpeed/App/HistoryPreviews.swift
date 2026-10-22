@@ -21,6 +21,11 @@ enum HistoryPreviews {
         var sort: HistoryColumn?
         /// Renders the full scrolling column instead of the window.
         var tall = false
+        /// DESIGN 9: display currency, chart metric, sources marked as subscriptions and the window's choice.
+        var currency = "USD"
+        var metric: HistoryChartMetric = .output
+        var marked: Set<SourceKind> = []
+        var includeSubscriptions = false
     }
 
     enum Days { case full, none, recent(Int) }
@@ -53,7 +58,32 @@ enum HistoryPreviews {
         Case(name: "today-zh-hans-min", size: HistoryWindowController.minimumSize, range: .today, language: .zhHans),
         Case(name: "table", tall: true),
         Case(name: "table-sorted", source: .claudeDesktop, sort: .speed, tall: true),
+        // Cost (DESIGN 9).
+        Case(name: "cost-en", language: .en, metric: .cost),
+        Case(name: "cost-twd-hover", hoverDaysAgo: 4, currency: "TWD", metric: .cost),
+        Case(name: "cost-output-hover-en", range: .days7, language: .en, hoverDaysAgo: 2, currency: "TWD"),
+        Case(name: "cost-cny-min", size: HistoryWindowController.minimumSize, language: .zhHans, currency: "CNY", metric: .cost),
+        Case(name: "cost-jpy-ja", source: .claudeCode, range: .days90, language: .ja, currency: "JPY", metric: .cost),
+        Case(name: "cost-subscriptions-en", language: .en, metric: .cost, marked: [.claudeDesktop, .codex]),
+        Case(name: "cost-subscriptions-min", size: HistoryWindowController.minimumSize, metric: .cost, marked: [.claudeDesktop]),
+        Case(name: "cost-subscription-source", source: .claudeDesktop, currency: "TWD", metric: .cost, marked: [.claudeDesktop]),
+        Case(name: "cost-breakdown", range: .yesterday, currency: "TWD", metric: .cost, marked: [.codex]),
+        Case(name: "cost-breakdown-model-en", source: .claudeCode, range: .yesterday, language: .en, metric: .cost),
+        Case(name: "cost-table", sort: .cost, tall: true, currency: "TWD"),
+        Case(name: "cost-table-min", size: HistoryWindowController.minimumSize, language: .en, sort: .cost, tall: true,
+             currency: "JPY", marked: [.codex]),
+        Case(name: "cost-old-days", source: .claudeDesktop, range: .all, language: .en, sort: .date, tall: true, metric: .cost),
     ]
+
+    /// Deterministic rates for previews (the shape of an open.er-api.com response).
+    static let previewRates = ExchangeRateSet(
+        provider: "open.er-api.com",
+        url: "https://open.er-api.com/v6/latest/USD",
+        dateMs: 1_792_627_200_000,
+        fetchedMs: 1_792_630_000_000,
+        rates: ["USD": 1, "CNY": Decimal(string: "6.689327")!, "TWD": Decimal(string: "32.411205")!,
+                "JPY": Decimal(string: "158.100039")!, "EUR": Decimal(string: "0.890292")!]
+    )
 
     static func render(model: AppModel, into directory: URL) {
         let only = ProcessInfo.processInfo.environment["AGENT_SPEED_HISTORY_CASES"]?.split(separator: ",").map(String.init)
@@ -63,9 +93,21 @@ enum HistoryPreviews {
             for dark in [false, true] {
                 let url = directory.appendingPathComponent("history-\(item.name)-\(dark ? "dark" : "light").png")
                 if item.tall {
-                    renderColumn(viewModel: viewModel, model: model, dark: dark, to: url)
+                    renderColumn(viewModel: viewModel, model: model, width: item.size.width, dark: dark, to: url)
                 } else {
                     renderWindow(viewModel: viewModel, model: model, size: item.size, dark: dark, to: url)
+                }
+            }
+        }
+        if only?.contains("unpriced-popover") ?? true {
+            for (language, currency) in [(LanguagePreference.zhHant, "TWD"), (.en, "USD")] {
+                let viewModel = prepare(Case(name: "unpriced-popover", range: .days90, language: language, currency: currency), model: model)
+                for dark in [false, true] {
+                    PreviewSnapshot.writeHosted(
+                        UnpricedModelsList(models: viewModel.content.unpricedModels, l10n: model.l10n).appEnvironment(model),
+                        dark: dark,
+                        to: directory.appendingPathComponent("history-unpriced-popover-\(language.rawValue)-\(dark ? "dark" : "light").png")
+                    )
                 }
             }
         }
@@ -83,6 +125,10 @@ enum HistoryPreviews {
         }
         model.settings.language = original
         model.l10n.apply(original)
+        model.settings.currency = "USD"
+        model.settings.subscriptionSources = []
+        model.settings.storage.removeObject(forKey: HistoryViewModel.includeSubscriptionsKey)
+        model.rates.preview(rates: nil, currency: "USD")
         model.history.publish(state: .notLoaded, days: [])
     }
 
@@ -105,7 +151,12 @@ enum HistoryPreviews {
         case .notLoaded: .notLoaded
         }
         model.history.publish(state: state, days: days)
-        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility)
+        model.settings.currency = item.currency
+        model.rates.preview(rates: previewRates, currency: item.currency)
+        model.settings.subscriptionSources = item.marked
+        model.settings.storage.set(item.includeSubscriptions, forKey: HistoryViewModel.includeSubscriptionsKey)
+        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost)
+        viewModel.select(metric: item.metric)
         viewModel.select(source: item.source)
         if item.range == .custom, let (start, end) = item.custom {
             let today = DayKey(now, calendar: calendar)
@@ -145,13 +196,13 @@ enum HistoryPreviews {
     }
 
     /// The whole scrolling column at its natural height, to review the table.
-    private static func renderColumn(viewModel: HistoryViewModel, model: AppModel, dark: Bool, to url: URL) {
+    private static func renderColumn(viewModel: HistoryViewModel, model: AppModel, width: CGFloat, dark: Bool, to url: URL) {
         let rows = viewModel.content.rows.count
         let height = 460 + HistoryLayout.chartHeight + CGFloat(min(rows, 40)) * HistoryLayout.rowHeight + 120
         PreviewSnapshot.writeHosted(
             HistoryView(model: viewModel)
                 .appEnvironment(model)
-                .frame(width: HistoryWindowController.defaultSize.width, height: height),
+                .frame(width: width, height: height),
             dark: dark,
             to: url
         )

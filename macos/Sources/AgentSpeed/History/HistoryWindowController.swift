@@ -67,7 +67,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
 
     private func ensureWindow() -> (NSWindow, HistoryViewModel) {
         if let window, let viewModel { return (window, viewModel) }
-        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility)
+        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost)
         let root = HistoryView(model: viewModel).appEnvironment(model)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
@@ -119,7 +119,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
         let content = viewModel.content
         guard !content.rows.isEmpty else { return }
         let l10n = model.l10n
-        let data = HistoryCSV.encode(HistoryCSV.build(content.rows, source: content.source))
+        let data = HistoryCSV.encode(HistoryCSV.build(content.rows, source: content.source, money: content.money))
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = HistoryCSV.fileName(content.range, source: content.source)

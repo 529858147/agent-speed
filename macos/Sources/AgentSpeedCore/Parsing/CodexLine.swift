@@ -38,6 +38,8 @@ struct CodexSessionMeta: Equatable, Sendable {
     var isSubagent: Bool
     /// The spawning thread (METRICS 6.7).
     var parentThreadId: String?
+    /// `payload.model_provider` (METRICS 3.2).
+    var modelProvider: String?
 }
 
 struct CodexLegacyInfo: Equatable, Sendable {
@@ -81,6 +83,7 @@ enum CodexLineExtractor {
         var parentThreadId: String?
         var spawnParentThreadId: String?
         var model: String?
+        var modelProvider: String?
         var responseId: String?
         var threadId: String?
         var usage: CodexRawUsage?
@@ -123,7 +126,8 @@ enum CodexLineExtractor {
                 cwd: payload.cwd,
                 agentPath: payload.agentPath,
                 isSubagent: payload.threadSource == "subagent" || payload.sourceHasSubagent,
-                parentThreadId: payload.parentThreadId ?? payload.spawnParentThreadId
+                parentThreadId: payload.parentThreadId ?? payload.spawnParentThreadId,
+                modelProvider: payload.modelProvider
             ))
         case 1:
             return .turnContext(model: payload?.model, cwd: payload?.cwd)
@@ -188,6 +192,8 @@ enum CodexLineExtractor {
                 (payload.sourceHasSubagent, payload.spawnParentThreadId) = try scanSource(&scanner)
             } else if scanner.key(key, is: "model") {
                 payload.model = try scanner.readNonEmptyString()
+            } else if scanner.key(key, is: "model_provider") {
+                payload.modelProvider = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "response_id") {
                 payload.responseId = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "thread_id") {

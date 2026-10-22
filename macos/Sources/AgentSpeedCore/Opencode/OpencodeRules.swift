@@ -37,7 +37,8 @@ enum OpencodeRules {
             startMs: startMs,
             endMs: endMs,
             usage: tokens,
-            isFinal: true
+            isFinal: true,
+            provider: data.provider
         )
     }
 

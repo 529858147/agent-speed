@@ -6,6 +6,8 @@ struct HeroScenario: Sendable {
     /// (seconds, tok/s) keyframes; each change eases over 0.45 s (log-space between two non-zero values).
     let keys: [(TimeInterval, Double)]
     let duration: TimeInterval
+    /// Holds each keyframe without easing or noise (the title-badge prototype's sampler).
+    var stepped = false
 
     /// Every title upward, a crash back to idle, and a restart.
     static let tour = HeroScenario(name: "tour", keys: [
@@ -18,11 +20,29 @@ struct HeroScenario: Sendable {
         (0, 0), (2, 10), (5, 0), (10.5, 3), (13, 0), (18.5, 450), (22, 0), (27.5, 18), (30.5, 0), (36, 120), (39, 120),
     ], duration: 39)
 
+    /// The title-badge prototype's stairs at R = 400: level 1, then one title up every 0.9 s, overdrive at 1.9 R,
+    /// a fall to titles 9 and 6, and parking.
+    static let stairs: HeroScenario = {
+        func enter(_ level: Int) -> Double { SpeedTitle(rawValue: level)?.enterSpeed(redline: 400) ?? 0 }
+        var keys: [(TimeInterval, Double)] = [(0, 0), (1.6, 1)]
+        var t = 3.0
+        for level in 2...13 {
+            keys.append((t, enter(level) * 1.08))
+            t += 0.9
+        }
+        keys.append((t, 400 * 1.9))
+        keys.append((t + 2.4, enter(9) * 1.02))
+        keys.append((t + 4.2, enter(6) * 1.02))
+        keys.append((t + 6.0, 0))
+        return HeroScenario(name: "stairs", keys: keys, duration: t + 10.6, stepped: true)
+    }()
+
     static func named(_ name: String) -> HeroScenario? {
-        [tour, startups].first { $0.name == name }
+        [tour, startups, stairs].first { $0.name == name }
     }
 
     func value(at t: TimeInterval) -> Double {
+        if stepped { return keys.last { $0.0 <= t }?.1 ?? 0 }
         var v = keys[keys.count - 1].1
         for index in 0..<(keys.count - 1) where t >= keys[index].0 && t < keys[index + 1].0 {
             let previous = index > 0 ? keys[index - 1].1 : keys[index].1

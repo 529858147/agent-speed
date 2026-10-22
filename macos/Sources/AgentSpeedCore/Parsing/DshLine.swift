@@ -17,6 +17,8 @@ struct DshAssistantMessage: Equatable, Sendable {
     var id: String?
     var seq: Int64?
     var model: String?
+    /// `source.provider`.
+    var provider: String?
     /// Set when `data.usage` is an object.
     var usage: TokenUsage?
     /// `data.message.content` has a block of type `tool-call`.
@@ -24,7 +26,7 @@ struct DshAssistantMessage: Equatable, Sendable {
 }
 
 enum DshEventKind: Equatable, Sendable {
-    case requestHeader(model: String?)
+    case requestHeader(model: String?, provider: String?)
     case stepStart
     case assistantMessage(DshAssistantMessage)
     case turnEnd
@@ -59,6 +61,7 @@ enum DshLineExtractor {
         var records: [DshRecord] = []
         var own = DshHeader()
         var requestModel: String?
+        var requestProvider: String?
         var message = DshAssistantMessage()
     }
 
@@ -128,7 +131,7 @@ enum DshLineExtractor {
         guard let time = members.time else { return }
         let kind: DshEventKind
         switch members.type {
-        case 3: kind = .requestHeader(model: members.requestModel)
+        case 3: kind = .requestHeader(model: members.requestModel, provider: members.requestProvider)
         case 4: kind = .stepStart
         case 5:
             var message = members.message
@@ -187,11 +190,12 @@ enum DshLineExtractor {
 
     private static func scanData(_ scanner: inout JSONScanner, into members: inout Members) throws(JSONScanError) {
         members.requestModel = nil
+        members.requestProvider = nil
         members.message = DshAssistantMessage()
         guard try scanner.beginObjectIfPresent() else { return }
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "header") {
-                members.requestModel = try scanRequestModel(&scanner)
+                (members.requestModel, members.requestProvider) = try scanRequestConfig(&scanner)
             } else if scanner.key(key, is: "message") {
                 let usage = members.message.usage
                 members.message = try scanMessage(&scanner)
@@ -204,26 +208,30 @@ enum DshLineExtractor {
         }
     }
 
-    /// `data.header.config.model`.
-    private static func scanRequestModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> String? {
-        guard try scanner.beginObjectIfPresent() else { return nil }
+    /// `data.header.config.model` and `.provider`.
+    private static func scanRequestConfig(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?) {
+        guard try scanner.beginObjectIfPresent() else { return (nil, nil) }
         var model: String?
+        var provider: String?
         while let key = try scanner.nextMember() {
             guard scanner.key(key, is: "config") else {
                 try scanner.skipValue()
                 continue
             }
             model = nil
+            provider = nil
             guard try scanner.beginObjectIfPresent() else { continue }
             while let inner = try scanner.nextMember() {
                 if scanner.key(inner, is: "model") {
                     model = try scanner.readNonEmptyString()
+                } else if scanner.key(inner, is: "provider") {
+                    provider = try scanner.readNonEmptyString()
                 } else {
                     try scanner.skipValue()
                 }
             }
         }
-        return model
+        return (model, provider)
     }
 
     /// `data.message`: its id, `source.model` and whether any content block is a `tool-call`.
@@ -234,7 +242,7 @@ enum DshLineExtractor {
             if scanner.key(key, is: "id") {
                 message.id = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "source") {
-                message.model = try scanSourceModel(&scanner)
+                (message.model, message.provider) = try scanSource(&scanner)
             } else if scanner.key(key, is: "content") {
                 message.hasToolCall = try scanHasToolCall(&scanner)
             } else {
@@ -244,17 +252,20 @@ enum DshLineExtractor {
         return message
     }
 
-    private static func scanSourceModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> String? {
-        guard try scanner.beginObjectIfPresent() else { return nil }
+    private static func scanSource(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?) {
+        guard try scanner.beginObjectIfPresent() else { return (nil, nil) }
         var model: String?
+        var provider: String?
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "model") {
                 model = try scanner.readNonEmptyString()
+            } else if scanner.key(key, is: "provider") {
+                provider = try scanner.readNonEmptyString()
             } else {
                 try scanner.skipValue()
             }
         }
-        return model
+        return (model, provider)
     }
 
     private static func scanHasToolCall(_ scanner: inout JSONScanner) throws(JSONScanError) -> Bool {

@@ -98,6 +98,8 @@ final class OrbsController {
             guard let self, let model = self.model else { return }
             let snapshot = model.store.snapshot
             _ = (model.settings.metric, model.settings.redlineOutput, model.settings.redlineTotal)
+            // The money unit follows the currency, language, rates and subscription marks (DESIGN 9).
+            _ = (model.cost.currency, model.cost.rate, model.l10n.language, model.settings.billableSources)
             self.ingest(snapshot, model: model)
         })
         loops.append(ObservationLoop { [weak self] in
@@ -155,7 +157,7 @@ final class OrbsController {
         let previewing = model.store.isPreviewing
         let now = Clock.now
         for orb in document.orbs {
-            runtimes[orb.id]?.ingest(snapshot, settings: model.settings, isPreviewing: previewing, now: now)
+            runtimes[orb.id]?.ingest(snapshot, settings: model.settings, cost: model.cost, isPreviewing: previewing, now: now)
         }
     }
 
@@ -308,6 +310,16 @@ final class OrbsController {
         setDocument(OrbEditing.setStyle(style, of: id, in: document))
     }
 
+    /// tok/s or the money unit (DESIGN 9); persisted at once.
+    func setUnit(_ unit: OrbUnit, of id: String) {
+        setDocument(OrbEditing.setUnit(unit, of: id, in: document))
+    }
+
+    func toggleUnit(of id: String) {
+        guard let orb = document.orb(id) else { return }
+        setUnit(orb.unit.toggled, of: id)
+    }
+
     func setSize(_ size: Double, of id: String) {
         setDocument(OrbEditing.setSize(size, of: id, in: document))
     }
@@ -350,6 +362,28 @@ final class OrbsController {
     func setRedline(_ value: Double?, metric: SpeedMetric, of id: String) {
         let snapped = value.map { SettingsLimits.snapRedline($0, metric: metric) }
         setDocument(OrbEditing.setRedline(snapped, metric: metric, of: id, in: document))
+    }
+
+    /// nil follows the General title theme (DESIGN 2b `titleTheme`).
+    func setTitleTheme(_ theme: String?, of id: String) {
+        setDocument(OrbEditing.setTitleTheme(theme, of: id, in: document))
+    }
+
+    /// Orbs naming a deleted custom title set take its base preset; returns the document before, for undo.
+    @discardableResult
+    func replaceTitleTheme(_ old: String, with replacement: String?) -> OrbsDocument {
+        let previous = document
+        setDocument(OrbEditing.replacingTitleTheme(old, with: replacement, in: document))
+        return previous
+    }
+
+    /// Restores the title-theme references of a document saved before a title-set deletion (its undo).
+    func restoreTitleThemes(from previous: OrbsDocument) {
+        var next = document
+        for index in next.orbs.indices {
+            if let old = previous.orb(next.orbs[index].id) { next.orbs[index].titleTheme = old.titleTheme }
+        }
+        setDocument(next)
     }
 
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -443,7 +477,8 @@ final class OrbsController {
         if let model {
             let snapshot = model.store.snapshot
             for orb in document.orbs {
-                runtimes[orb.id]?.ingest(snapshot, settings: model.settings, isPreviewing: model.store.isPreviewing, now: Clock.now)
+                runtimes[orb.id]?.ingest(snapshot, settings: model.settings, cost: model.cost, isPreviewing: model.store.isPreviewing,
+                                         now: Clock.now)
             }
         }
     }

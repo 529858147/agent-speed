@@ -27,6 +27,11 @@ final class StatusItemRenderer {
             _ = (gauge.revision, gauge.tier, gauge.readoutValue)
             _ = (settings.barMode, settings.barShowsUnit, settings.barColoredGlyph, settings.effects)
             _ = (self.model.l10n.language, self.model.accessibility.increaseContrast, self.model.accessibility.reduceMotion)
+            if settings.liveUnit == .cost {
+                // The money value follows the snapshot, the currency, the rates and the marks (DESIGN 9).
+                _ = (self.model.snapshot.sources, self.model.cost.currency, self.model.cost.rate, settings.billableSources)
+            }
+            _ = settings.liveUnit
             self.render()
         }
     }
@@ -70,7 +75,7 @@ final class StatusItemRenderer {
 
     /// The current state, with the value's room decided by the width governor.
     private func state(at time: TimeInterval) -> StatusItemState {
-        let needed = StatusItemLayout.valueWidth(of: SpeedFormat.speed(model.gauge.readoutValue))
+        let needed = StatusItemLayout.valueWidth(of: StatusItemValue.current(model).text)
         _ = widthGovernor.update(needed: needed, now: time)
         return StatusItemState(model: model, time: time, valueWidth: widthGovernor.width)
     }

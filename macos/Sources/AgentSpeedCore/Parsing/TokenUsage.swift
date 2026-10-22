@@ -5,15 +5,25 @@ public struct TokenUsage: Equatable, Hashable, Sendable {
     public var input: Int
     public var cachedInput: Int
     public var cacheWriteInput: Int
+    /// The part of `cacheWriteInput` written with a 1-hour lifetime (Claude only; METRICS 3.2).
+    public var cacheWrite1hInput: Int
     public var output: Int
     public var reasoning: Int
 
     public var total: Int { input + output }
 
-    public init(input: Int = 0, cachedInput: Int = 0, cacheWriteInput: Int = 0, output: Int = 0, reasoning: Int = 0) {
+    public init(
+        input: Int = 0,
+        cachedInput: Int = 0,
+        cacheWriteInput: Int = 0,
+        cacheWrite1hInput: Int = 0,
+        output: Int = 0,
+        reasoning: Int = 0
+    ) {
         self.input = input
         self.cachedInput = cachedInput
         self.cacheWriteInput = cacheWriteInput
+        self.cacheWrite1hInput = cacheWrite1hInput
         self.output = output
         self.reasoning = reasoning
     }
@@ -26,6 +36,7 @@ public struct TokenUsage: Equatable, Hashable, Sendable {
             input: max(input, other.input),
             cachedInput: max(cachedInput, other.cachedInput),
             cacheWriteInput: max(cacheWriteInput, other.cacheWriteInput),
+            cacheWrite1hInput: max(cacheWrite1hInput, other.cacheWrite1hInput),
             output: max(output, other.output),
             reasoning: max(reasoning, other.reasoning)
         )

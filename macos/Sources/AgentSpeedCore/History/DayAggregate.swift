@@ -11,12 +11,37 @@ struct ModelTally: Equatable, Sendable {
     var output = 0
     var measuredOutput = 0
     var measuredMs: Int64 = 0
+    /// Nil when the contribution was stored before costs existed (METRICS 8).
+    var cost: CostTally?
 
     mutating func merge(_ other: ModelTally) {
+        cost = CostTally.merged(cost, requests: requests, other.cost, requests: other.requests)
         requests += other.requests
         output = output.saturatingAdd(other.output)
         measuredOutput = measuredOutput.saturatingAdd(other.measuredOutput)
         measuredMs += other.measuredMs
+    }
+}
+
+extension CostTally {
+    /// Sums two contributions. A part without cost data (stored before costs existed) adds its requests as
+    /// unpriced, so a day mixing both shows a partial cost; only parts that all lack cost data stay without.
+    static func merged(_ lhs: CostTally?, requests lhsRequests: Int, _ rhs: CostTally?, requests rhsRequests: Int) -> CostTally? {
+        if lhsRequests == 0, lhs == nil || lhs == .zero { return rhs }
+        if rhsRequests == 0, rhs == nil || rhs == .zero { return lhs }
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return nil
+        case (var sum?, nil):
+            sum.unpricedRequests += rhsRequests
+            return sum
+        case (nil, var sum?):
+            sum.unpricedRequests += lhsRequests
+            return sum
+        case (var sum?, let other?):
+            sum.add(other)
+            return sum
+        }
     }
 }
 
@@ -28,10 +53,16 @@ struct DayAggregate: Equatable, Sendable {
     var unfinalized = 0
     var agents = 0
     var models: [String: ModelTally] = [:]
+    /// Nil when the contribution was stored before costs existed (METRICS 8).
+    var cost: CostTally?
 
-    mutating func add(_ record: ResponseRecord) {
+    /// Adds a response with its cost (nil = unknown price).
+    mutating func add(_ record: ResponseRecord, cost responseCost: Int64?) {
+        if cost == nil, totals.requests == 0 { cost = .zero }
+        cost?.add(responseCost)
         totals.add(record.usage, sign: 1)
-        var tally = models[record.model ?? ""] ?? ModelTally()
+        var tally = models[record.model ?? ""] ?? ModelTally(cost: .zero)
+        tally.cost?.add(responseCost)
         tally.requests += 1
         tally.output = tally.output.saturatingAdd(record.usage.output)
         if record.isFinal, let timed = TimedResponse(record) {
@@ -45,6 +76,7 @@ struct DayAggregate: Equatable, Sendable {
     }
 
     mutating func merge(_ other: DayAggregate) {
+        cost = CostTally.merged(cost, requests: totals.requests, other.cost, requests: other.totals.requests)
         totals.requests = totals.requests.saturatingAdd(other.totals.requests)
         totals.input = totals.input.saturatingAdd(other.totals.input)
         totals.cachedInput = totals.cachedInput.saturatingAdd(other.totals.cachedInput)
@@ -60,21 +92,24 @@ struct DayAggregate: Equatable, Sendable {
         }
     }
 
-    /// Per-day contributions of one agent's responses, all attributed to `source` (the file's final source).
+    /// Per-day contributions of one agent's responses, all attributed to `source` (the file's final source), each
+    /// response priced with the table of its date (METRICS 9.7).
     static func contributions<Records: Sequence>(
         of records: Records,
         source: SourceKind,
-        labeler: inout DayLabeler
+        labeler: inout DayLabeler,
+        pricing: PriceBook
     ) -> [UsageKey: DayAggregate] where Records.Element == ResponseRecord {
         var days: [UsageKey: DayAggregate] = [:]
         for record in records {
-            days[UsageKey(day: labeler.label(forMs: record.endMs), source: source), default: DayAggregate()].add(record)
+            let day = labeler.label(forMs: record.endMs)
+            days[UsageKey(day: day, source: source), default: DayAggregate()].add(record, cost: pricing.cost(of: record, day: day))
         }
         for key in days.keys { days[key]?.agents = 1 }
         return days
     }
 
-    func usage(day: String, source: SourceKind, peak: Double?) -> DailyUsage {
+    func usage(day: String, source: SourceKind, peak: Double?, priceVersion: Int?) -> DailyUsage {
         DailyUsage(
             day: day,
             source: source,
@@ -87,9 +122,11 @@ struct DayAggregate: Equatable, Sendable {
             models: models
                 .map {
                     ModelUsage(model: $0.key, requests: $0.value.requests, output: $0.value.output,
-                               measuredOutput: $0.value.measuredOutput, measuredMs: $0.value.measuredMs)
+                               measuredOutput: $0.value.measuredOutput, measuredMs: $0.value.measuredMs, cost: $0.value.cost)
                 }
-                .sorted { $0.model.unicodeScalars.lexicographicallyPrecedes($1.model.unicodeScalars) }
+                .sorted { $0.model.unicodeScalars.lexicographicallyPrecedes($1.model.unicodeScalars) },
+            cost: cost,
+            priceVersion: cost == nil ? nil : priceVersion
         )
     }
 }

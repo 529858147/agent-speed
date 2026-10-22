@@ -10,8 +10,11 @@ struct HistoryBreakdownCard: View {
     let today: DayKey
     /// The selected source: its color paints every model bar, as in the chart tooltip's model shares.
     let source: SourceKind?
+    let money: HistoryMoney
     let l10n: Localizer
     let reduceMotion: Bool
+    /// Output or cost sorts and sizes the bars (DESIGN 9).
+    @Binding var metric: HistoryChartMetric
     let onSelectSource: (SourceKind) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -22,7 +25,7 @@ struct HistoryBreakdownCard: View {
         let columns = BreakdownColumns(names: breakdown.items.map { HistoryText.breakdownName($0.subject, l10n) })
         let inProgress = breakdown.day == today
         // Bars spring to their new lengths; under Reduce Motion the rows crossfade instead.
-        let identity = reduceMotion ? "\(breakdown.day)-\(breakdown.kind)-\(source?.rawValue ?? "all")" : "breakdown"
+        let identity = reduceMotion ? "\(breakdown.day)-\(breakdown.kind)-\(breakdown.metric)-\(source?.rawValue ?? "all")" : "breakdown"
         VStack(alignment: .leading, spacing: Spacing.xxs) {
             header(columns: columns, inProgress: inProgress)
             if breakdown.isEmpty {
@@ -49,13 +52,22 @@ struct HistoryBreakdownCard: View {
         .historyCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(l10n(breakdown.titleKey))
-        .accessibilityChartDescriptor(HistoryBreakdownDescriptor(breakdown: breakdown, l10n: l10n))
+        .accessibilityChartDescriptor(HistoryBreakdownDescriptor(breakdown: breakdown, money: money, l10n: l10n))
     }
 
     /// The title (with 進行中 for today) over the names, the column captions over the numbers.
     private func header(columns: BreakdownColumns, inProgress: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: BreakdownColumns.spacing) {
-            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Picker(l10n(breakdown.metric.titleKey), selection: $metric) {
+                    ForEach(HistoryChartMetric.allCases) { metric in
+                        Text(l10n(metric.titleKey)).tag(metric)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
                 Text(l10n(breakdown.titleKey))
                     .font(HistoryFont.sectionTitle)
                     .fixedSize()
@@ -68,6 +80,8 @@ struct HistoryBreakdownCard: View {
             Group {
                 Text(l10n("history.table.output"))
                     .frame(width: BreakdownColumns.output, alignment: .trailing)
+                Text(l10n("history.table.cost"))
+                    .frame(width: BreakdownColumns.cost, alignment: .trailing)
                 Text(l10n("mac.history.breakdown.share"))
                     .frame(width: BreakdownColumns.share, alignment: .trailing)
                 Text(l10n("history.table.speed"))
@@ -86,7 +100,7 @@ struct HistoryBreakdownCard: View {
     @ViewBuilder
     private func row(_ item: BreakdownItem, columns: BreakdownColumns, inProgress: Bool, dark: Bool) -> some View {
         let name = HistoryText.breakdownName(item.subject, l10n)
-        let value = HistoryText.accessible(item, l10n)
+        let value = HistoryText.accessible(item, money: money, l10n)
         let content = BreakdownRowContent(
             item: item,
             name: name,
@@ -94,6 +108,7 @@ struct HistoryBreakdownCard: View {
             columns: columns,
             inProgress: inProgress,
             increasedContrast: contrast == .increased,
+            money: money,
             l10n: l10n
         )
         if case .source(let kind) = item.subject {
@@ -132,6 +147,7 @@ struct BreakdownColumns {
     static let inset: CGFloat = Spacing.xs
     static let spacing: CGFloat = Spacing.s
     static let output: CGFloat = 60
+    static let cost: CGFloat = 80
     static let share: CGFloat = 44
     static let speed: CGFloat = 92
     static let swatch: CGFloat = 9
@@ -154,6 +170,7 @@ private struct BreakdownRowContent: View {
     let columns: BreakdownColumns
     let inProgress: Bool
     let increasedContrast: Bool
+    let money: HistoryMoney
     let l10n: Localizer
 
     var body: some View {
@@ -174,6 +191,8 @@ private struct BreakdownRowContent: View {
             Text(SpeedFormat.tokens(item.output))
                 .font(HistoryFont.cell)
                 .frame(width: BreakdownColumns.output, alignment: .trailing)
+            cost
+                .frame(width: BreakdownColumns.cost, alignment: .trailing)
             Text(HistoryText.percent(item.share))
                 .font(HistoryFont.cell)
                 .foregroundStyle(.historySecondary)
@@ -185,6 +204,25 @@ private struct BreakdownRowContent: View {
         .padding(.horizontal, BreakdownColumns.inset)
         .frame(height: 32)
         .contentShape(Rectangle())
+    }
+
+    /// The cost cell: amount (with a small `≥`), `–`, or the subscription tag, quiet when not priced.
+    private var cost: some View {
+        let text = money.display(item.cost, subscriptionTag: l10n("cost.subscription.tag"))
+        let quiet = item.cost.sortValue == nil
+        return HStack(alignment: .firstTextBaseline, spacing: 1) {
+            if text.hasPrefix("≥") {
+                Text(verbatim: "≥")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.historySecondary)
+            }
+            Text(text.hasPrefix("≥") ? String(text.dropFirst()) : text)
+                .font(quiet && text != "–" ? .system(size: 11.5) : HistoryFont.cell)
+                .foregroundStyle(quiet ? AnyShapeStyle(.historySecondary) : AnyShapeStyle(.primary))
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .help(HistoryTable.costTooltip(item.cost, money: money, l10n) ?? text)
     }
 
     @ViewBuilder

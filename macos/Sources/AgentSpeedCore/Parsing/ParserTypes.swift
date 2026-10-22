@@ -13,6 +13,12 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
     public var usage: TokenUsage
     /// False while only a streaming snapshot of the usage was written (METRICS 3.3). Codex usage is always final.
     public var isFinal: Bool
+    /// The API provider the agent says it used, only for pricing (METRICS 3.2); never empty.
+    public var provider: String?
+    /// The request ran in a provider's fast mode (METRICS 3.2).
+    public var fast: Bool
+    /// Integer micro-USD (METRICS 9.3), set by pricing; nil while unpriced or when the price is unknown.
+    public var costMicroUsd: Int64?
 
     /// A final response with a valid interval contributes measured speed.
     public var isMeasured: Bool { isFinal && ResponseTiming.effectiveStart(startMs: startMs, endMs: endMs) != nil }
@@ -25,7 +31,10 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
         startMs: Int64?,
         endMs: Int64,
         usage: TokenUsage,
-        isFinal: Bool = true
+        isFinal: Bool = true,
+        provider: String? = nil,
+        fast: Bool = false,
+        costMicroUsd: Int64? = nil
     ) {
         self.key = key
         self.source = source
@@ -35,6 +44,9 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
         self.endMs = endMs
         self.usage = usage
         self.isFinal = isFinal
+        self.provider = provider.flatMap { $0.isEmpty ? nil : $0 }
+        self.fast = fast
+        self.costMicroUsd = costMicroUsd
     }
 }
 

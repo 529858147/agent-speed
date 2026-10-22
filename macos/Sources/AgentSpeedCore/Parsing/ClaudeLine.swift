@@ -28,6 +28,8 @@ struct ClaudeLine: Equatable, Sendable {
     var model: String?
     var stopReason: ClaudeStopReason = .none
     var usage: TokenUsage = .zero
+    /// `message.usage.speed == "fast"` (METRICS 3.2).
+    var fast = false
     /// A user line whose content starts with `[Request interrupted by user`.
     var isInterrupt = false
     /// `message.content` contains a block of type `tool_use`.
@@ -109,7 +111,7 @@ enum ClaudeLineExtractor {
                     }
                 }
             } else if scanner.key(key, is: "usage") {
-                line.usage = try scanUsage(&scanner)
+                (line.usage, line.fast) = try scanUsage(&scanner)
             } else if scanner.key(key, is: "content") {
                 (line.isInterrupt, line.hasToolUse) = try scanContent(&scanner)
             } else {
@@ -118,13 +120,15 @@ enum ClaudeLineExtractor {
         }
     }
 
-    private static func scanUsage(_ scanner: inout JSONScanner) throws(JSONScanError) -> TokenUsage {
-        guard try scanner.beginObjectIfPresent() else { return .zero }
+    private static func scanUsage(_ scanner: inout JSONScanner) throws(JSONScanError) -> (TokenUsage, fast: Bool) {
+        guard try scanner.beginObjectIfPresent() else { return (.zero, false) }
         var input = 0
         var cacheCreation = 0
+        var cacheCreation1h = 0
         var cacheRead = 0
         var output = 0
         var thinking = 0
+        var fast = false
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "input_tokens") {
                 input = TokenCount.clamp(try scanner.readInteger())
@@ -135,31 +139,39 @@ enum ClaudeLineExtractor {
             } else if scanner.key(key, is: "output_tokens") {
                 output = TokenCount.clamp(try scanner.readInteger())
             } else if scanner.key(key, is: "output_tokens_details") {
-                thinking = try scanThinkingTokens(&scanner)
+                thinking = try scanNestedCount(&scanner, "thinking_tokens")
+            } else if scanner.key(key, is: "cache_creation") {
+                cacheCreation1h = try scanNestedCount(&scanner, "ephemeral_1h_input_tokens")
+            } else if scanner.key(key, is: "speed") {
+                fast = try scanner.readStringMatch(["fast"]) == 0
             } else {
                 try scanner.skipValue()
             }
         }
-        return TokenUsage(
+        let usage = TokenUsage(
             input: input + cacheCreation + cacheRead,
             cachedInput: cacheRead,
             cacheWriteInput: cacheCreation,
+            cacheWrite1hInput: min(cacheCreation1h, cacheCreation),
             output: output,
             reasoning: thinking
         )
+        return (usage, fast)
     }
 
-    private static func scanThinkingTokens(_ scanner: inout JSONScanner) throws(JSONScanError) -> Int {
+    /// One integer member of a nested object (`output_tokens_details.thinking_tokens`,
+    /// `cache_creation.ephemeral_1h_input_tokens`); 0 when absent.
+    private static func scanNestedCount(_ scanner: inout JSONScanner, _ name: StaticString) throws(JSONScanError) -> Int {
         guard try scanner.beginObjectIfPresent() else { return 0 }
-        var thinking = 0
+        var count = 0
         while let key = try scanner.nextMember() {
-            if scanner.key(key, is: "thinking_tokens") {
-                thinking = TokenCount.clamp(try scanner.readInteger())
+            if scanner.key(key, is: name) {
+                count = TokenCount.clamp(try scanner.readInteger())
             } else {
                 try scanner.skipValue()
             }
         }
-        return thinking
+        return count
     }
 
     /// Whether string content or any top-level `text` block starts with the interrupt marker, and whether any

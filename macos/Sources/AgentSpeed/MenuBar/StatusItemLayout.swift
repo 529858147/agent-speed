@@ -33,11 +33,11 @@ struct StatusItemLayout: Equatable {
     }
 
     @MainActor
-    init(model: AppModel, valueWidth: CGFloat) {
+    init(model: AppModel, unit: String? = nil, valueWidth: CGFloat) {
         self.init(
             mode: model.settings.barMode,
             showsUnit: model.settings.barShowsUnit,
-            unit: model.l10n("unit.tokS"),
+            unit: unit ?? model.l10n("unit.tokS"),
             valueWidth: valueWidth,
             height: Self.barHeight
         )

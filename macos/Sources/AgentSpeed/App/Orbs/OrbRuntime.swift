@@ -34,11 +34,12 @@ final class OrbRuntime {
     }
 
     /// Feeds one snapshot (every engine tick). While the effects preview runs, every orb shows the demo.
-    func ingest(_ snapshot: SpeedSnapshot, settings: AppSettings, isPreviewing: Bool, now: TimeInterval) {
+    func ingest(_ snapshot: SpeedSnapshot, settings: AppSettings, cost: CostDisplay?, isPreviewing: Bool, now: TimeInterval) {
         let metric = settings.metric
         let set = isPreviewing ? nil : sourceSet
         let reading = OrbSubset.reading(snapshot, sources: set)
         self.reading = reading
+        updateMoney(snapshot, reading: reading, cost: cost, isPreviewing: isPreviewing)
         let redline = redline(for: metric, settings: settings)
         if feed.gauge.redline != redline { feed.gauge.redline = redline }
         let output = config.redlineOutput.map { SettingsLimits.snapRedline($0, metric: .output) } ?? settings.redlineOutput
@@ -55,6 +56,25 @@ final class OrbRuntime {
         updateBezel(unavailable: isPreviewing ? [] : reading.unavailable)
         trackPeak(snapshot: snapshot, set: set, isPreviewing: isPreviewing)
     }
+
+    /// The money readout of a cost orb (METRICS 6.8 Cost, DESIGN 9 Orb): its billable sources' live cost rate.
+    /// The effects preview has no prices, so it shows the demo's output at a nominal $15 per million tokens.
+    private func updateMoney(_ snapshot: SpeedSnapshot, reading: SubsetReading, cost: CostDisplay?, isPreviewing: Bool) {
+        if feed.unit != config.unit { feed.unit = config.unit }
+        guard config.unit == .cost, let cost else {
+            if feed.money != nil { feed.money = nil }
+            return
+        }
+        var costReading = OrbSubset.cost(snapshot, sources: isPreviewing ? nil : sourceSet, billable: cost.billable)
+        if isPreviewing {
+            costReading = CostReading(microUsdPerSecond: reading.live.output * Self.previewMicroUsdPerToken,
+                                      liveOutput: reading.live.output)
+        }
+        let money = cost.live(costReading, agentCount: reading.agents.count)
+        if feed.money != money { feed.money = money }
+    }
+
+    static let previewMicroUsdPerToken = 15.0
 
     /// The orb's redline of `metric`: its override, else the General redline.
     func redline(for metric: SpeedMetric, settings: AppSettings) -> Double {

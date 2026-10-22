@@ -66,7 +66,7 @@ enum HistoryText {
     }
 
     /// An axis value in the compact form without trailing zeros: `1.5M`, `500k`, `2.5`.
-    static func axisNumber(_ value: Double) -> String {
+    nonisolated static func axisNumber(_ value: Double) -> String {
         guard value.isFinite, value > 0 else { return "0" }
         let compact = value >= 1000 ? SpeedFormat.tokens(Int(value.rounded())) : SpeedFormat.speed(value)
         guard let dot = compact.firstIndex(of: ".") else { return compact }
@@ -187,10 +187,11 @@ enum HistoryText {
     }
 
     /// Everything a day holds, as one sentence for screen readers.
-    static func accessible(_ day: DaySummary, today: DayKey, _ l10n: Localizer) -> String {
+    static func accessible(_ day: DaySummary, today: DayKey, money: HistoryMoney? = nil, _ l10n: Localizer) -> String {
         var parts = [
             labelled(l10n("history.table.output"), fullNumber(day.output, l10n), l10n),
             labelled(l10n("history.table.input"), fullNumber(day.input, l10n), l10n),
+            money.map { labelled(l10n("history.table.cost"), spokenCost(day.cost, money: $0, l10n), l10n) } ?? "",
             labelled(l10n("history.table.requests"), fullNumber(day.requests, l10n), l10n),
             labelled(l10n("history.table.cacheHit"), percent(day.cacheHitRatio), l10n),
             labelled(l10n("history.table.speed"), speed(day.averageSpeed, l10n), l10n),
@@ -223,14 +224,48 @@ enum HistoryText {
         return "\(model.model) · \(self.speed(speed, l10n))"
     }
 
-    /// One breakdown bar for screen readers: `輸出：312,345，佔比：38%，平均速度：88.2 tok/s，請求：151`.
-    static func accessible(_ item: BreakdownItem, _ l10n: Localizer) -> String {
+    /// One breakdown bar for screen readers: `輸出：312,345，費用：4.20 美元，佔比：38%，平均速度：88.2 tok/s，請求：151`.
+    static func accessible(_ item: BreakdownItem, money: HistoryMoney? = nil, _ l10n: Localizer) -> String {
         join([
             labelled(l10n("history.table.output"), fullNumber(item.output, l10n), l10n),
+            money.map { labelled(l10n("history.table.cost"), spokenCost(item.cost, money: $0, l10n), l10n) } ?? "",
             labelled(l10n("mac.history.breakdown.share"), percent(item.share), l10n),
             labelled(l10n("history.table.speed"), fullSpeed(item.averageSpeed, l10n), l10n),
             labelled(l10n("history.table.requests"), fullNumber(item.requests, l10n), l10n),
         ], l10n)
+    }
+
+    /// The secondary line under a cost: unpriced requests, no cost data, or the excluded subscription sources.
+    static func costNote(_ cost: HistoryCost, _ l10n: Localizer) -> String? {
+        switch cost.kind {
+        case .priced(_, let partial): partial ? l10n("history.unpricedDay", cost.unpriced) : nil
+        case .unknown: l10n("history.unpricedDay", cost.requests)
+        case .unavailable: l10n("history.costUnavailable")
+        case .subscription(let sources): l10n("cost.subscriptionExcluded", sourceList(sources, l10n))
+        }
+    }
+
+    static func sourceList(_ sources: [SourceKind], _ l10n: Localizer) -> String {
+        sources.map { l10n($0.titleKey) }.joined(separator: l10n("list.separator"))
+    }
+
+    /// A model's cost next to its share: the amount, `cost.free`, `cost.unknown`, or `cost.subscription.tag` when only
+    /// subscription sources used it.
+    static func modelCost(_ cost: ModelCost?, money: HistoryMoney, _ l10n: Localizer) -> String {
+        guard let cost, cost.requests > 0 else { return l10n("cost.subscription.tag") }
+        guard let tally = cost.cost, !tally.isUnknown(requests: cost.requests) else { return l10n("cost.unknown") }
+        if tally.costMicroUsd == 0, tally.unpricedRequests == 0 { return l10n("cost.free") }
+        return (tally.unpricedRequests > 0 ? "≥" : "") + money.amount(tally.costMicroUsd)
+    }
+
+    /// How accessibility reads a cost: the amount with the currency's name, `≥` as `a11y.orb.costAtLeast`, `–` as
+    /// `cost.unknown` (DESIGN 9).
+    static func spokenCost(_ cost: HistoryCost, money: HistoryMoney, _ l10n: Localizer) -> String {
+        switch cost.kind {
+        case .priced(let micro, let partial): partial ? l10n("a11y.orb.costAtLeast", money.spoken(micro)) : money.spoken(micro)
+        case .unknown, .unavailable: l10n("cost.unknown")
+        case .subscription: l10n("cost.subscription.tag")
+        }
     }
 
     /// The day's long date, with `進行中` for today.

@@ -4,6 +4,8 @@ import Foundation
 /// (METRICS 4.7). Assistant messages and `model_usage` entries share it.
 struct OmpCall: Equatable, Sendable {
     var model: String
+    /// The `provider` string; nil when it is empty (METRICS 3.2).
+    var provider: String?
     var tokens: TokenUsage
     /// One of `input`, `output`, `cacheRead`, `cacheWrite` is above 0.
     var hasUsage: Bool
@@ -104,6 +106,7 @@ enum OmpLineExtractor {
     private struct CallMembers {
         var model: String?
         var hasProvider = false
+        var provider: String?
         var hasApi = false
         var usage: Usage?
 
@@ -117,7 +120,7 @@ enum OmpLineExtractor {
                 reasoning: usage.reasoning
             )
             let hasUsage = usage.input > 0 || usage.output > 0 || usage.cacheRead > 0 || usage.cacheWrite > 0
-            return OmpCall(model: model, tokens: tokens, hasUsage: hasUsage)
+            return OmpCall(model: model, provider: provider, tokens: tokens, hasUsage: hasUsage)
         }
     }
 
@@ -265,7 +268,9 @@ enum OmpLineExtractor {
         if scanner.key(key, is: "model") {
             call.model = try scanner.readString()
         } else if scanner.key(key, is: "provider") {
-            call.hasProvider = try scanner.readStringIsNonEmpty() != nil
+            let value = try scanner.readStringValue()
+            call.hasProvider = value != nil
+            call.provider = value.flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
         } else if scanner.key(key, is: "api") {
             call.hasApi = try scanner.readStringIsNonEmpty() != nil
         } else if scanner.key(key, is: "usage") {

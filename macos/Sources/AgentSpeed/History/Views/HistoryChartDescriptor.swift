@@ -2,7 +2,8 @@ import Accessibility
 import AgentSpeedCore
 import SwiftUI
 
-/// Audio graph of the daily chart: output per day, with the average speed as a second series.
+/// Audio graph of the daily chart: output per day with the average speed as a second series, or cost per day in the
+/// display currency (DESIGN 9).
 struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
     let title: String
     let summary: String
@@ -14,25 +15,34 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
     let speeds: [Double?]
     let outputMax: Double
     let language: AppLanguage
+    /// Cost values read as amounts (`12.34 美元`).
+    let money: HistoryMoney?
 
     @MainActor
     init(chart: HistoryChartModel, l10n: Localizer) {
-        title = l10n("history.chart.output")
+        let cost = chart.metric == .cost
+        title = l10n(chart.metric.titleKey)
         summary = HistoryText.rangeSubtitle(chart.range, l10n)
         dayTitle = l10n("history.table.date")
-        outputTitle = l10n("history.table.output")
+        outputTitle = l10n(cost ? "history.table.cost" : "history.table.output")
         speedTitle = "\(l10n("history.chart.speed")) (\(l10n("unit.tokS")))"
         labels = chart.range.days.map { HistoryText.longDate($0, l10n) }
-        outputs = chart.range.days.map { Double(chart.days[$0]?.output ?? 0) }
+        outputs = chart.range.days.map { day in
+            guard let summary = chart.days[day] else { return 0 }
+            return cost ? (chart.money?.value(summary.cost.microUsd) ?? 0) : Double(summary.output)
+        }
         speeds = chart.speeds
-        outputMax = max(chart.outputTicks.max, 1)
+        outputMax = max(chart.outputTicks.max, cost ? 0.000001 : 1)
         language = l10n.language
+        money = cost ? chart.money : nil
     }
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(title: dayTitle, categoryOrder: labels)
+        let money = money
         let yAxis = AXNumericDataAxisDescriptor(title: outputTitle, range: 0...outputMax, gridlinePositions: []) { value in
-            SpeedFormat.tokens(Int(value.rounded()))
+            if let money, let micro = money.microUsd(fromValue: value) { return money.spoken(micro) }
+            return SpeedFormat.tokens(Int(value.rounded()))
         }
         let output = AXDataSeriesDescriptor(
             name: outputTitle,
@@ -50,7 +60,7 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
             xAxis: xAxis,
             yAxis: yAxis,
             additionalAxes: [],
-            series: [output, speed]
+            series: money == nil ? [output, speed] : [output]
         )
     }
 }
@@ -64,20 +74,27 @@ struct HistoryBreakdownDescriptor: AXChartDescriptorRepresentable {
     let names: [String]
     let outputs: [Double]
 
+    /// Cost values read as amounts.
+    let money: HistoryMoney?
+
     @MainActor
-    init(breakdown: DayBreakdown, l10n: Localizer) {
+    init(breakdown: DayBreakdown, money: HistoryMoney, l10n: Localizer) {
+        let cost = breakdown.metric == .cost
         title = l10n(breakdown.titleKey)
         summary = HistoryText.longDate(breakdown.day, l10n)
         nameTitle = l10n(breakdown.kind == .bySource ? "dashboard.sources" : "history.table.models")
-        outputTitle = l10n("history.table.output")
+        outputTitle = l10n(cost ? "history.table.cost" : "history.table.output")
         names = breakdown.items.map { HistoryText.breakdownName($0.subject, l10n) }
-        outputs = breakdown.items.map { Double($0.output) }
+        outputs = breakdown.items.map { cost ? money.value($0.cost.microUsd) : Double($0.output) }
+        self.money = cost ? money : nil
     }
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(title: nameTitle, categoryOrder: names)
-        let yAxis = AXNumericDataAxisDescriptor(title: outputTitle, range: 0...max(outputs.max() ?? 0, 1), gridlinePositions: []) { value in
-            SpeedFormat.tokens(Int(value.rounded()))
+        let money = money
+        let yAxis = AXNumericDataAxisDescriptor(title: outputTitle, range: 0...max(outputs.max() ?? 0, money == nil ? 1 : 0.000001), gridlinePositions: []) { value in
+            if let money, let micro = money.microUsd(fromValue: value) { return money.spoken(micro) }
+            return SpeedFormat.tokens(Int(value.rounded()))
         }
         let output = AXDataSeriesDescriptor(
             name: outputTitle,

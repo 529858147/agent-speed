@@ -139,7 +139,7 @@ struct OmpParser: Sendable {
     ) {
         let claim = deduper.claim(key, for: fileID)
         let record = ResponseRecord(key: key, source: .omp, agentId: agentId, model: call.model, startMs: startMs,
-                                    endMs: endMs, usage: call.tokens, isFinal: true)
+                                    endMs: endMs, usage: call.tokens, isFinal: true, provider: call.provider)
         // A repeat in the same file (a rewrite read again) is an update (METRICS 4.4).
         emit(ResponseUpsert(record: record, isCompletion: claim == .new))
     }

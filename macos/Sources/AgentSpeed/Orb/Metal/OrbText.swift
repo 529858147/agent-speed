@@ -131,8 +131,12 @@ struct OrbTextInstance {
     var glow: SIMD4<Float>
     /// Shear factor, shear pivot y, glow radius (points), clip mode (`OrbTextClip`).
     var params: SIMD4<Float>
-    /// Clip rect: min x, min y, max x, max y (points).
+    /// Clip rect: min x, min y, max x, max y (points); a band: center x, center y, half width, slope.
     var clip: SIMD4<Float>
+    /// Bottom color of a vertical gradient fill (when `gradient.z` is 1).
+    var fill2: SIMD4<Float> = .zero
+    /// Gradient top y, bottom y (points), enabled, unused.
+    var gradient: SIMD4<Float> = .zero
 }
 
 /// Where a text quad may draw.
@@ -141,12 +145,16 @@ enum OrbTextClip: Equatable {
     case rect(CGRect)
     /// Only above (`below == false`) or below the liquid surface, inside `rect`.
     case liquid(below: Bool, rect: CGRect)
+    /// Fading out linearly over `halfWidth` either side of a line through `center` with `slope` (dx per dy): a sheen
+    /// or light band crossing the glyphs.
+    case band(center: CGPoint, halfWidth: CGFloat, slope: CGFloat)
 
     var mode: Float {
         switch self {
         case .none: 0
         case .rect: 1
         case .liquid(let below, _): below ? 3 : 2
+        case .band: 4
         }
     }
 
@@ -155,6 +163,8 @@ enum OrbTextClip: Equatable {
         case .none: SIMD4(-1e6, -1e6, 1e6, 1e6)
         case .rect(let rect), .liquid(_, let rect):
             SIMD4(Float(rect.minX), Float(rect.minY), Float(rect.maxX), Float(rect.maxY))
+        case .band(let center, let halfWidth, let slope):
+            SIMD4(Float(center.x), Float(center.y), Float(halfWidth), Float(slope))
         }
     }
 }

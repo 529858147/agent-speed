@@ -80,6 +80,9 @@ final class OrbAnimator {
     @ObservationIgnored let readout = OrbReadoutBuilder()
     /// The hero vehicle of the embedded (dashboard) orb, DESIGN 4c.
     @ObservationIgnored let hero: HeroVehicleDriver?
+    /// The hero title badge that replaces the vehicle for every title theme except Vehicles (DESIGN 4c).
+    @ObservationIgnored let badge: HeroBadge?
+    @ObservationIgnored var heroArt = HeroArtState()
     @ObservationIgnored private var cachedGeometry: OrbGeometry?
 
     @ObservationIgnored private weak var model: AppModel?
@@ -114,6 +117,7 @@ final class OrbAnimator {
         renderers[style] = renderer
         pulses.reserveCapacity(8)
         hero = surface == .embedded && !Self.disablesHero ? HeroVehicleDriver() : nil
+        badge = hero == nil ? nil : HeroBadge()
     }
 
     var isAttached: Bool { model != nil }
@@ -129,6 +133,7 @@ final class OrbAnimator {
         self.model = model
         self.feed = feed
         self.interaction = interaction
+        follow(feed, model: model)
         let value = feed.gauge.readoutValue
         readout.reset(text: SpeedFormat.speed(value), value: value)
         prime(tier: feed.gauge.tier, effects: effects(for: model))
@@ -140,6 +145,7 @@ final class OrbAnimator {
             guard let self, let model = self.model, let feed = self.feed else { return }
             let gauge = feed.gauge
             _ = (gauge.revision, gauge.tier, gauge.title, gauge.readoutValue, model.settings.effects, model.accessibility.reduceMotion)
+            _ = model.titles.document
             _ = (feed.generating, feed.unavailableTitleKey, feed.bezel)
             let hovered = self.interaction?.isHovered ?? false
             if hovered != lastHover {
@@ -149,6 +155,11 @@ final class OrbAnimator {
             if self.interaction?.isVisibleOnScreen == false { self.pendingResume = true }
             self.reevaluate()
         }
+    }
+
+    /// The hero vehicle follows `feed`'s gauge when it is not the app's all-sources feed (Settings previews).
+    func follow(_ feed: OrbFeed, model: AppModel) {
+        if feed !== model.mainFeed { hero?.gauge = feed.gauge }
     }
 
     func detach() {
@@ -405,6 +416,7 @@ final class OrbAnimator {
             || now - gauge.titleChangedAt < OrbReadoutBuilder.titleSlide + 0.1
             || now - hoverChangedAt < 0.45
             || now - styleChangedAt < Self.styleCrossfade + 0.05
+            || readout.isRenaming(at: now)
     }
 
     /// Short motion that runs at the orb's resting rate (at least 30 fps): response waves, the odometer and the aura
@@ -452,7 +464,7 @@ final class OrbAnimator {
             || now - gauge.tierChangedAt < 0.9
             || !envelopesSettled
         guard !busy else { return .active }
-        switch hero?.demand() {
+        switch HeroCenter.demand(animator: self, model: model, at: now) {
         case .full?: return .active
         case .idle(let fps)?: return .ambient(fps)
         case .still?, nil: return .paused

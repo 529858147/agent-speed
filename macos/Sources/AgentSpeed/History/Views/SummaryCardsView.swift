@@ -1,7 +1,7 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// The four summary cards: one row when wide, two rows when narrow (DESIGN 4b, item 2).
+/// The summary cards: all five in one row from 860 pt of content width, else 3 + 2 (DESIGN 4b item 2, DESIGN 9).
 struct SummaryCardsView: View {
     let cards: [SummaryCard]
     let source: SourceKind?
@@ -9,14 +9,17 @@ struct SummaryCardsView: View {
     let wide: Bool
 
     var body: some View {
-        let columns = wide ? 4 : 2
-        Grid(horizontalSpacing: HistoryLayout.cardSpacing, verticalSpacing: HistoryLayout.cardSpacing) {
-            ForEach(Array(stride(from: 0, to: cards.count, by: columns)), id: \.self) { start in
-                GridRow {
-                    ForEach(cards[start..<min(start + columns, cards.count)]) { card in
-                        SummaryCardView(card: card, source: source, l10n: l10n, compact: !wide)
+        let rows: [ArraySlice<SummaryCard>] = wide
+            ? [cards[...]]
+            : stride(from: 0, to: cards.count, by: 3).map { cards[$0..<min($0 + 3, cards.count)] }
+        VStack(spacing: HistoryLayout.cardSpacing) {
+            ForEach(rows.indices, id: \.self) { index in
+                HStack(alignment: .top, spacing: HistoryLayout.cardSpacing) {
+                    ForEach(rows[index]) { card in
+                        SummaryCardView(card: card, source: source, l10n: l10n, compact: !wide && rows[index].count < 3)
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -33,7 +36,7 @@ private struct SummaryCardView: View {
 
     var body: some View {
         let dark = colorScheme == .dark
-        let title = l10n(card.metric.titleKey)
+        let title = l10n(card.titleKey ?? card.metric.titleKey)
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(HistoryFont.cardLabel)
@@ -63,12 +66,16 @@ private struct SummaryCardView: View {
         }
         .padding(.horizontal, Spacing.m)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .historyCard()
+        .help(card.help ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(card.secondary.isEmpty ? card.fullValue : "\(card.fullValue), \(card.secondary)")
+        .accessibilityValue(card.secondary.isEmpty ? spoken : "\(spoken), \(card.secondary)")
+        .accessibilityHint(card.help ?? "")
     }
+
+    private var spoken: String { card.spokenValue ?? card.fullValue }
 
     private var value: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -82,9 +89,9 @@ private struct SummaryCardView: View {
             }
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
+        .minimumScaleFactor(0.6)
         .fixedSize(horizontal: compact, vertical: false)
-        .help(card.fullValue)
+        .help(card.help ?? card.fullValue)
     }
 
     /// The change is the only colored part of the line.
@@ -93,7 +100,10 @@ private struct SummaryCardView: View {
         if let change = card.change {
             let changeText = HistoryText.change(change)
             let parts = card.secondary.components(separatedBy: changeText)
-            let color = change >= 0 ? HistoryPalette.positive(dark: dark) : HistoryPalette.negative(dark: dark)
+            // Money is never green or red (DESIGN 9 Principles): the cost card's change stays secondary.
+            let color = card.neutralChange
+                ? HistoryPalette.secondary(dark: dark, increasedContrast: false)
+                : (change >= 0 ? HistoryPalette.positive(dark: dark) : HistoryPalette.negative(dark: dark))
             if parts.count == 2 {
                 Text("\(Text(parts[0]).foregroundStyle(.historySecondary))\(Text(changeText).foregroundStyle(color).fontWeight(.semibold))\(Text(parts[1]).foregroundStyle(.historySecondary))")
             } else {

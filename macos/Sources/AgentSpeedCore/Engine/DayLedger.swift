@@ -11,6 +11,10 @@ struct DayLedger: Sendable {
     private(set) var bySource: [SourceKind: TokenTotals] = [:]
     /// Today's unfinalized responses (METRICS 6.6).
     private(set) var unfinalized = 0
+    /// Today's cost (METRICS 9.6), in total, per source and per source and model.
+    private(set) var cost = CostTally()
+    private(set) var costBySource: [SourceKind: CostTally] = [:]
+    private(set) var costByModel: [SourceKind: [String: CostTally]] = [:]
     private var validOutput = 0
     private var validDurationMs: Int64 = 0
     private var outputBuckets: [Double]
@@ -51,6 +55,10 @@ struct DayLedger: Sendable {
         totals.add(record.usage, sign: sign)
         bySource[record.source, default: TokenTotals()].add(record.usage, sign: sign)
         if !record.isFinal { unfinalized += sign }
+        cost.add(record.costMicroUsd, sign: sign)
+        costBySource[record.source, default: CostTally()].add(record.costMicroUsd, sign: sign)
+        let model = record.model ?? ""
+        costByModel[record.source, default: [:]][model, default: CostTally()].add(record.costMicroUsd, sign: sign)
         guard record.isFinal, let timed = TimedResponse(record) else { return }
         validOutput = validOutput.saturatingAdd(sign * record.usage.output)
         validDurationMs += Int64(sign) * timed.durationMs

@@ -47,6 +47,13 @@ enum BarDisplayMode: String, CaseIterable, Identifiable, Sendable {
     var showsValue: Bool { self != .glyph }
 }
 
+/// The live value's unit (DESIGN 9): token speed or the API-equivalent cost per second.
+enum LiveUnit: String, CaseIterable, Identifiable, Sendable {
+    case tokens, cost
+
+    var id: String { rawValue }
+}
+
 enum EffectsLevel: String, CaseIterable, Identifiable, Comparable, Sendable {
     case off, soft, standard, max
 

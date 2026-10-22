@@ -98,6 +98,7 @@ struct ParserFixtureTests {
                 #expect(actual.model == wanted.string("model"), "\(relative) \(actual.key) model")
                 #expect(actual.source == state.source, "\(relative) \(actual.key) source")
                 #expect(actual.isFinal == (wanted["final"] as? Bool), "\(relative) \(actual.key) final")
+                expectPricingFields(actual, wanted, "\(relative) \(actual.key)")
             }
         }
     }

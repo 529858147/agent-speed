@@ -101,11 +101,13 @@ final class TranscriptSession {
     init(
         configuration: MonitorConfiguration,
         limits: ReadingLimits = .standard,
+        pricing: PriceBook? = nil,
         clock: @escaping @Sendable () -> Int64 = { Clock.milliseconds(Date()) }
     ) {
         enabledSources = configuration.enabledSources
         self.limits = limits
         self.clock = clock
+        engine = SpeedEngine(pricing: pricing)
         roots = TranscriptFamily.allCases.flatMap { family in
             configuration.resolvedRoots(for: family).map { path in
                 Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false,

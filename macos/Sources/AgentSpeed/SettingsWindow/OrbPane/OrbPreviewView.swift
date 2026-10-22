@@ -16,6 +16,8 @@ struct OrbPreviewView: View {
     let active: Bool
     /// False when a preview group draws the dynamic layers over this view (only the body is drawn here).
     var dynamic = true
+    /// The title theme it names levels with; nil = General.
+    var theme: TitleTheme?
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.orbStillTime) private var stillTime
@@ -40,12 +42,12 @@ struct OrbPreviewView: View {
             .drawingGroup()
             if let stillTime {
                 if let image = OrbPreviewStill.image(model: model, feed: feed, style: style, diameter: diameter, dark: dark,
-                                                     thumbnail: thumbnail, time: stillTime) {
+                                                     thumbnail: thumbnail, time: stillTime, theme: theme) {
                     Image(decorative: image, scale: 2)
                 }
             } else if dynamic {
                 OrbPreviewCanvas(model: model, feed: feed, style: style, diameter: diameter, dark: dark,
-                                 thumbnail: thumbnail, cap: cap, active: active)
+                                 thumbnail: thumbnail, cap: cap, active: active, theme: theme)
             }
         }
         .frame(width: canvasSide, height: canvasSide)
@@ -64,9 +66,11 @@ private struct OrbPreviewCanvas: NSViewRepresentable {
     let thumbnail: Bool
     let cap: Double
     let active: Bool
+    let theme: TitleTheme?
 
     final class Coordinator {
         var presenter: OrbPresenter?
+        var theme: TitleTheme?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -79,6 +83,8 @@ private struct OrbPreviewCanvas: NSViewRepresentable {
         presenter.contentAdjustment = { content in content.isThumbnail = thumbnail }
         presenter.cap = cap
         presenter.isActive = active
+        if let theme { presenter.titleTheme = { theme } }
+        context.coordinator.theme = theme
         context.coordinator.presenter = presenter
         return canvas
     }
@@ -90,6 +96,10 @@ private struct OrbPreviewCanvas: NSViewRepresentable {
         presenter.dark = dark
         if presenter.cap != cap { presenter.cap = cap }
         presenter.isActive = active
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
+            presenter.titleTheme = theme.map { value in { value } }
+        }
     }
 
     static func dismantleNSView(_ canvas: OrbCanvasView, coordinator: Coordinator) {
@@ -104,11 +114,12 @@ enum OrbPreviewStill {
     private static var scene = OrbScene(capacity: 1024)
 
     static func image(model: AppModel, feed: OrbFeed, style: OrbStyleKind, diameter: CGFloat, dark: Bool, thumbnail: Bool,
-                      time: TimeInterval) -> CGImage? {
+                      time: TimeInterval, theme: TitleTheme? = nil) -> CGImage? {
         let animator = OrbAnimator(surface: .preview, style: style)
         animator.primeForStill(model: model, gauge: feed.gauge)
         var content = OrbContentBuilder.content(model: model, feed: feed, diameter: diameter, dark: dark,
-                                                contrast: model.accessibility.increaseContrast, style: style, showsReadout: true)
+                                                contrast: model.accessibility.increaseContrast, style: style, showsReadout: true,
+                                                theme: theme)
         content.isThumbnail = thumbnail
         let side = (diameter * OrbView.canvasScale).rounded(.up)
         let start = time + 1

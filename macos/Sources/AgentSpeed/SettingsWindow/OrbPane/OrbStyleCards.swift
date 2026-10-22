@@ -66,7 +66,7 @@ struct OrbStyleCards: View {
         OrbStyleKind.allCases.compactMap { style in
             guard let frame = orbFrames[style], let clip = cardFrames[style] else { return nil }
             return OrbPreviewSpec(id: style.rawValue, feed: feeds.feed(style), style: style, diameter: Self.orbDiameter,
-                                  frame: frame, clip: clip, thumbnail: false)
+                                  frame: frame, clip: clip, thumbnail: false, theme: model.titles.theme(forOrb: orb))
         }
     }
 
@@ -103,7 +103,7 @@ struct OrbStyleCards: View {
         return ZStack(alignment: .top) {
             StyleCardBackground(selected: selected)
             OrbPreviewView(model: model, feed: feeds.feed(style), style: style, diameter: Self.orbDiameter, cap: Self.cardRate,
-                           active: active, dynamic: false)
+                           active: active, dynamic: false, theme: model.titles.theme(forOrb: orb))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { orbFrames[style] = $0 }
                 .padding(.top, -2)
         }

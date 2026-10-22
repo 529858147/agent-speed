@@ -56,6 +56,7 @@ struct OpencodeTests {
                 #expect(record.usage.reasoning == want.int("reasoning"), "\(record.key) reasoning")
                 #expect(record.model == want.string("model"), "\(record.key) model")
                 #expect(record.isFinal == (want["final"] as? Bool), "\(record.key) final")
+                expectPricingFields(record, want, record.key)
             }
         }
     }

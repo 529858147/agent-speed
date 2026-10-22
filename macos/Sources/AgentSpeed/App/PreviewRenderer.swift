@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import AppKit
 import SwiftUI
 
@@ -27,6 +28,9 @@ enum PreviewRenderer {
         if wants("orbs") {
             OrbsPreviews.render(model: model, into: directory)
         }
+        if wants("themes") {
+            TitleThemePreviews.render(model: model, into: directory)
+        }
         if only?.contains("upgrade") == true {
             OrbsPreviews.renderUpgrade(model: model, into: directory)
         }
@@ -38,6 +42,9 @@ enum PreviewRenderer {
         }
         if wants("hero") {
             HeroPreviews.render(model: model, into: directory)
+        }
+        if wants("badge") {
+            HeroBadgePreviews.render(model: model, into: directory)
         }
         if only?.contains("herobench") == true {
             HeroBenchmark.run(model: model, into: directory)
@@ -84,6 +91,9 @@ enum PreviewRenderer {
                 )
             }
         }
+        if wants("cost") {
+            CostPreviews.render(model: model, into: directory)
+        }
         if wants("history") {
             HistoryLogicChecks.run(l10n: model.l10n, into: directory)
             HistoryPreviews.render(model: model, into: directory)
@@ -129,7 +139,35 @@ enum PreviewRenderer {
                     )
                 }
             }
+            renderTitleThemes(model, into: directory)
         }
+    }
+
+    /// Settings → General with two custom title sets, the first selected with its editor open (light, dark, English).
+    static func renderTitleThemes(_ model: AppModel, into directory: URL) {
+        let titles = model.titles
+        guard let vehicles = titles.copy(TitlePreset.vehicles.rawValue),
+              let custom = titles.copy(TitlePreset.cultivation.rawValue) else { return }
+        titles.rename(custom, to: "我的修仙路")
+        titles.commitField(level: 4, of: custom, text: "結丹")
+        titles.commitField(level: 12, of: custom, text: "飛升")
+        titles.commitField(level: 6, of: vehicles, text: "保時捷")
+        titles.select(custom)
+        func write(_ name: String, dark: Bool) {
+            PreviewSnapshot.writeHosted(
+                SettingsPaneView(pane: .general, model: model).appEnvironment(model).environment(\.orbStillTime, Clock.now),
+                dark: dark,
+                to: directory.appendingPathComponent("settings-general-titles-\(name).png")
+            )
+        }
+        write("light", dark: false)
+        write("dark", dark: true)
+        let language = model.settings.language
+        model.settings.language = .en
+        model.l10n.apply(.en)
+        write("en-light", dark: false)
+        model.settings.language = language
+        model.l10n.apply(language)
     }
 
     /// Lets the floating orbs read the published snapshot, then settles their gauges (Settings thumbnails).

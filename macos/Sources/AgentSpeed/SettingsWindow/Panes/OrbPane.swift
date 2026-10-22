@@ -46,6 +46,7 @@ struct OrbPane: View {
                     OrbEditorHeading(model: model, orb: orb)
                 }
                 OrbStyleCards(model: model, orb: orb, feeds: cardFeeds, active: live)
+                OrbUnitSection(model: model, orb: orb)
                 OrbLookSection(model: model, orb: orb)
                 OrbSwitchesSection(model: model, orb: orb)
                 OrbAdvancedSection(model: model, orb: orb, expanded: $advancedExpanded)

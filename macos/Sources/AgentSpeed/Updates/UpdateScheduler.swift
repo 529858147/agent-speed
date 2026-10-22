@@ -27,7 +27,8 @@ final class UpdateScheduler {
         // Only the setting is observed here, so a check that updates `lastChecked` never restarts its own timer.
         settingLoop = ObservationLoop { [weak self] in
             guard let self else { return }
-            let enabled = self.settings.autoCheckUpdates
+            // With the network master switch off, automatic checks have no effect (NETWORK 2).
+            let enabled = self.settings.autoCheckUpdates && self.settings.networkEnabled
             guard enabled != self.isEnabled else { return }
             self.isEnabled = enabled
             Task { @MainActor [weak self] in self?.reschedule() }

@@ -37,9 +37,17 @@ final class AppModel {
     let mainFeed: OrbFeed
     /// The floating orbs (DESIGN 2b).
     let orbs: OrbsController
+    /// The title themes and custom title sets (DESIGN 1).
+    let titles: TitleThemesController
     let accessibility: AccessibilityState
     let launchAtLogin: LaunchAtLogin
     let updates: UpdateController
+    /// Price tables and day bindings shared by the live engine and the history (METRICS 9.7).
+    let priceBook: PriceBook
+    /// Price-table sync and exchange rates (NETWORK 3, 4) and the money formatting built on them (DESIGN 9).
+    let prices: PriceSyncController
+    let rates: ExchangeRateController
+    let cost: CostDisplay
 
     /// True while the 20 s effects preview (or the `--demo` loop) drives the store.
     private(set) var isPreviewing = false
@@ -68,8 +76,14 @@ final class AppModel {
         gauge = LiveGauge()
         mainFeed = OrbFeed(gauge: gauge)
         orbs = OrbsController(defaults: settings.storage)
+        titles = TitleThemesController(defaults: settings.storage)
         accessibility = AccessibilityState()
         launchAtLogin = LaunchAtLogin()
+        let userAgent = "AgentSpeed/\(UpdateConfiguration.bundleVersion) (macOS)"
+        priceBook = PriceBook()
+        prices = PriceSyncController(book: priceBook, userAgent: userAgent)
+        rates = ExchangeRateController(userAgent: userAgent)
+        cost = CostDisplay(settings: settings, l10n: l10n, rates: rates, prices: prices)
         gauge.redline = settings.redline
     }
 
@@ -125,8 +139,12 @@ final class AppModel {
             if self.isPreviewing != previewing { self.isPreviewing = previewing }
         })
         orbs.activate(model: self)
+        titles.activate(model: self)
         guard live else { return }
-        let monitor = LiveMonitor(store: store, configuration: settings.monitorConfiguration)
+        // Stored day bindings first, so the engine never re-binds a day that was priced before (METRICS 9.7).
+        HistoryService.restorePricing(into: priceBook)
+        activateNetwork()
+        let monitor = LiveMonitor(store: store, configuration: settings.monitorConfiguration, pricing: priceBook)
         self.monitor = monitor
         appliedConfiguration = settings.monitorConfiguration
         monitor.setSubsets(orbSubsets)
@@ -160,12 +178,28 @@ final class AppModel {
 
     private static let historyGracePeriod: TimeInterval = 20
 
+    /// The price-table sync and exchange rates follow the master switch, the sync setting and the currency
+    /// (NETWORK 1, 3, 4); a newly accepted table re-prices what no table could price (METRICS 9.7).
+    private func activateNetwork() {
+        prices.onTableAccepted = { [weak self] _ in self?.historyService?.refresh(showsProgress: false) }
+        loops.append(ObservationLoop { [weak self] in
+            guard let self else { return }
+            let network = self.settings.networkEnabled
+            self.prices.update(networkEnabled: network, autoSync: self.settings.syncPrices)
+            self.rates.update(networkEnabled: network, currency: self.settings.currency)
+            self.updates.networkEnabled = network
+        })
+        prices.start()
+        rates.start()
+    }
+
     /// Starts the daily history analysis if it is not running yet.
     func startHistory() {
         guard historyService == nil, monitor != nil else { return }
         historyStartTimer?.invalidate()
         historyStartTimer = nil
-        let service = HistoryService(store: history, configuration: settings.monitorConfiguration, liveStore: store)
+        let service = HistoryService(store: history, configuration: settings.monitorConfiguration, liveStore: store,
+                                     pricing: priceBook)
         historyService = service
         service.start()
     }
@@ -240,7 +274,7 @@ enum DemoDriverRatio {
 
 /// Settings window panes (DESIGN section 5).
 enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
-    case general, menuBar, orb, effects, sources, about
+    case general, menuBar, orb, effects, cost, sources, about
 
     var id: String { rawValue }
 
@@ -250,6 +284,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .menuBar: "settings.bar"
         case .orb: "settings.orb"
         case .effects: "settings.effects"
+        case .cost: "settings.cost"
         case .sources: "settings.sources"
         case .about: "settings.about"
         }
@@ -261,6 +296,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .menuBar: "menubar.rectangle"
         case .orb: "circle.circle"
         case .effects: "sparkles"
+        case .cost: "banknote"
         case .sources: "folder"
         case .about: "info.circle"
         }

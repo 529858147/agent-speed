@@ -71,6 +71,31 @@ final class LiveGauge {
         revision &+= 1
     }
 
+    /// Shows `title` at once with its real transition, the springs easing to `value` (Settings previews, which step
+    /// through the levels as the focus moves instead of waiting for the hold).
+    func show(_ title: SpeedTitle, value: Double, now: TimeInterval) {
+        rawValue = value
+        if value >= SpeedTier.cruiseSpeed { lastActiveAt = now }
+        heatSpring.retarget(HeatPalette.heat(value: value, redline: redline), at: now)
+        overdriveSpring.retarget(HeatPalette.overdrive(value: value, redline: redline), at: now)
+        valueSpring.retarget(value, at: now)
+        let tier = title == .idle ? SpeedTier.idle : Self.tier(for: value, redline: redline)
+        tracker.reset(to: tier)
+        if tier != self.tier {
+            previousTier = self.tier
+            self.tier = tier
+            tierChangedAt = now
+        }
+        titleTracker.reset(to: title)
+        if title != self.title {
+            previousTitle = self.title
+            self.title = title
+            titleChangedAt = now
+        }
+        readoutValue = value
+        revision &+= 1
+    }
+
     func heat(at time: TimeInterval) -> Double { heatSpring.value(at: time).clamped(to: 0...1) }
     func overdrive(at time: TimeInterval) -> Double { overdriveSpring.value(at: time).clamped(to: 0...1) }
     func smoothedValue(at time: TimeInterval) -> Double { max(0, valueSpring.value(at: time)) }

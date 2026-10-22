@@ -62,6 +62,7 @@ struct TodaySection: View {
                 increasedContrast: contrast == .increased
             )
             .padding(.top, 2)
+            TodayCostRow(model: model)
         }
     }
 }

@@ -2,7 +2,7 @@ import AgentSpeedCore
 import Foundation
 
 enum HistoryColumn: String, CaseIterable, Identifiable, Sendable {
-    case date, requests, output, input, cacheHit, speed, peak, agents, models
+    case date, requests, output, input, cost, cacheHit, speed, peak, agents, models
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum HistoryColumn: String, CaseIterable, Identifiable, Sendable {
         case .requests: "history.table.requests"
         case .output: "history.table.output"
         case .input: "history.table.input"
+        case .cost: "history.table.cost"
         case .cacheHit: "history.table.cacheHit"
         case .speed: "history.table.speed"
         case .peak: "history.table.peak"
@@ -68,12 +69,13 @@ enum HistoryTable {
         return present.map(\.0) + missing
     }
 
-    static func cell(_ row: DaySummary, _ column: HistoryColumn, today: DayKey, _ l10n: Localizer) -> String {
+    static func cell(_ row: DaySummary, _ column: HistoryColumn, today: DayKey, money: HistoryMoney, _ l10n: Localizer) -> String {
         switch column {
         case .date: HistoryText.tableDate(row.day, today: today, l10n)
         case .requests: HistoryText.fullNumber(row.requests, l10n)
         case .output: SpeedFormat.tokens(row.output)
         case .input: SpeedFormat.tokens(row.input)
+        case .cost: money.display(row.cost, subscriptionTag: l10n("cost.subscription.tag"))
         case .cacheHit: HistoryText.percent(row.cacheHitRatio)
         case .speed: row.averageSpeed.map(SpeedFormat.speed) ?? l10n("history.noSpeed")
         case .peak: row.peak.map(SpeedFormat.speed) ?? "–"
@@ -83,11 +85,12 @@ enum HistoryTable {
     }
 
     /// The exact value behind a compact cell, for its tooltip; nil when the cell already is exact.
-    static func fullCell(_ row: DaySummary, _ column: HistoryColumn, _ l10n: Localizer) -> String? {
+    static func fullCell(_ row: DaySummary, _ column: HistoryColumn, money: HistoryMoney, _ l10n: Localizer) -> String? {
         switch column {
         case .date: HistoryText.longDate(row.day, l10n)
         case .output: HistoryText.fullNumber(row.output, l10n)
         case .input: HistoryText.fullNumber(row.input, l10n)
+        case .cost: costTooltip(row.cost, money: money, l10n)
         case .speed: row.averageSpeed.map { HistoryText.fullSpeed($0, l10n) }
         case .peak: row.peak.map { HistoryText.fullSpeed($0, l10n) }
         case .models: row.models.isEmpty ? nil : row.models.map { HistoryText.modelWithSpeed($0, l10n) }.joined(separator: "\n")
@@ -95,8 +98,17 @@ enum HistoryTable {
         }
     }
 
+    /// The cost cell's tooltip: the amount with US dollars beside another currency, and why a value is partial or
+    /// missing (`history.unpricedDay`, `history.costUnavailable`, the excluded subscriptions).
+    static func costTooltip(_ cost: HistoryCost, money: HistoryMoney, _ l10n: Localizer) -> String? {
+        var lines: [String] = []
+        if case .priced(let micro, let partial) = cost.kind { lines.append((partial ? "≥" : "") + money.amountWithUSD(micro)) }
+        if let note = HistoryText.costNote(cost, l10n) { lines.append(note) }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
     /// Rows as tab-separated text with a header line (pastes into a spreadsheet as a table). Counts are exact.
-    static func copyText(_ rows: [DaySummary], columns: [HistoryColumn], today: DayKey, _ l10n: Localizer) -> String {
+    static func copyText(_ rows: [DaySummary], columns: [HistoryColumn], today: DayKey, money: HistoryMoney, _ l10n: Localizer) -> String {
         let header = columns.map { l10n($0.headerKey) }.joined(separator: "\t")
         let lines = rows.map { row in
             columns.map { column -> String in
@@ -104,7 +116,7 @@ enum HistoryTable {
                 case .output: HistoryText.fullNumber(row.output, l10n)
                 case .input: HistoryText.fullNumber(row.input, l10n)
                 case .models: row.models.map(\.model).joined(separator: ", ")
-                default: cell(row, column, today: today, l10n)
+                default: cell(row, column, today: today, money: money, l10n)
                 }
             }.joined(separator: "\t")
         }
@@ -117,6 +129,7 @@ enum HistoryTable {
         case .requests: Double(row.requests)
         case .output: Double(row.output)
         case .input: Double(row.input)
+        case .cost: row.cost.sortValue
         case .cacheHit: row.cacheHitRatio
         case .speed: row.averageSpeed
         case .peak: row.peak

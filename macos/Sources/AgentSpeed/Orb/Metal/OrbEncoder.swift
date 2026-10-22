@@ -106,7 +106,8 @@ final class OrbEncoder {
                         into encoder: MTLRenderCommandEncoder) {
         let stride = MemoryLayout<OrbInstance>.stride
         if let vehicle = scene.vehicle {
-            heroEncoder?.encode(vehicle.list, origin: vehicle.origin, unit: vehicle.unit, viewport: size, scale: scale, into: encoder)
+            heroEncoder?.encode(vehicle.list, origin: vehicle.origin, unit: vehicle.unit, viewport: size, scale: scale,
+                                alpha: vehicle.alpha, into: encoder)
         }
         var uniforms = Uniforms(
             viewport: SIMD4(Float(size.width), Float(size.height), Float(scale), 0),
@@ -116,6 +117,7 @@ final class OrbEncoder {
         encoder.setFragmentTexture(gpu.palette, index: 0)
         for batch in scene.batches {
             uniforms.viewport.w = batch.clip
+            uniforms.transform.w = batch.feather
             switch batch.pass {
             case .shapes(let blend):
                 guard let buffer, batch.count > 0 else { continue }
@@ -138,6 +140,7 @@ final class OrbEncoder {
         }
         if !scene.texts.isEmpty {
             uniforms.viewport.w = 0
+            uniforms.transform.w = 0
             encoder.setRenderPipelineState(gpu.text)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)

@@ -51,6 +51,8 @@ final class UpdateController {
     let currentVersion: String
     @ObservationIgnored let configuration: UpdateConfiguration
     @ObservationIgnored private let store: UpdateStore
+    /// The network master switch (NETWORK 1, UPDATES): off, no check of any kind runs.
+    var networkEnabled = true
     @ObservationIgnored private var checkTask: Task<Void, Never>?
     @ObservationIgnored private var checkIsManual = false
     @ObservationIgnored private var statusBeforeCheck: Status = .idle
@@ -96,7 +98,7 @@ final class UpdateController {
     /// and errors; automatic checks only announce new versions and fail silently.
     @discardableResult
     func startCheck(manual: Bool) -> Task<Void, Never> {
-        guard !installation.isActive else { return Task {} }
+        guard !installation.isActive, networkEnabled else { return Task {} }
         if manual, !checkIsManual {
             checkIsManual = true
             statusBeforeCheck = status

@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import Foundation
 import Observation
 
@@ -25,6 +26,10 @@ final class OrbFeed {
     var unavailableTitleKey: String?
     /// The orb's output redline, for the heat of response pulses.
     var redlineOutput = 400.0
+    /// tok/s or the money unit (DESIGN 9); heat, tiers and titles always follow tokens.
+    var unit: OrbUnit = .tokens
+    /// The money readout while `unit` is `.cost`.
+    var money: LiveMoney?
 
     @ObservationIgnored private var listeners: [UUID: @MainActor (OrbFeedEvent) -> Void] = [:]
 

@@ -44,8 +44,9 @@ struct OmpTests {
             [
                 "key": response.key, "startMs": value(response.startMs), "endMs": response.endMs,
                 "input": response.usage.input, "cachedInput": response.usage.cachedInput,
-                "cacheWriteInput": response.usage.cacheWriteInput, "output": response.usage.output,
-                "reasoning": response.usage.reasoning, "model": value(response.model), "final": response.isFinal,
+                "cacheWriteInput": response.usage.cacheWriteInput, "cacheWrite1hInput": response.usage.cacheWrite1hInput,
+                "output": response.usage.output, "reasoning": response.usage.reasoning, "model": value(response.model),
+                "provider": value(response.provider), "fast": response.fast, "final": response.isFinal,
             ]
         }
         return [

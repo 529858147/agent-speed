@@ -36,3 +36,16 @@ extension Dictionary where Key == String, Value == Any {
     func double(_ key: String) -> Double? { (self[key] as? NSNumber)?.doubleValue }
     func string(_ key: String) -> String? { self[key] as? String }
 }
+
+/// The fields added with the cost feature (METRICS 3.2): `cacheWrite1hInput`, `provider` and `fast`.
+func expectPricingFields(
+    _ record: ResponseRecord,
+    _ wanted: [String: Any],
+    _ label: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+) {
+    #expect(record.usage.cacheWrite1hInput == wanted.int("cacheWrite1hInput"), "\(label) cacheWrite1hInput",
+            sourceLocation: sourceLocation)
+    #expect(record.provider == wanted.string("provider"), "\(label) provider", sourceLocation: sourceLocation)
+    #expect(record.fast == (wanted["fast"] as? Bool), "\(label) fast", sourceLocation: sourceLocation)
+}

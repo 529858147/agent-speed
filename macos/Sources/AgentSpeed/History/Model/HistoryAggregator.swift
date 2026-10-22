@@ -4,8 +4,9 @@ import Foundation
 /// Turns the stored per-source days (`DailyUsage`) into what the Usage History window shows.
 enum HistoryAggregator {
     /// Days with data inside `range` for one source (every source when nil), oldest first. Records with an unreadable
-    /// day or without any usage are ignored. Peaks are kept only for the all-sources view (METRICS 8).
-    static func daily(_ usage: [DailyUsage], source: SourceKind?, range: DayRange? = nil) -> [DaySummary] {
+    /// day or without any usage are ignored. Peaks are kept only for the all-sources view (METRICS 8). The costs of
+    /// `excluded` sources add nothing (METRICS 9.4); their tokens count as usual.
+    static func daily(_ usage: [DailyUsage], source: SourceKind?, range: DayRange? = nil, excluded: Set<SourceKind> = []) -> [DaySummary] {
         var groups: [DayKey: [DailyUsage]] = [:]
         for record in usage {
             if let source, record.source != source { continue }
@@ -13,12 +14,14 @@ enum HistoryAggregator {
             if let range, !range.contains(day) { continue }
             groups[day, default: []].append(record)
         }
-        return groups.keys.sorted().map { summarize($0, groups[$0] ?? [], includePeak: source == nil) }
+        return groups.keys.sorted().map { summarize($0, groups[$0] ?? [], includePeak: source == nil, excluded: excluded) }
     }
 
     static func totals(_ days: [DaySummary]) -> HistoryTotals {
         var totals = HistoryTotals()
         for day in days {
+            totals.cost = totals.cost.adding(day.cost)
+            if day.cost.tally != nil { totals.costDays += 1 }
             totals.requests += day.requests
             totals.input += day.input
             totals.cachedInput += day.cachedInput
@@ -77,18 +80,76 @@ enum HistoryAggregator {
         measuredMs > 0 && measuredOutput > 0 ? Double(measuredOutput) / (Double(measuredMs) / 1000) : nil
     }
 
+    /// Models with responses of unknown price in `days` over the counted sources, most unpriced requests first
+    /// (`history.unpricedNotice`). Contributions stored before costs existed are not unknown prices and are left out.
+    static func unpricedModels(_ usage: [DailyUsage], source: SourceKind?, range: DayRange, excluded: Set<SourceKind>) -> [UnpricedModel] {
+        var counts: [UnpricedModel.Key: Int] = [:]
+        for record in usage {
+            if let source, record.source != source { continue }
+            guard !excluded.contains(record.source), record.cost != nil, let day = DayKey(record.day), range.contains(day) else { continue }
+            var named = 0
+            for model in record.models {
+                guard let unpriced = model.cost?.unpricedRequests, unpriced > 0 else { continue }
+                let name = model.model.trimmingCharacters(in: .whitespaces)
+                counts[UnpricedModel.Key(model: name, source: record.source), default: 0] += unpriced
+                named += unpriced
+            }
+            let rest = (record.cost?.unpricedRequests ?? 0) - named
+            if rest > 0 { counts[UnpricedModel.Key(model: "", source: record.source), default: 0] += rest }
+        }
+        return counts
+            .map { UnpricedModel(model: $0.key.model, source: $0.key.source, requests: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.requests != rhs.requests { return lhs.requests > rhs.requests }
+                if lhs.model != rhs.model { return lhs.model < rhs.model }
+                return (SourceKind.allCases.firstIndex(of: lhs.source) ?? 0) < (SourceKind.allCases.firstIndex(of: rhs.source) ?? 0)
+            }
+    }
+
     static func hasUsage(_ record: DailyUsage) -> Bool {
         record.totals.requests > 0 || record.totals.output > 0 || record.totals.input > 0
     }
 
-    private static func summarize(_ day: DayKey, _ records: [DailyUsage], includePeak: Bool) -> DaySummary {
+    /// The cost of one stored record as counted: nothing for an excluded source.
+    static func cost(of record: DailyUsage, excluded: Set<SourceKind>) -> HistoryCost {
+        guard !excluded.contains(record.source) else { return HistoryCost(tally: nil, requests: 0, excluded: [record.source]) }
+        return HistoryCost(tally: record.cost, requests: max(0, record.totals.requests), excluded: [])
+    }
+
+    private static func summarize(_ day: DayKey, _ records: [DailyUsage], includePeak: Bool, excluded: Set<SourceKind>) -> DaySummary {
         var requests = 0, input = 0, cached = 0, cacheWrite = 0, output = 0, reasoning = 0
         var measuredOutput = 0, unfinalized = 0, agents = 0
         var measuredMs: Int64 = 0
         var peak: Double?
         var models: [String: ModelUsage] = [:]
-        var sources: [SourceKind: Int] = [:]
+        var sources: [SourceKind: SourceOutput] = [:]
+        var dayCost = HistoryCost.none
+        var totalCost: CostTally?
+        var totalRequests = 0
+        var priceVersion: Int?
+        var modelCosts: [String: ModelCost] = [:]
         for record in records {
+            let counted = cost(of: record, excluded: excluded)
+            dayCost = dayCost.adding(counted)
+            totalCost = HistoryCostMath.merged(totalCost, requests: totalRequests, record.cost, requests: max(0, record.totals.requests))
+            totalRequests += max(0, record.totals.requests)
+            if let version = record.priceVersion { priceVersion = max(priceVersion ?? version, version) }
+            let previous = sources[record.source]
+            sources[record.source] = SourceOutput(
+                source: record.source,
+                output: (previous?.output ?? 0) + max(0, record.totals.output),
+                requests: (previous?.requests ?? 0) + max(0, record.totals.requests),
+                cost: (previous?.cost ?? .none).adding(counted)
+            )
+            if !excluded.contains(record.source) {
+                for model in record.models where !model.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                    let current = modelCosts[model.model] ?? ModelCost()
+                    modelCosts[model.model] = ModelCost(
+                        cost: HistoryCostMath.merged(current.cost, requests: current.requests, model.cost, requests: max(0, model.requests)),
+                        requests: current.requests + max(0, model.requests)
+                    )
+                }
+            }
             let totals = record.totals
             requests += max(0, totals.requests)
             input += max(0, totals.input)
@@ -104,7 +165,6 @@ enum HistoryAggregator {
             if includePeak, let value = record.peak, value.isFinite, value > 0 {
                 peak = max(peak ?? 0, value)
             }
-            sources[record.source, default: 0] += max(0, totals.output)
             for model in record.models where !model.model.trimmingCharacters(in: .whitespaces).isEmpty {
                 var current = models[model.model] ?? ModelUsage(model: model.model, requests: 0, output: 0)
                 current.requests += max(0, model.requests)
@@ -121,12 +181,29 @@ enum HistoryAggregator {
                 return lhs.model < rhs.model
             }
         let sourceList = SourceKind.allCases.compactMap { kind in
-            sources[kind].flatMap { $0 > 0 ? SourceOutput(source: kind, output: $0) : nil }
+            sources[kind].flatMap { $0.output > 0 || $0.requests > 0 ? $0 : nil }
         }
+        // A model only subscription sources used has no counted requests (its cost shows `cost.subscription.tag`).
+        for model in modelList where modelCosts[model.model] == nil { modelCosts[model.model] = ModelCost(cost: nil, requests: 0) }
         return DaySummary(
             day: day, requests: requests, input: input, cachedInput: cached, cacheWriteInput: cacheWrite,
             output: output, reasoning: reasoning, measuredOutput: measuredOutput, measuredMs: measuredMs,
-            unfinalized: unfinalized, agents: agents, peak: peak, models: modelList, sources: sourceList
+            unfinalized: unfinalized, agents: agents, peak: peak, models: modelList, sources: sourceList,
+            cost: dayCost, totalCost: totalCost, priceVersion: totalCost == nil ? nil : priceVersion, modelCosts: modelCosts
         )
     }
+}
+
+/// A model whose price is unknown, with the requests it left out of the range's cost.
+struct UnpricedModel: Equatable, Sendable, Identifiable {
+    struct Key: Hashable, Sendable {
+        let model: String
+        let source: SourceKind
+    }
+
+    var id: Key { Key(model: model, source: source) }
+    /// Empty for responses without a model name.
+    let model: String
+    let source: SourceKind
+    let requests: Int
 }

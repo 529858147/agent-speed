@@ -22,7 +22,7 @@ public struct OrbAvailability: Equatable, Sendable {
 public enum OrbEditing {
     // MARK: Creating and removing
 
-    /// Adds an orb after `sourceId` (or the first orb) with its style, size, opacity and toggles, tracking the first
+    /// Adds an orb after `sourceId` (or the first orb) with its style, size, opacity, toggles and title theme, tracking the first
     /// detected, enabled source no orb tracks explicitly, else all sources. Nil at eight orbs.
     public static func add(to doc: OrbsDocument, copying sourceId: String?, availability: OrbAvailability, newId: String) -> OrbsDocument? {
         guard doc.canAdd, let template = sourceId.flatMap(doc.orb) ?? doc.orbs.first else { return nil }
@@ -38,7 +38,9 @@ public enum OrbEditing {
             clickThrough: template.clickThrough,
             fadeWhenIdle: template.fadeWhenIdle,
             allSpaces: template.allSpaces,
-            visible: true
+            visible: true,
+            titleTheme: template.titleTheme,
+            unit: template.unit
         )
         return inserting(orb, after: template.id, in: doc)
     }
@@ -166,9 +168,31 @@ public enum OrbEditing {
         update(id, in: doc) { $0.visible = visible }
     }
 
+    /// tok/s or the money unit (DESIGN 9).
+    public static func setUnit(_ unit: OrbUnit, of id: String, in doc: OrbsDocument) -> OrbsDocument {
+        update(id, in: doc) { $0.unit = unit }
+    }
+
     /// Trimmed and limited; empty means automatic.
     public static func setName(_ name: String?, of id: String, in doc: OrbsDocument) -> OrbsDocument {
         update(id, in: doc) { $0.name = OrbConfig.cleanName(name) }
+    }
+
+    /// The orb's title theme: nil follows the General theme (DESIGN 2b `titleTheme`).
+    public static func setTitleTheme(_ theme: String?, of id: String, in doc: OrbsDocument) -> OrbsDocument {
+        var next = doc
+        guard let index = next.index(of: id) else { return doc }
+        next.orbs[index].titleTheme = OrbConfig.cleanThemeID(theme)
+        return next
+    }
+
+    /// Every orb naming the title theme `old` names `replacement` instead (a deleted custom set → its base preset).
+    public static func replacingTitleTheme(_ old: String, with replacement: String?, in doc: OrbsDocument) -> OrbsDocument {
+        var next = doc
+        for index in next.orbs.indices where next.orbs[index].titleTheme == old {
+            next.orbs[index].titleTheme = OrbConfig.cleanThemeID(replacement)
+        }
+        return next
     }
 
     /// nil follows the General redline of that metric.

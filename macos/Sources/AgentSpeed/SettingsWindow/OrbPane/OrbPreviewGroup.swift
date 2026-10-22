@@ -16,10 +16,12 @@ struct OrbPreviewSpec: Equatable {
     /// What the orb may draw into (its card or row).
     let clip: CGRect
     let thumbnail: Bool
+    /// The title theme it names levels with; nil = General.
+    var theme: TitleTheme?
 
     static func == (lhs: OrbPreviewSpec, rhs: OrbPreviewSpec) -> Bool {
         lhs.id == rhs.id && lhs.feed === rhs.feed && lhs.style == rhs.style && lhs.diameter == rhs.diameter
-            && lhs.frame == rhs.frame && lhs.clip == rhs.clip && lhs.thumbnail == rhs.thumbnail
+            && lhs.frame == rhs.frame && lhs.clip == rhs.clip && lhs.thumbnail == rhs.thumbnail && lhs.theme == rhs.theme
     }
 }
 
@@ -130,7 +132,7 @@ final class OrbPreviewGroup {
     private func content(for spec: OrbPreviewSpec) -> OrbContent {
         guard let model else { return .placeholder(diameter: spec.diameter, dark: dark) }
         var content = OrbContentBuilder.content(model: model, feed: spec.feed, diameter: spec.diameter, dark: dark, contrast: false,
-                                                style: spec.style, showsReadout: true)
+                                                style: spec.style, showsReadout: true, theme: spec.theme)
         content.isThumbnail = spec.thumbnail
         _ = (spec.feed.gauge.title, spec.feed.gauge.previousTitle)
         return content

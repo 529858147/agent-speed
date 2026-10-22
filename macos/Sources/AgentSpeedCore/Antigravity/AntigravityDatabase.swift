@@ -29,6 +29,8 @@ final class AntigravityDatabase: @unchecked Sendable {
 
     let path: String
     let isImmutable: Bool
+    /// A `-wal` existed when the connection opened (a running server).
+    private let openedWithWAL: Bool
     private let openedStat: FileStat
     private let connection: SQLiteConnection
     private let stepsStatement: SQLiteStatement
@@ -52,6 +54,7 @@ final class AntigravityDatabase: @unchecked Sendable {
             immutable = true
         }
         isImmutable = immutable
+        openedWithWAL = hasWAL
         connection = opened
         guard let columns = try? Self.columns(of: "steps", in: opened) else { throw .unreadable }
         guard Self.requiredStepColumns.isSubset(of: columns) else { throw .unsupported }
@@ -99,9 +102,11 @@ final class AntigravityDatabase: @unchecked Sendable {
         OpencodeDatabase.headerSaysWAL(path)
     }
 
-    /// An immutable connection is valid only while the database file is unchanged and no `-wal` exists.
+    /// An immutable connection is valid only while the database file is unchanged and no `-wal` exists. A `mode=ro`
+    /// connection opened beside a `-wal` is stale once that `-wal` is gone: the server exited and checkpointed, and
+    /// keeping the connection would hold its deleted `-shm` and trip the server's next start.
     var isStale: Bool {
-        guard isImmutable else { return false }
+        guard isImmutable else { return openedWithWAL && FileStat.lstat(path + "-wal") == nil }
         if FileStat.lstat(path + "-wal") != nil { return true }
         guard let stat = FileStat.lstat(path) else { return true }
         return stat.size != openedStat.size || stat.modifiedNs != openedStat.modifiedNs || stat.identity != openedStat.identity

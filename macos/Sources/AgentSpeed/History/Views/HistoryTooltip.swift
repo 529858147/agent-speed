@@ -50,19 +50,50 @@ struct HistoryTooltip: View {
 
     @ViewBuilder
     private func rows(_ summary: DaySummary) -> some View {
+        let costFirst = chart.metric == .cost
         VStack(alignment: .leading, spacing: 4) {
-            row(l10n("history.table.output"), HistoryText.fullNumber(summary.output, l10n), emphasized: true)
-            if !chart.isSingleSource, summary.sources.count > 1 {
-                SourceShareBar(summary: summary, stack: chart.stack, dark: dark)
-                    .frame(height: 5)
-                    .padding(.bottom, 3)
-            }
+            if costFirst { costRow(summary, emphasized: true) }
+            row(l10n("history.table.output"), HistoryText.fullNumber(summary.output, l10n), emphasized: !costFirst)
+            if !costFirst { shareBar(summary) }
             row(l10n("history.table.input"), HistoryText.fullNumber(summary.input, l10n))
             row(l10n("history.table.requests"), HistoryText.fullNumber(summary.requests, l10n))
             row(l10n("history.table.speed"), HistoryText.speed(summary.averageSpeed, l10n))
             if let peak = summary.peak {
                 row(l10n("history.table.peak"), HistoryText.speed(peak, l10n))
             }
+            if !costFirst { costRow(summary, emphasized: false) }
+        }
+    }
+
+    @ViewBuilder
+    private func shareBar(_ summary: DaySummary) -> some View {
+        if !chart.isSingleSource, summary.sources.filter({ value($0) > 0 }).count > 1 {
+            SourceShareBar(summary: summary, stack: chart.stack, dark: dark, value: value)
+                .frame(height: 5)
+                .padding(.bottom, 3)
+        }
+    }
+
+    private func value(_ source: SourceOutput) -> Double {
+        chart.metric == .cost ? Double(source.cost.microUsd) : Double(source.output)
+    }
+
+    /// The day's cost: always present (DESIGN 9), with `≥` and the unpriced count, `–` when nothing is priced.
+    @ViewBuilder
+    private func costRow(_ summary: DaySummary, emphasized: Bool) -> some View {
+        let money = chart.money ?? .usd
+        let cost = summary.cost
+        let shown: String = {
+            if case .priced(let micro, let partial) = cost.kind { return (partial ? "≥" : "") + money.amountWithUSD(micro) }
+            return money.display(cost, subscriptionTag: l10n("cost.subscription.tag"))
+        }()
+        row(l10n("history.table.cost"), shown, emphasized: emphasized)
+        if emphasized { shareBar(summary) }
+        if let note = HistoryText.costNote(cost, l10n) {
+            Text(note)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.historySecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -98,7 +129,8 @@ struct HistoryTooltip: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 8)
-                        if let speed = HistoryAggregator.speed(measuredOutput: model.measuredOutput, measuredMs: model.measuredMs) {
+                        if chart.metric == .output,
+                           let speed = HistoryAggregator.speed(measuredOutput: model.measuredOutput, measuredMs: model.measuredMs) {
                             Text(HistoryText.speed(speed, l10n))
                                 .foregroundStyle(.historySecondary)
                                 .layoutPriority(1)
@@ -106,6 +138,9 @@ struct HistoryTooltip: View {
                         Text(HistoryText.percent(share))
                             .foregroundStyle(.historySecondary)
                             .layoutPriority(1)
+                        Text(HistoryText.modelCost(summary.modelCosts[model.model], money: chart.money ?? .usd, l10n))
+                            .fontWeight(.medium)
+                            .layoutPriority(2)
                     }
                     .font(HistoryFont.tooltip)
                     GeometryReader { proxy in
@@ -121,17 +156,19 @@ struct HistoryTooltip: View {
     }
 }
 
-/// The day's output split by source, in stacking order, as one thin bar.
+/// The day's output (or cost) split by source, in stacking order, as one thin bar.
 private struct SourceShareBar: View {
     let summary: DaySummary
     let stack: [SourceKind]
     let dark: Bool
+    let value: (SourceOutput) -> Double
 
     var body: some View {
         GeometryReader { proxy in
-            let total = max(Double(summary.output), 1)
+            let entries = Dictionary(uniqueKeysWithValues: summary.sources.map { ($0.source, value($0)) })
+            let total = max(entries.values.reduce(0, +), 1)
             let gap: CGFloat = 1.5
-            let parts = stack.map { ($0, Double(summary.output(of: $0))) }.filter { $0.1 > 0 }
+            let parts = stack.map { ($0, entries[$0] ?? 0) }.filter { $0.1 > 0 }
             let usable = max(0, proxy.size.width - gap * CGFloat(max(parts.count - 1, 0)))
             HStack(spacing: gap) {
                 ForEach(parts, id: \.0) { source, output in

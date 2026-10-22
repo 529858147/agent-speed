@@ -307,7 +307,12 @@ struct OrbListRow: View {
         let text: String = if !shown {
             l10n("orbs.hidden")
         } else if let runtime, !runtime.isUnavailable {
-            l10n("mac.settings.speedValue", SpeedFormat.speed(runtime.feed.gauge.readoutValue))
+            if let money = runtime.feed.money {
+                // A money orb lists its own unit (DESIGN 9): `0.0042 US$/s`.
+                money.unknown ? "– \(money.unit)" : "\(money.atLeast ? "≥" : "")\(money.number) \(money.unit)"
+            } else {
+                l10n("mac.settings.speedValue", SpeedFormat.speed(runtime.feed.gauge.readoutValue))
+            }
         } else {
             "–"
         }

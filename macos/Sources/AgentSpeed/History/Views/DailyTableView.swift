@@ -6,6 +6,7 @@ import SwiftUI
 struct DailyTableHeader: View {
     let columns: [HistoryColumn]
     let widths: [CGFloat]
+    var gap: CGFloat = HistoryColumnLayout.gap
     let sort: HistorySort
     let l10n: Localizer
     let onSort: (HistoryColumn) -> Void
@@ -13,7 +14,7 @@ struct DailyTableHeader: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: HistoryColumnLayout.gap) {
+        HStack(alignment: .bottom, spacing: gap) {
             ForEach(Array(columns.enumerated()), id: \.element) { index, column in
                 header(column, width: widths[safe: index] ?? 60)
             }
@@ -34,23 +35,24 @@ struct DailyTableHeader: View {
     private func header(_ column: HistoryColumn, width: CGFloat) -> some View {
         let title = l10n(column.headerKey)
         let active = sort.column == column
+        // Only the sorted column carries its chevron, on the side away from the alignment edge, so the title never
+        // moves and narrow columns keep their full width for the title.
         let indicator = Image(systemName: sort.descending ? "chevron.down" : "chevron.up")
             .font(.system(size: 8, weight: .bold))
-            .opacity(active ? 1 : 0)
         return Button {
             onSort(column)
         } label: {
             HStack(alignment: .lastTextBaseline, spacing: 3) {
                 if column.isNumeric {
                     Spacer(minLength: 0)
-                    indicator
+                    if active { indicator }
                 }
                 Text(title)
                     .lineLimit(2)
                     .multilineTextAlignment(column.isNumeric ? .trailing : .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if !column.isNumeric {
-                    indicator
+                    if active { indicator }
                     Spacer(minLength: 0)
                 }
             }
@@ -76,7 +78,9 @@ struct DailyTableRow: View {
     let index: Int
     let columns: [HistoryColumn]
     let widths: [CGFloat]
+    var gap: CGFloat = HistoryColumnLayout.gap
     let today: DayKey
+    let money: HistoryMoney
     let l10n: Localizer
     let interaction: HistoryInteraction
     let tableFocused: Bool
@@ -90,7 +94,7 @@ struct DailyTableRow: View {
         let selected = interaction.selection.contains(row.day)
         let hovered = interaction.hoveredDay == row.day
         let emphasized = selected && tableFocused
-        HStack(spacing: HistoryColumnLayout.gap) {
+        HStack(spacing: gap) {
             ForEach(Array(columns.enumerated()), id: \.element) { position, column in
                 cell(column, emphasized: emphasized)
                     .frame(width: widths[safe: position] ?? 60, alignment: column.isNumeric ? .trailing : .leading)
@@ -114,7 +118,7 @@ struct DailyTableRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(HistoryText.dayTitle(row.day, today: today, l10n))
-        .accessibilityValue(HistoryText.accessible(row, today: today, l10n))
+        .accessibilityValue(HistoryText.accessible(row, today: today, money: money, l10n))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
         .accessibilityAction { onSelect(row.day) }
     }
@@ -128,8 +132,8 @@ struct DailyTableRow: View {
 
     @ViewBuilder
     private func cell(_ column: HistoryColumn, emphasized: Bool) -> some View {
-        let text = HistoryTable.cell(row, column, today: today, l10n)
-        let help = HistoryTable.fullCell(row, column, l10n)
+        let text = HistoryTable.cell(row, column, today: today, money: money, l10n)
+        let help = HistoryTable.fullCell(row, column, money: money, l10n)
         let primary: AnyShapeStyle = emphasized ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary)
         let secondary: AnyShapeStyle = emphasized ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(.historySecondary)
         switch column {
@@ -160,6 +164,22 @@ struct DailyTableRow: View {
                 }
             }
             .font(HistoryFont.cell)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .help(help ?? text)
+        case .cost:
+            // `≥` sits small and secondary in front, as on the orb (DESIGN 9); `–` and the subscription tag are quiet.
+            let quiet = row.cost.sortValue == nil
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                if text.hasPrefix("≥") {
+                    Text(verbatim: "≥")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(secondary)
+                }
+                Text(text.hasPrefix("≥") ? String(text.dropFirst()) : text)
+                    .foregroundStyle(quiet ? secondary : primary)
+            }
+            .font(quiet && text != "–" ? .system(size: 11.5) : HistoryFont.cell)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .help(help ?? text)

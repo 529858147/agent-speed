@@ -6,6 +6,10 @@ struct ProbeArguments {
         case dumpToday
         case dumpHistory
         case watch(seconds: Int)
+        /// One real price-table sync round into a scratch folder (NETWORK 3).
+        case syncPrices(directory: String)
+        /// One real exchange-rate round into a scratch folder (NETWORK 4).
+        case syncRates(directory: String, currency: String)
     }
 
     var mode: Mode
@@ -14,11 +18,14 @@ struct ProbeArguments {
     var utc = false
     /// `--history-store PATH`: reuse (and update) a persistent history store instead of analysing in memory.
     var historyStore: String?
+    /// `--prices PATH`: price with this table instead of the bundled one (METRICS 9), as `reference.py --prices`.
+    var prices: String?
 
     static let usage = """
         usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS)
-                               [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]
-                               [--omp PATH] [--antigravity PATH]
+                               [--prices PATH] [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH]
+                               [--gemini PATH] [--omp PATH] [--antigravity PATH]
+               AgentSpeedProbe --sync-prices DIR | --sync-rates DIR CURRENCY
         """
 
     static func parse(_ arguments: [String]) -> ProbeArguments? {
@@ -26,6 +33,7 @@ struct ProbeArguments {
         var configuration = MonitorConfiguration()
         var utc = false
         var historyStore: String?
+        var prices: String?
         var iterator = arguments.makeIterator()
         while let argument = iterator.next() {
             switch argument {
@@ -38,6 +46,15 @@ struct ProbeArguments {
             case "--history-store":
                 guard let path = iterator.next() else { return nil }
                 historyStore = path
+            case "--prices":
+                guard let path = iterator.next() else { return nil }
+                prices = path
+            case "--sync-prices":
+                guard let directory = iterator.next() else { return nil }
+                mode = .syncPrices(directory: directory)
+            case "--sync-rates":
+                guard let directory = iterator.next(), let currency = iterator.next() else { return nil }
+                mode = .syncRates(directory: directory, currency: currency.uppercased())
             case "--watch":
                 guard let value = iterator.next(), let seconds = Int(value), seconds > 0, seconds <= 86_400 else { return nil }
                 mode = .watch(seconds: seconds)
@@ -71,6 +88,24 @@ struct ProbeArguments {
             }
         }
         guard let mode else { return nil }
-        return ProbeArguments(mode: mode, configuration: configuration, utc: utc, historyStore: historyStore)
+        return ProbeArguments(mode: mode, configuration: configuration, utc: utc, historyStore: historyStore, prices: prices)
+    }
+}
+
+extension ProbeArguments {
+    /// The table of `--prices`, else the bundled one; exits when the file does not validate.
+    func priceTable() -> PriceTable {
+        guard let prices else { return PriceBook.bundled }
+        guard let data = FileManager.default.contents(atPath: prices) else {
+            FileHandle.standardError.write(Data("cannot read \(prices)\n".utf8))
+            exit(2)
+        }
+        switch PriceTable.load(data) {
+        case .success(let table):
+            return table
+        case .failure(let error):
+            FileHandle.standardError.write(Data("\(prices) is not a valid price table: \(error)\n".utf8))
+            exit(2)
+        }
     }
 }

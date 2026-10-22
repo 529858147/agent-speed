@@ -13,6 +13,8 @@ public final class HistoryService {
 
     public private(set) var configuration: MonitorConfiguration
     public let storeURL: URL
+    /// Shared with the live engine (METRICS 9.7).
+    public let pricing: PriceBook
     private let store: HistoryStore
     private weak var liveStore: SpeedStore?
     private var worker: HistoryWorker?
@@ -23,12 +25,14 @@ public final class HistoryService {
         store: HistoryStore,
         configuration: MonitorConfiguration = MonitorConfiguration(),
         liveStore: SpeedStore? = nil,
-        storeURL: URL = HistoryService.defaultStoreURL
+        storeURL: URL = HistoryService.defaultStoreURL,
+        pricing: PriceBook = PriceBook()
     ) {
         self.store = store
         self.configuration = configuration
         self.liveStore = liveStore
         self.storeURL = storeURL
+        self.pricing = pricing
     }
 
     /// `~/Library/Application Support/AgentSpeed/history.sqlite`.
@@ -41,9 +45,19 @@ public final class HistoryService {
     /// True between `start()` and `stop()`.
     public var isRunning: Bool { worker != nil }
 
+    /// Loads the day bindings and table copies of the store into `book` (a quick read that never changes the store),
+    /// before the live engine prices anything (METRICS 9.7).
+    public nonisolated static func restorePricing(into book: PriceBook, storeURL: URL = defaultStoreURL) {
+        let stored = HistoryDatabase.storedPricing(at: storeURL.path)
+        let repaired = book.restore(bindings: stored.bindings, tables: stored.tables)
+        if !repaired.isEmpty {
+            PricingLog.logger.notice("Price bindings without a valid table rebound to the current table: \(repaired.count, privacy: .public)")
+        }
+    }
+
     public func start() {
         guard worker == nil else { return }
-        let worker = HistoryWorker(storePath: storeURL.path, configuration: configuration) { [weak store] state, days in
+        let worker = HistoryWorker(storePath: storeURL.path, configuration: configuration, pricing: pricing) { [weak store] state, days in
             store?.publish(state: state, days: days)
         }
         self.worker = worker
@@ -64,6 +78,7 @@ public final class HistoryService {
         samplePeak()
         peakTimer?.invalidate()
         peakTimer = nil
+        pricing.setBindingObserver(nil)
         worker?.stop()
         worker = nil
     }
@@ -122,7 +137,10 @@ final class HistoryWorker: @unchecked Sendable {
     }
 
     private let storePath: String
+    private let pricing: PriceBook
     private let publisher: Publisher
+    /// A binding save is queued (bindings arrive in bursts while a day's responses are priced).
+    private let bindingSaveQueued = OSAllocatedUnfairLock(initialState: false)
     private let queue = DispatchQueue(label: "app.agentspeed.history", qos: .utility)
     private let control = OSAllocatedUnfairLock(initialState: Control())
 
@@ -132,9 +150,10 @@ final class HistoryWorker: @unchecked Sendable {
     private var midnightTimer: DispatchSourceTimer?
     private var lastState: HistoryState = .notLoaded
 
-    init(storePath: String, configuration: MonitorConfiguration, publisher: @escaping Publisher) {
+    init(storePath: String, configuration: MonitorConfiguration, pricing: PriceBook, publisher: @escaping Publisher) {
         self.storePath = storePath
         self.configuration = configuration
+        self.pricing = pricing
         self.publisher = publisher
     }
 
@@ -144,12 +163,26 @@ final class HistoryWorker: @unchecked Sendable {
     }
 
     func start() {
+        pricing.setBindingObserver { [weak self] in self?.requestBindingSave() }
         queue.async { [self] in
             guard openAnalyzer() != nil else { return }
             post(.analyzing(progress: 0, filesDone: 0, filesTotal: 0), days: true)
             scheduleTimers()
         }
         requestRun(visible: true)
+    }
+
+    /// Saves new day bindings (the live engine binds today) soon, once per burst.
+    private func requestBindingSave() {
+        let enqueue = bindingSaveQueued.withLock { queued -> Bool in
+            defer { queued = true }
+            return !queued
+        }
+        guard enqueue else { return }
+        queue.async { [self] in
+            bindingSaveQueued.withLock { $0 = false }
+            try? analyzer?.saveBindings()
+        }
     }
 
     func stop() {
@@ -179,6 +212,7 @@ final class HistoryWorker: @unchecked Sendable {
         queue.async { [self] in
             control.withLock { $0.pendingClears -= 1 }
             analyzer = nil
+            pricing.clearBindings()
             HistoryDatabase.delete(at: storePath)
             guard openAnalyzer() != nil else { return }
             post(.analyzing(progress: 0, filesDone: 0, filesTotal: 0), days: true)
@@ -221,10 +255,10 @@ final class HistoryWorker: @unchecked Sendable {
         if let analyzer { return analyzer }
         guard !isStopped else { return nil }
         do {
-            analyzer = try HistoryAnalyzer(database: HistoryDatabase(path: storePath))
+            analyzer = try HistoryAnalyzer(database: HistoryDatabase(path: storePath), pricing: pricing)
         } catch {
             // An unreadable or newer store is left untouched; this launch keeps its history in memory.
-            analyzer = try? HistoryAnalyzer(database: HistoryDatabase.inMemory())
+            analyzer = try? HistoryAnalyzer(database: HistoryDatabase.inMemory(), pricing: pricing)
         }
         if analyzer == nil { post(.failed("The history store could not be opened."), days: false) }
         return analyzer

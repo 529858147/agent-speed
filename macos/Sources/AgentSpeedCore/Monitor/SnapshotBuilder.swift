@@ -65,7 +65,8 @@ enum SnapshotBuilder {
                 live: row.live,
                 recentSpeed: row.recentSpeed,
                 lastActivity: date(row.agent.lastLineMs ?? 0),
-                parentId: row.parentId
+                parentId: row.parentId,
+                liveCost: row.liveCost
             )
         }
         let sources = SourceKind.allCases.map { kind in
@@ -79,7 +80,10 @@ enum SnapshotBuilder {
                 live: output.sourceLive[kind] ?? .zero,
                 today: output.todayBySource[kind] ?? TokenTotals(),
                 activeAgents: agents.filter { $0.source == kind && $0.phase == .generating }.count,
-                liveEstimated: output.sourceLiveEstimated[kind] ?? .zero
+                liveEstimated: output.sourceLiveEstimated[kind] ?? .zero,
+                liveCost: output.sourceLiveCost[kind] ?? .zero,
+                todayCost: output.todayCostBySource[kind] ?? .zero,
+                unpricedModels: unpricedModels(output.todayCostByModel[kind])
             )
         }
         return SpeedSnapshot(
@@ -99,8 +103,18 @@ enum SnapshotBuilder {
             lastResponse: output.lastResponse,
             warnings: context.warnings(for: output),
             subsetPeaks: output.subsetPeaks,
-            dayStart: date(output.todayStartMs)
+            dayStart: date(output.todayStartMs),
+            liveCost: output.liveCost,
+            todayCost: output.todayCost
         )
+    }
+
+    /// Models with unpriced responses, most first, then by name.
+    static func unpricedModels(_ models: [String: CostTally]?) -> [String] {
+        (models ?? [:])
+            .filter { $0.value.unpricedRequests > 0 && !$0.key.isEmpty }
+            .sorted { $0.value.unpricedRequests != $1.value.unpricedRequests ? $0.value.unpricedRequests > $1.value.unpricedRequests : $0.key < $1.key }
+            .map(\.key)
     }
 
     /// A snapshot without data, for `.starting` and `.noSources`.

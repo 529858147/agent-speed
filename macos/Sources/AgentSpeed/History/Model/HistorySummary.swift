@@ -2,7 +2,7 @@ import AgentSpeedCore
 import Foundation
 
 enum SummaryMetric: String, CaseIterable, Identifiable, Sendable {
-    case output, input, requests, speed
+    case output, input, requests, speed, cost
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum SummaryMetric: String, CaseIterable, Identifiable, Sendable {
         case .input: "history.summary.input"
         case .requests: "history.summary.requests"
         case .speed: "history.summary.speed"
+        case .cost: "history.summary.cost"
         }
     }
 }
@@ -33,11 +34,78 @@ struct SummaryCard: Identifiable, Equatable, Sendable {
     let spark: [Double?]
     /// The point drawn as the selected day: the last one, for a single-day range.
     let sparkHighlight: Int?
+    /// Overrides the metric's title (`history.summary.costApi` for a subscription source selected directly).
+    var titleKey: String?
+    /// The card's tooltip (`history.costFrozen`); nil shows `fullValue`.
+    var help: String?
+    /// How accessibility reads the value; nil reads `fullValue`.
+    var spokenValue: String?
+    /// The change is shown without green or red (money is never colored, DESIGN 9).
+    var neutralChange = false
 }
 
-/// The four summary cards (DESIGN 4b, item 2). Same choice of secondary lines as on Windows.
+/// The summary cards (DESIGN 4b, item 2, and the cost card of DESIGN 9). Same choice of secondary lines as on Windows.
 @MainActor
 enum HistorySummary {
+    /// The five cards, the cost card last.
+    static func build(
+        days: [DaySummary], previous: [DaySummary], sparkDays: [DaySummary], range: DayRange, today: DayKey,
+        money: HistoryMoney, costTitleKey: String, _ l10n: Localizer
+    ) -> [SummaryCard] {
+        build(days: days, previous: previous, sparkDays: sparkDays, range: range, today: today, l10n)
+            + [costCard(days: days, previous: previous, sparkDays: sparkDays, range: range, money: money, titleKey: costTitleKey, l10n)]
+    }
+
+    /// `費用（API 等值）`: the range's cost, its average per day with cost data (the change against the day before for
+    /// a single day), and a sparkline of daily cost. Amounts convert with the one rate in use, so the card equals
+    /// the sum of its days (METRICS 9.8).
+    static func costCard(
+        days: [DaySummary], previous: [DaySummary], sparkDays: [DaySummary], range: DayRange, money: HistoryMoney,
+        titleKey: String, _ l10n: Localizer
+    ) -> SummaryCard {
+        let totals = HistoryAggregator.totals(days)
+        let tag = l10n("cost.subscription.tag")
+        let value = money.display(totals.cost, subscriptionTag: tag)
+        var full = value
+        var spoken = l10n("cost.unknown")
+        var secondary = ""
+        var change: Double?
+        switch totals.cost.kind {
+        case .priced(let micro, let partial):
+            full = (partial ? "≥" : "") + money.amountWithUSD(micro)
+            spoken = partial ? l10n("a11y.orb.costAtLeast", money.spoken(micro)) : money.spoken(micro)
+            if partial { full += "\n" + l10n("history.unpricedDay", totals.cost.unpriced) }
+            if range.isSingleDay {
+                let before = HistoryAggregator.totals(previous).cost
+                if before.tally != nil {
+                    change = HistoryAggregator.change(Double(micro), from: Double(before.microUsd))
+                    secondary = change.map { HistoryText.versusPreviousDay($0, l10n) } ?? ""
+                }
+            } else if totals.costDays > 0 {
+                secondary = l10n("history.summary.costPerDay", money.amount(micro / Int64(totals.costDays)))
+            }
+        case .unknown:
+            full = l10n("history.unpricedDay", totals.cost.requests)
+        case .unavailable:
+            full = l10n("history.costUnavailable")
+        case .subscription(let sources):
+            full = l10n("cost.subscriptionExcluded", sources.map { l10n($0.titleKey) }.joined(separator: l10n("list.separator")))
+            spoken = tag
+        }
+        let sparkRange = range.isSingleDay ? HistoryRanges.sparkRange(range) : range
+        let spark = HistoryAggregator.series(range.isSingleDay ? sparkDays : days, range: sparkRange) { day in
+            day.cost.tally == nil && day.cost.requests > 0 ? nil : money.value(day.cost.microUsd)
+        }
+        return SummaryCard(
+            metric: .cost, value: value, unit: nil, fullValue: full, secondary: secondary, change: change, spark: spark,
+            sparkHighlight: range.isSingleDay ? sparkRange.index(of: range.end) : nil,
+            titleKey: titleKey,
+            help: "\(full)\n\n\(l10n("history.costFrozen"))",
+            spokenValue: spoken,
+            neutralChange: true
+        )
+    }
+
     /// - Parameters:
     ///   - days: days with data in `range`.
     ///   - previous: days with data in the equally long period before it.

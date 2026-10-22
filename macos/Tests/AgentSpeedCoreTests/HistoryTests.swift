@@ -42,24 +42,40 @@ struct HistoryTests {
 
     /// The JSON shape of `reference.py --dump-history`.
     static func json(_ day: DailyUsage) -> [String: Any] {
+        func null(_ value: Any?) -> Any { value ?? NSNull() }
         var models: [String: Any] = [:]
         for model in day.models {
-            models[model.model] = ["requests": model.requests, "output": model.output, "measuredOutput": model.measuredOutput,
-                                   "measuredMs": model.measuredMs]
+            models[model.model] = [
+                "requests": model.requests, "output": model.output, "measuredOutput": model.measuredOutput,
+                "measuredMs": model.measuredMs, "costMicroUsd": null(model.cost?.costMicroUsd),
+                "unpricedRequests": null(model.cost?.unpricedRequests),
+            ]
         }
         return [
             "date": day.day, "source": day.source.rawValue, "requests": day.totals.requests, "input": day.totals.input,
             "cachedInput": day.totals.cachedInput, "cacheWriteInput": day.totals.cacheWriteInput,
             "output": day.totals.output, "reasoning": day.totals.reasoning, "measuredOutput": day.measuredOutput,
-            "measuredMs": day.measuredMs, "unfinalized": day.unfinalized, "agents": day.agents, "models": models,
+            "measuredMs": day.measuredMs, "unfinalized": day.unfinalized, "costMicroUsd": null(day.cost?.costMicroUsd),
+            "unpricedRequests": null(day.cost?.unpricedRequests), "priceVersion": null(day.priceVersion),
+            "agents": day.agents, "models": models,
         ]
+    }
+
+    /// The fixture price tables and stored bindings of `history-expected.json` `prices` (METRICS 9.7).
+    static func fixturePricing() throws -> PriceBook {
+        let prices = try #require(try Fixtures.json("history-expected.json")["prices"] as? [String: Any])
+        let tables = try #require(prices["tables"] as? [String]).map { try PriceTableTests.table($0) }
+        let bindings = (prices["bindings"] as? [String: NSNumber] ?? [:]).mapValues(\.intValue)
+        return PriceBook(tables: tables, bindings: bindings)
     }
 
     @Test func fixturesMatchExpectedHistory() throws {
         let expected = try #require(try Fixtures.json("history-expected.json")["days"] as? [[String: Any]])
         #expect(Set(expected.compactMap { $0["source"] as? String }) == Set(SourceKind.allCases.map(\.rawValue)))
         let (directory, copy) = try Self.fixtureCopy()
-        let report = try HistoryScan.run(configuration: Self.configuration(fixtures: copy), timeZone: Self.utc)
+        let report = try HistoryScan.run(
+            configuration: Self.configuration(fixtures: copy), timeZone: Self.utc, pricing: try Self.fixturePricing()
+        )
         #expect(report.days.count == expected.count)
         for (day, want) in zip(report.days, expected) {
             let got = Self.json(day) as NSDictionary
@@ -144,7 +160,9 @@ struct HistoryTests {
         #expect(days[0].totals.requests == 3)
         #expect(days[0].totals.output == 151)
         #expect(days[0].agents == 2)
-        #expect(days[0].models == [ModelUsage(model: "m", requests: 3, output: 151, measuredOutput: 151, measuredMs: 12_000)])
+        #expect(days[0].models == [ModelUsage(model: "m", requests: 3, output: 151, measuredOutput: 151, measuredMs: 12_000,
+                                              cost: CostTally(unpricedRequests: 3))])
+        #expect(days[0].cost == CostTally(unpricedRequests: 3), "model m has no price")
         #expect(days[0].measuredMs == 12_000)
         #expect(days[1].totals.output == 7)
 
@@ -206,7 +224,9 @@ struct HistoryTests {
         #expect(report.filesAnalyzed == 1)
         #expect(days.map(\.day) == ["2026-10-01", "2026-10-20"], "a day without logs any more is kept")
         #expect(days[0].models == [ModelUsage(model: "m", requests: 2, output: 30)], "its model speed stays unknown")
-        #expect(days[1].models == [ModelUsage(model: "m", requests: 2, output: 150, measuredOutput: 150, measuredMs: 8000)])
+        #expect(days[0].cost == nil, "and it has no cost data")
+        #expect(days[1].models == [ModelUsage(model: "m", requests: 2, output: 150, measuredOutput: 150, measuredMs: 8000,
+                                              cost: CostTally(unpricedRequests: 2))])
         #expect(days[1].models.first?.averageSpeed == 150 / 8.0)
         #expect(try scratch.run().0.filesAnalyzed == 0)
     }

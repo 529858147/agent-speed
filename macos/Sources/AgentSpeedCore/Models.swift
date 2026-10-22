@@ -98,6 +98,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     public var lastActivity: Date
     /// The parent agent's id when the parent is also in the list (METRICS 6.7).
     public var parentId: String?
+    /// The agent's live cost rate (METRICS 9.5).
+    public var liveCost: LiveCost
 
     public init(
         id: String,
@@ -109,7 +111,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         live: Rate,
         recentSpeed: Double?,
         lastActivity: Date,
-        parentId: String? = nil
+        parentId: String? = nil,
+        liveCost: LiveCost = .zero
     ) {
         self.id = id
         self.source = source
@@ -121,6 +124,7 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         self.recentSpeed = recentSpeed
         self.lastActivity = lastActivity
         self.parentId = parentId
+        self.liveCost = liveCost
     }
 }
 
@@ -137,6 +141,12 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
     public var activeAgents: Int
     /// The estimated part of `live` (unmeasured responses and in-flight requests, METRICS 6.3), in the same units.
     public var liveEstimated: Rate
+    /// The live cost rate (METRICS 9.5).
+    public var liveCost: LiveCost
+    /// Today's cost (METRICS 9.6).
+    public var todayCost: CostTally
+    /// Models of today's responses without a known price, most unpriced requests first.
+    public var unpricedModels: [String]
 
     public init(
         kind: SourceKind,
@@ -147,7 +157,10 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         live: Rate,
         today: TokenTotals,
         activeAgents: Int,
-        liveEstimated: Rate = .zero
+        liveEstimated: Rate = .zero,
+        liveCost: LiveCost = .zero,
+        todayCost: CostTally = .zero,
+        unpricedModels: [String] = []
     ) {
         self.kind = kind
         self.enabled = enabled
@@ -158,6 +171,9 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         self.today = today
         self.activeAgents = activeAgents
         self.liveEstimated = liveEstimated
+        self.liveCost = liveCost
+        self.todayCost = todayCost
+        self.unpricedModels = unpricedModels
     }
 }
 
@@ -234,6 +250,10 @@ public struct SpeedSnapshot: Equatable, Sendable {
     public var subsetPeaks: [SourceSet: Double]
     /// Local midnight at which this snapshot's "today" starts; `.distantPast` before the monitor reported one.
     public var dayStart: Date
+    /// The live cost rate of every source (METRICS 9.5); subscription marks apply in the UI (9.4).
+    public var liveCost: LiveCost
+    /// Today's cost of every source (METRICS 9.6).
+    public var todayCost: CostTally
 
     public init(
         timestamp: Date,
@@ -252,7 +272,9 @@ public struct SpeedSnapshot: Equatable, Sendable {
         lastResponse: ResponseSummary?,
         warnings: [MonitorWarning],
         subsetPeaks: [SourceSet: Double] = [:],
-        dayStart: Date = .distantPast
+        dayStart: Date = .distantPast,
+        liveCost: LiveCost = .zero,
+        todayCost: CostTally = .zero
     ) {
         self.timestamp = timestamp
         self.state = state
@@ -271,6 +293,8 @@ public struct SpeedSnapshot: Equatable, Sendable {
         self.warnings = warnings
         self.subsetPeaks = subsetPeaks
         self.dayStart = dayStart
+        self.liveCost = liveCost
+        self.todayCost = todayCost
     }
 
     public static let empty = SpeedSnapshot(

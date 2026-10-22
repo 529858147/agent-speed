@@ -3,8 +3,9 @@ import Foundation
 /// The persistent daily-history store (METRICS 8): file identities, the 64-bit hashes of the response keys each file
 /// owns, per-file per-day contributions and day peaks. Only aggregates are stored — never keys in plain text or content.
 final class HistoryDatabase {
-    /// 2: per-model `measured_output` and `measured_ms`.
-    static let schemaVersion: Int64 = 2
+    /// 2: per-model `measured_output` and `measured_ms`. 3: cost per contribution and model, day bindings of the
+    /// price tables and their copies (METRICS 9.7).
+    static let schemaVersion: Int64 = 3
 
     enum Failure: Error, Equatable {
         /// Written by a newer version of the app; left untouched.
@@ -20,6 +21,11 @@ final class HistoryDatabase {
         var modified: Int64
         var version: Int64
         var days: [UsageKey: DayAggregate]
+
+        /// Some response has no known price (METRICS 9.7 re-analysis).
+        var hasUnpriced: Bool {
+            days.values.contains { ($0.cost?.unpricedRequests ?? 0) > 0 }
+        }
     }
 
     let path: String
@@ -53,12 +59,22 @@ final class HistoryDatabase {
         let version = try scalar("PRAGMA user_version") ?? 0
         guard version <= Self.schemaVersion else { throw Failure.newerSchema }
         guard version < Self.schemaVersion else { return }
-        if version == 1 {
-            // The analysis version moved with it, so every file is analysed again and fills the new columns.
+        if version >= 1 {
+            // The analysis version moved with each step, so every file is analysed again and fills the new columns;
+            // contributions of files that are gone keep NULL costs (METRICS 8).
             try connection.transaction {
+                if version == 1 {
+                    try connection.execute("""
+                        ALTER TABLE contribution_models ADD COLUMN measured_output INTEGER NOT NULL DEFAULT 0;
+                        ALTER TABLE contribution_models ADD COLUMN measured_ms INTEGER NOT NULL DEFAULT 0;
+                        """)
+                }
                 try connection.execute("""
-                    ALTER TABLE contribution_models ADD COLUMN measured_output INTEGER NOT NULL DEFAULT 0;
-                    ALTER TABLE contribution_models ADD COLUMN measured_ms INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE contributions ADD COLUMN cost_micro_usd INTEGER;
+                    ALTER TABLE contributions ADD COLUMN unpriced_requests INTEGER;
+                    ALTER TABLE contribution_models ADD COLUMN cost_micro_usd INTEGER;
+                    ALTER TABLE contribution_models ADD COLUMN unpriced_requests INTEGER;
+                    \(Self.priceTablesSQL)
                     PRAGMA user_version = \(Self.schemaVersion);
                     """)
             }
@@ -90,6 +106,8 @@ final class HistoryDatabase {
                     measured_ms INTEGER NOT NULL,
                     unfinalized INTEGER NOT NULL,
                     agents INTEGER NOT NULL,
+                    cost_micro_usd INTEGER,
+                    unpriced_requests INTEGER,
                     PRIMARY KEY (file_id, day, source)
                 ) WITHOUT ROWID;
                 CREATE TABLE IF NOT EXISTS contribution_models (
@@ -101,13 +119,22 @@ final class HistoryDatabase {
                     output INTEGER NOT NULL,
                     measured_output INTEGER NOT NULL,
                     measured_ms INTEGER NOT NULL,
+                    cost_micro_usd INTEGER,
+                    unpriced_requests INTEGER,
                     PRIMARY KEY (file_id, day, source, model)
                 ) WITHOUT ROWID;
                 CREATE TABLE IF NOT EXISTS day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
+                \(Self.priceTablesSQL)
                 PRAGMA user_version = \(Self.schemaVersion);
                 """)
         }
     }
+
+    /// Day → price table version, and a copy of every version a binding references (METRICS 9.7).
+    private static let priceTablesSQL = """
+        CREATE TABLE IF NOT EXISTS price_bindings (day TEXT PRIMARY KEY, version INTEGER NOT NULL) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS price_tables (version INTEGER PRIMARY KEY, body BLOB NOT NULL);
+        """
 
     private func scalar(_ sql: String) throws -> Int64? {
         let statement = try connection.prepare(sql)
@@ -150,7 +177,7 @@ final class HistoryDatabase {
         }
         let contributions = try connection.prepare("""
             SELECT file_id, day, source, requests, input, cached_input, cache_write_input, output, reasoning,
-                   measured_output, measured_ms, unfinalized, agents FROM contributions
+                   measured_output, measured_ms, unfinalized, agents, cost_micro_usd, unpriced_requests FROM contributions
             """)
         try contributions.forEachRow { row in
             guard let path = paths[row.int64(0)], let day = row.string(1),
@@ -163,19 +190,29 @@ final class HistoryDatabase {
             aggregate.measuredMs = row.int64(10)
             aggregate.unfinalized = Int(row.int64(11))
             aggregate.agents = Int(row.int64(12))
+            aggregate.cost = Self.cost(row, 13)
             entries[path]?.days[UsageKey(day: day, source: source)] = aggregate
         }
-        let models = try connection.prepare(
-            "SELECT file_id, day, source, model, requests, output, measured_output, measured_ms FROM contribution_models")
+        let models = try connection.prepare("""
+            SELECT file_id, day, source, model, requests, output, measured_output, measured_ms, cost_micro_usd,
+                   unpriced_requests FROM contribution_models
+            """)
         try models.forEachRow { row in
             guard let path = paths[row.int64(0)], let day = row.string(1),
                   let source = row.string(2).flatMap(SourceKind.init(rawValue:)), let model = row.string(3) else { return }
             let key = UsageKey(day: day, source: source)
             guard entries[path]?.days[key] != nil else { return }
             entries[path]?.days[key]?.models[model] = ModelTally(
-                requests: Int(row.int64(4)), output: Int(row.int64(5)), measuredOutput: Int(row.int64(6)), measuredMs: row.int64(7))
+                requests: Int(row.int64(4)), output: Int(row.int64(5)), measuredOutput: Int(row.int64(6)), measuredMs: row.int64(7),
+                cost: Self.cost(row, 8))
         }
         return entries
+    }
+
+    /// A cost pair stored at `column` and `column + 1`; nil when it was stored before costs existed.
+    private static func cost(_ row: SQLiteStatement, _ column: Int32) -> CostTally? {
+        guard let micro = row.optionalInt64(column), let unpriced = row.optionalInt64(column + 1) else { return nil }
+        return CostTally(costMicroUsd: micro, unpricedRequests: Int(unpriced))
     }
 
     /// Adds the key hashes owned by every stored file except `excluded` to a hashed deduper.
@@ -218,12 +255,13 @@ final class HistoryDatabase {
             let clearModels = try connection.prepare("DELETE FROM contribution_models WHERE file_id = ?1")
             let insertDay = try connection.prepare("""
                 INSERT INTO contributions (file_id, day, source, requests, input, cached_input, cache_write_input,
-                    output, reasoning, measured_output, measured_ms, unfinalized, agents)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    output, reasoning, measured_output, measured_ms, unfinalized, agents, cost_micro_usd, unpriced_requests)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
                 """)
             let insertModel = try connection.prepare("""
-                INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms,
+                    cost_micro_usd, unpriced_requests)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                 """)
             var ids: [String: Int64] = [:]
             for (path, entry, keys) in files {
@@ -255,6 +293,8 @@ final class HistoryDatabase {
                     insertDay.bind(11, day.measuredMs)
                     insertDay.bind(12, day.unfinalized)
                     insertDay.bind(13, day.agents)
+                    insertDay.bind(14, day.cost?.costMicroUsd)
+                    insertDay.bind(15, day.cost.map { Int64($0.unpricedRequests) })
                     try insertDay.run()
                     for (model, tally) in day.models {
                         insertModel.bind(1, id)
@@ -265,12 +305,83 @@ final class HistoryDatabase {
                         insertModel.bind(6, tally.output)
                         insertModel.bind(7, tally.measuredOutput)
                         insertModel.bind(8, tally.measuredMs)
+                        insertModel.bind(9, tally.cost?.costMicroUsd)
+                        insertModel.bind(10, tally.cost.map { Int64($0.unpricedRequests) })
                         try insertModel.run()
                     }
                 }
             }
             return ids
         }
+    }
+
+    // MARK: - Price bindings (METRICS 9.7)
+
+    func priceBindings() throws -> [String: Int] {
+        let statement = try connection.prepare("SELECT day, version FROM price_bindings")
+        var bindings: [String: Int] = [:]
+        try statement.forEachRow { row in
+            if let day = row.string(0) { bindings[day] = Int(row.int64(1)) }
+        }
+        return bindings
+    }
+
+    /// The stored table copies, by version.
+    func priceTables() throws -> [Int: Data] {
+        let statement = try connection.prepare("SELECT version, body FROM price_tables")
+        var tables: [Int: Data] = [:]
+        try statement.forEachRow { row in
+            tables[Int(row.int64(0))] = row.withBlob(1) { Data($0) }
+        }
+        return tables
+    }
+
+    /// Saves bindings, a copy of every table they reference that is not stored yet (`tables` supplies them), and
+    /// deletes the copies no binding references any more.
+    func savePriceBindings(_ bindings: [String: Int], tables: (Int) -> Data?) throws {
+        guard !bindings.isEmpty else { return }
+        try connection.transaction {
+            let upsert = try connection.prepare("""
+                INSERT INTO price_bindings (day, version) VALUES (?1, ?2)
+                ON CONFLICT(day) DO UPDATE SET version = excluded.version
+                """)
+            for (day, version) in bindings.sorted(by: { $0.key < $1.key }) {
+                upsert.bind(1, day)
+                upsert.bind(2, version)
+                try upsert.run()
+            }
+            var stored: Set<Int> = []
+            try connection.prepare("SELECT version FROM price_tables").forEachRow { stored.insert(Int($0.int64(0))) }
+            let insert = try connection.prepare("INSERT INTO price_tables (version, body) VALUES (?1, ?2)")
+            for version in Set(bindings.values).subtracting(stored).sorted() {
+                guard let body = tables(version) else { continue }
+                insert.bind(1, version)
+                body.withUnsafeBytes { insert.bind(2, blob: $0) }
+                try insert.run()
+            }
+            try connection.execute("DELETE FROM price_tables WHERE version NOT IN (SELECT DISTINCT version FROM price_bindings)")
+        }
+    }
+
+    /// Bindings and table copies of the store at `path`, read without changing it; empty when the store does not
+    /// exist yet or predates costs. The app reads them before the live engine prices anything (METRICS 9.7).
+    static func storedPricing(at path: String) -> (bindings: [String: Int], tables: [Int: Data]) {
+        guard FileManager.default.fileExists(atPath: path),
+              let connection = try? SQLiteConnection(path: path, mode: .readOnly) else { return ([:], [:]) }
+        defer { connection.close() }
+        var bindings: [String: Int] = [:]
+        var tables: [Int: Data] = [:]
+        do {
+            try connection.prepare("SELECT day, version FROM price_bindings").forEachRow { row in
+                if let day = row.string(0) { bindings[day] = Int(row.int64(1)) }
+            }
+            try connection.prepare("SELECT version, body FROM price_tables").forEachRow { row in
+                tables[Int(row.int64(0))] = row.withBlob(1) { Data($0) }
+            }
+        } catch {
+            return ([:], [:])
+        }
+        return (bindings, tables)
     }
 
     // MARK: - Peaks

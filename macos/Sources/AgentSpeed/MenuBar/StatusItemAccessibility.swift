@@ -18,6 +18,7 @@ final class StatusItemAccessibility {
         loop = ObservationLoop { [weak self] in
             guard let self else { return }
             _ = (self.model.gauge.readoutValue, self.model.gauge.title, self.model.l10n.language)
+            _ = (self.model.settings.liveUnit, self.model.snapshot.liveCost, self.model.cost.currency)
             self.schedule()
         }
     }
@@ -53,9 +54,17 @@ final class StatusItemAccessibility {
         updatedAt = Clock.now
         let l10n = model.l10n
         let speed = Self.spokenSpeed(model.gauge.readoutValue, locale: l10n.locale)
-        let title = l10n(model.gauge.title.titleKey).capitalized(with: l10n.locale)
+        let title = model.titles.text(model.gauge.title, in: model.titles.general, l10n: l10n).capitalized(with: l10n.locale)
         let name = l10n("app.name")
         if button.accessibilityLabel() != name { button.setAccessibilityLabel(name) }
+        if let money = StatusItemValue.money(model) {
+            // The money unit reads the amount with the currency's name (DESIGN 9, Accessibility).
+            let amount = money.atLeast ? l10n("a11y.orb.costAtLeast", money.number) : money.number
+            let text = money.unknown ? l10n("a11y.orb.costUnknown", title) : l10n("a11y.orb.cost", amount, model.cost.currencyName, title)
+            button.setAccessibilityValue(text)
+            button.toolTip = text
+            return
+        }
         button.setAccessibilityValue(l10n("a11y.orb", speed, title))
         button.toolTip = l10n("mac.a11y.statusItem", speed, title)
     }

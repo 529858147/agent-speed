@@ -1,5 +1,6 @@
 import AgentSpeedCore
 import AgentSpeedHero
+import AgentSpeedOrbModel
 import Foundation
 import Metal
 
@@ -21,6 +22,10 @@ enum HeroBenchmark {
         lines.append(cpu(model: model, name: "tour, Standard", level: .standard, scenario: .tour))
         lines.append(cpu(model: model, name: "rocket at 1.6 R, Max", level: .max, scenario: HeroScenario(name: "redline", keys: [(0, 640)], duration: 12)))
         lines.append(contentsOf: gpu(model: model))
+        lines.append(badge(model: model, name: "stairs, Cultivation, Standard", theme: .cultivation, level: .standard, scenario: .stairs))
+        lines.append(badge(model: model, name: "stairs, Wuxia (two lines), Max", theme: .wuxia, level: .max, scenario: .stairs))
+        lines.append(badge(model: model, name: "1.6 R, Engineer, Max", theme: .engineer, level: .max,
+                           scenario: HeroScenario(name: "redline", keys: [(0, 640)], duration: 12)))
         let report = lines.joined(separator: "\n") + "\n"
         try? report.write(to: directory.appendingPathComponent("hero-bench.txt"), atomically: true, encoding: .utf8)
         print(report, terminator: "")
@@ -35,6 +40,21 @@ enum HeroBenchmark {
         timeline.run(until: start + scenario.duration) { scenario.value(at: $0 - start) }
         let samples = (timeline.hero?.stats.samples ?? []).sorted()
         return "hero frame CPU (\(name), \(samples.count) frames): " + summary(samples)
+    }
+
+    /// CPU time of the title badge per frame (state step and scene build), DESIGN 4c.
+    private static func badge(model: AppModel, name: String, theme: TitlePreset, level: HeroLevel, scenario: HeroScenario) -> String {
+        let selected = model.titles.document.selected
+        model.titles.select(theme.rawValue)
+        defer { model.titles.select(selected) }
+        let timeline = HeroTimeline(model: model)
+        timeline.hero?.overrides.level = level
+        let start = timeline.time
+        timeline.reset(value: scenario.value(at: 0))
+        timeline.animator.badge?.collectsSamples = true
+        timeline.run(until: start + scenario.duration) { scenario.value(at: $0 - start) }
+        let samples = (timeline.animator.badge?.samples ?? []).sorted()
+        return "title badge frame CPU (\(name), \(samples.count) frames): " + summary(samples)
     }
 
     /// Encodes the layer of a busy frame (a rocket at Max with an upgrade in flight) offscreen and times it.

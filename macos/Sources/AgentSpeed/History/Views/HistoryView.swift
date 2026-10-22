@@ -23,7 +23,8 @@ struct HistoryView: View {
                 }
             }
             .animation(HistoryMotion.fade, value: content.isEmpty)
-            HistoryFooter(store: model.store, l10n: model.l10n, onRefresh: model.refresh)
+            HistoryFooter(store: model.store, l10n: model.l10n, unpriced: content.unpricedModels, rateNote: model.rateNote,
+                          onRefresh: model.refresh)
         }
         .frame(minWidth: 720, minHeight: 480)
     }
@@ -39,7 +40,7 @@ struct HistoryView: View {
     }
 
     private func scrollingLayout(_ content: HistoryContent) -> some View {
-        let widths = columnWidths(content.columns)
+        let (widths, gap) = columnLayout(content.columns)
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
@@ -58,8 +59,10 @@ struct HistoryView: View {
                                 breakdown: breakdown,
                                 today: content.today,
                                 source: content.source,
+                                money: content.money,
                                 l10n: model.l10n,
-                                reduceMotion: model.accessibility.reduceMotion
+                                reduceMotion: model.accessibility.reduceMotion,
+                                metric: Binding(get: { model.chartMetric }, set: { model.select(metric: $0) })
                             ) { source in
                                 model.select(source: source)
                             }
@@ -82,7 +85,9 @@ struct HistoryView: View {
                                 index: index,
                                 columns: content.columns,
                                 widths: widths,
+                                gap: gap,
                                 today: content.today,
+                                money: content.money,
                                 l10n: model.l10n,
                                 interaction: model.interaction,
                                 tableFocused: tableFocused,
@@ -95,6 +100,7 @@ struct HistoryView: View {
                         DailyTableHeader(
                             columns: content.columns,
                             widths: widths,
+                            gap: gap,
                             sort: content.sort,
                             l10n: model.l10n
                         ) { column in
@@ -131,9 +137,10 @@ struct HistoryView: View {
         }
     }
 
-    private func columnWidths(_ columns: [HistoryColumn]) -> [CGFloat] {
+    private func columnLayout(_ columns: [HistoryColumn]) -> ([CGFloat], CGFloat) {
         let available = Double(contentWidth) - Double(DailyTableRow.inset * 2)
-        return HistoryColumnLayout.widths(columns.map(HistoryColumnLayout.spec), width: available).map { CGFloat($0) }
+        let layout = HistoryColumnLayout.layout(columns.map(HistoryColumnLayout.spec), width: available)
+        return (layout.widths.map { CGFloat($0) }, CGFloat(layout.gap))
     }
 
     // MARK: Selection
@@ -178,7 +185,7 @@ struct HistoryView: View {
     private func copyItems(in content: HistoryContent) -> [NSItemProvider] {
         let selected = content.rows.filter { model.interaction.selection.contains($0.day) }
         guard !selected.isEmpty else { return [] }
-        let text = HistoryTable.copyText(selected, columns: content.columns, today: content.today, model.l10n)
+        let text = HistoryTable.copyText(selected, columns: content.columns, today: content.today, money: content.money, model.l10n)
         return [NSItemProvider(object: text as NSString)]
     }
 
@@ -186,7 +193,7 @@ struct HistoryView: View {
         let selection = model.interaction.selection
         let days = selection.contains(day) ? selection : [day]
         let rows = content.rows.filter { days.contains($0.day) }
-        let text = HistoryTable.copyText(rows, columns: content.columns, today: content.today, model.l10n)
+        let text = HistoryTable.copyText(rows, columns: content.columns, today: content.today, money: content.money, model.l10n)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)

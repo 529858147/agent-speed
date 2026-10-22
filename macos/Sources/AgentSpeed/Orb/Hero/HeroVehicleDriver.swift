@@ -38,6 +38,8 @@ final class HeroVehicleDriver {
     let library: HeroLibrary
     let stage: HeroStage
     var overrides = Overrides()
+    /// The gauge the vehicle follows; nil = the app's all-sources gauge (Settings previews pass their own).
+    weak var gauge: LiveGauge?
     var collectsSamples = false
     private(set) var stats = Stats()
     private let builder: HeroFrameBuilder
@@ -63,7 +65,7 @@ final class HeroVehicleDriver {
     }
 
     func input(model: AppModel, time: TimeInterval, sweepEpoch: TimeInterval) -> HeroInput {
-        let gauge = model.gauge
+        let gauge = self.gauge ?? model.gauge
         let redline = gauge.redline
         let title = gauge.title
         let reduceMotion = overrides.reduceMotion ?? model.accessibility.reduceMotion

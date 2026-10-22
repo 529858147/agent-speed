@@ -6,13 +6,16 @@ public final class LiveMonitor {
     public private(set) var configuration: MonitorConfiguration
     /// Source sets whose measured peak each snapshot reports in `subsetPeaks` (METRICS 6.8).
     public private(set) var subsets: Set<SourceSet> = []
+    /// Prices every response (METRICS 9); nil leaves costs unknown.
+    public let pricing: PriceBook?
     private let store: SpeedStore
     private var core: MonitorCore?
     private var mailbox: SnapshotMailbox?
 
-    public init(store: SpeedStore, configuration: MonitorConfiguration = MonitorConfiguration()) {
+    public init(store: SpeedStore, configuration: MonitorConfiguration = MonitorConfiguration(), pricing: PriceBook? = nil) {
         self.store = store
         self.configuration = configuration
+        self.pricing = pricing
     }
 
     /// True between `start()` and `stop()`.
@@ -23,7 +26,7 @@ public final class LiveMonitor {
         let mailbox = SnapshotMailbox { [weak store] snapshot, events in
             store?.publishLive(snapshot, events: events)
         }
-        let core = MonitorCore(configuration: configuration, mailbox: mailbox, subsets: subsets)
+        let core = MonitorCore(configuration: configuration, mailbox: mailbox, subsets: subsets, pricing: pricing)
         self.mailbox = mailbox
         self.core = core
         core.start()

@@ -10,13 +10,23 @@ public struct ModelUsage: Equatable, Sendable, Identifiable {
     /// Output and widened duration of the model's measured responses.
     public var measuredOutput: Int
     public var measuredMs: Int64
+    /// The model's cost on that day (METRICS 9.7); nil when it was stored before costs existed.
+    public var cost: CostTally?
 
-    public init(model: String, requests: Int, output: Int, measuredOutput: Int = 0, measuredMs: Int64 = 0) {
+    public init(
+        model: String,
+        requests: Int,
+        output: Int,
+        measuredOutput: Int = 0,
+        measuredMs: Int64 = 0,
+        cost: CostTally? = nil
+    ) {
         self.model = model
         self.requests = requests
         self.output = output
         self.measuredOutput = measuredOutput
         self.measuredMs = measuredMs
+        self.cost = cost
     }
 
     /// Output tok/s over the model's measured responses.
@@ -39,6 +49,10 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
     /// Only for days observed live.
     public var peak: Double?
     public var models: [ModelUsage]
+    /// API-equivalent cost (METRICS 9.7); nil when the day's logs were gone before costs existed.
+    public var cost: CostTally?
+    /// The price table version bound to the day.
+    public var priceVersion: Int?
 
     public init(
         day: String,
@@ -49,7 +63,9 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
         unfinalized: Int,
         agents: Int,
         peak: Double?,
-        models: [ModelUsage]
+        models: [ModelUsage],
+        cost: CostTally? = nil,
+        priceVersion: Int? = nil
     ) {
         self.day = day
         self.source = source
@@ -60,6 +76,8 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
         self.agents = agents
         self.peak = peak
         self.models = models
+        self.cost = cost
+        self.priceVersion = priceVersion
     }
 
     /// Output tok/s over the day's measured responses.
@@ -154,27 +172,55 @@ public enum PreviewHistory {
                         ModelUsage(model: models[1], requests: requests - Int(Double(requests) * split), output: output - firstOutput,
                                    measuredOutput: output - firstOutput, measuredMs: measuredMs - firstMs),
                     ]
+                let totals = TokenTotals(
+                    requests: requests,
+                    input: input,
+                    cachedInput: Int(Double(input) * 0.9),
+                    cacheWriteInput: input / 40,
+                    output: output,
+                    reasoning: output / 3
+                )
+                let priced = usage.map { model in
+                    var model = model
+                    model.cost = Self.cost(of: model, dayTotals: totals)
+                    return model
+                }
+                var dayCost = CostTally()
+                for model in priced { dayCost.add(model.cost ?? CostTally()) }
                 result.append(DailyUsage(
                     day: day,
                     source: source,
-                    totals: TokenTotals(
-                        requests: requests,
-                        input: input,
-                        cachedInput: Int(Double(input) * 0.9),
-                        cacheWriteInput: input / 40,
-                        output: output,
-                        reasoning: output / 3
-                    ),
+                    totals: totals,
                     measuredOutput: output,
                     measuredMs: measuredMs,
                     unfinalized: 0,
                     agents: 1 + Int(generator.unit() * 6),
                     peak: offset < 30 ? daySpeed * (2 + generator.unit() * 3) : nil,
-                    models: usage
+                    models: priced,
+                    // A quarter of the oldest days predate costs, as after an upgrade whose logs are gone.
+                    cost: offset > count * 3 / 4 && generator.unit() < 0.25 ? nil : dayCost,
+                    priceVersion: PriceBook.bundled.version
                 ))
             }
         }
         return result
+    }
+
+    /// A model's share of the day priced with the bundled table, one request at a time (METRICS 9.3).
+    private static func cost(of model: ModelUsage, dayTotals totals: TokenTotals) -> CostTally {
+        let share = totals.output > 0 ? Double(model.output) / Double(totals.output) : 0
+        let requests = max(1, model.requests)
+        let usage = TokenUsage(
+            input: Int(Double(totals.input) * share) / requests,
+            cachedInput: Int(Double(totals.cachedInput) * share) / requests,
+            cacheWriteInput: Int(Double(totals.cacheWriteInput) * share) / requests,
+            output: model.output / requests,
+            reasoning: 0
+        )
+        guard let each = PriceBook.bundled.cost(model: model.model, provider: nil, usage: usage, endMs: nil, fast: false) else {
+            return CostTally(unpricedRequests: model.requests)
+        }
+        return CostTally(costMicroUsd: each * Int64(model.requests))
     }
 
     private struct SplitMix {

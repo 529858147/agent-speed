@@ -1,10 +1,20 @@
 import AgentSpeedCore
 import Foundation
 
-/// One source's output on one day, for stacking the chart.
-struct SourceOutput: Hashable, Sendable {
+/// One source's output and cost on one day, for stacking the chart.
+struct SourceOutput: Equatable, Sendable {
     let source: SourceKind
     let output: Int
+    var requests = 0
+    /// The source's cost as counted: an excluded subscription source adds nothing (METRICS 9.4).
+    var cost = HistoryCost.none
+}
+
+/// A model's cost on a day over the counted sources (METRICS 9.7): nil without cost data.
+struct ModelCost: Equatable, Sendable {
+    var cost: CostTally?
+    /// Requests of the model from counted sources; 0 when only subscription sources used it.
+    var requests = 0
 }
 
 /// One calendar day for the selected source, or summed over every source (METRICS 8). Speeds are always
@@ -26,8 +36,16 @@ struct DaySummary: Identifiable, Equatable, Sendable {
     let peak: Double?
     /// Every model of the day, most output first.
     let models: [ModelUsage]
-    /// Output per source (non-zero only), in `SourceKind` order.
+    /// Output per source (non-zero output or requests only), in `SourceKind` order.
     let sources: [SourceOutput]
+    /// The day's cost over the counted sources (DESIGN 9: subscriptions left out unless included).
+    var cost = HistoryCost.none
+    /// Every source's cost, for the CSV (subscription exclusion does not apply there); nil without cost data.
+    var totalCost: CostTally?
+    /// The price table version bound to the day (METRICS 9.7).
+    var priceVersion: Int?
+    /// Per model over the counted sources.
+    var modelCosts: [String: ModelCost] = [:]
 
     /// Output tok/s over the day's measured responses.
     var averageSpeed: Double? {
@@ -42,6 +60,16 @@ struct DaySummary: Identifiable, Equatable, Sendable {
     func output(of source: SourceKind) -> Int {
         sources.first { $0.source == source }?.output ?? 0
     }
+
+    /// The counted, known cost of `source` (0 when excluded or unpriced).
+    func costMicroUsd(of source: SourceKind) -> Int64 {
+        sources.first { $0.source == source }?.cost.microUsd ?? 0
+    }
+
+    /// The day's value of a chart metric: output tokens, or known micro-USD.
+    func value(_ metric: HistoryChartMetric) -> Double {
+        metric == .output ? Double(output) : Double(cost.microUsd)
+    }
 }
 
 /// Totals over a run of days.
@@ -55,6 +83,10 @@ struct HistoryTotals: Equatable, Sendable {
     var activeDays = 0
     /// The day with the most output (the newest of equals).
     var busiestDay: DaySummary?
+    /// Σ of the days' costs (METRICS 9.8: a range total is the sum of its days).
+    var cost = HistoryCost.none
+    /// Days that have cost data (`history.summary.costPerDay` divides by them).
+    var costDays = 0
 
     static let empty = HistoryTotals()
 

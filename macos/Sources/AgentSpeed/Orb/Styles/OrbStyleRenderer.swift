@@ -24,11 +24,24 @@ struct OrbContent {
     var bezel: OrbBezel?
     /// Set when every source of the orb is unavailable (DESIGN 2b): the value reads `–` and the title explains.
     var unavailableTitle: String?
+    /// The money unit (DESIGN 9); nil shows tok/s.
+    var money: OrbMoneyText?
     /// Thumbnails and previews (Settings) cap effects and draw at small sizes.
     var isThumbnail = false
 
     /// Below 64 pt only the value is drawn (DESIGN 2a, Shared foundation).
     var valueOnly: Bool { diameter < 64 }
+}
+
+/// The value of an orb in the money unit (DESIGN 9): the number the odometer rolls (with the symbol in front where
+/// the style has no unit line), a small `≥` before it when part of the value is unpriced, and `–` in the idle value
+/// color when nothing is priced.
+struct OrbMoneyText: Equatable {
+    var number: String
+    /// micro-USD per second, for the odometer's direction.
+    var value: Double
+    var atLeast: Bool
+    var unknown: Bool
 }
 
 /// The colour rim of an orb tracking a subset: one arc per source, dashed when unavailable.

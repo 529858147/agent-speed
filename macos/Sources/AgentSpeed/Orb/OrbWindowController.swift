@@ -47,6 +47,11 @@ final class OrbWindowController {
     private var chipUntil: TimeInterval = -.infinity
     private var hoverChipTimer: Timer?
 
+    /// The click on the unit line (DESIGN 9) and its hover affordance.
+    private let unitToggle = OrbUnitToggle()
+    private var unitHovered = false
+    private var unitHoverTimer: Timer?
+
     private var drag: OrbDragSession?
     private var dragInterruptedMotion = false
     private var dragRegion: [CGRect] = []
@@ -71,6 +76,11 @@ final class OrbWindowController {
         self.host = host
         presenter = OrbPresenter(model: model, feed: runtime.feed, surface: .floating, style: runtime.config.style, diameter: diameter,
                                  dark: host.isDark, interaction: interaction, canvas: host.canvas)
+        let orbID = runtime.id
+        presenter.titleTheme = { [weak model] in
+            guard let model else { return .preset(.vehicles) }
+            return model.titles.theme(forOrb: model.orbs.orb(orbID))
+        }
         animator = OrbWindowAnimator(center: .zero, diameter: diameter)
         fader = OrbWindowFader(panel: panel)
         visibility = OrbWindowVisibilityMonitor(window: panel)
@@ -90,6 +100,10 @@ final class OrbWindowController {
             self.updatePointer(at: location)
         }
         visibility.onChange = { [weak self] in self?.updateVisibleOnScreen() }
+        unitToggle.onToggle = { [weak self] in
+            guard let self else { return }
+            self.model.orbs.toggleUnit(of: self.id)
+        }
         observe()
         applyConfiguration()
     }
@@ -128,6 +142,8 @@ final class OrbWindowController {
     /// Removes the window at once.
     func close() {
         isClosing = true
+        unitToggle.cancel()
+        unitHoverTimer?.invalidate()
         loops.forEach { $0.cancel() }
         loops.removeAll()
         dimmer?.cancel()
@@ -351,6 +367,67 @@ final class OrbWindowController {
             panel.ignoresMouseEvents = !inside
         }
         setHovered(inside)
+        setUnitHovered(inside && isOnUnit(screenPoint: location))
+    }
+
+    // MARK: Unit toggle (DESIGN 9)
+
+    /// The unit's hit area in the host view; nil when the readout shows only the value at thumbnail size.
+    private var unitHitRect: NSRect? {
+        let content = presenter.content
+        guard content.showsReadout, !content.valueOnly, content.unavailableTitle == nil else { return nil }
+        return OrbUnitToggle.hitRect(
+            layout: presenter.animator.renderer.readoutLayout, discDiameter: host.discDiameter * host.hoverScale,
+            in: host.bounds, unit: content.unit, value: presenter.animator.readout.odometer.current
+        )
+    }
+
+    private func isOnUnit(local point: NSPoint) -> Bool {
+        guard let rect = unitHitRect else { return false }
+        return OrbUnitToggle.contains(point, rect: rect, discDiameter: host.discDiameter * host.hoverScale, in: host.bounds)
+    }
+
+    private func isOnUnit(screenPoint point: NSPoint) -> Bool {
+        guard let window = host.window else { return false }
+        return isOnUnit(local: host.convert(window.convertPoint(fromScreen: point), from: nil))
+    }
+
+    /// Over the unit: the pointing hand, the unit raised from 55 % to 85 % with a faint underline (0.15 s) and the
+    /// `orbs.unit.toggleHint` tooltip.
+    private func setUnitHovered(_ hovered: Bool) {
+        guard hovered != unitHovered else { return }
+        unitHovered = hovered
+        if interaction.isHovered {
+            let cursor: NSCursor = hovered ? .pointingHand : .openHand
+            host.cursor = cursor
+            cursor.set()
+        }
+        host.removeAllToolTips()
+        if hovered, let rect = unitHitRect { host.addToolTip(rect, owner: model.l10n("orbs.unit.toggleHint") as NSString, userData: nil) }
+        let readout = presenter.animator.readout
+        let start = readout.unitHoverAmount
+        let target = hovered ? 1.0 : 0.0
+        let began = Clock.now
+        unitHoverTimer?.invalidate()
+        guard !reduceMotion else {
+            readout.unitHoverAmount = target
+            presenter.canvas.setNeedsFrame()
+            return
+        }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let progress = ((Clock.now - began) / 0.15).clamped(to: 0...1)
+                readout.unitHoverAmount = start + (target - start) * Easing.easeOut(progress)
+                self.presenter.canvas.setNeedsFrame()
+                if progress >= 1 {
+                    self.unitHoverTimer?.invalidate()
+                    self.unitHoverTimer = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        unitHoverTimer = timer
     }
 
     private func setHovered(_ hovered: Bool) {
@@ -520,6 +597,10 @@ final class OrbWindowController {
         host.accessibilityActions = [
             action("menu.dashboard") { [weak self] in self?.model.commands?.showDashboard() },
             action("a11y.orb.showMenu") { [weak self] in self?.hostShowMenu(nil) },
+            action("a11y.orb.toggleUnit") { [weak self] in
+                guard let self else { return }
+                self.model.orbs.toggleUnit(of: self.id)
+            },
             action("a11y.orb.moveCorner") { [weak self] in self?.moveToNextCorner() },
             action("menu.orb.settings") { [weak self] in
                 guard let self else { return }
@@ -572,6 +653,7 @@ extension OrbWindowController: OrbHostViewDelegate {
             hostShowMenu(event)
             return
         }
+        unitToggle.mouseDown(event, onUnit: isOnUnit(local: host.convert(event.locationInWindow, from: nil)))
         if event.clickCount >= 2 {
             endDragging()
             model.commands?.showDashboard()
@@ -611,6 +693,7 @@ extension OrbWindowController: OrbHostViewDelegate {
     func hostMouseUp(_ event: NSEvent) {
         guard let session = drag else { return }
         let moved = session.isMoving || dragInterruptedMotion
+        unitToggle.mouseUp(event, moved: moved)
         let velocity = session.releaseVelocity()
         drag = nil
         if moved { release(velocity: velocity) }

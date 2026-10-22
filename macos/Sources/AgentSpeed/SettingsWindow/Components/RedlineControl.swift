@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
 /// Redline of the selected metric: title and live value, a full-width slider, and the heat strip it calibrates with a
@@ -154,6 +155,7 @@ struct RedlineFooter: View {
     let settings: AppSettings
     let l10n: Localizer
     @Binding var highlightedTitle: SpeedTitle?
+    var theme: TitleTheme = .preset(.vehicles)
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs - 2) {
@@ -162,7 +164,8 @@ struct RedlineFooter: View {
                 redline: settings.redline,
                 metric: settings.metric,
                 l10n: l10n,
-                highlighted: $highlightedTitle
+                highlighted: $highlightedTitle,
+                theme: theme
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)

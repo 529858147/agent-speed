@@ -34,6 +34,10 @@ final class OrbPresenter {
     var contentAdjustment: ((inout OrbContent) -> Void)? {
         didSet { refreshContent() }
     }
+    /// The orb's title theme (read when the content refreshes; observable reads re-run it); nil = General.
+    var titleTheme: (() -> TitleTheme)? {
+        didSet { refreshContent() }
+    }
 
     private weak var model: AppModel?
     private var loops: [ObservationLoop] = []
@@ -86,7 +90,7 @@ final class OrbPresenter {
     private func refreshContent() {
         guard let model else { return }
         var next = OrbContentBuilder.content(model: model, feed: feed, diameter: diameter, dark: dark, contrast: false,
-                                             style: animator.style, showsReadout: true)
+                                             style: animator.style, showsReadout: true, theme: titleTheme?())
         contentAdjustment?(&next)
         _ = (feed.gauge.title, feed.gauge.previousTitle)
         content = next
