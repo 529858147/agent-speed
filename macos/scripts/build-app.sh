@@ -124,10 +124,18 @@ for arch in arm64 x86_64; do
 done
 
 # macOS 26+ shows the current system design (Liquid Glass) only to apps stamped with a recent SDK; an executable stamped
-# with its deployment target as SDK runs in the compatibility appearance (see Package.swift).
+# with its deployment target as SDK runs in the compatibility appearance. Depending on the Xcode version, SwiftPM's
+# linker step stamps the deployment target instead of the SDK it compiled against, so the stamp is set here.
 step "Checking the SDK stamp"
 EXPECTED_SDK="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)"
 [[ -n "$EXPECTED_SDK" ]] || die "Could not determine the macOS SDK version." "Check the selected Xcode with: xcode-select -p"
+MINOS="$(vtool -arch arm64 -show-build "$BINARY" 2>/dev/null | awk '$1 == "minos" { print $2; exit }')"
+[[ -n "$MINOS" ]] || die "Could not read the minimum macOS version of the executable."
+STAMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAMP_DIR"' EXIT
+vtool -set-build-version macos "$MINOS" "$EXPECTED_SDK" -replace -output "$STAMP_DIR/$EXECUTABLE" "$BINARY" \
+    || die "Could not stamp the SDK version into the executable."
+BINARY="$STAMP_DIR/$EXECUTABLE"
 for arch in arm64 x86_64; do
     STAMP="$(vtool -arch "$arch" -show-build "$BINARY" 2>/dev/null | awk '$1 == "minos" { minos = $2 } $1 == "sdk" { sdk = $2 } END { print minos " " sdk }')"
     read -r MINOS SDK <<< "$STAMP"
