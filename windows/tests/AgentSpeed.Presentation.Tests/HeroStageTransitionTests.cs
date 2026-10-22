@@ -8,7 +8,7 @@ namespace AgentSpeed.Presentation.Tests;
 /// <summary>DESIGN 4c "Title transitions" and "Start-up".</summary>
 public class HeroStageTransitionTests
 {
-    private const double R = HeatMath.DefaultRedline;
+    private const double R = HeatMath.ReferenceRedline;
 
     /// <summary>A walker that has been walking for 3 s climbs to the bicycle; returns the time of the change.</summary>
     private static (HeroDriver Driver, double Change) Upgrade(HeroOptions? options = null, SpeedTitle to = SpeedTitle.Bicycle)

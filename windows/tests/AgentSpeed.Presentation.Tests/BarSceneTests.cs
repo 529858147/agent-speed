@@ -8,7 +8,7 @@ public class BarSceneTests
 {
     private static (BarScene Scene, FrameClock Clock) Create(double value, SpeedTier tier, bool reduceMotion = false)
     {
-        var scene = new BarScene { ReduceMotion = reduceMotion };
+        var scene = new BarScene { ReduceMotion = reduceMotion, Redline = HeatMath.ReferenceRedline };
         var clock = new FrameClock();
         scene.SetTarget(value, tier);
         scene.Update(clock.Now);
@@ -128,7 +128,7 @@ public class BarSceneTests
     [Fact]
     public void SnapSettlesImmediately()
     {
-        var scene = new BarScene();
+        var scene = new BarScene { Redline = HeatMath.ReferenceRedline };
         scene.SetTarget(120, SpeedTier.Boost);
         Assert.True(scene.IsAnimating);
         scene.Snap();
@@ -142,7 +142,7 @@ public class BarSceneTests
     [InlineData(-10)]
     public void InvalidValuesBecomeZero(double value)
     {
-        var scene = new BarScene();
+        var scene = new BarScene { Redline = HeatMath.ReferenceRedline };
         scene.SetTarget(value, SpeedTier.Idle);
         scene.Snap();
         Assert.Equal(0, scene.Value);

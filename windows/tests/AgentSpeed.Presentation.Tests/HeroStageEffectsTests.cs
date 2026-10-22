@@ -10,7 +10,7 @@ namespace AgentSpeed.Presentation.Tests;
 /// <summary>DESIGN 4c "Effects intensity", "Color and glow", "Accessibility and performance".</summary>
 public class HeroStageEffectsTests
 {
-    private const double R = HeatMath.DefaultRedline;
+    private const double R = HeatMath.ReferenceRedline;
 
     private static int CountParticles(HeroStage stage, HeroParticleKind kind)
     {

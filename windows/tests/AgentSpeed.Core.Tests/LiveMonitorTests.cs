@@ -105,6 +105,34 @@ public sealed class LiveMonitorTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishesThePeaksOfTheRequestedSourceSets()
+    {
+        Directory.CreateDirectory(CodexRoot);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _temp.WriteFile("claude/projects/p/s.jsonl",
+            ClaudeLines.UserText(now - 5000, "go") + "\n" + ClaudeLines.Assistant(now - 3000, "msg_seed", 60) + "\n");
+        SourceSet claude = [SourceKind.ClaudeCode], codex = [SourceKind.Codex];
+        var probe = await HubProbe.CreateAsync();
+        using var monitor = new LiveMonitor(probe.Hub, Configuration());
+
+        monitor.SetSubsets([claude, claude]);
+        monitor.Start();
+        var running = await probe.WaitForAsync(s => s.State.Kind == MonitorStateKind.Running && s.Today.Requests == 1);
+
+        Assert.Equal([claude], running.SubsetPeaks.Keys);
+        Assert.True(running.SubsetPeaks[claude] > 0);
+        Assert.Equal(running.PeakToday.Output, running.SubsetPeaks[claude]);
+        Assert.InRange(running.Timestamp - running.DayStart, TimeSpan.Zero, TimeSpan.FromHours(25));
+
+        monitor.SetSubsets([codex, claude]);
+        var updated = await probe.WaitForAsync(s => s.SubsetPeaks.ContainsKey(codex));
+
+        Assert.Equal(0, updated.SubsetPeaks[codex]);
+        Assert.Equal(running.SubsetPeaks[claude], updated.SubsetPeaks[claude]);
+        Assert.Equal(new HashSet<SourceSet> { codex, claude }, monitor.Subsets.ToHashSet());
+    }
+
+    [Fact]
     public void StopIsIdempotentAndDisposeStopsQuickly()
     {
         var monitor = new LiveMonitor(new SpeedHub(), Configuration());

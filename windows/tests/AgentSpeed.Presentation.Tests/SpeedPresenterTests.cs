@@ -42,7 +42,7 @@ public class SpeedPresenterTests
         presenter.Configure(SpeedMetric.Output, 433, 0);
         Assert.Equal(450, presenter.Redline);
         presenter.Configure(SpeedMetric.Output, double.NaN, 0);
-        Assert.Equal(400, presenter.Redline);
+        Assert.Equal(HeatMath.DefaultRedline, presenter.Redline);
     }
 
     [Fact]
@@ -58,6 +58,7 @@ public class SpeedPresenterTests
     public void TierAppearsAfterHoldViaTick()
     {
         var presenter = new SpeedPresenter();
+        presenter.Configure(SpeedMetric.Output, HeatMath.ReferenceRedline, 0);
         Assert.False(presenter.Update(WithLive(100, 100), 0));
         Assert.Equal(0.8, presenter.NextDeadline!.Value, 9);
         Assert.True(presenter.Tick(0.8));
@@ -76,7 +77,7 @@ public class SpeedPresenterTests
     [InlineData(234_567, 230_000)]
     [InlineData(1_249_999, 1_200_000)]
     [InlineData(9_000_000, 2_000_000)]
-    [InlineData(double.NaN, 200_000)]
+    [InlineData(double.NaN, 2_000_000)]
     public void TotalMetricHasItsOwnRedlineRange(double input, double expected)
     {
         var presenter = new SpeedPresenter();

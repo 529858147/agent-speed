@@ -4,7 +4,7 @@ namespace AgentSpeed.Presentation.Tests;
 
 public class HeatMathTests
 {
-    private const double R = HeatMath.DefaultRedline;
+    private const double R = HeatMath.ReferenceRedline;
 
     [Theory]
     [InlineData(0, 0)]
@@ -140,9 +140,9 @@ public class HeatMathTests
     [InlineData(-500, 100)]
     [InlineData(9999, 2000)]
     [InlineData(2024, 2000)]
-    [InlineData(double.NaN, 400)]
-    [InlineData(double.PositiveInfinity, 400)]
-    [InlineData(double.NegativeInfinity, 400)]
+    [InlineData(double.NaN, 2000)]
+    [InlineData(double.PositiveInfinity, 2000)]
+    [InlineData(double.NegativeInfinity, 2000)]
     public void ClampRedlineStepsAndClamps(double input, double expected)
     {
         Assert.Equal(expected, HeatMath.ClampRedline(input));

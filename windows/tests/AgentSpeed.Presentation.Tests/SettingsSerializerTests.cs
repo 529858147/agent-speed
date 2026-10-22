@@ -4,6 +4,7 @@ using AgentSpeed.Core;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Settings.Orbs;
 
 namespace AgentSpeed.Presentation.Tests;
 
@@ -47,6 +48,7 @@ public class SettingsSerializerTests
             ChartSeconds = 300,
             AgentsExpanded = true,
             HistoryWindow = new WindowFrame(-1600.5, 120.25, 1040, 720, Maximized: true),
+            OrbNames = OrbNamesMode.Never,
         })
         .WithOrbAnchor(@"\\.\DISPLAY2", new OrbAnchor(0.5, 0.125))
         .WithOrbAnchor("Display 1 \"quoted\" ü", new OrbAnchor(0.25, 0.75));
@@ -75,7 +77,8 @@ public class SettingsSerializerTests
         Assert.Equal(AppearanceMode.Auto, d.Appearance);
         Assert.Equal(AppLanguage.System, d.Language);
         Assert.Equal(SpeedMetric.Output, d.Metric);
-        Assert.Equal(400, d.RedlineOutput);
+        Assert.Equal(2000, d.RedlineOutput);
+        Assert.Equal(2_000_000, d.RedlineTotal);
         Assert.Equal(148, d.OrbSize);
         Assert.Equal(1, d.OrbOpacity);
         Assert.Equal(EffectsIntensity.Standard, d.Effects);
@@ -138,7 +141,7 @@ public class SettingsSerializerTests
     [InlineData(9999, 2000)]
     [InlineData(433, 450)]
     [InlineData(400, 400)]
-    [InlineData(double.NaN, 400)]
+    [InlineData(double.NaN, 2000)]
     public void ValidatedClampsRedline(double input, double expected)
     {
         Assert.Equal(expected, (AppSettings.Default with { RedlineOutput = input }).Validated().RedlineOutput);
@@ -368,7 +371,7 @@ public class SettingsSerializerTests
 
         Assert.Equal(AppearanceMode.Auto, s.Appearance);
         Assert.Equal(AppLanguage.ZhHant, s.Language);
-        Assert.Equal(400, s.RedlineOutput);
+        Assert.Equal(2000, s.RedlineOutput);
         Assert.Equal(SpeedMetric.Total, s.Metric);
         Assert.True(s.ShowOnTaskbar);
         Assert.Equal(BarDisplayMode.ValueOnly, s.BarMode);
@@ -475,7 +478,7 @@ public class SettingsSerializerTests
         var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(settings));
         Assert.Equal(450, back.RedlineOutput);
         Assert.Equal(350_000, back.RedlineTotal);
-        Assert.Equal(200_000, AppSettings.Default.RedlineTotal);
+        Assert.Equal(2_000_000, AppSettings.Default.RedlineTotal);
     }
 
     [Fact]
@@ -484,5 +487,34 @@ public class SettingsSerializerTests
         var settings = SettingsSerializer.Deserialize("{ \"redline\": 800 }");
         Assert.Equal(800, settings.RedlineOutput);
         Assert.Equal(HeatMath.DefaultRedlineTotal, settings.RedlineTotal);
+    }
+
+    [Theory]
+    [InlineData("{ \"redlineOutput\": 400, \"redlineTotal\": 200000 }", 2000, 2_000_000)]
+    [InlineData("{ \"version\": 1, \"redlineOutput\": 400, \"redlineTotal\": 200000 }", 2000, 2_000_000)]
+    [InlineData("{ \"version\": 1, \"redline\": 400 }", 2000, 2_000_000)]
+    [InlineData("{ \"version\": 1, \"redlineOutput\": 450, \"redlineTotal\": 300000 }", 450, 300_000)]
+    [InlineData("{ \"version\": 1, \"redlineOutput\": 400, \"redlineTotal\": 250000 }", 2000, 250_000)]
+    [InlineData("{ \"version\": 2, \"redlineOutput\": 400, \"redlineTotal\": 200000 }", 400, 200_000)]
+    [InlineData("{ \"version\": 1 }", 2000, 2_000_000)]
+    public void OldDefaultRedlinesMoveToTheNewDefaultOnce(string json, double output, double total)
+    {
+        var settings = SettingsSerializer.Deserialize(json);
+        Assert.Equal(output, settings.RedlineOutput);
+        Assert.Equal(total, settings.RedlineTotal);
+    }
+
+    [Fact]
+    public void RedlineMigrationNeverRepeats()
+    {
+        var migrated = SettingsSerializer.Deserialize("{ \"version\": 1, \"redlineOutput\": 400 }");
+        Assert.Equal(2000, migrated.RedlineOutput);
+
+        // The user deliberately picks 400 again: version 2 files keep it.
+        var json = SettingsSerializer.Serialize(migrated with { RedlineOutput = 400, RedlineTotal = 200_000 });
+        Assert.Contains("\"version\": 2", json, StringComparison.Ordinal);
+        var back = SettingsSerializer.Deserialize(json);
+        Assert.Equal(400, back.RedlineOutput);
+        Assert.Equal(200_000, back.RedlineTotal);
     }
 }

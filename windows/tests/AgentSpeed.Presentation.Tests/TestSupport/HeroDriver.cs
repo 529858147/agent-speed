@@ -12,7 +12,7 @@ internal sealed class HeroDriver
 {
     public const double FrameSeconds = 1.0 / 60;
 
-    public HeroDriver(string? parkedKey = null, HeroOptions? options = null, double redline = HeatMath.DefaultRedline, uint seed = 7)
+    public HeroDriver(string? parkedKey = null, HeroOptions? options = null, double redline = HeatMath.ReferenceRedline, uint seed = 7)
     {
         Stage = new HeroStage(Art, parkedKey, seed);
         Options = options ?? new HeroOptions(EffectsIntensity.Standard);

@@ -134,13 +134,6 @@ internal sealed class SettingsViewModel : ObservableObject
         }
 
         PreviewCommand = new RelayCommand(StartPreview, () => !_preview.IsRunning);
-        SizePresetCommand = new RelayCommand(p =>
-        {
-            if (p is string text && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var size))
-            {
-                OrbSize = size;
-            }
-        });
         ChangeCodexCommand = new RelayCommand(() => ChangeFolder(CodexPath, (s, path) => s with { CodexRoot = path }));
         ChangeClaudeCommand = new RelayCommand(() => ChangeFolder(ClaudePath, (s, path) => s with { ClaudeRoot = path }));
         ChangeDshCommand = new RelayCommand(() => ChangeFolder(DshPath, (s, path) => s with { DshRoot = path }));
@@ -208,6 +201,10 @@ internal sealed class SettingsViewModel : ObservableObject
             if (Set(ref _darkTheme, value))
             {
                 RefreshTitleLadder();
+                if (Orbs is not null)
+                {
+                    Orbs.DarkTheme = value;
+                }
             }
         }
     }
@@ -231,7 +228,6 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public RelayCommand PreviewCommand { get; }
 
-    public RelayCommand SizePresetCommand { get; }
 
     public RelayCommand ChangeCodexCommand { get; }
 
@@ -372,45 +368,6 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public bool HasTaskbarStatus => !string.IsNullOrEmpty(TaskbarStatus);
 
-    public bool ShowOrb
-    {
-        get => S.ShowOrb;
-        set => Apply(s => s with { ShowOrb = value });
-    }
-
-    public double OrbSize
-    {
-        get => S.OrbSize;
-        set => Apply(s => s with { OrbSize = value });
-    }
-
-    public string OrbSizeText => $"{S.OrbSize:0}";
-
-    public double OrbOpacityPercent
-    {
-        get => Math.Round(S.OrbOpacity * 100);
-        set => Apply(s => s with { OrbOpacity = value / 100 });
-    }
-
-    public string OrbOpacityText => $"{Math.Round(S.OrbOpacity * 100):0}%";
-
-    public bool OrbAlwaysOnTop
-    {
-        get => S.OrbAlwaysOnTop;
-        set => Apply(s => s with { OrbAlwaysOnTop = value });
-    }
-
-    public bool OrbClickThrough
-    {
-        get => S.OrbClickThrough;
-        set => Apply(s => s with { OrbClickThrough = value });
-    }
-
-    public bool OrbFadeWhenIdle
-    {
-        get => S.OrbFadeWhenIdle;
-        set => Apply(s => s with { OrbFadeWhenIdle = value });
-    }
 
     public int EffectsIndex
     {
@@ -433,7 +390,14 @@ internal sealed class SettingsViewModel : ObservableObject
     public bool ReduceMotion
     {
         get => _reduceMotion;
-        set => Set(ref _reduceMotion, value);
+        set
+        {
+            Set(ref _reduceMotion, value);
+            if (Orbs is not null)
+            {
+                Orbs.ReduceMotion = value;
+            }
+        }
     }
 
     public bool IsPreviewing => _preview.IsRunning;
@@ -558,12 +522,14 @@ internal sealed class SettingsViewModel : ObservableObject
         }
 
         RefreshTitleLadder();
+        Orbs?.Relocalize(localizer);
         OnPropertyChanged(string.Empty);
     }
 
     public void UpdateLive(SpeedSnapshot snapshot, TaskbarPresence presence)
     {
         _snapshot = snapshot;
+        Orbs?.UpdateLive();
         if (_taskbarPresence != presence)
         {
             _taskbarPresence = presence;
@@ -710,4 +676,10 @@ internal sealed class SettingsViewModel : ObservableObject
             AppLog.Warn("Could not open the logs folder.", ex);
         }
     }
+
+    /// <summary>The floating orb pane (DESIGN 5); set by the app once the orb manager exists.</summary>
+    public OrbsPane.OrbsPaneViewModel? Orbs { get; set; }
+
+    /// <summary>Selects an orb in the floating orb pane (Settings → 懸浮窗).</summary>
+    public void SelectOrb(string orbId) => Orbs?.Select(orbId);
 }

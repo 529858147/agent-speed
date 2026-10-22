@@ -30,6 +30,16 @@ internal static unsafe partial class User32
     internal static partial bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     [LibraryImport(Dll, SetLastError = true)]
+    internal static partial nint BeginDeferWindowPos(int nNumWindows);
+
+    [LibraryImport(Dll, SetLastError = true)]
+    internal static partial nint DeferWindowPos(nint hWinPosInfo, nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [LibraryImport(Dll, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool EndDeferWindowPos(nint hWinPosInfo);
+
+    [LibraryImport(Dll, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetWindowRect(nint hWnd, out RECT lpRect);
 

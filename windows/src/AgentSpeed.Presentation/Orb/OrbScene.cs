@@ -84,6 +84,7 @@ public sealed class OrbScene
     private double _lastTextChange = double.NegativeInfinity;
     private double _sparkRate;
     private double _emberRate;
+    private double _signOfLifeStart = double.NegativeInfinity;
 
     public OrbScene(int? seed = null)
     {
@@ -100,6 +101,95 @@ public sealed class OrbScene
     public bool PulsesEnabled { get; set; } = true;
 
     public bool PeaksEnabled { get; set; } = true;
+
+    /// <summary>
+    /// The LED instrument's own effects (comet, sparks, embers, shimmer, edge glow). Other styles (DESIGN 2a) turn this
+    /// off and keep only the shared state: springs, tiers, titles, readout, pulses, peak, hover.
+    /// </summary>
+    public bool LedEffects { get; set; } = true;
+
+    /// <summary>
+    /// Floating orbs (DESIGN 2a): the idle sign of life runs on the shared clock, every 6 s at multiples of
+    /// <see cref="IdleSweepInterval"/>, skipping one that would start less than 2 s after entering idle, for
+    /// <see cref="SignOfLifeDuration"/>. The dashboard hero keeps the sweep relative to its own idle start.
+    /// </summary>
+    public bool SharedSignOfLife { get; set; }
+
+    /// <summary>Length of one sign-of-life event (0.9 s; the liquid bubble 1.2 s; 0 for none).</summary>
+    public double SignOfLifeDuration { get; set; } = 0.9;
+
+    /// <summary>LOD multiplier of the LED spark and ember rates (0.5 below S 120, DESIGN 2a.1).</summary>
+    public double ParticleRateScale { get; set; } = 1;
+
+    /// <summary>The value odometer of the floating orb styles (DESIGN 2a).</summary>
+    public OdometerText Odometer { get; } = new();
+
+    /// <summary>The live value the springs move toward (tok/s).</summary>
+    public double TargetValue => _targetValue;
+
+    /// <summary>Unsmoothed heat <c>h_raw</c>.</summary>
+    public double HeatRaw => HeatMath.Heat(_targetValue, Redline);
+
+    /// <summary>Unsmoothed overdrive <c>o_raw</c>.</summary>
+    public double OverdriveRaw => HeatMath.Overdrive(_targetValue, Redline);
+
+    /// <summary>True while the heat and overdrive springs are still moving.</summary>
+    public bool SpringsMoving =>
+        !_heat.IsSettled(HeatRaw, 0.0005) || !_overdrive.IsSettled(OverdriveRaw, 0.0005);
+
+    /// <summary>Seconds since the running shared sign-of-life event started, or null (see <see cref="SharedSignOfLife"/>).</summary>
+    public double? SignOfLifeAge
+    {
+        get
+        {
+            if (!SharedSignOfLife || _tier != SpeedTier.Idle || !Effects.IdleSweep || SignOfLifeDuration <= 0)
+            {
+                return null;
+            }
+
+            var age = _now - _signOfLifeStart;
+            return age >= 0 && age < SignOfLifeDuration ? age : null;
+        }
+    }
+
+    /// <summary>Start of the next shared sign-of-life event (for a single wake-up timer), or null.</summary>
+    public double? NextSignOfLife
+    {
+        get
+        {
+            if (!SharedSignOfLife || _tier != SpeedTier.Idle || !Effects.IdleSweep || SignOfLifeDuration <= 0)
+            {
+                return null;
+            }
+
+            var earliest = Math.Max(_idleSince + 2, _now);
+            var next = Math.Ceiling(earliest / IdleSweepInterval) * IdleSweepInterval;
+            return next <= _signOfLifeStart ? next + IdleSweepInterval : next;
+        }
+    }
+
+    /// <summary>
+    /// The frame class the shared layers need (DESIGN 2a frame table, "Transitions" and "Off or Reduce Motion"): 60 fps
+    /// (30 for <c>minimal</c>) while a title, peak, pulse, hover, flash or value roll runs; 30 fps while the heat springs
+    /// settle; otherwise none (the style decides its steady class).
+    /// </summary>
+    public FrameClass SharedFrameClass(bool minimal)
+    {
+        var transition = minimal ? FrameClass.Fps30 : FrameClass.Fps60;
+        if (_pulses.Count > 0 || _flare > 0.002
+            || _now - _peakStart < Math.Max(PeakPillDuration, PeakRayDuration)
+            || _now - _titleTransitionStart < TierTransitionDuration
+            || Flash > 0
+            || Odometer.IsAnimating(_now)
+            || _pendingText != Odometer.Current
+            || !_hover.IsSettled(_hovering ? 1 : 0) || !_hoverBlend.IsSettled(_hovering ? 1 : 0)
+            || !_skew.IsSettled(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * HeatRaw : 0, 0.01))
+        {
+            return transition;
+        }
+
+        return SpringsMoving ? FrameClass.Fps30 : FrameClass.None;
+    }
 
     public ParticleSystem Particles { get; }
 
@@ -216,7 +306,7 @@ public sealed class OrbScene
                 return null;
             }
 
-            var t = (_now - _sweepStart) / IdleSweepDuration;
+            var t = (_now - _sweepStart) / (SharedSignOfLife ? SignOfLifeDuration : IdleSweepDuration);
             return t is >= 0 and < 1 ? t : null;
         }
     }
@@ -333,6 +423,25 @@ public sealed class OrbScene
         }
     }
 
+    /// <summary>
+    /// Jumps every spring to its target and drops running particles and transitions, so the first frame after a pause
+    /// shows the current state without a catch-up animation (DESIGN 2a, Frame policy).
+    /// </summary>
+    public void Snap(double nowSeconds)
+    {
+        Update(nowSeconds);
+        _heat.Snap(HeatMath.Heat(_targetValue, Redline));
+        _overdrive.Snap(HeatMath.Overdrive(_targetValue, Redline));
+        _cometVisibility.Snap(LedEffects && Effects.Comet && _tier != SpeedTier.Idle ? 1 : 0);
+        _redlineAmount.Snap(LedEffects && _tier == SpeedTier.Redline ? 1 : 0);
+        _skew.Snap(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * Heat : 0);
+        _pulses.Clear();
+        _flare = 0;
+        Particles.Clear();
+        _transitionStart = double.NegativeInfinity;
+        _titleTransitionStart = double.NegativeInfinity;
+    }
+
     public void Update(double nowSeconds)
     {
         var dt = double.IsNaN(_lastUpdate) ? 0 : nowSeconds - _lastUpdate;
@@ -364,14 +473,14 @@ public sealed class OrbScene
             _flare = 0;
         }
 
-        var cometOn = Effects.Comet && _tier != SpeedTier.Idle;
+        var cometOn = LedEffects && Effects.Comet && _tier != SpeedTier.Idle;
         _cometVisibility.Step(cometOn ? 1 : 0, dt);
         if (_cometVisibility.Value > 0.001)
         {
             _cometPhase = (_cometPhase + dt / Easing.Lerp(6, 0.7, heat)) % 1;
         }
 
-        _redlineAmount.Step(_tier == SpeedTier.Redline ? 1 : 0, dt);
+        _redlineAmount.Step(LedEffects && _tier == SpeedTier.Redline ? 1 : 0, dt);
         _skew.Step(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * heat : 0, dt);
         _hover.Step(_hovering ? 1 : 0, dt);
         _hoverBlend.Step(_hovering ? 1 : 0, dt);
@@ -426,6 +535,11 @@ public sealed class OrbScene
                 return null;
             }
 
+            if (SharedSignOfLife)
+            {
+                return NextSignOfLife;
+            }
+
             var last = double.IsNegativeInfinity(_sweepStart) ? _idleSince : _sweepStart;
             return last + IdleSweepInterval;
         }
@@ -440,13 +554,14 @@ public sealed class OrbScene
 
         var direction = _pendingValue >= _shownValue ? 1 : -1;
         Readout.Set(_pendingText, direction, _now, Effects.RollingDigits);
+        Odometer.Set(_pendingText, direction > 0, _now, Effects.RollingDigits);
         _shownValue = _pendingValue;
         _lastTextChange = _now;
     }
 
     private void UpdateShimmer()
     {
-        var active = Effects.Shimmer && _tier == SpeedTier.Redline;
+        var active = LedEffects && Effects.Shimmer && _tier == SpeedTier.Redline;
         if (!active)
         {
             if (_shimmer[0] != 1f || _shimmer[^1] != 1f)
@@ -500,6 +615,18 @@ public sealed class OrbScene
             return;
         }
 
+        if (SharedSignOfLife)
+        {
+            var slot = Math.Floor(_now / IdleSweepInterval) * IdleSweepInterval;
+            if (slot >= _idleSince + 2 && slot > _signOfLifeStart && _now - slot < SignOfLifeDuration)
+            {
+                _signOfLifeStart = slot;
+                _sweepStart = slot;
+            }
+
+            return;
+        }
+
         var last = double.IsNegativeInfinity(_sweepStart) ? _idleSince : _sweepStart;
         if (_now - last >= IdleSweepInterval)
         {
@@ -510,10 +637,10 @@ public sealed class OrbScene
     private void UpdateParticles(double dt)
     {
         var heat = Heat;
-        if (Effects.Particles)
+        if (Effects.Particles && LedEffects)
         {
-            _sparkRate = heat >= 0.45 ? 120 * ((heat - 0.45) / 0.55) * Effects.ParticleRate : 0;
-            _emberRate = _tier == SpeedTier.Redline ? 90 * Math.Max(Overdrive, 0.3) * Effects.ParticleRate : 0;
+            _sparkRate = heat >= 0.45 ? 120 * ((heat - 0.45) / 0.55) * Effects.ParticleRate * ParticleRateScale : 0;
+            _emberRate = _tier == SpeedTier.Redline ? 90 * Math.Max(Overdrive, 0.3) * Effects.ParticleRate * ParticleRateScale : 0;
         }
         else
         {

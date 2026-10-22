@@ -11,6 +11,7 @@ internal sealed class TodayLedger
     private readonly Queue<string> _order = new();
     private readonly SecondSeries _output = new();
     private readonly SecondSeries _total = new();
+    private readonly SourceSeconds _sourceOutput = new();
     private readonly TokenTotals[] _perSource = new TokenTotals[Enum.GetValues<SourceKind>().Length];
     private double _validOutput;
     private double _validSeconds;
@@ -34,6 +35,15 @@ internal sealed class TodayLedger
 
     public TokenTotals ForSource(SourceKind source) => _perSource[(int)source];
 
+    /// <summary>Sources with measured buckets today (METRICS 6.6).</summary>
+    public SourceSet MeasuredSources => _sourceOutput.Allocated;
+
+    /// <summary>Chunks rescanned for source-set peaks so far (tests).</summary>
+    public long SourcePeakChunkScans => _sourceOutput.ChunkScans;
+
+    /// <summary>Today's measured output peak of a source set (METRICS 6.8), without the observed live part.</summary>
+    public double MeasuredPeakOutput(SourceSet sources) => _sourceOutput.MeasuredPeak(sources);
+
     public (double Output, long? OutputAtMs, double Total) Peak()
     {
         var (output, at) = _output.TrailingPeak();
@@ -48,6 +58,7 @@ internal sealed class TodayLedger
         _order.Clear();
         _output.Clear();
         _total.Clear();
+        _sourceOutput.Clear();
         Array.Clear(_perSource);
         Totals = default;
         _validOutput = 0;
@@ -110,6 +121,7 @@ internal sealed class TodayLedger
         _validSeconds += sign * (interval.DurationMs / 1000.0);
         _output.AddInterval(interval.StartMs, interval.EndMs, sign * (double)entry.Tokens.Output, StartMs);
         _total.AddInterval(interval.StartMs, interval.EndMs, sign * (double)entry.Tokens.Total, StartMs);
+        _sourceOutput.AddInterval(entry.Source, interval.StartMs, interval.EndMs, sign * (double)entry.Tokens.Output, StartMs);
     }
 
     private static TokenTotals Add(TokenTotals totals, in TokenCounts tokens, int sign) => new(

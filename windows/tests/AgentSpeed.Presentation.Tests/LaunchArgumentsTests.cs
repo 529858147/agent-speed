@@ -173,4 +173,55 @@ public class LaunchArgumentsTests
         Assert.False(plain.NoHero);
         Assert.Null(plain.HeroDemo);
     }
+
+    [Fact]
+    public void ParsesTheOrbDevelopmentFlags()
+    {
+        var args = LaunchArguments.Parse(["--orb-demo", "multi", "--orb-style", "liquid", "--orb-count", "8", "--orb-size", "240",
+            "--orb-tour", "--theme", "light", "--effects", "max", "--capture-dir", @"C:\shots"]);
+        Assert.Equal("multi", args.OrbDemo);
+        Assert.Equal("liquid", args.OrbStyle);
+        Assert.Equal(8, args.OrbCount);
+        Assert.Equal(240, args.OrbSize);
+        Assert.True(args.OrbTour);
+        Assert.Equal("light", args.Theme);
+        Assert.Equal("max", args.Effects);
+        Assert.True(args.EphemeralSettings);
+    }
+
+    [Theory]
+    [InlineData("--orb-count", "9")]
+    [InlineData("--orb-count", "0")]
+    [InlineData("--orb-size", "999")]
+    [InlineData("--orb-style", "plasma")]
+    [InlineData("--theme", "sepia")]
+    [InlineData("--capture-dir", "relative\\path")]
+    public void RejectsInvalidOrbFlagValues(string flag, string value)
+    {
+        var args = LaunchArguments.Parse([flag, value]);
+        Assert.Null(args.OrbCount);
+        Assert.Null(args.OrbSize);
+        Assert.Null(args.OrbStyle);
+        Assert.Null(args.Theme);
+        Assert.Null(args.CaptureDir);
+        Assert.False(args.EphemeralSettings);
+    }
+
+    [Theory]
+    [InlineData("names")]
+    [InlineData("names-cluster")]
+    [InlineData("names-crowd")]
+    public void ParsesTheNamePlateDemos(string demo)
+    {
+        var args = LaunchArguments.Parse(["--orb-demo", demo]);
+        Assert.Equal(demo, args.OrbDemo);
+        Assert.True(args.EphemeralSettings);
+    }
+
+    [Fact]
+    public void OrbDemoDefaultsToStylesAndNormalRunsKeepTheirSettings()
+    {
+        Assert.Equal("styles", LaunchArguments.Parse(["--orb-demo"]).OrbDemo);
+        Assert.False(LaunchArguments.Parse(["--demo-speed", "100"]).EphemeralSettings);
+    }
 }

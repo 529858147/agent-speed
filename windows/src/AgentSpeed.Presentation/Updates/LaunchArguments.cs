@@ -6,7 +6,8 @@ namespace AgentSpeed.Presentation.Updates;
 /// Command-line flags: <c>--after-update &lt;old version&gt;</c> and <c>--wait-pid &lt;pid&gt;</c> (the relaunch after an
 /// install, UPDATES section 5) and the development flags <c>--check-updates-now</c>, <c>--preview-history</c>,
 /// <c>--demo-speed 24,96,400</c>, <c>--hero-demo [tour|startups|idle]</c>, <c>--hero-glow blur|strokes</c>,
-/// <c>--no-hero</c> and <c>--reduce-motion</c>.
+/// <c>--no-hero</c>, <c>--reduce-motion</c> and the orb flags <c>--orb-demo</c>, <c>--orb-style</c>, <c>--orb-count</c>,
+/// <c>--orb-size</c>, <c>--orb-tour</c>, <c>--theme</c>, <c>--effects</c>.
 /// Unknown arguments are ignored.
 /// </summary>
 public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, int? WaitPid, bool CheckUpdatesNow)
@@ -20,6 +21,14 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
     public const string HeroGlowFlag = "--hero-glow";
     public const string ReduceMotionFlag = "--reduce-motion";
     public const string NoHeroFlag = "--no-hero";
+    public const string OrbDemoFlag = "--orb-demo";
+    public const string OrbStyleFlag = "--orb-style";
+    public const string OrbCountFlag = "--orb-count";
+    public const string OrbSizeFlag = "--orb-size";
+    public const string OrbTourFlag = "--orb-tour";
+    public const string ThemeFlag = "--theme";
+    public const string EffectsFlag = "--effects";
+    public const string CaptureDirFlag = "--capture-dir";
     private const int MaxDemoSpeeds = 32;
 
     /// <summary>Development flag: fill the Usage History window with generated days instead of the real history.</summary>
@@ -47,6 +56,44 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
 
     /// <summary>Development flag: leave the dashboard hero without its vehicle layer (to measure what the layer costs).</summary>
     public bool NoHero { get; init; }
+
+    /// <summary>
+    /// Development flag <c>--orb-demo styles|multi|grid|names|names-cluster|names-crowd</c>: replace the orbs for this
+    /// session only (settings are not saved) by every style side by side, a multi-orb arrangement with different source
+    /// sets, a grid of <see cref="OrbCount"/> orbs of <see cref="OrbStyle"/> (the benchmark layout), or the name plate
+    /// placement scenes (a top row, a bottom-docked row and a right-docked column; a 2 × 2 cluster with mixed sizes; a
+    /// crowd where one plate has no room).
+    /// </summary>
+    public string? OrbDemo { get; init; }
+
+    /// <summary>Development flag <c>--orb-style led|needle|liquid|reactor|minimal</c> for the demo orbs.</summary>
+    public string? OrbStyle { get; init; }
+
+    /// <summary>Development flag <c>--orb-count 1..8</c>: number of orbs in the grid demo.</summary>
+    public int? OrbCount { get; init; }
+
+    /// <summary>Development flag <c>--orb-size 64..240</c>: diameter of the demo orbs.</summary>
+    public double? OrbSize { get; init; }
+
+    /// <summary>Development flag <c>--orb-tour</c>: loop the orbs through idle → climb → redline → overdrive → back.</summary>
+    public bool OrbTour { get; init; }
+
+    /// <summary>Development flag <c>--theme light|dark</c>: force the appearance for this session.</summary>
+    public string? Theme { get; init; }
+
+    /// <summary>Development flag <c>--effects off|soft|standard|max</c>: force the effects level for this session.</summary>
+    public string? Effects { get; init; }
+
+    /// <summary>
+    /// Development flag <c>--capture-dir &lt;folder&gt;</c>: the app renders its orbs or menus into PNG files in that folder
+    /// when a <c>capture.request</c> file appears there (used to verify the look on a test machine without capturing
+    /// the screen).
+    /// </summary>
+    public string? CaptureDir { get; init; }
+
+    /// <summary>Any orb development flag: the session's settings are kept in memory only.</summary>
+    public bool EphemeralSettings => OrbDemo is not null || OrbStyle is not null || OrbCount is not null || OrbSize is not null
+        || Theme is not null || Effects is not null;
 
     /// <summary>Comma-separated non-negative finite numbers; anything invalid yields an empty list.</summary>
     public static IReadOnlyList<double> ParseSpeeds(string? text)
@@ -91,6 +138,14 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
         string? heroGlow = null;
         var reduceMotion = false;
         var noHero = false;
+        string? orbDemo = null;
+        string? orbStyle = null;
+        int? orbCount = null;
+        double? orbSize = null;
+        var orbTour = false;
+        string? theme = null;
+        string? effects = null;
+        string? captureDir = null;
         for (var i = 0; i < args.Count; i++)
         {
             var arg = args[i];
@@ -145,6 +200,68 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
             {
                 noHero = true;
             }
+            else if (string.Equals(arg, OrbDemoFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                orbDemo = "styles";
+                if (value is "styles" or "multi" or "grid" or "names" or "names-cluster" or "names-crowd")
+                {
+                    orbDemo = value;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, OrbStyleFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is "led" or "needle" or "liquid" or "reactor" or "minimal")
+                {
+                    orbStyle = value;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, OrbCountFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is not null && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count is >= 1 and <= 8)
+                {
+                    orbCount = count;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, OrbSizeFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is not null && double.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var size)
+                    && size is >= 32 and <= 240)
+                {
+                    orbSize = size;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, OrbTourFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                orbTour = true;
+            }
+            else if (string.Equals(arg, ThemeFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is "light" or "dark")
+                {
+                    theme = value;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, CaptureDirFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is not null && Path.IsPathFullyQualified(value) && value.Length < 260 && value.IndexOf('\0') < 0)
+                {
+                    captureDir = value;
+                    i++;
+                }
+            }
+            else if (string.Equals(arg, EffectsFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is "off" or "soft" or "standard" or "max")
+                {
+                    effects = value;
+                    i++;
+                }
+            }
             else if (string.Equals(arg, DemoSpeedFlag, StringComparison.OrdinalIgnoreCase))
             {
                 var speeds = ParseSpeeds(value);
@@ -164,6 +281,14 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
             HeroGlow = heroGlow,
             ReduceMotion = reduceMotion,
             NoHero = noHero,
+            OrbDemo = orbDemo,
+            OrbStyle = orbStyle,
+            OrbCount = orbCount,
+            OrbSize = orbSize,
+            OrbTour = orbTour,
+            Theme = theme,
+            Effects = effects,
+            CaptureDir = captureDir,
         };
     }
 

@@ -4,6 +4,7 @@ using AgentSpeed.Presentation.Chart;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Settings.Orbs;
 using AgentSpeed.Presentation.Updates;
 
 namespace AgentSpeed.Presentation.Settings;
@@ -96,7 +97,20 @@ public sealed record AppSettings
 
     public bool BarShowUnit { get; init; } = true;
 
+    /// <summary>
+    /// The single orb's visibility before multiple orbs (<c>orb.show</c>). Read and written back unchanged so a downgrade
+    /// restores it; the app uses <see cref="ShowOrbs"/>. The same holds for the other <c>Orb*</c> values below.
+    /// </summary>
     public bool ShowOrb { get; init; } = true;
+
+    /// <summary>Master switch of all floating orbs (DESIGN 2b); files without it take <see cref="ShowOrb"/>.</summary>
+    public bool ShowOrbs { get; init; } = true;
+
+    /// <summary>Every floating orb and its positions per display arrangement (settings value <c>orbs</c>).</summary>
+    public OrbsDocument Orbs { get; init; } = OrbsDocument.ProcessDefault;
+
+    /// <summary>Name plates under the orbs (<c>orbNames</c>, DESIGN 2b Name plate); an orb's <c>showName</c> overrides it.</summary>
+    public OrbNamesMode OrbNames { get; init; } = OrbNamesMode.Auto;
 
     public double OrbSize { get; init; } = DefaultOrbSize;
 
@@ -215,6 +229,11 @@ public sealed record AppSettings
         return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot);
     }
 
+    /// <summary>The master switch; turning it on while every orb is individually hidden makes them all visible.</summary>
+    public AppSettings WithShowOrbs(bool show) => show
+        ? this with { ShowOrbs = true, Orbs = OrbEditing.ShowAll(Orbs ?? OrbsDocument.ProcessDefault) }
+        : this with { ShowOrbs = false };
+
     public AppSettings WithOrbAnchor(string monitorKey, OrbAnchor anchor)
     {
         ArgumentException.ThrowIfNullOrEmpty(monitorKey);
@@ -256,6 +275,8 @@ public sealed record AppSettings
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),
+        Orbs = (Orbs ?? OrbsDocument.ProcessDefault).Validated(),
+        OrbNames = Enum.IsDefined(OrbNames) ? OrbNames : OrbNamesMode.Auto,
         LastUpdateCheck = CleanTimestamp(LastUpdateCheck),
         SkippedVersion = CleanTag(SkippedVersion),
         NotifiedVersion = CleanTag(NotifiedVersion),

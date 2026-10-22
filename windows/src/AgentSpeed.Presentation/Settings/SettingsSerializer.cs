@@ -3,17 +3,21 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Settings.Orbs;
 
 namespace AgentSpeed.Presentation.Settings;
 
 /// <summary>
 /// Tolerant JSON (de)serialization: unknown properties are ignored and an invalid property falls back to its
-/// default instead of discarding the whole file.
+/// default instead of discarding the whole file. A file without a usable <c>orbs</c> value migrates the single-orb
+/// keys (<c>orb.*</c>), which are always written back as loaded so an older version still finds them.
 /// </summary>
 public static class SettingsSerializer
 {
-    public const int CurrentVersion = 1;
+    /// <summary>Version 2 moved the redline defaults to the slider maximum (DESIGN 1).</summary>
+    public const int CurrentVersion = 2;
     public const int MaxFileBytes = 1024 * 1024;
 
     public static string Serialize(AppSettings settings)
@@ -61,6 +65,11 @@ public static class SettingsSerializer
 
             w.WriteEndObject();
             w.WriteEndObject();
+
+            w.WriteBoolean("showOrbs", s.ShowOrbs);
+            w.WriteString("orbNames", OrbNamesModes.Key(s.OrbNames));
+            w.WritePropertyName("orbs");
+            OrbsJson.Write(w, s.Orbs);
 
             w.WriteStartObject("effects");
             w.WriteString("intensity", s.Effects.ToString());
@@ -161,6 +170,8 @@ public static class SettingsSerializer
             BarColoredGlyph = ReadBool(taskbar, "coloredGlyph", d.BarColoredGlyph),
             BarShowUnit = ReadBool(taskbar, "showUnit", d.BarShowUnit),
             ShowOrb = ReadBool(orb, "show", d.ShowOrb),
+            ShowOrbs = ReadBool(root, "showOrbs", ReadBool(orb, "show", d.ShowOrb)),
+            OrbNames = OrbNamesModes.Parse(ReadString(root, "orbNames")),
             OrbSize = ReadDouble(orb, "size", d.OrbSize),
             OrbOpacity = ReadDouble(orb, "opacity", d.OrbOpacity),
             OrbAlwaysOnTop = ReadBool(orb, "alwaysOnTop", d.OrbAlwaysOnTop),
@@ -196,8 +207,26 @@ public static class SettingsSerializer
             NotifiedVersion = ReadString(updates, "notifiedVersion"),
         };
 
-        return settings.Validated();
+        var fileVersion = ReadDouble(root, "version", 1);
+        if (fileVersion < 2)
+        {
+            settings = MigrateRedlineDefaults(settings);
+        }
+
+        var validated = settings.Validated();
+        var orbs = root.TryGetProperty("orbs", out var orbsValue) ? OrbsJson.Read(orbsValue) : null;
+        return validated with { Orbs = orbs ?? OrbsMigration.FromLegacy(validated) };
     }
+
+    /// <summary>
+    /// A redline stored as the old default (400 / 200 000 tok/s) counts as never set and moves to the new default; any
+    /// other value is kept. Runs once: files are written as version 2 afterwards.
+    /// </summary>
+    internal static AppSettings MigrateRedlineDefaults(AppSettings settings) => settings with
+    {
+        RedlineOutput = settings.RedlineOutput == HeatMath.ReferenceRedline ? HeatMath.DefaultRedline : settings.RedlineOutput,
+        RedlineTotal = settings.RedlineTotal == HeatMath.ReferenceRedlineTotal ? HeatMath.DefaultRedlineTotal : settings.RedlineTotal,
+    };
 
     private static void WriteNullableString(Utf8JsonWriter writer, string name, string? value)
     {

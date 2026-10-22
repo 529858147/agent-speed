@@ -184,6 +184,7 @@ public class SpeedTitleTests
     public void TitlesAndTiersMoveIndependently()
     {
         var presenter = new SpeedPresenter();
+        presenter.Configure(SpeedMetric.Output, HeatMath.ReferenceRedline, 0);
         presenter.Update(SpeedSnapshot.Empty with { Live = new Rate(150, 150) }, 0);
         Assert.True(presenter.Tick(0.8));
         Assert.Equal(SpeedTier.Overdrive, presenter.Tier);
@@ -201,6 +202,7 @@ public class SpeedTitleTests
     public void PresenterDeadlineIsTheEarlierOfTierAndTitle()
     {
         var presenter = new SpeedPresenter(new TierTracker(holdSeconds: 0.8), new TitleTracker(holdSeconds: 0.3));
+        presenter.Configure(SpeedMetric.Output, HeatMath.ReferenceRedline, 0);
         presenter.Update(SpeedSnapshot.Empty with { Live = new Rate(100, 100) }, 0);
         Assert.Equal(0.3, presenter.NextDeadline!.Value, 9);
         Assert.True(presenter.Tick(0.3));
@@ -213,13 +215,14 @@ public class SpeedTitleTests
     public void SwitchingTheMetricRescalesTheTitle()
     {
         var presenter = new SpeedPresenter();
+        presenter.Configure(SpeedMetric.Output, HeatMath.ReferenceRedline, 0);
         var snapshot = SpeedSnapshot.Empty with { Live = new Rate(40, 120_000) };
         presenter.Update(snapshot, 0);
         presenter.Tick(1);
         Assert.Equal(SpeedTitle.SportsCar, presenter.Title);
 
         // Total throughput at its default 200k redline: 120k is 0.6 R, a fighter jet.
-        presenter.Configure(SpeedMetric.Total, HeatMath.DefaultRedlineTotal, 2);
+        presenter.Configure(SpeedMetric.Total, HeatMath.ReferenceRedlineTotal, 2);
         presenter.Tick(3);
         Assert.Equal(SpeedTitle.FighterJet, presenter.Title);
     }

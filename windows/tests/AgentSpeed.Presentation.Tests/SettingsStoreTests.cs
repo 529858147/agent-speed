@@ -67,7 +67,7 @@ public sealed class SettingsStoreTests : IDisposable
         var result = store.Load();
 
         Assert.Equal(SettingsLoadStatus.RecoveredFromCorruption, result.Status);
-        Assert.Equal(400, result.Settings.RedlineOutput);
+        Assert.Equal(2000, result.Settings.RedlineOutput);
         Assert.False(File.Exists(store.FilePath));
         Assert.Equal(content.Length, new FileInfo(store.CorruptBackupPath).Length);
     }

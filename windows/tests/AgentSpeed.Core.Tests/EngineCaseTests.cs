@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using AgentSpeed.Core.Engine;
+using AgentSpeed.Core.History;
 using AgentSpeed.Core.Parsing;
 
 namespace AgentSpeed.Core.Tests;
@@ -63,6 +64,7 @@ public sealed class EngineCaseTests
                 seeded: true);
         }
 
+        var trackers = new Dictionary<SourceSet, SubsetPeakTracker>();
         foreach (var query in item.GetProperty("queries").EnumerateArray())
         {
             var nowMs = query.GetProperty("nowMs").GetInt64();
@@ -118,6 +120,26 @@ public sealed class EngineCaseTests
                 AssertClose(peak.GetDouble(), frame.PeakToday.Output, at + " peakTodayOutput");
             }
 
+            if (query.TryGetProperty("subsets", out var subsets))
+            {
+                foreach (var subset in subsets.EnumerateArray())
+                {
+                    var set = SourceSet.From(subset.GetProperty("sources").EnumerateArray().Select(s => ParseSource(s.GetString()!)));
+                    var label = $"{at} subset {set}";
+                    var live = 0.0;
+                    foreach (var kind in set)
+                    {
+                        live += frame.SourceLive[(int)kind].Output;
+                    }
+
+                    var measured = engine.MeasuredPeakOutput(set);
+                    var tracker = trackers.TryGetValue(set, out var known) ? known : trackers[set] = new SubsetPeakTracker();
+                    tracker.Update(live, measured, todayStartMs, nowMs);
+                    AssertClose(subset.GetProperty("liveOutput").GetDouble(), live, label + " liveOutput");
+                    AssertClose(subset.GetProperty("peakTodayOutput").GetDouble(), tracker.PeakTodayOutput, label + " peakTodayOutput");
+                }
+            }
+
             if (query.TryGetProperty("historyMeasuredOutput", out var history))
             {
                 Assert.Equal(SpeedEngine.HistorySeconds, frame.History.Count);
@@ -132,17 +154,21 @@ public sealed class EngineCaseTests
         }
     }
 
+    [Fact]
+    public void EverySourceKeyParses()
+    {
+        string[] keys = ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity"];
+
+        Assert.Equal(Enum.GetValues<SourceKind>(), keys.Select(ParseSource));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ParseSource("cursor"));
+    }
+
     internal static void AssertClose(double expected, double actual, string label) =>
         Assert.True(Math.Abs(expected - actual) <= Tolerance, $"{label}: expected {expected}, got {actual}");
 
-    internal static SourceKind ParseSource(string name) => name switch
-    {
-        "codex" => SourceKind.Codex,
-        "claudeCode" => SourceKind.ClaudeCode,
-        "claudeDesktop" => SourceKind.ClaudeDesktop,
-        "deepseek" => SourceKind.DeepSeek,
-        _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
-    };
+    /// <summary>Every METRICS 1 source key.</summary>
+    internal static SourceKind ParseSource(string name) =>
+        SourceNames.Parse(name) ?? throw new ArgumentOutOfRangeException(nameof(name), name, null);
 
     internal static AgentPhase ParsePhase(string name) => name switch
     {

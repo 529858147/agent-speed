@@ -45,6 +45,9 @@ internal sealed class SpeedEngine
 
     public long TodayStartMs => _today.StartMs;
 
+    /// <summary>Sources with measured output today.</summary>
+    public SourceSet MeasuredSourcesToday => _today.MeasuredSources;
+
     public void UpdateAgent(in AgentInfo agent) => _agents[agent.Id] = agent;
 
     public void RemoveAgent(string id) => _agents.Remove(id);
@@ -173,11 +176,13 @@ internal sealed class SpeedEngine
         var liveSum = measured.Output + estimated.Output;
         var share = liveSum > 0 ? estimated.Output / liveSum : 0;
         var sourceLive = new Rate[SourceCount];
+        var sourceEstimated = new Rate[SourceCount];
         for (var i = 0; i < SourceCount; i++)
         {
             sourceLive[i] = new Rate(
                 (measured.SourceOutput[i] + estimated.SourceOutput[i]) / seconds,
                 (measured.SourceTotal[i] + estimated.SourceTotal[i]) / seconds);
+            sourceEstimated[i] = new Rate(estimated.SourceOutput[i] / seconds, estimated.SourceTotal[i] / seconds);
         }
 
         var agents = BuildAgents(nowMs, measured, estimated, recent, seconds, out var generating, out var tools);
@@ -196,6 +201,7 @@ internal sealed class SpeedEngine
             live,
             share,
             sourceLive,
+            sourceEstimated,
             peak.Rate,
             peak.AtMs,
             _today.AverageOutputSpeed,
@@ -209,6 +215,13 @@ internal sealed class SpeedEngine
             events,
             _today.UnfinalizedCount);
     }
+
+    /// <summary>
+    /// Today's measured output peak of a source set as of the last <see cref="Compute"/> (METRICS 6.8): the maximum
+    /// 3-bucket trailing average of the members' summed measured buckets, without the observed live part. Cached per
+    /// set; recomputed only where a member's buckets changed.
+    /// </summary>
+    public double MeasuredPeakOutput(SourceSet sources) => _today.MeasuredPeakOutput(sources);
 
     private void RollDay(long todayStartMs)
     {

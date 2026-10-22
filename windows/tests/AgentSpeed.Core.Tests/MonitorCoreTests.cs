@@ -368,6 +368,76 @@ public sealed class MonitorCoreTests : IDisposable
         Assert.Equal(2, core.TrackedFileCount);
     }
 
+    [Fact]
+    public void RequestedSourceSetsReportTheirMeasuredPeakToday()
+    {
+        var observer = new Observer();
+        var core = NewCore(observer);
+        WriteOverlappingCodexAndClaude();
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        SourceSet codex = [SourceKind.Codex], claude = [SourceKind.ClaudeCode], gemini = [SourceKind.Gemini];
+        SourceSet both = [SourceKind.Codex, SourceKind.ClaudeCode];
+
+        var (snapshot, _) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: true, [codex, claude, both, gemini]);
+
+        Assert.Equal(new HashSet<SourceSet> { codex, claude, both, gemini }, snapshot.SubsetPeaks.Keys.ToHashSet());
+        var responses = observer.Seen.Select(s => s.Response).ToList();
+        Assert.Equal(2, responses.Count);
+        foreach (var (set, peak) in snapshot.SubsetPeaks)
+        {
+            EngineCaseTests.AssertClose(
+                SubsetPeakEngineTests.ReferencePeak(responses.Where(r => set.Contains(r.Source)), _todayStart), peak, set.ToString());
+        }
+
+        EngineCaseTests.AssertClose(50, snapshot.SubsetPeaks[codex], "codex");
+        EngineCaseTests.AssertClose(200.0 / 3, snapshot.SubsetPeaks[both], "both");
+        Assert.Equal(0, snapshot.SubsetPeaks[gemini]);
+        Assert.Equal(snapshot.PeakToday.Output, snapshot.SubsetPeaks[both], 9);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(_todayStart), snapshot.DayStart);
+
+        var reading = OrbSubset.Reading(snapshot, both);
+        Assert.Equal(snapshot.SubsetPeaks[both], reading.MeasuredPeakOutput);
+        Assert.Equal(snapshot.Today, reading.Today);
+
+        Assert.Empty(core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: true).Snapshot.SubsetPeaks);
+        var starting = core.BuildStartingSnapshot(_now, _todayStart, 0.5);
+        Assert.Empty(starting.SubsetPeaks);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(_todayStart), starting.DayStart);
+    }
+
+    [Fact]
+    public void ADisabledSourceAddsNothingToASetPeak()
+    {
+        var enabled = new HashSet<SourceKind>(Enum.GetValues<SourceKind>());
+        enabled.Remove(SourceKind.ClaudeCode);
+        var core = new MonitorCore(new MonitorConfiguration(enabled), CodexRoot, ClaudeRoot, DshRoot, _todayStart);
+        WriteOverlappingCodexAndClaude();
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        SourceSet codex = [SourceKind.Codex], claude = [SourceKind.ClaudeCode];
+        SourceSet both = [SourceKind.Codex, SourceKind.ClaudeCode];
+
+        var (snapshot, _) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: true, [codex, claude, both]);
+
+        EngineCaseTests.AssertClose(50, snapshot.SubsetPeaks[codex], "codex");
+        Assert.Equal(snapshot.SubsetPeaks[codex], snapshot.SubsetPeaks[both]);
+        Assert.Equal(0, snapshot.SubsetPeaks[claude]);
+        Assert.Equal(SubsetState.AllDisabled, OrbSubset.Reading(snapshot, claude).State);
+        Assert.Equal(Rate.Zero, snapshot.Sources.Single(s => s.Kind == SourceKind.ClaudeCode).LiveEstimated);
+    }
+
+    /// <summary>Claude Code at 50 tok/s over seconds 0–1 and Codex at 50 tok/s over seconds 1–4, ten minutes ago.</summary>
+    private void WriteOverlappingCodexAndClaude()
+    {
+        var t = (_now - 600_000) / 1000 * 1000;
+        WriteClaude("p/a.jsonl", ClaudeLines.UserText(t, "hi"), ClaudeLines.Assistant(t + 2000, "msg_a", 100));
+        WriteCodex("2026/10/20/rollout-a.jsonl",
+            CodexLines.SessionMeta(t),
+            CodexLines.TurnContext(t + 10),
+            CodexLines.TaskStarted(t + 1000),
+            CodexLines.Envelope(t + 5000, "token_usage_record",
+                """{"thread_id":"thread-1","response_id":"resp-a","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":200,"reasoning_output_tokens":0}}"""));
+    }
+
     private MonitorCore NewCore(IResponseObserver? observer = null) =>
         new(MonitorConfiguration.Default, CodexRoot, ClaudeRoot, DshRoot, _todayStart, observer);
 

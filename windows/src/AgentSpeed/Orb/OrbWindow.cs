@@ -5,49 +5,76 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using AgentSpeed.Interop;
+using AgentSpeed.Orb.Render;
 using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Motion;
-using AgentSpeed.Presentation.Settings;
 
 namespace AgentSpeed.Orb;
 
+/// <summary>Window options of one orb (DESIGN 2b, per orb).</summary>
+internal readonly record struct OrbWindowOptions(bool AlwaysOnTop, bool ClickThrough, bool FadeWhenIdle, bool Dimmed, bool ReduceMotion);
+
 /// <summary>
-/// The floating orb window: borderless, per-pixel transparent, never activated. Outside the disc it lets clicks
-/// through (WS_EX_TRANSPARENT toggled by cursor position); it drags with magnetic edge snapping.
+/// One floating orb window: borderless, per-pixel transparent, never activated. Outside the disc it lets clicks through
+/// (WS_EX_TRANSPARENT toggled by cursor position). Dragging asks the owner for the assisted target (edges, other orbs,
+/// alignment) and follows it through a critically damped spring; positions are physical pixels of the disc center.
 /// </summary>
 internal sealed class OrbWindow : Window
 {
-    private const double SnapThreshold = 24;
-    private const double SnapMargin = 12;
     private const double DragSlop = 3;
+    private const double DragSettle = 0.12;
 
+    private readonly Func<double> _clock;
     private readonly DispatcherTimer _passThroughPoll;
     private readonly DispatcherTimer _housekeeping;
+    private readonly ScaleTransform _appearScale = new(1, 1);
+    private readonly System.Windows.Controls.StackPanel _actions = new()
+    {
+        Width = 1,
+        Height = 1,
+        Opacity = 0,
+        IsHitTestVisible = false,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private nint _hwnd;
-    private bool _clickThrough;
+    private OrbWindowOptions _options;
     private bool _passThrough;
     private bool _dragging;
     private bool _dragMoved;
     private POINT _dragStartCursor;
     private PointD _dragStartCenter;
+    private PointD _dragTarget;
     private PointD _center;
     private bool _hasCenter;
-    private DampedSpring _snapX;
-    private DampedSpring _snapY;
-    private PointD _snapTarget;
-    private bool _snapping;
-    private bool _fadeWhenIdle;
+    private CriticalSpring _followX;
+    private CriticalSpring _followY;
+    private DampedSpring _moveX;
+    private DampedSpring _moveY;
+    private PointD _moveTarget;
+    private Action? _moveDone;
+    private bool _moving;
+    private bool _following;
+    private double _lastFrame;
     private bool _faded;
+    private bool _hovering;
+    private bool _discHover;
+    private bool _plateHover;
+    private DispatcherTimer? _hoverGrace;
     private double _idleSince = double.NaN;
-    private bool _reduceMotion;
-    private readonly Func<double> _clock;
+    private readonly List<IOrbAttachment> _attachments = [];
+    private readonly List<(nint Handle, PixelRect Rect)> _batch = [];
 
-    public OrbWindow(Func<double> clock)
+    public OrbWindow(string orbId, Func<double> clock, OrbClock orbClock, uint seed)
     {
+        OrbId = orbId;
         _clock = clock;
-        View = new OrbView(clock);
-        Content = View;
-        Title = "Agent Speed";
+        Surface = new OrbSurface(orbClock, seed);
+        var root = new System.Windows.Controls.Grid();
+        root.Children.Add(Surface);
+        root.Children.Add(_actions);
+        Content = root;
+        Title = "Agent Speed Orb";
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -62,7 +89,8 @@ internal sealed class OrbWindow : Window
         Cursor = Cursors.SizeAll;
         Left = -32000;
         Top = -32000;
-        ApplySize(View.Diameter);
+        Surface.RenderTransform = _appearScale;
+        ApplySize(Surface.Diameter);
 
         _passThroughPoll = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Input, (_, _) => PollPassThrough(), Dispatcher);
         _passThroughPoll.Stop();
@@ -86,93 +114,242 @@ internal sealed class OrbWindow : Window
         {
             _housekeeping.Stop();
             _passThroughPoll.Stop();
-            CompositionTarget.Rendering -= OnSnapFrame;
+            _hoverGrace?.Stop();
+            StopFrames();
         };
     }
 
-    public OrbView View { get; }
+    public string OrbId { get; }
 
-    /// <summary>Raised on double-click.</summary>
-    public event EventHandler? DashboardRequested;
+    public OrbSurface Surface { get; }
 
-    /// <summary>Right-click; the menu opens at the cursor.</summary>
-    public event EventHandler? MenuRequested;
+    public nint Handle => _hwnd;
 
-    /// <summary>The user finished moving the orb: monitor key and the center as a work-area fraction.</summary>
-    public event EventHandler<(string MonitorKey, OrbAnchor Anchor)>? PositionCommitted;
-
+    /// <summary>Disc center in physical pixels.</summary>
     public PointD Center => _center;
 
-    public void Configure(OrbConfig config, bool alwaysOnTop, bool clickThrough, bool fadeWhenIdle, bool reduceMotion)
+    public bool HasCenter => _hasCenter;
+
+    public bool IsDragging => _dragging;
+
+    public bool IsHovered => _hovering;
+
+    /// <summary>The disc center as drawn: the window's whole-pixel origin plus half its size (physical px).</summary>
+    public PointD DrawnCenter { get; private set; }
+
+    /// <summary>The display scale (dpi / 96) at the disc center.</summary>
+    public double DisplayScale { get; private set; } = 1;
+
+    /// <summary>The orb's window options (the name plate follows always-on-top and click-through).</summary>
+    public OrbWindowOptions Options => _options;
+
+    /// <summary>Dims the orb to 55 % when every source is unavailable (DESIGN 2b).</summary>
+    public void SetDimmed(bool dimmed)
     {
-        var sizeChanged = Math.Abs(config.Diameter - View.Diameter) > 0.01;
-        View.Configure(config);
-        _reduceMotion = reduceMotion;
+        if (_options.Dimmed != dimmed)
+        {
+            _options = _options with { Dimmed = dimmed };
+            ApplyOpacity();
+        }
+    }
+
+    /// <summary>A window that moves with the orb in the same batch (its name plate, its undo chip).</summary>
+    public void Attach(IOrbAttachment attachment)
+    {
+        if (!_attachments.Contains(attachment))
+        {
+            _attachments.Add(attachment);
+        }
+    }
+
+    public void Detach(IOrbAttachment attachment) => _attachments.Remove(attachment);
+
+    /// <summary>The pointer is over the orb's name plate: the plate belongs to the orb, so the orb is hovered.</summary>
+    public void SetPlateHover(bool hovering)
+    {
+        if (_plateHover != hovering)
+        {
+            _plateHover = hovering;
+            ApplyHover();
+        }
+
+        if (hovering)
+        {
+            Restore();
+        }
+    }
+
+    /// <summary>Left button down on the name plate: a double-click opens the dashboard, else a drag of the orb begins.</summary>
+    public void PlatePress(int clickCount)
+    {
+        Interacted?.Invoke(this, EventArgs.Empty);
+        if (clickCount >= 2)
+        {
+            _dragging = false;
+            DashboardRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        BeginDrag();
+    }
+
+    /// <summary>The pointer moved while the plate holds the capture.</summary>
+    public void PlateMove()
+    {
+        if (_dragging)
+        {
+            ContinueDrag();
+        }
+    }
+
+    /// <summary>The plate's button came up (or it lost the capture).</summary>
+    public void PlateRelease()
+    {
+        if (_dragging)
+        {
+            EndDrag();
+        }
+    }
+
+    /// <summary>Right-click on the name plate opens the orb's menu.</summary>
+    public void PlateMenu()
+    {
+        Interacted?.Invoke(this, EventArgs.Empty);
+        MenuRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? DashboardRequested;
+
+    /// <summary>Right-click on the disc; the menu opens at the cursor.</summary>
+    public event EventHandler? MenuRequested;
+
+    /// <summary>Pointer down on the disc (z-order: the last clicked orb is in front).</summary>
+    public event EventHandler? Interacted;
+
+    /// <summary>The disc is hovered (true) or left (false).</summary>
+    public event EventHandler<bool>? HoverChanged;
+
+    /// <summary>Asks the owner for the assisted drag target of a raw center (physical px).</summary>
+    public Func<PointD, PointD>? DragAssist { get; set; }
+
+    /// <summary>Raised when a drag ends with the raw center; the owner springs the orb to its release target.</summary>
+    public event EventHandler<PointD>? DragReleased;
+
+    /// <summary>Raised on every drag movement (the owner refreshes guides and the chip).</summary>
+    public event EventHandler? DragMoved;
+
+    public void Configure(OrbSurfaceConfig config, OrbWindowOptions options)
+    {
+        var sizeChanged = Math.Abs(config.Size - Surface.Diameter) > 0.01;
+        Surface.Configure(config);
         if (sizeChanged)
         {
-            ApplySize(config.Diameter);
+            ApplySize(config.Size);
             if (_hasCenter)
             {
                 PlaceAt(_center);
             }
         }
 
-        if (Topmost != alwaysOnTop)
+        if (Topmost != options.AlwaysOnTop)
         {
-            Topmost = alwaysOnTop;
+            Topmost = options.AlwaysOnTop;
         }
 
-        _fadeWhenIdle = fadeWhenIdle;
-        if (!fadeWhenIdle)
+        var clickThroughChanged = options.ClickThrough != _options.ClickThrough || _hwnd == 0;
+        _options = options;
+        if (!options.FadeWhenIdle)
         {
-            Restore();
+            _faded = false;
         }
 
-        SetClickThrough(clickThrough);
+        ApplyOpacity();
+        if (clickThroughChanged)
+        {
+            SetClickThrough(options.ClickThrough, force: true);
+        }
     }
 
-    /// <summary>Places the orb from the persisted anchor, validated against the current monitors.</summary>
-    public void RestorePlacement(string? monitorKey, OrbAnchor? anchor)
+    /// <summary>
+    /// The orb's accessibility actions (DESIGN 2b, Accessibility): invisible, non-focusable buttons that UI Automation
+    /// clients can invoke (open the dashboard, show the menu, move to the next corner, orb settings).
+    /// </summary>
+    public void SetActions(IReadOnlyList<(string Name, Action Invoke)> actions)
     {
-        var monitors = Monitors.All();
-        var monitor = monitors.FirstOrDefault(m => string.Equals(m.Key, monitorKey, StringComparison.OrdinalIgnoreCase))
-            ?? monitors.FirstOrDefault(m => m.IsPrimary)
-            ?? monitors.FirstOrDefault();
-        if (monitor is null)
+        _actions.Children.Clear();
+        foreach (var (name, invoke) in actions)
         {
-            return;
+            var button = new System.Windows.Controls.Button { Width = 1, Height = 1, Focusable = false, IsTabStop = false };
+            System.Windows.Automation.AutomationProperties.SetName(button, name);
+            button.Click += (_, _) => invoke();
+            _actions.Children.Add(button);
         }
+    }
 
-        var radius = View.Diameter / 2 * monitor.Scale;
-        var margin = SnapMargin * monitor.Scale;
-        var found = anchor is not null && string.Equals(monitor.Key, monitorKey, StringComparison.OrdinalIgnoreCase);
-        var center = found
-            ? PlacementMath.ClampDisc(PlacementMath.FromFraction(anchor!.Value.X, anchor.Value.Y, monitor.WorkRect), radius, monitor.WorkRect, margin)
-            : PlacementMath.DefaultOrbCenter(monitor.WorkRect, radius, margin * 2);
+    /// <summary>Moves the disc center immediately (physical pixels).</summary>
+    public void MoveTo(PointD center)
+    {
+        StopMove();
         PlaceAt(center);
     }
 
-    /// <summary>After a display change, keeps the orb on a visible work area.</summary>
-    public void Revalidate()
+    /// <summary>Springs the disc center to <paramref name="center"/> (layout springs; Reduce Motion: immediately).</summary>
+    public void AnimateTo(PointD center, double response = 0.35, double damping = 0.8, Action? done = null)
     {
-        if (!_hasCenter)
+        if (_options.ReduceMotion || !_hasCenter || !IsVisible || (Math.Abs(center.X - _center.X) < 0.5 && Math.Abs(center.Y - _center.Y) < 0.5))
         {
+            StopMove();
+            PlaceAt(center);
+            done?.Invoke();
             return;
         }
 
-        var monitors = Monitors.All();
-        var works = monitors.Select(m => m.WorkRect).ToArray();
-        var index = PlacementMath.NearestIndex(_center, works);
-        if (index < 0)
-        {
-            return;
-        }
-
-        var monitor = monitors[index];
-        var radius = View.Diameter / 2 * monitor.Scale;
-        PlaceAt(PlacementMath.ClampDisc(_center, radius, monitor.WorkRect, SnapMargin * monitor.Scale * 0.5));
+        _moveX = new DampedSpring(response, damping, _center.X);
+        _moveY = new DampedSpring(response, damping, _center.Y);
+        _moveTarget = center;
+        _moveDone = done;
+        _moving = true;
+        StartFrames();
     }
 
+    /// <summary>Springs in from 0.6 × scale and 0 opacity (a new orb), or fades in with Reduce Motion.</summary>
+    public void Appear()
+    {
+        var duration = TimeSpan.FromSeconds(_options.ReduceMotion ? 0.2 : 0.45);
+        Surface.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, _options.ReduceMotion ? duration : TimeSpan.FromSeconds(0.2)));
+        if (_options.ReduceMotion)
+        {
+            return;
+        }
+
+        var center = Surface.Diameter * 0.75;
+        _appearScale.CenterX = center;
+        _appearScale.CenterY = center;
+        var spring = new ElasticEase { Oscillations = 1, Springiness = 6, EasingMode = EasingMode.EaseOut };
+        var animation = new DoubleAnimation(0.6, 1, duration) { EasingFunction = spring };
+        _appearScale.BeginAnimation(ScaleTransform.ScaleXProperty, animation);
+        _appearScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
+    }
+
+    /// <summary>Shrinks to 0.85 and fades out (split original, merge source, removal), then runs <paramref name="done"/>.</summary>
+    public void Vanish(Action done, double seconds = 0.2)
+    {
+        var duration = TimeSpan.FromSeconds(seconds);
+        var fade = new DoubleAnimation(Surface.Opacity, 0, duration);
+        fade.Completed += (_, _) => done();
+        Surface.BeginAnimation(OpacityProperty, fade);
+        if (!_options.ReduceMotion)
+        {
+            var center = Surface.Diameter * 0.75;
+            _appearScale.CenterX = center;
+            _appearScale.CenterY = center;
+            var shrink = new DoubleAnimation(1, 0.85, duration);
+            _appearScale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
+            _appearScale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
+        }
+    }
+
+    /// <summary>The orb's own idle state drives "fade when idle" (its sources idle for 60 s).</summary>
     public void NoteActivity(bool active)
     {
         if (active)
@@ -186,10 +363,19 @@ internal sealed class OrbWindow : Window
         }
     }
 
+    /// <summary>Brings this orb in front of the others of its level without activating it.</summary>
+    public void BringToFront()
+    {
+        if (_hwnd != 0)
+        {
+            User32.SetWindowPos(_hwnd, Topmost ? HWND.TOPMOST : HWND.TOP, 0, 0, 0, 0, SWP.NOMOVE | SWP.NOSIZE | SWP.NOACTIVATE);
+        }
+    }
+
     protected override void OnMouseEnter(MouseEventArgs e)
     {
         base.OnMouseEnter(e);
-        UpdateHover(e.GetPosition(View));
+        UpdateHover(e.GetPosition(Surface));
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)
@@ -197,7 +383,7 @@ internal sealed class OrbWindow : Window
         base.OnMouseLeave(e);
         if (!_dragging)
         {
-            View.SetHover(false);
+            SetDiscHover(false);
         }
     }
 
@@ -210,17 +396,18 @@ internal sealed class OrbWindow : Window
             return;
         }
 
-        UpdateHover(e.GetPosition(View));
+        UpdateHover(e.GetPosition(Surface));
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
-        if (!IsInsideDisc(e.GetPosition(View)))
+        if (!IsInsideDisc(e.GetPosition(Surface)))
         {
             return;
         }
 
+        Interacted?.Invoke(this, EventArgs.Empty);
         if (e.ClickCount >= 2)
         {
             _dragging = false;
@@ -229,13 +416,8 @@ internal sealed class OrbWindow : Window
             return;
         }
 
-        if (User32.GetCursorPos(out var cursor))
+        if (BeginDrag())
         {
-            StopSnap();
-            _dragging = true;
-            _dragMoved = false;
-            _dragStartCursor = cursor;
-            _dragStartCenter = _center;
             CaptureMouse();
             e.Handled = true;
         }
@@ -249,13 +431,8 @@ internal sealed class OrbWindow : Window
             return;
         }
 
-        _dragging = false;
+        EndDrag();
         ReleaseMouseCapture();
-        if (_dragMoved)
-        {
-            SnapToEdges();
-        }
-
         e.Handled = true;
     }
 
@@ -264,19 +441,16 @@ internal sealed class OrbWindow : Window
         base.OnLostMouseCapture(e);
         if (_dragging)
         {
-            _dragging = false;
-            if (_dragMoved)
-            {
-                SnapToEdges();
-            }
+            EndDrag();
         }
     }
 
     protected override void OnMouseRightButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseRightButtonUp(e);
-        if (IsInsideDisc(e.GetPosition(View)))
+        if (IsInsideDisc(e.GetPosition(Surface)))
         {
+            Interacted?.Invoke(this, EventArgs.Empty);
             MenuRequested?.Invoke(this, EventArgs.Empty);
             e.Handled = true;
         }
@@ -285,14 +459,14 @@ internal sealed class OrbWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
-        View.Paused = true;
+        Surface.Paused = true;
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         _hwnd = new WindowInteropHelper(this).Handle;
         WindowEffects.AddExtendedStyle(_hwnd, WS_EX.TOOLWINDOW | WS_EX.NOACTIVATE);
-        SetClickThrough(_clickThrough, force: true);
+        SetClickThrough(_options.ClickThrough, force: true);
         if (_hasCenter)
         {
             PlaceAt(_center);
@@ -316,10 +490,42 @@ internal sealed class OrbWindow : Window
 
         var monitor = Monitors.FromPoint(new POINT((int)Math.Round(center.X), (int)Math.Round(center.Y)));
         var scale = monitor?.Scale ?? VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var size = (int)Math.Round(View.Diameter * 1.5 * scale);
+        var size = (int)Math.Round(Surface.Diameter * 1.5 * scale);
         var left = (int)Math.Round(center.X - size / 2.0);
         var top = (int)Math.Round(center.Y - size / 2.0);
-        User32.SetWindowPos(_hwnd, 0, left, top, size, size, SWP.NOZORDER | SWP.NOACTIVATE | SWP.NOOWNERZORDER);
+        DrawnCenter = new PointD(left + size / 2.0, top + size / 2.0);
+        DisplayScale = scale;
+        _batch.Clear();
+        _batch.Add((_hwnd, new PixelRect(left, top, size, size)));
+        CollectAttachments();
+        WindowBatch.Move(_batch);
+    }
+
+    private void CollectAttachments()
+    {
+        foreach (var attachment in _attachments)
+        {
+            if (attachment.Handle != 0 && attachment.Arrange(DrawnCenter, DisplayScale) is { } rect)
+            {
+                _batch.Add((attachment.Handle, rect));
+            }
+        }
+    }
+
+    private bool BeginDrag()
+    {
+        if (!User32.GetCursorPos(out var cursor))
+        {
+            return false;
+        }
+
+        StopMove();
+        _dragging = true;
+        _dragMoved = false;
+        _dragStartCursor = cursor;
+        _dragStartCenter = _center;
+        _dragTarget = _center;
+        return true;
     }
 
     private void ContinueDrag()
@@ -336,81 +542,112 @@ internal sealed class OrbWindow : Window
             return;
         }
 
-        _dragMoved = true;
-        PlaceAt(new PointD(_dragStartCenter.X + dx, _dragStartCenter.Y + dy));
+        if (!_dragMoved)
+        {
+            _dragMoved = true;
+            _followX = new CriticalSpring(DragSettle, _center.X);
+            _followY = new CriticalSpring(DragSettle, _center.Y);
+        }
+
+        var raw = new PointD(_dragStartCenter.X + dx, _dragStartCenter.Y + dy);
+        _dragTarget = DragAssist?.Invoke(raw) ?? raw;
+        if (_options.ReduceMotion)
+        {
+            PlaceAt(_dragTarget);
+        }
+        else
+        {
+            _following = true;
+            StartFrames();
+        }
+
+        DragMoved?.Invoke(this, EventArgs.Empty);
     }
 
-    private void SnapToEdges()
+    private void EndDrag()
     {
-        var monitors = Monitors.All();
-        var index = PlacementMath.NearestIndex(_center, monitors.Select(m => m.WorkRect).ToArray());
-        if (index < 0)
+        _dragging = false;
+        _following = false;
+        if (!_dragMoved)
         {
+            StopFrames();
             return;
         }
 
-        var monitor = monitors[index];
-        var radius = View.Diameter / 2 * monitor.Scale;
-        var target = PlacementMath.Snap(_center, radius, monitor.WorkRect, SnapThreshold * monitor.Scale, SnapMargin * monitor.Scale);
-        _snapTarget = target;
-
-        if (_reduceMotion || (Math.Abs(target.X - _center.X) < 0.5 && Math.Abs(target.Y - _center.Y) < 0.5))
-        {
-            PlaceAt(target);
-            Commit(monitor);
-            return;
-        }
-
-        _snapX = new DampedSpring(0.45, 0.82, _center.X);
-        _snapY = new DampedSpring(0.45, 0.82, _center.Y);
-        _snapping = true;
-        _lastSnapTime = _clock();
-        CompositionTarget.Rendering += OnSnapFrame;
+        PlaceAt(_dragTarget);
+        DragReleased?.Invoke(this, _dragTarget);
     }
 
-    private double _lastSnapTime;
+    private void StartFrames()
+    {
+        _lastFrame = _clock();
+        CompositionTarget.Rendering -= OnMotionFrame;
+        CompositionTarget.Rendering += OnMotionFrame;
+    }
 
-    private void OnSnapFrame(object? sender, EventArgs e)
+    private void StopFrames() => CompositionTarget.Rendering -= OnMotionFrame;
+
+    private void OnMotionFrame(object? sender, EventArgs e)
     {
         var now = _clock();
-        var dt = Math.Clamp(now - _lastSnapTime, 0, 0.05);
-        _lastSnapTime = now;
-        _snapX.Step(_snapTarget.X, dt);
-        _snapY.Step(_snapTarget.Y, dt);
-        if (_snapX.IsSettled(_snapTarget.X, 0.3) && _snapY.IsSettled(_snapTarget.Y, 0.3))
+        var dt = Math.Clamp(now - _lastFrame, 0, 0.05);
+        _lastFrame = now;
+        if (_following && _dragging)
         {
-            StopSnap();
-            PlaceAt(_snapTarget);
-            if (Monitors.FromPoint(new POINT((int)_snapTarget.X, (int)_snapTarget.Y)) is { } monitor)
+            _followX.Step(_dragTarget.X, dt);
+            _followY.Step(_dragTarget.Y, dt);
+            if (_followX.IsSettled(_dragTarget.X, 0.3) && _followY.IsSettled(_dragTarget.Y, 0.3))
             {
-                Commit(monitor);
+                // At rest under a still pointer: no frames until the pointer moves again (ContinueDrag restarts them).
+                _followX.Snap(_dragTarget.X);
+                _followY.Snap(_dragTarget.Y);
+                PlaceAt(_dragTarget);
+                StopFrames();
+                return;
             }
 
+            PlaceAt(new PointD(_followX.Value, _followY.Value));
             return;
         }
 
-        PlaceAt(new PointD(_snapX.Value, _snapY.Value));
-    }
-
-    private void StopSnap()
-    {
-        if (_snapping)
+        if (_moving)
         {
-            _snapping = false;
-            CompositionTarget.Rendering -= OnSnapFrame;
+            _moveX.Step(_moveTarget.X, dt);
+            _moveY.Step(_moveTarget.Y, dt);
+            if (_moveX.IsSettled(_moveTarget.X, 0.3) && _moveY.IsSettled(_moveTarget.Y, 0.3))
+            {
+                var done = _moveDone;
+                StopMove();
+                PlaceAt(_moveTarget);
+                done?.Invoke();
+                return;
+            }
+
+            PlaceAt(new PointD(_moveX.Value, _moveY.Value));
+            return;
         }
+
+        StopFrames();
     }
 
-    private void Commit(MonitorInfo monitor)
+    private void StopMove()
     {
-        var (fx, fy) = PlacementMath.ToFraction(_center, monitor.WorkRect);
-        PositionCommitted?.Invoke(this, (monitor.Key, new OrbAnchor(fx, fy)));
+        if (_moving)
+        {
+            _moving = false;
+            _moveDone = null;
+        }
+
+        if (!_dragging)
+        {
+            StopFrames();
+        }
     }
 
     private bool IsInsideDisc(Point position)
     {
-        var c = View.Diameter * 0.75;
-        var r = View.Diameter * 0.5 * (1 + 0.03 * Math.Max(0, View.Scene.Hover)) + 1;
+        var c = Surface.Diameter * 0.75;
+        var r = Surface.Diameter * 0.5 * (1 + 0.03 * Math.Max(0, Surface.Scene.Hover)) + 1;
         var dx = position.X - c;
         var dy = position.Y - c;
         return dx * dx + dy * dy <= r * r;
@@ -419,15 +656,61 @@ internal sealed class OrbWindow : Window
     private void UpdateHover(Point position)
     {
         var inside = IsInsideDisc(position);
-        View.SetHover(inside);
+        SetDiscHover(inside);
         if (inside)
         {
             Restore();
         }
-        else if (!_clickThrough)
+        else if (!_options.ClickThrough)
         {
             SetPassThrough(true);
         }
+    }
+
+    private void SetDiscHover(bool hovering)
+    {
+        if (_discHover != hovering)
+        {
+            _discHover = hovering;
+            ApplyHover();
+        }
+    }
+
+    /// <summary>
+    /// The orb is hovered while the pointer is over its disc or its name plate. Leaving one for the other crosses the
+    /// small gap between them, so with a plate attached the hover ends only after a short grace.
+    /// </summary>
+    private void ApplyHover()
+    {
+        var hovering = _discHover || _plateHover;
+        if (hovering || _attachments.Count == 0 || _dragging)
+        {
+            _hoverGrace?.Stop();
+            SetHover(hovering);
+            return;
+        }
+
+        if (_hovering && _hoverGrace is not { IsEnabled: true })
+        {
+            _hoverGrace ??= new DispatcherTimer(TimeSpan.FromSeconds(0.12), DispatcherPriority.Input, (_, _) =>
+            {
+                _hoverGrace!.Stop();
+                SetHover(_discHover || _plateHover);
+            }, Dispatcher);
+            _hoverGrace.Start();
+        }
+    }
+
+    private void SetHover(bool hovering)
+    {
+        if (_hovering == hovering)
+        {
+            return;
+        }
+
+        _hovering = hovering;
+        Surface.SetHover(hovering);
+        HoverChanged?.Invoke(this, hovering);
     }
 
     private void PollPassThrough()
@@ -450,14 +733,14 @@ internal sealed class OrbWindow : Window
         if (IsInsideDisc(local))
         {
             SetPassThrough(false);
-            View.SetHover(true);
+            SetDiscHover(true);
             Restore();
         }
     }
 
     private void SetPassThrough(bool enabled)
     {
-        if (_clickThrough || _passThrough == enabled)
+        if (_options.ClickThrough || _passThrough == enabled)
         {
             return;
         }
@@ -466,7 +749,7 @@ internal sealed class OrbWindow : Window
         ApplyTransparentStyle(enabled);
         if (enabled)
         {
-            View.SetHover(false);
+            SetDiscHover(false);
             _passThroughPoll.Start();
         }
         else
@@ -477,18 +760,20 @@ internal sealed class OrbWindow : Window
 
     private void SetClickThrough(bool enabled, bool force = false)
     {
-        if (!force && _clickThrough == enabled)
+        if (!force && _options.ClickThrough == enabled)
         {
             return;
         }
 
-        _clickThrough = enabled;
         _passThrough = false;
         _passThroughPoll.Stop();
         ApplyTransparentStyle(enabled);
         if (enabled)
         {
-            View.SetHover(false);
+            _discHover = false;
+            _plateHover = false;
+            _hoverGrace?.Stop();
+            SetHover(false);
         }
     }
 
@@ -511,16 +796,11 @@ internal sealed class OrbWindow : Window
 
     private void Housekeeping()
     {
-        View.Paused = WindowEffects.IsCloaked(_hwnd);
-
-        if (_fadeWhenIdle && !_faded && !double.IsNaN(_idleSince) && _clock() - _idleSince >= 60 && View.Scene.HoverBlend < 0.01)
+        Surface.Paused = WindowEffects.IsCloaked(_hwnd);
+        if (_options.FadeWhenIdle && !_faded && !double.IsNaN(_idleSince) && _clock() - _idleSince >= 60 && Surface.Scene.HoverBlend < 0.01)
         {
             _faded = true;
-            var animation = new DoubleAnimation(0.45, _reduceMotion ? TimeSpan.Zero : TimeSpan.FromSeconds(0.6))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
-            };
-            BeginAnimation(OpacityProperty, animation);
+            ApplyOpacity(animated: true);
         }
     }
 
@@ -532,7 +812,23 @@ internal sealed class OrbWindow : Window
         }
 
         _faded = false;
-        BeginAnimation(OpacityProperty, null);
-        Opacity = 1;
+        ApplyOpacity();
+    }
+
+    private void ApplyOpacity(bool animated = false)
+    {
+        var target = (_options.Dimmed ? 0.55 : 1) * (_faded ? 0.45 : 1);
+        if (animated && !_options.ReduceMotion)
+        {
+            BeginAnimation(OpacityProperty, new DoubleAnimation(target, TimeSpan.FromSeconds(0.6))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+            });
+        }
+        else
+        {
+            BeginAnimation(OpacityProperty, null);
+            Opacity = target;
+        }
     }
 }

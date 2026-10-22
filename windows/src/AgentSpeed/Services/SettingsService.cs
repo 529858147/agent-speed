@@ -17,6 +17,7 @@ internal sealed class SettingsService : IDisposable
     private readonly SettingsStore _store;
     private readonly DispatcherTimer _saveTimer;
     private bool _dirty;
+    private bool _ephemeral;
 
     public SettingsService(Dispatcher dispatcher)
     {
@@ -44,6 +45,14 @@ internal sealed class SettingsService : IDisposable
         }
     }
 
+    /// <summary>Development sessions (orb demos): keep every change in memory and never write the settings file.</summary>
+    public void MakeEphemeral()
+    {
+        _ephemeral = true;
+        _dirty = false;
+        _saveTimer.Stop();
+    }
+
     public void Update(Func<AppSettings, AppSettings> change)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -64,7 +73,7 @@ internal sealed class SettingsService : IDisposable
     public void Flush()
     {
         _saveTimer.Stop();
-        if (!_dirty)
+        if (!_dirty || _ephemeral)
         {
             return;
         }

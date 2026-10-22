@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace AgentSpeed.Core.Engine;
 
 /// <summary>
@@ -6,12 +8,19 @@ namespace AgentSpeed.Core.Engine;
 /// </summary>
 internal sealed class SecondSeries
 {
-    private const int ChunkSeconds = 1024;
+    public const int ChunkSeconds = 1024;
 
     private readonly Dictionary<long, double[]> _chunks = [];
     private bool _dirty;
     private double _peak;
     private long? _peakAtMs;
+
+    /// <summary>Indices of the allocated chunks; chunk <c>c</c> holds the seconds <c>[c * ChunkSeconds, (c + 1) * ChunkSeconds)</c>.</summary>
+    public Dictionary<long, double[]>.KeyCollection ChunkKeys => _chunks.Keys;
+
+    public static long ChunkOf(long second) => SpeedMath.FloorDiv(second, ChunkSeconds);
+
+    public bool TryGetChunk(long key, [NotNullWhen(true)] out double[]? chunk) => _chunks.TryGetValue(key, out chunk);
 
     public void Clear()
     {
@@ -97,7 +106,7 @@ internal sealed class SecondSeries
 
     private ref double Slot(long second)
     {
-        var key = SpeedMath.FloorDiv(second, ChunkSeconds);
+        var key = ChunkOf(second);
         if (!_chunks.TryGetValue(key, out var chunk))
         {
             chunk = new double[ChunkSeconds];

@@ -299,5 +299,11 @@
     "zh-Hans": "关闭",
     "en": "Close",
     "ja": "閉じる"
+  },
+  "win.settings.resetPosition": {
+    "zh-Hant": "重設位置",
+    "zh-Hans": "重置位置",
+    "en": "Reset Position",
+    "ja": "位置をリセット"
   }
 }

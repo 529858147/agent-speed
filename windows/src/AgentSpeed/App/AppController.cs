@@ -10,11 +10,14 @@ using AgentSpeed.Localization;
 using AgentSpeed.Menus;
 using AgentSpeed.Orb;
 using AgentSpeed.Orb.Hero;
+using AgentSpeed.Orb.Render;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Menus;
+using AgentSpeed.Presentation.Settings.Orbs;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Updates;
@@ -28,7 +31,7 @@ using AgentSpeed.Updates;
 namespace AgentSpeed.App;
 
 /// <summary>Composition root: owns every service and surface, and wires data, settings and theme to them.</summary>
-internal sealed class AppController : IAppCommands, IDisposable
+internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 {
     private const double HeroDiameter = 112;
 
@@ -56,7 +59,9 @@ internal sealed class AppController : IAppCommands, IDisposable
     private TaskbarWidget? _taskbar;
     private HoverTooltip? _tooltip;
     private MenuHost? _menu;
-    private OrbWindow? _orb;
+    private OrbClock? _orbClock;
+    private OrbManager? _orbs;
+    private DevCapture? _capture;
     private DashboardWindow? _dashboard;
     private readonly DashboardViewModel _dashboardModel = new();
     private SettingsWindow? _settingsWindow;
@@ -91,6 +96,12 @@ internal sealed class AppController : IAppCommands, IDisposable
 
         _settings = new SettingsService(_ui);
         _settings.Load();
+        if (_launch.EphemeralSettings)
+        {
+            _settings.MakeEphemeral();
+            _settings.Update(s => OrbDemoSetup.Apply(s, _launch));
+            AppLog.Info($"Orb development session ({_launch.OrbDemo ?? "grid"}): settings stay in memory.");
+        }
 
         _loc = new Localizer(Localizer.LoadEmbeddedTable(), ResolveLanguage(Settings.Language));
         LocalizationSource.Instance.Attach(_loc);
@@ -158,11 +169,10 @@ internal sealed class AppController : IAppCommands, IDisposable
         _dashboardTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => FlushDashboard(), _ui);
         _dashboardTimer.Stop();
 
-        if (Settings.ShowOrb)
-        {
-            ShowOrb();
-        }
-
+        _orbClock = new OrbClock(_ui, () => _speed.Now);
+        OrbClock.Current = _orbClock;
+        _orbs = new OrbManager(_ui, _orbClock, _settings, _theme, _speed, _loc, this);
+        _orbs.Apply();
         phases.Mark("orb");
         UpdateTaskbar();
         StartMonitor();
@@ -190,6 +200,69 @@ internal sealed class AppController : IAppCommands, IDisposable
             if (_launch.HeroDemo is { } scenarioName && HeroTour.TryParse(scenarioName, out var scenario))
             {
                 StartHeroDemo(scenario);
+            }
+            else if (_launch.OrbTour)
+            {
+                AppLog.Info("--orb-tour: looping the orbs through the speed tour.");
+                _heroTour = new HeroTourDriver(_hub, _ui, HeroTourScenario.Tour, () => _speed.Redline);
+                _heroTour.Start();
+            }
+
+            if (_launch.EphemeralSettings && _orbClock is { } clock)
+            {
+                // The orb benchmark harness (DESIGN 2a, Budgets): frame rate and process CPU (% of one core) every 10 s.
+                var last = clock.FramesRendered;
+                var lastTicks = clock.Ticks;
+                var process = System.Diagnostics.Process.GetCurrentProcess();
+                var lastCpu = process.TotalProcessorTime;
+                var lastWall = System.Diagnostics.Stopwatch.GetTimestamp();
+                var stats = new DispatcherTimer(TimeSpan.FromSeconds(10), DispatcherPriority.Background, (_, _) =>
+                {
+                    var frames = clock.FramesRendered;
+                    var ticks = clock.Ticks;
+                    process.Refresh();
+                    var cpu = process.TotalProcessorTime;
+                    var wall = System.Diagnostics.Stopwatch.GetElapsedTime(lastWall).TotalSeconds;
+                    AppLog.Info($"ORBSTATS frames/s={(frames - last) / 10.0:0.0} ticks/s={(ticks - lastTicks) / 10.0:0.0} orbs={Settings.Orbs.Orbs.Length} hz={clock.RefreshHz:0.#} cpu={(cpu - lastCpu).TotalSeconds / wall * 100:0.00}% ws={process.WorkingSet64 / (1024 * 1024)}MB");
+                    last = frames;
+                    lastTicks = ticks;
+                    lastCpu = cpu;
+                    lastWall = System.Diagnostics.Stopwatch.GetTimestamp();
+                }, _ui);
+                stats.Start();
+            }
+
+            if (_launch.CaptureDir is { } captureDir && Directory.Exists(captureDir))
+            {
+                _capture = new DevCapture(_ui, captureDir, () => _orbs?.CaptureTargets() ?? [], CaptureMenu, _ =>
+                {
+                    OpenSettings("orb");
+                    return _settingsWindow?.FindName("OrbPage") as FrameworkElement;
+                })
+                {
+                    Operation = op =>
+                    {
+                        var first = Settings.Orbs.Orbs.FirstOrDefault()?.Id;
+                        switch (op)
+                        {
+                            case "add" when first is not null:
+                                _orbs?.Add(first);
+                                break;
+                            case "split" when first is not null:
+                                _orbs?.Split(first);
+                                break;
+                            case "merge" when first is not null:
+                                _orbs?.Merge(first);
+                                break;
+                            case "undo":
+                                _orbs?.Undo();
+                                break;
+                            case "corner" when first is not null:
+                                _orbs?.MoveToNextCorner(first);
+                                break;
+                        }
+                    },
+                };
             }
 
             if (_launch.PreviewHistory)
@@ -239,11 +312,20 @@ internal sealed class AppController : IAppCommands, IDisposable
         {
             _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
                 _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory);
+            if (_settingsModel.Orbs is null && _orbs is not null)
+            {
+                _settingsModel.Orbs = new Settings.OrbsPane.OrbsPaneViewModel(_settings, _orbs, _speed, _loc);
+            }
+
             _settingsModel.ReduceMotion = _theme.ReduceMotion;
             _settingsModel.DarkTheme = _theme.IsDark;
             _settingsModel.UpdateLive(_speed.Snapshot, _taskbar?.Presence ?? TaskbarPresence.Hidden);
             _settingsWindow = new SettingsWindow(_settingsModel) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
-            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow.Closed += (_, _) =>
+            {
+                _settingsWindow = null;
+                _orbs?.Highlight(null);
+            };
         }
 
         if (page is not null)
@@ -309,7 +391,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         Try(() => _dashboardTimer?.Stop());
         Try(() => _menu?.Close());
         Try(() => _tooltip?.Close());
-        Try(() => _orb?.Close());
+        Try(() => _orbs?.Dispose());
         Try(() => _dashboard?.CloseForShutdown());
         Try(() => _settingsWindow?.Close());
         Try(() => _updateWindow?.Close());
@@ -358,12 +440,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         var generating = snapshot.Agents.Where(a => a.Phase == AgentPhase.Generating).Select(a => a.Source).ToArray();
         var accessible = DisplayText.Accessibility(value, title, _loc);
 
-        if (_orb is { } orb)
-        {
-            orb.View.SetData(value, tier, title, generating, accessible);
-            orb.View.SetInfoLine(DisplayText.TodaySummary(snapshot, _loc));
-            orb.NoteActivity(tier != SpeedTier.Idle);
-        }
+        _orbs?.Update(snapshot);
 
         if (_dashboard is { IsShown: true } dashboard)
         {
@@ -406,6 +483,7 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     private void OnSpeedEvent(SpeedEvent speedEvent)
     {
+        _orbs?.OnEvent(speedEvent);
         switch (speedEvent)
         {
             case SpeedEvent.ResponseCompleted completed:
@@ -414,7 +492,6 @@ internal sealed class AppController : IAppCommands, IDisposable
                 var pulseSpeed = _speed.Metric == SpeedMetric.Total && completed.Response.Duration is { TotalSeconds: > 0 } d
                     ? completed.Response.TotalTokens / d.TotalSeconds
                     : speed;
-                _orb?.View.Pulse(pulseSpeed, tokens);
                 if (_dashboard is { IsShown: true } dashboard)
                 {
                     dashboard.Hero.Pulse(pulseSpeed, tokens);
@@ -422,7 +499,6 @@ internal sealed class AppController : IAppCommands, IDisposable
 
                 break;
             case SpeedEvent.NewPeak:
-                _orb?.View.Peak();
                 if (_dashboard is { IsShown: true } shown)
                 {
                     shown.Hero.Peak();
@@ -464,42 +540,10 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     // ---- Surfaces ----
 
-    private void ShowOrb()
-    {
-        if (_orb is null)
-        {
-            _orb = new OrbWindow(() => _speed.Now) { Language = AppFonts.XmlLanguageFor(_loc.LanguageCode) };
-            _orb.DashboardRequested += (_, _) => ShowDashboard(OrbAnchor());
-            _orb.MenuRequested += (_, _) => ShowMenu();
-            _orb.PositionCommitted += (_, placement) =>
-                _settings.Update(s => s.WithOrbAnchor(placement.MonitorKey, placement.Anchor));
-            _orb.Closed += (_, _) => _orb = null;
-            ConfigureOrb();
-            var anchor = Settings.OrbMonitor is { } key && Settings.OrbAnchors.TryGetValue(key, out var a) ? a : (OrbAnchor?)null;
-            _orb.RestorePlacement(Settings.OrbMonitor, anchor);
-        }
-
-        if (!_orb.IsVisible)
-        {
-            _orb.Show();
-        }
-
-        OnSpeedChanged();
-    }
-
-    private void HideOrb()
-    {
-        if (_orb is { } orb)
-        {
-            _orb = null;
-            orb.Close();
-        }
-    }
-
     private void ConfigureOrb()
     {
         var s = Settings;
-        _orb?.Configure(BuildOrbConfig(s.OrbSize, null), s.OrbAlwaysOnTop, s.OrbClickThrough, s.OrbFadeWhenIdle, _theme.ReduceMotion);
+        _orbs?.Apply();
         // The hero's ring stays at Soft (DESIGN 4.1); its vehicle layer follows the Effects setting (DESIGN 4c).
         var hero = new HeroConfig(new HeroOptions(s.Effects, _theme.ReduceMotion, _theme.HighContrast, _theme.IsDark), s.HeroLastTitle,
             _launch.HeroGlow == "strokes" ? HeroGlowMode.Strokes : HeroGlowMode.Blur);
@@ -580,7 +624,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         HideTooltip();
-        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available));
+        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources)));
     }
 
     private void ToggleDashboard(POINT anchor)
@@ -620,7 +664,7 @@ internal sealed class AppController : IAppCommands, IDisposable
             _dashboard.SourcesRequested += (_, _) => OpenSettings("sources");
             _dashboard.HistoryRequested += (_, source) => OpenHistory(source);
             _dashboard.QuitRequested += (_, _) => Quit();
-            _dashboard.OrbToggled += (_, visible) => _settings.Update(s => s with { ShowOrb = visible });
+            _dashboard.OrbToggled += (_, visible) => _settings.Update(s => s.WithShowOrbs(visible));
             _dashboard.RangeChanged += (_, seconds) => _settings.Update(s => s with { ChartSeconds = seconds });
             _dashboard.AgentsExpandedChanged += (_, expanded) => _settings.Update(s => s with { AgentsExpanded = expanded });
             _dashboard.UpdateRequested += (_, _) => OpenUpdate();
@@ -640,7 +684,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         _dashboard.SetRange(Settings.ChartSeconds);
-        _dashboard.SetOrbVisible(Settings.ShowOrb);
+        _dashboard.SetOrbVisible(Settings.ShowOrbs);
         _dashboard.SetPreviewing(_preview.IsRunning);
         _dashboard.SetUpdate(UpdatePillText());
         _dashboard.SetUpdateDone(_updateDoneText);
@@ -782,19 +826,10 @@ internal sealed class AppController : IAppCommands, IDisposable
             }
         }
 
-        if (current.ShowOrb && _orb is null)
-        {
-            ShowOrb();
-        }
-        else if (!current.ShowOrb && _orb is not null)
-        {
-            HideOrb();
-        }
-
         ConfigureOrb();
         UpdateTaskbar();
         _tray?.Update(TrayState());
-        _dashboard?.SetOrbVisible(current.ShowOrb);
+        _dashboard?.SetOrbVisible(current.ShowOrbs);
         if (previous.ChartSeconds != current.ChartSeconds)
         {
             _dashboard?.SetRange(current.ChartSeconds);
@@ -831,6 +866,7 @@ internal sealed class AppController : IAppCommands, IDisposable
         }
 
         _settingsModel?.Relocalize(_loc);
+        _orbs?.Relocalize(_loc);
         _updateWindowModel?.Relocalize(_loc);
         _history?.OnLanguageChanged();
         _dashboard?.SetUpdate(UpdatePillText());
@@ -844,7 +880,7 @@ internal sealed class AppController : IAppCommands, IDisposable
 
     private void OnDisplayChanged()
     {
-        _orb?.Revalidate();
+        _orbs?.OnDisplayChanged();
         _taskbar?.Reposition();
         _tray?.Refresh();
         _dashboard?.Dismiss();
@@ -958,8 +994,69 @@ internal sealed class AppController : IAppCommands, IDisposable
         return CursorAnchor();
     }
 
-    private POINT OrbAnchor() =>
-        _orb is { } orb ? new POINT((int)orb.Center.X, (int)orb.Center.Y) : CursorAnchor();
+    // ---- Floating orbs (IOrbHost and the orb commands of IAppCommands) ----
+
+    public void ShowDashboardAt(POINT anchor) => ShowDashboard(anchor);
+
+    /// <summary>Opens a menu for <see cref="DevCapture"/> and returns it (<c>menu-tray</c> or <c>menu-orb</c>).</summary>
+    private System.Windows.Controls.ContextMenu? CaptureMenu(string kind)
+    {
+        if (_menu is null)
+        {
+            return null;
+        }
+
+        var menu = kind == "menu-orb" && Settings.Orbs.Orbs.FirstOrDefault() is { } orb
+            ? OrbMenu.Build(this, orb.Id, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc)
+            : AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources));
+        if (menu is null)
+        {
+            return null;
+        }
+
+        var at = Monitors.Primary() is { } primary ? new POINT(primary.WorkArea.Left + 400, primary.WorkArea.Top + 200) : new POINT(400, 200);
+        _menu.Show(menu, at);
+        return menu;
+    }
+
+    public void ShowOrbMenu(string orbId)
+    {
+        if (_menu is null || _quitting)
+        {
+            return;
+        }
+
+        HideTooltip();
+        if (OrbMenu.Build(this, orbId, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc) is { } menu)
+        {
+            _menu.Show(menu);
+        }
+    }
+
+    public void OpenOrbSettings(string orbId)
+    {
+        OpenSettings("orb");
+        _settingsModel?.SelectOrb(orbId);
+    }
+
+    public void AddOrb(string fromOrbId) => _orbs?.Add(fromOrbId);
+
+    public void DuplicateOrb(string orbId) => _orbs?.Duplicate(orbId);
+
+    public void SplitOrb(string orbId) => _orbs?.Split(orbId);
+
+    public void MergeOrbs(string keepOrbId) => _orbs?.Merge(keepOrbId);
+
+    public void RemoveOrb(string orbId)
+    {
+        if (Settings.Orbs.Find(orbId) is not { } orb
+            || !OrbMenu.ConfirmRemove(null, OrbNaming.DisplayName(orb, _loc), _loc))
+        {
+            return;
+        }
+
+        _orbs?.Remove(orbId);
+    }
 
     private static POINT CursorAnchor() => User32.GetCursorPos(out var point) ? point : new POINT(0, 0);
 

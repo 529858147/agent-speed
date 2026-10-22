@@ -14,12 +14,22 @@ public enum SpeedTier
 /// <summary>Speed to heat mapping (DESIGN section 1).</summary>
 public static class HeatMath
 {
-    public const double DefaultRedline = 400;
+    /// <summary>The default redline is the slider's maximum (DESIGN 1).</summary>
+    public const double DefaultRedline = 2000;
+
+    /// <summary>
+    /// The redline of the title table in DESIGN 1 ("at R = 400") and the default before version 2 of the settings,
+    /// which migrates once to <see cref="DefaultRedline"/>.
+    /// </summary>
+    public const double ReferenceRedline = 400;
+
+    /// <summary>The total-throughput default before version 2 of the settings.</summary>
+    public const double ReferenceRedlineTotal = 200_000;
     public const double MinRedline = 100;
     public const double MaxRedline = 2000;
     public const double RedlineStep = 50;
     public const double CruiseThreshold = 0.5;
-    public const double DefaultRedlineTotal = 200_000;
+    public const double DefaultRedlineTotal = 2_000_000;
     public const double MinRedlineTotal = 20_000;
     public const double MaxRedlineTotal = 2_000_000;
 

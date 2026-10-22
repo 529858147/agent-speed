@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace AgentSpeed.Core;
 
 public enum SourceKind
@@ -68,6 +70,7 @@ public sealed record AgentStatus(
     string? ParentId = null);
 
 /// <param name="Available">The root folder exists and is readable.</param>
+/// <param name="LiveEstimated">The estimated part of <paramref name="Live"/> (METRICS 6.3), for subset shares (6.8).</param>
 public sealed record SourceStatus(
     SourceKind Kind,
     bool Enabled,
@@ -76,7 +79,8 @@ public sealed record SourceStatus(
     int SessionCount,
     Rate Live,
     TokenTotals Today,
-    int ActiveAgents);
+    int ActiveAgents,
+    Rate LiveEstimated = default);
 
 /// <param name="Duration">Null when the request start is unknown.</param>
 /// <param name="Speed">Output tok/s, null when the duration is unknown.</param>
@@ -141,6 +145,16 @@ public sealed record SpeedSnapshot(
     ResponseSummary? LastResponse,
     IReadOnlyList<MonitorWarning> Warnings)
 {
+    /// <summary>
+    /// Today's measured output peak of every source set requested with <see cref="LiveMonitor.SetSubsets"/>
+    /// (METRICS 6.8), keyed by the requested set: the maximum 3-bucket trailing average of the enabled members' summed
+    /// measured buckets, without the observed live part. Empty while starting.
+    /// </summary>
+    public IReadOnlyDictionary<SourceSet, double> SubsetPeaks { get; init; } = ReadOnlyDictionary<SourceSet, double>.Empty;
+
+    /// <summary>Local midnight at which this snapshot's "today" starts; <see cref="DateTimeOffset.MinValue"/> when unknown.</summary>
+    public DateTimeOffset DayStart { get; init; } = DateTimeOffset.MinValue;
+
     public static SpeedSnapshot Empty { get; } = new(
         DateTimeOffset.MinValue,
         MonitorState.Starting(0),

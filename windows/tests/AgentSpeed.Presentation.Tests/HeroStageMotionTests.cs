@@ -8,7 +8,7 @@ namespace AgentSpeed.Presentation.Tests;
 /// <summary>DESIGN 4c "Speed model", "Idle, start-up and parking" (parked state, parking, snapping).</summary>
 public class HeroStageMotionTests
 {
-    private const double R = HeatMath.DefaultRedline;
+    private const double R = HeatMath.ReferenceRedline;
 
     [Theory]
     [InlineData("sportsCar", "sportsCar")]

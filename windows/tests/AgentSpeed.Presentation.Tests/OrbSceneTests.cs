@@ -10,13 +10,13 @@ namespace AgentSpeed.Presentation.Tests;
 
 public class OrbSceneTests
 {
-    private const double R = HeatMath.DefaultRedline;
+    private const double R = HeatMath.ReferenceRedline;
 
     private sealed class Rig
     {
         public Rig(EffectsIntensity effects, bool reduceMotion, bool highContrast, int seed)
         {
-            Scene = new OrbScene(seed) { Effects = new EffectsPolicy(effects, reduceMotion, highContrast) };
+            Scene = new OrbScene(seed) { Effects = new EffectsPolicy(effects, reduceMotion, highContrast), Redline = R };
             Scene.Update(Clock.Now);
         }
 

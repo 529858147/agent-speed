@@ -28,6 +28,8 @@ public sealed class LiveMonitor : IDisposable
     private long _pendingSince;
     private bool _rescanRequested;
     private MonitorConfiguration _configuration;
+    private SourceSet[] _subsets = [];
+    private int _subsetsChanged;
     private Thread? _thread;
     private CancellationTokenSource? _stop;
     private CancellationTokenSource? _session;
@@ -186,6 +188,33 @@ public sealed class LiveMonitor : IDisposable
             _pendingSince = 0;
             _rescanRequested = false;
         }
+    }
+
+    /// <summary>Source sets whose measured peak today every snapshot reports in <see cref="SpeedSnapshot.SubsetPeaks"/>.</summary>
+    public IReadOnlyCollection<SourceSet> Subsets => Volatile.Read(ref _subsets).AsReadOnly();
+
+    /// <summary>
+    /// Requests <see cref="SpeedSnapshot.SubsetPeaks"/> for these sets (one per floating orb that tracks a subset,
+    /// METRICS 6.8). Callable from any thread, also before <see cref="Start"/>; kept across configuration changes. A
+    /// running monitor publishes a fresh snapshot promptly when the sets change.
+    /// </summary>
+    public void SetSubsets(IReadOnlyCollection<SourceSet> sets)
+    {
+        ArgumentNullException.ThrowIfNull(sets);
+        var next = sets.Distinct().ToArray();
+        lock (_gate)
+        {
+            var current = _subsets;
+            if (current.Length == next.Length && current.All(next.Contains))
+            {
+                return;
+            }
+
+            Volatile.Write(ref _subsets, next);
+        }
+
+        Interlocked.Exchange(ref _subsetsChanged, 1);
+        SignalWake();
     }
 
     /// <summary>Applies new settings; the monitor re-reads its sources in the background when anything changed.</summary>
@@ -377,7 +406,7 @@ public sealed class LiveMonitor : IDisposable
             }
 
             elapsed = Stopwatch.GetElapsedTime(start);
-            dirty |= changed;
+            dirty |= changed | (Interlocked.Exchange(ref _subsetsChanged, 0) != 0);
             if (elapsed >= nextPublish || (dirty && elapsed - lastPublish >= ChangePublishMinInterval))
             {
                 Publish(core, StateOf(core), zone, observeLive: true);
@@ -395,7 +424,7 @@ public sealed class LiveMonitor : IDisposable
         IReadOnlyList<SpeedEvent> events;
         try
         {
-            (snapshot, events) = core.BuildSnapshot(now, LocalDay.StartMs(now, zone), state, observeLive);
+            (snapshot, events) = core.BuildSnapshot(now, LocalDay.StartMs(now, zone), state, observeLive, Volatile.Read(ref _subsets));
         }
         catch (Exception e) when (e is not OperationCanceledException and not OutOfMemoryException)
         {

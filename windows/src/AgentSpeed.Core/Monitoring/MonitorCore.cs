@@ -33,6 +33,7 @@ internal sealed class MonitorCore : IDisposable
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     private readonly IReadOnlySet<SourceKind> _enabled;
+    private readonly SourceSet _enabledSet;
     private readonly IResponseObserver? _observer;
     private readonly Deduper _deduper = new();
     private readonly SpeedEngine _engine;
@@ -71,6 +72,7 @@ internal sealed class MonitorCore : IDisposable
         IResponseObserver? observer = null)
     {
         _enabled = configuration.EnabledSources;
+        _enabledSet = SourceSet.From(_enabled);
         _observer = observer;
         _engine = new SpeedEngine(todayStartMs);
         foreach (var (family, path) in locations.FileRoots())
@@ -488,8 +490,9 @@ internal sealed class MonitorCore : IDisposable
 
     public bool PartialHistory => _partialHistory;
 
+    /// <param name="subsets">Source sets whose measured peak today the snapshot reports in <see cref="SpeedSnapshot.SubsetPeaks"/>.</param>
     public (SpeedSnapshot Snapshot, IReadOnlyList<SpeedEvent> Events) BuildSnapshot(
-        long nowMs, long todayStartMs, MonitorState state, bool observeLive)
+        long nowMs, long todayStartMs, MonitorState state, bool observeLive, IReadOnlyCollection<SourceSet>? subsets = null)
     {
         ResolveParents();
         var frame = _engine.Compute(nowMs, todayStartMs, observeLive);
@@ -509,7 +512,8 @@ internal sealed class MonitorCore : IDisposable
 
         var sources = Enum.GetValues<SourceKind>()
             .Select(kind => BuildSourceStatus(kind, todayStartMs, frame.SourceLive[(int)kind],
-                frame.SourceToday[(int)kind], agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating)))
+                frame.SourceToday[(int)kind], agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating),
+                frame.SourceLiveEstimated[(int)kind]))
             .ToList();
 
         var snapshot = new SpeedSnapshot(
@@ -527,7 +531,11 @@ internal sealed class MonitorCore : IDisposable
             frame.ToolsCount,
             frame.History,
             frame.LastResponse,
-            Warnings(frame.UnfinalizedToday));
+            Warnings(frame.UnfinalizedToday))
+        {
+            SubsetPeaks = subsets is { Count: > 0 } ? SubsetPeaks(subsets) : SpeedSnapshot.Empty.SubsetPeaks,
+            DayStart = DateTimeOffset.FromUnixTimeMilliseconds(todayStartMs),
+        };
         return (snapshot, frame.Events);
     }
 
@@ -542,10 +550,24 @@ internal sealed class MonitorCore : IDisposable
             Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(nowMs),
             State = MonitorState.Starting(Math.Clamp(progress, 0, 1)),
             Sources = sources,
+            DayStart = DateTimeOffset.FromUnixTimeMilliseconds(todayStartMs),
         };
     }
 
-    private SourceStatus BuildSourceStatus(SourceKind kind, long todayStartMs, Rate live, TokenTotals today, int activeAgents)
+    /// <summary>A disabled source contributes nothing to a set (METRICS 6.8).</summary>
+    private IReadOnlyDictionary<SourceSet, double> SubsetPeaks(IReadOnlyCollection<SourceSet> subsets)
+    {
+        var peaks = new Dictionary<SourceSet, double>(subsets.Count);
+        foreach (var set in subsets)
+        {
+            peaks[set] = _engine.MeasuredPeakOutput(set.Intersect(_enabledSet));
+        }
+
+        return peaks.AsReadOnly();
+    }
+
+    private SourceStatus BuildSourceStatus(
+        SourceKind kind, long todayStartMs, Rate live, TokenTotals today, int activeAgents, Rate liveEstimated = default)
     {
         var enabled = _enabled.Contains(kind);
         string path;
@@ -573,7 +595,8 @@ internal sealed class MonitorCore : IDisposable
             rootEnabled ? SessionCount(kind, todayStartMs) : 0,
             enabled ? live : Rate.Zero,
             enabled ? today : TokenTotals.Zero,
-            enabled ? activeAgents : 0);
+            enabled ? activeAgents : 0,
+            enabled ? liveEstimated : Rate.Zero);
     }
 
     private ReadPlan? PlanInitialRead(TrackedFile tracked, DiscoveredFile file, long todayStartMs)

@@ -4,11 +4,13 @@ namespace AgentSpeed.Core.Engine;
 internal sealed record AgentFrame(AgentInfo Info, AgentPhase Phase, Rate Live, double? RecentSpeed, string? ParentId = null);
 
 /// <summary>Everything the engine computes for one instant (METRICS 6).</summary>
+/// <param name="SourceLiveEstimated">The estimated part of each <paramref name="SourceLive"/> (METRICS 6.3, 6.8).</param>
 internal sealed record EngineFrame(
     long NowMs,
     Rate Live,
     double EstimatedShare,
     Rate[] SourceLive,
+    Rate[] SourceLiveEstimated,
     Rate PeakToday,
     long? PeakTodayAtMs,
     double? AverageToday,

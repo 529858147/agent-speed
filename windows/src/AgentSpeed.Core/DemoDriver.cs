@@ -3,6 +3,8 @@ namespace AgentSpeed.Core;
 /// <summary>Drives <see cref="SpeedHub"/> with a scripted sweep through every tier to preview the effects.</summary>
 public sealed class DemoDriver : IDisposable
 {
+    private const double EstimatedShare = 0.15;
+
     private static readonly (double At, double Value)[] Keys =
     [
         (0, 0), (0.08, 0), (0.2, 0.12), (0.35, 0.3), (0.5, 0.6), (0.68, 1.3), (0.86, 1.05), (0.97, 0), (1, 0),
@@ -199,14 +201,15 @@ public sealed class DemoDriver : IDisposable
             var live = agents.Where(a => a.Source == kind).Sum(a => a.Live.Output);
             return new SourceStatus(kind, true, string.Empty, true, 12, new Rate(live, live * 24),
                 new TokenTotals(_today.Requests / n, _today.Input / n, _today.CachedInput / n, 0, _today.Output / n),
-                agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating));
+                agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating),
+                new Rate(live * EstimatedShare, live * 24 * EstimatedShare));
         }).ToList();
 
         return new SpeedSnapshot(
             now,
             MonitorState.Running,
             new Rate(speed, speed * 24),
-            0.15,
+            EstimatedShare,
             new Rate(_peak, _peak * 24),
             _peak > 0 ? now : null,
             _peak > 0 ? _peak * 0.4 : null,
