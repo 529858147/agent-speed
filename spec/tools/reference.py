@@ -3,12 +3,14 @@
 
   python3 spec/tools/reference.py --check-fixtures
   python3 spec/tools/reference.py --dump-today [--codex PATH] [--claude PATH] [--dsh PATH] [--gemini PATH]
+                                              [--omp PATH] [--antigravity PATH]
   python3 spec/tools/reference.py --dump-history [--utc] [...]
   python3 spec/tools/reference.py --write-history-fixture
 
 The dump format matches the `--dump-today` output of both platform probes. Conversation content is never printed.
 """
 import argparse
+import math
 import sqlite3
 import subprocess
 import json
@@ -20,6 +22,7 @@ import tempfile
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
 MAX_LINE = 32 * 1024 * 1024
 DEDUPE_LIMIT = 65_536
@@ -29,6 +32,12 @@ TOKEN_FIELDS = ("input", "cachedInput", "cacheWriteInput", "output", "reasoning"
 GEMINI_LEGACY_MAX = 64 * 1024 * 1024
 GEMINI_SANITIZE = re.compile(r"[^A-Za-z0-9_-]")
 GEMINI_CANCELLED = "Request cancelled."
+OMP_COPY_MS = 2000
+AG_BLOB_MAX = 1024 * 1024
+AG_TOKEN_MAX = 10_000_000
+AG_OPEN = {1, 2, 8, 9, 11}
+AG_FAILED = {6, 7, 12}
+AG_NAME = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.db$")
 
 
 def parse_ts(value):
@@ -80,7 +89,7 @@ class Deduper:
 
 
 class FileState:
-    def __init__(self, path, source):
+    def __init__(self, path, source, root=None):
         self.path = path
         self.source = source
         self.source_decided = False
@@ -115,6 +124,13 @@ class FileState:
             self.is_subagent = nested
             self.parent_session = parts[-2] if nested else None
             self.project = gemini_project(path)
+        # omp
+        self.header_seen = False
+        self.pending_calls = set()
+        if source == "omp":
+            self.source_decided = True
+            rel = os.path.relpath(path, root) if root else path
+            self.is_subagent = len([p for p in re.split(r"[\\/]", rel) if p]) >= 3
 
 
 def emit(state, key, start, end, tokens, model, final=True):
@@ -417,7 +433,10 @@ def zst_stream_lines(path):
 def process_file(state, dedupe, start_offset=0, max_lines=None):
     if state.source == "gemini" and state.path.endswith(".json"):
         return gemini_legacy(state, dedupe)
-    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record}.get(state.source, claude_line)
+    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record,
+               "omp": omp_line}.get(state.source, claude_line)
+    if state.source == "omp" and start_offset > 0:
+        omp_read_header(state, dedupe)
     if state.path.endswith(".zstd"):
         lines = zstd_lines(state.path, start_offset)
     elif state.path.endswith(".jsonl.zst"):
@@ -464,6 +483,10 @@ def resolve_parents(states):
         elif s.source == "gemini":
             chats = os.sep.join(re.split(r"[\\/]", s.path)[:-2])
             parent = gemini_mains.get((chats, s.parent_session)) if s.parent_session else None
+        elif s.source == "omp":
+            candidate = os.path.dirname(s.path) + ".jsonl"
+            tracked = candidate in by_path and by_path[candidate].source == "omp"
+            parent = candidate if s.is_subagent and tracked else None
         else:
             parts = re.split(r"[\\/]", s.path)
             if len(parts) >= 3 and parts[-2] == "subagents":
@@ -546,18 +569,7 @@ def dsh_header(state, header):
 
 def opencode_states(db_path, dedupe):
     """Parses an OpenCode database (METRICS 4.5); returns one state per session, keyed like agent ids."""
-    with open(db_path, "rb") as f:
-        header = f.read(20)
-    closed_wal = len(header) == 20 and header[18] == 2 and header[19] == 2 and not os.path.exists(db_path + "-wal")
-    try:
-        if closed_wal:
-            raise sqlite3.OperationalError("closed WAL database")
-        db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
-        db.execute("select 1 from sqlite_master limit 1")
-    except sqlite3.OperationalError:
-        if os.path.exists(db_path + "-wal"):
-            raise
-        db = sqlite3.connect("file:%s?immutable=1" % db_path, uri=True, timeout=2)
+    db = sqlite_readonly(db_path)
     try:
         tables = {r[0] for r in db.execute("select name from sqlite_master where type='table'")}
         if not {"session_v2", "session_message"} <= tables:
@@ -872,6 +884,513 @@ def discover_gemini(root, limit=20_000):
     return found[:limit]
 
 
+# ----------------------------------------------------------------------------- omp (METRICS 4.7)
+
+def finite(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def omp_touch(state, ts):
+    state.last_line = ts if state.last_line is None else max(state.last_line, ts)
+
+
+def omp_tokens(usage):
+    cr, cw = num(usage.get("cacheRead")), num(usage.get("cacheWrite"))
+    return dict(input=num(usage.get("input")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
+                output=num(usage.get("output")), reasoning=num(usage.get("reasoningTokens")))
+
+
+def omp_has_usage(usage):
+    return any(num(usage.get(f)) > 0 for f in ("input", "output", "cacheRead", "cacheWrite"))
+
+
+def omp_guard(obj):
+    return (all(isinstance(obj.get(f), str) for f in ("model", "provider", "api"))
+            and isinstance(obj.get("usage"), dict))
+
+
+def omp_line(state, obj, dedupe):
+    """One line of an omp session file (METRICS 4.7)."""
+    kind = obj.get("type")
+    if kind == "title":
+        return
+    if kind == "session":
+        if state.header_seen:
+            return
+        state.header_seen = True
+        state.file_created = parse_ts(obj.get("timestamp"))
+        state.project = basename(obj.get("cwd"))
+        state.thread_id = obj.get("id") if isinstance(obj.get("id"), str) else None
+        if state.file_created is not None:
+            omp_touch(state, state.file_created)
+        return
+    if not state.header_seen or not isinstance(obj.get("id"), str):
+        return
+    ts = parse_ts(obj.get("timestamp"))
+    if ts is None or (state.file_created is not None and ts < state.file_created - OMP_COPY_MS):
+        return
+    omp_touch(state, ts)
+    if kind == "message" and isinstance(obj.get("message"), dict):
+        msg = obj["message"]
+        role = msg.get("role")
+        if role in ("user", "developer"):
+            state.phase, state.in_flight = "generating", ts
+            state.pending_calls.clear()
+        elif role == "assistant":
+            omp_assistant(state, obj, msg, ts, dedupe)
+        elif role == "toolResult":
+            state.pending_calls.discard(msg.get("toolCallId"))
+            if msg.get("toolName") == "yield" and msg.get("isError") is not True:
+                state.phase, state.in_flight = "idle", None
+            elif state.phase == "tools" and not state.pending_calls:
+                state.phase, state.in_flight = "generating", ts
+    elif kind == "model_usage":
+        if not omp_guard(obj):
+            return
+        key = "omp:%s:%d" % (obj["id"], ts)
+        if dedupe.owner(key) not in (None, state.path) or not omp_has_usage(obj["usage"]):
+            return
+        dedupe.claim(key, state.path)
+        emit(state, key, None, ts, omp_tokens(obj["usage"]), obj["model"])
+    elif kind == "custom" and obj.get("customType") == "session_exit":
+        state.phase, state.in_flight = "idle", None
+        state.pending_calls.clear()
+
+
+def omp_assistant(state, entry, msg, ts, dedupe):
+    if not omp_guard(msg):
+        return
+    started = int(msg["timestamp"]) if finite(msg.get("timestamp")) and msg["timestamp"] > 0 else None
+    key = "omp:%s:%d" % (entry["id"], started if started is not None else ts)
+    if dedupe.owner(key) not in (None, state.path):
+        return
+    stop = msg.get("stopReason") if isinstance(msg.get("stopReason"), str) else "aborted"
+    duration, completed = msg.get("duration"), msg.get("completedAt")
+    if started is not None and finite(duration) and duration >= 0:
+        end = started + int(duration)
+    elif finite(completed) and completed > 0:
+        end = int(completed)
+    else:
+        end = ts
+    if omp_has_usage(msg["usage"]):
+        dedupe.claim(key, state.path)
+        emit(state, key, None if stop in ("error", "aborted") else started, end, omp_tokens(msg["usage"]),
+             msg["model"])
+        state.model = msg["model"]
+    content = msg.get("content") if isinstance(msg.get("content"), list) else []
+    calls = {b["id"] for b in content if isinstance(b, dict) and b.get("type") == "toolCall"
+             and isinstance(b.get("id"), str)}
+    details = msg.get("stopDetails") if isinstance(msg.get("stopDetails"), dict) else {}
+    if stop in ("error", "aborted"):
+        state.phase, state.in_flight = "idle", None
+        state.pending_calls.clear()
+    elif calls and stop in ("toolUse", "stop", "length"):
+        state.phase, state.in_flight, state.pending_calls = "tools", None, calls
+    elif stop == "stop" and details.get("type") == "pause_turn":
+        state.phase, state.in_flight = "generating", end
+    else:
+        state.phase, state.in_flight = "idle", None
+
+
+def omp_read_header(state, dedupe):
+    """Reading that starts mid-file first takes the header from the first two lines (METRICS 4.7)."""
+    with open(state.path, "rb") as f:
+        for _ in range(2):
+            raw = f.readline(MAX_LINE)
+            try:
+                obj = json.loads(raw)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if isinstance(obj, dict) and obj.get("type") == "session":
+                omp_line(state, obj, dedupe)
+                return
+
+
+def _subdirs(path):
+    try:
+        return [n for n in os.listdir(path)
+                if os.path.isdir(os.path.join(path, n)) and not os.path.islink(os.path.join(path, n))]
+    except OSError:
+        return []
+
+
+def omp_roots(env=None, platform=None, home=None):
+    """The automatic omp roots (METRICS 2, 4.7): the default root, then one per named profile."""
+    env = os.environ if env is None else env
+    platform = sys.platform if platform is None else platform
+    home = home or os.path.expanduser("~")
+    cfg = os.path.join(home, (env.get("PI_CONFIG_DIR") or ".omp").lstrip("/\\"))
+    xdg = env.get("XDG_DATA_HOME") if platform == "darwin" else None
+    xdg_omp = os.path.join(xdg, "omp") if xdg else None
+    if env.get("PI_CODING_AGENT_DIR"):
+        roots = [os.path.join(env["PI_CODING_AGENT_DIR"], "sessions")]
+    elif xdg_omp and os.path.isdir(xdg_omp):
+        roots = [os.path.join(xdg_omp, "sessions")]
+    else:
+        roots = [os.path.join(cfg, "agent", "sessions")]
+    names = set(_subdirs(os.path.join(cfg, "profiles")))
+    if xdg_omp:
+        names |= set(_subdirs(os.path.join(xdg_omp, "profiles")))
+    for name in sorted(names):
+        xdg_profile = os.path.join(xdg_omp, "profiles", name) if xdg_omp else None
+        if xdg_profile and os.path.isdir(xdg_profile):
+            roots.append(os.path.join(xdg_profile, "sessions"))
+        else:
+            roots.append(os.path.join(cfg, "profiles", name, "agent", "sessions"))
+    return list(OrderedDict.fromkeys(roots))
+
+
+def discover_omp(root, limit=20_000):
+    found = []
+    if not os.path.isdir(root):
+        return found
+    base_depth = root.rstrip(os.sep).count(os.sep)
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
+        dirnames[:] = [] if depth >= 6 else [d for d in dirnames if not d.startswith(".")
+                                              and not os.path.islink(os.path.join(dirpath, d))]
+        if depth < 1:
+            continue
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if name.endswith(".jsonl") and not name.startswith(".") and not os.path.islink(path):
+                found.append(path)
+    found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return found[:limit]
+
+
+# ----------------------------------------------------------------------------- Antigravity (METRICS 4.8)
+
+def pb_varint(data, pos):
+    result = 0
+    for i in range(10):
+        if pos >= len(data):
+            raise ValueError("truncated varint")
+        byte = data[pos]
+        pos += 1
+        result |= (byte & 0x7F) << (7 * i)
+        if not byte & 0x80:
+            return result & 0xFFFF_FFFF_FFFF_FFFF, pos
+    raise ValueError("varint longer than 10 bytes")
+
+
+def pb_fields(data):
+    """Top-level fields of a protobuf message as (number, wire, value); raises ValueError when malformed."""
+    out, pos = [], 0
+    while pos < len(data):
+        key, pos = pb_varint(data, pos)
+        number, wire = key >> 3, key & 7
+        if number == 0:
+            raise ValueError("field 0")
+        if wire == 0:
+            value, pos = pb_varint(data, pos)
+        elif wire in (1, 5):
+            size = 8 if wire == 1 else 4
+            if pos + size > len(data):
+                raise ValueError("truncated fixed field")
+            value, pos = int.from_bytes(data[pos:pos + size], "little"), pos + size
+        elif wire == 2:
+            size, pos = pb_varint(data, pos)
+            if size > len(data) - pos:
+                raise ValueError("truncated length-delimited field")
+            value, pos = bytes(data[pos:pos + size]), pos + size
+        else:
+            raise ValueError("wire type %d" % wire)
+        out.append((number, wire, value))
+    return out
+
+
+def pb_last(fields, number, wire):
+    values = [v for n, w, v in fields if n == number and w == wire]
+    return values[-1] if values else None
+
+
+def pb_first(fields, number, wire):
+    values = [v for n, w, v in fields if n == number and w == wire]
+    return values[0] if values else None
+
+
+def pb_int(fields, number):
+    value = pb_last(fields, number, 0)
+    return 0 if value is None else value
+
+
+def pb_signed(fields, number):
+    value = pb_int(fields, number)
+    return value - (1 << 64) if value >= 1 << 63 else value
+
+
+def pb_str(fields, number, first=False):
+    value = (pb_first if first else pb_last)(fields, number, 2)
+    return value.decode("utf-8", "replace") if value else ""
+
+
+def pb_msg(fields, number, first=False):
+    value = (pb_first if first else pb_last)(fields, number, 2)
+    return None if value is None else pb_fields(value)
+
+
+def pb_timestamp(fields, number):
+    sub = pb_msg(fields, number)
+    if sub is None:
+        return None
+    seconds, nanos = pb_signed(sub, 1), pb_signed(sub, 2)
+    if seconds <= 0:
+        return None
+    return seconds * 1000 + (nanos // 1_000_000 if 0 <= nanos <= 999_999_999 else 0)
+
+
+def pb_repeated_uint(fields, number):
+    values = []
+    for n, w, v in fields:
+        if n != number:
+            continue
+        if w == 0:
+            values.append(v)
+        elif w == 2:
+            pos = 0
+            while pos < len(v):
+                item, pos = pb_varint(v, pos)
+                values.append(item)
+    return values
+
+
+def uri_basename(value):
+    """Basename of a path or URI; a URI loses its scheme and authority and is percent-decoded (METRICS 4.8)."""
+    if not value:
+        return None
+    m = re.match(r"^[A-Za-z][A-Za-z0-9+.-]+:", value)
+    if m:
+        rest = value[m.end():]
+        if rest.startswith("//"):
+            slash = rest.find("/", 2)
+            rest = rest[slash:] if slash >= 0 else ""
+        value = unquote(rest, encoding="utf-8", errors="replace")
+    return basename(value)
+
+
+def sqlite_readonly(db_path):
+    """Opens a database read-only without ever creating a file (METRICS 4.5, 4.8)."""
+    with open(db_path, "rb") as f:
+        header = f.read(20)
+    closed_wal = len(header) == 20 and header[18] == 2 and header[19] == 2 and not os.path.exists(db_path + "-wal")
+    try:
+        if closed_wal:
+            raise sqlite3.OperationalError("closed WAL database")
+        db = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=2)
+        db.execute("select 1 from sqlite_master limit 1")
+    except sqlite3.OperationalError:
+        if os.path.exists(db_path + "-wal"):
+            raise
+        db = sqlite3.connect("file:%s?immutable=1" % db_path, uri=True, timeout=2)
+    return db
+
+
+def ag_rows(db, sql):
+    try:
+        return db.execute(sql).fetchall()
+    except sqlite3.DatabaseError:
+        return []
+
+
+def ag_decode(state, blob, decoder):
+    if blob is None:
+        return None
+    try:
+        return decoder(bytes(blob))
+    except ValueError:
+        state.malformed += 1
+        return None
+
+
+def ag_trajectory(data):
+    fields = pb_fields(data)
+    workspace = pb_msg(fields, 1, first=True)
+    uris = [v.decode("utf-8", "replace") for n, w, v in fields if n == 7 and w == 2]
+    project = uri_basename(uris[0]) if uris else None
+    if project is None and workspace is not None:
+        project = uri_basename(pb_str(workspace, 1))
+    parent = pb_str(fields, 5)
+    return dict(created=pb_timestamp(fields, 2), parent=parent or None, project=project,
+                subagent=bool(parent) or pb_signed(fields, 17) > 0 or pb_last(fields, 8, 2) is not None)
+
+
+def ag_generation(data):
+    fields = pb_fields(data)
+    chat = pb_msg(fields, 1) or []
+    return dict(steps=set(pb_repeated_uint(fields, 2)), model=pb_str(chat, 19) or pb_str(chat, 21) or None)
+
+
+def ag_executor(data):
+    fields = pb_fields(data)
+    planner = pb_msg(pb_msg(fields, 10) or [], 1) or []
+    return dict(reason=pb_signed(fields, 1), last=pb_signed(fields, 3), model=pb_str(planner, 28) or None)
+
+
+AG_TIMES = (("created", 1), ("viewable", 6), ("finished", 7), ("completed", 8), ("chunk", 22), ("started", 32))
+
+
+def ag_step(data):
+    fields = pb_fields(data)
+    step = {name: pb_timestamp(fields, number) for name, number in AG_TIMES}
+    use = pb_msg(fields, 9)
+    if use is not None:
+        tokens = {name: pb_int(use, number) for name, number in (
+            ("input", 2), ("output", 3), ("cache", 5), ("thinking", 9), ("response", 10))}
+        if any(v > AG_TOKEN_MAX for v in tokens.values()):
+            raise ValueError("implausible token count")
+        tokens["key"] = pb_str(use, 11) or pb_str(use, 7) or None
+    step["usage"] = None if use is None else tokens
+    return step
+
+
+def antigravity_state(db_path, dedupe):
+    """Parses one Antigravity conversation database completely; None when its format is unsupported."""
+    db = sqlite_readonly(db_path)
+    try:
+        columns = {r[1] for r in ag_rows(db, "PRAGMA table_info(steps)")}
+        if not {"idx", "step_type", "status", "metadata"} <= columns:
+            return None
+        st = FileState(db_path, "antigravity")
+        conversation = os.path.basename(db_path)[:-3]
+        traj = None
+        for (blob,) in ag_rows(db, "SELECT CASE WHEN length(data) <= %d THEN data END FROM trajectory_metadata_blob "
+                                   "ORDER BY rowid LIMIT 1" % AG_BLOB_MAX):
+            traj = ag_decode(st, blob, ag_trajectory)
+        created = traj["created"] if traj else None
+        if traj:
+            st.project, st.is_subagent, st.parent_session = traj["project"], traj["subagent"], traj["parent"]
+        st.file_created = created
+        gens = [g for _, blob in ag_rows(db, "SELECT idx, CASE WHEN typeof(size) = 'integer' AND size <= %d AND "
+                                             "length(data) <= %d THEN data END FROM gen_metadata WHERE idx > -1 "
+                                             "ORDER BY idx, rowid" % (AG_BLOB_MAX, AG_BLOB_MAX))
+                for g in [ag_decode(st, blob, ag_generation)] if g]
+        execs = [dict(e, idx=idx) for idx, blob in ag_rows(db, "SELECT idx, CASE WHEN length(data) <= %d THEN data END "
+                                                                "FROM executor_metadata WHERE idx > -1 ORDER BY idx, "
+                                                                "rowid" % AG_BLOB_MAX)
+                 for e in [ag_decode(st, blob, ag_executor)] if e]
+
+        def model_for(idx):
+            generation = next((g for g in gens if idx in g["steps"]), None)
+            if generation and generation["model"]:
+                return generation["model"]
+            covering = sorted((e for e in execs if e["last"] >= idx), key=lambda e: (e["last"], e["idx"]))
+            return covering[0]["model"] if covering else None
+
+        times = [created] if created is not None else []
+        latest = None
+        models = {}
+        for idx, step_type, status, blob in ag_rows(
+                db, "SELECT idx, step_type, status, CASE WHEN length(metadata) <= %d THEN metadata END FROM steps "
+                    "WHERE idx > -1 ORDER BY idx, rowid" % AG_BLOB_MAX):
+            idx, step_type, status = idx or 0, step_type or 0, status or 0
+            step = ag_decode(st, blob, ag_step)
+            if step is None:
+                continue
+            if created is not None and step["created"] is not None and step["created"] < created - 2000:
+                continue
+            row_times = [t for name, t in step.items() if name != "usage" and t is not None]
+            times += row_times
+            latest = dict(step, idx=idx, type=step_type, status=status)
+            use = step["usage"]
+            if step_type != 15 or status in AG_OPEN or not use:
+                continue
+            if not any(use[f] > 0 for f in ("input", "output", "cache", "thinking", "response")):
+                continue
+            key = use["key"] or "antigravity:%s:%d" % (conversation, idx)
+            if dedupe.owner(key) not in (None, st.path):
+                continue
+            end = step["finished"] or step["chunk"] or step["completed"]
+            start = step["created"]
+            if end is None:
+                if not row_times:
+                    continue
+                end, start = max(row_times), None
+            if status in AG_FAILED:
+                start = None
+            dedupe.claim(key, st.path)
+            models[key] = model_for(idx)
+            output = use["output"] or use["thinking"] + use["response"]
+            emit(st, key, start, end, dict(input=use["input"] + use["cache"], cachedInput=use["cache"],
+                                           cacheWriteInput=0, output=output, reasoning=use["thinking"]), models[key])
+            if models[key]:
+                st.model = models[key]
+        st.last_line = max(times) if times else None
+        st.phase, st.in_flight = ag_phase(latest, execs)
+        return st
+    finally:
+        db.close()
+
+
+def ag_phase(latest, execs):
+    if latest is None or any(e["reason"] != 0 and e["last"] >= latest["idx"] for e in execs):
+        return "idle", None
+    kind, status = latest["type"], latest["status"]
+    if kind == 15:
+        return ("generating", latest["created"]) if status in AG_OPEN else ("idle", None)
+    if kind == 14:
+        return ("idle", None) if status in AG_FAILED else ("generating", latest["created"])
+    if status in AG_OPEN:
+        return "tools", None
+    if status == 3:
+        return "generating", latest["completed"] if latest["completed"] is not None else latest["created"]
+    return "idle", None
+
+
+def antigravity_stores(home=None, setting=None, gemini_dir=None):
+    """The stores to read (METRICS 2, 4.8); a `-backup` store is never read."""
+    if setting:
+        candidates = [setting]
+    else:
+        base = gemini_dir or os.path.join(home or os.path.expanduser("~"), ".gemini")
+        candidates = [os.path.join(base, n) for n in ("antigravity-cli", "antigravity", "antigravity-ide")]
+    stores = []
+    for c in candidates:
+        c = c.rstrip("/\\")
+        store = os.path.dirname(c) if os.path.basename(c) == "conversations" else c
+        if not os.path.basename(store).endswith("-backup"):
+            stores.append(c)
+    return stores
+
+
+def discover_antigravity(store, limit=20_000):
+    folder = store if os.path.basename(store.rstrip("/\\")) == "conversations" else os.path.join(store, "conversations")
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return []
+    found = [os.path.join(folder, n) for n in names if AG_NAME.match(n)
+             and os.path.isfile(os.path.join(folder, n)) and not os.path.islink(os.path.join(folder, n))]
+    found.sort(key=ag_mtime, reverse=True)
+    return found[:limit]
+
+
+def ag_mtime(path):
+    """A database's time for startup order: the newer of the .db and its -wal (METRICS 5.4)."""
+    wal = path + "-wal"
+    return max(os.path.getmtime(path), os.path.getmtime(wal) if os.path.exists(wal) else 0)
+
+
+def antigravity_parents(states):
+    by_id = {}
+    for s in states:
+        by_id.setdefault(os.path.basename(s.path)[:-3].lower(), []).append(s.path)
+    parents = {}
+    for s in states:
+        candidates = by_id.get((s.parent_session or "").lower(), []) if s.parent_session else []
+        candidates = sorted(candidates, key=lambda p: (os.path.dirname(p) != os.path.dirname(s.path), p))
+        parent = candidates[0] if candidates else None
+        parents[s.path] = parent if parent != s.path else None
+    for path in list(parents):
+        seen, cur = set(), path
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            cur = parents.get(cur)
+        if cur is not None:
+            parents[path] = None
+    return parents
+
+
 # ----------------------------------------------------------------------------- engine
 
 def interval(resp):
@@ -1036,7 +1555,7 @@ def check_fixtures():
     states = []
     for rel in expected["order"]:
         exp = expected["files"][rel]
-        state = FileState(os.path.join(root, rel), fixture_source(rel))
+        state = fixture_state(root, rel)
         process_file(state, dedupe)
         states.append(state)
         got = dict(source=state.source, project=state.project, model=state.model, isSubagent=state.is_subagent,
@@ -1070,21 +1589,23 @@ def check_fixtures():
         found = sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in discover_gemini(groot))
         if found != gm["discover"]:
             failures.append("gemini discover: expected %r got %r" % (gm["discover"], found))
-        for t in gm["traces"]:
-            trace_dedupe = Deduper()
-            for rel in expected["order"]:
-                if rel == t["file"]:
-                    break
-                process_file(FileState(os.path.join(root, rel), fixture_source(rel)), trace_dedupe)
-            state = FileState(os.path.join(root, t["file"]), "gemini")
-            process_file(state, trace_dedupe, max_lines=t["afterLine"])
-            if (state.phase, state.in_flight) != (t["phase"], t["inFlightStartMs"]):
-                failures.append("%s line %d: expected %s/%r got %s/%r" % (
-                    t["file"], t["afterLine"], t["phase"], t["inFlightStartMs"], state.phase, state.in_flight))
+        failures += check_traces(root, expected, gm["traces"])
         if gemini_roots({"GEMINI_CLI_HOME": "/x"}, "linux") != [os.path.join("/x", ".gemini", "tmp")]:
             failures.append("gemini roots: GEMINI_CLI_HOME not honoured")
         if len(gemini_roots({"GEMINI_CLI_HOME": "/x"}, "darwin")) != 2:
             failures.append("gemini roots: macOS sandbox root missing")
+    om = expected.get("omp")
+    if om:
+        found = sorted(os.path.relpath(p, root).replace(os.sep, "/")
+                       for r in fixture_omp_roots(root) for p in discover_omp(r))
+        if found != om["discover"]:
+            failures.append("omp discover: expected %r got %r" % (om["discover"], found))
+        failures += check_traces(root, expected, om["traces"])
+        failures += check_tail_reads(root, expected, om.get("tailReads", []))
+        failures += check_omp_roots()
+    ag = expected.get("antigravity")
+    if ag:
+        failures += check_antigravity(root, ag, dedupe)
     hist_path = os.path.join(root, "history-expected.json")
     if os.path.exists(hist_path):
         got = fixture_history(root, expected)
@@ -1117,15 +1638,137 @@ def check_fixtures():
     if failures:
         print("\n".join(failures))
         sys.exit(1)
-    print("reference implementation matches all fixtures (%d files, %d engine cases)"
-          % (len(expected["order"]), len(cases)))
+    print("reference implementation matches all fixtures (%d files, %d Antigravity databases, %d engine cases)"
+          % (len(expected["order"]), len((ag or {}).get("order", [])), len(cases)))
+
+
+def check_traces(root, expected, traces):
+    """Phase after feeding a file up to a physical line, after the files before it in `order`."""
+    failures = []
+    for t in traces:
+        trace_dedupe = Deduper()
+        for rel in expected["order"]:
+            if rel == t["file"]:
+                break
+            process_file(fixture_state(root, rel), trace_dedupe)
+        state = fixture_state(root, t["file"])
+        process_file(state, trace_dedupe, max_lines=t["afterLine"])
+        if (state.phase, state.in_flight) != (t["phase"], t["inFlightStartMs"]):
+            failures.append("%s line %d: expected %s/%r got %s/%r" % (
+                t["file"], t["afterLine"], t["phase"], t["inFlightStartMs"], state.phase, state.in_flight))
+    return failures
+
+
+def check_tail_reads(root, expected, reads):
+    """Files that start being read at a byte offset (an older file that grows): the header is read first."""
+    failures = []
+    for t in reads:
+        tail_dedupe = Deduper()
+        for rel in expected["order"]:
+            if rel == t["file"]:
+                break
+            process_file(fixture_state(root, rel), tail_dedupe)
+        state = fixture_state(root, t["file"])
+        process_file(state, tail_dedupe, start_offset=t["offset"])
+        got = dict(project=state.project, phase=state.phase, inFlightStartMs=state.in_flight,
+                   lastLineMs=state.last_line, responseKeys=list(state.responses))
+        for k, v in got.items():
+            if t[k] != v:
+                failures.append("%s from byte %d: %s expected %r got %r" % (t["file"], t["offset"], k, t[k], v))
+    return failures
+
+
+def check_omp_roots():
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        home, xdg = os.path.join(tmp, "home"), os.path.join(tmp, "xdg")
+        for d in (".omp/profiles/work", ".omp/profiles/play", ".pi-alt/profiles/solo"):
+            os.makedirs(os.path.join(home, d))
+        for d in ("omp/profiles/work", "omp/profiles/lab"):
+            os.makedirs(os.path.join(xdg, d))
+        h, x = os.path.join(home, ".omp"), os.path.join(xdg, "omp")
+        cases = [
+            ({}, "linux", [h + "/agent/sessions", h + "/profiles/play/agent/sessions", h + "/profiles/work/agent/sessions"]),
+            ({"PI_CODING_AGENT_DIR": "/agent"}, "win32",
+             ["/agent/sessions", h + "/profiles/play/agent/sessions", h + "/profiles/work/agent/sessions"]),
+            ({"PI_CONFIG_DIR": ".pi-alt"}, "linux",
+             [home + "/.pi-alt/agent/sessions", home + "/.pi-alt/profiles/solo/agent/sessions"]),
+            ({"XDG_DATA_HOME": xdg}, "darwin",
+             [x + "/sessions", x + "/profiles/lab/sessions", h + "/profiles/play/agent/sessions",
+              x + "/profiles/work/sessions"]),
+            ({"XDG_DATA_HOME": xdg}, "win32",
+             [h + "/agent/sessions", h + "/profiles/play/agent/sessions", h + "/profiles/work/agent/sessions"]),
+        ]
+        for env, platform, want in cases:
+            got = omp_roots(env, platform, home)
+            if [os.path.normpath(p) for p in got] != [os.path.normpath(p) for p in want]:
+                failures.append("omp roots %r %s: expected %r got %r" % (env, platform, want, got))
+    return failures
+
+
+def check_antigravity(root, ag, dedupe):
+    failures = []
+    tree = os.path.join(root, "antigravity")
+    before = sorted(os.path.relpath(os.path.join(d, n), tree) for d, _, ns in os.walk(tree) for n in ns)
+    stores = antigravity_stores(gemini_dir=tree)
+    found = sorted(os.path.relpath(p, root).replace(os.sep, "/") for s in stores for p in discover_antigravity(s))
+    if found != ag["discover"]:
+        failures.append("antigravity discover: expected %r got %r" % (ag["discover"], found))
+    backup = os.path.join(tree, "antigravity-backup")
+    if antigravity_stores(setting=backup) or antigravity_stores(setting=os.path.join(backup, "conversations")):
+        failures.append("antigravity: a -backup store chosen in the setting must not be read")
+    for store in stores:
+        via_folder = [p for s in antigravity_stores(setting=os.path.join(store, "conversations"))
+                      for p in discover_antigravity(s)]
+        if sorted(via_folder) != sorted(discover_antigravity(store)):
+            failures.append("antigravity: a `conversations` folder chosen in the setting must be used directly")
+    states = []
+    for rel in ag["order"]:
+        exp = ag["databases"][rel]
+        st = antigravity_state(os.path.join(root, rel), dedupe)
+        if st is None:
+            if exp != {"unsupported": True}:
+                failures.append("%s: unexpectedly unsupported" % rel)
+            continue
+        if exp.get("unsupported"):
+            failures.append("%s: expected unsupported" % rel)
+            continue
+        states.append(st)
+        got = dict(source=st.source, project=st.project, model=st.model, isSubagent=st.is_subagent,
+                   phase=st.phase, inFlightStartMs=st.in_flight, lastLineMs=st.last_line, malformedLines=st.malformed,
+                   responses=list(st.responses.values()))
+        for k, v in exp.items():
+            if k != "parentFile" and got[k] != v:
+                failures.append("%s: %s expected %r got %r" % (rel, k, v, got[k]))
+    parents = antigravity_parents(states)
+    for st in states:
+        rel = os.path.relpath(st.path, root).replace(os.sep, "/")
+        got = os.path.relpath(parents[st.path], root).replace(os.sep, "/") if parents[st.path] else None
+        if got != ag["databases"][rel]["parentFile"]:
+            failures.append("%s: parentFile expected %r got %r" % (rel, ag["databases"][rel]["parentFile"], got))
+    after = sorted(os.path.relpath(os.path.join(d, n), tree) for d, _, ns in os.walk(tree) for n in ns)
+    if after != before:
+        failures.append("antigravity: reading created files %r" % sorted(set(after) - set(before)))
+    return failures
 
 
 def fixture_source(rel):
-    for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini")):
+    for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini"), ("omp/", "omp")):
         if rel.startswith(prefix):
             return source
     return "claudeCode"
+
+
+def fixture_omp_roots(root):
+    """The fixture folder `omp` plays `~/.omp`: its automatic roots are the default root and every profile."""
+    return omp_roots({"PI_CONFIG_DIR": "omp"}, "linux", root)
+
+
+def fixture_state(root, rel):
+    path = os.path.join(root, rel)
+    source = fixture_source(rel)
+    omp_root = next((r for r in fixture_omp_roots(root) if path.startswith(r + os.sep)), None)
+    return FileState(path, source, omp_root if source == "omp" else None)
 
 
 def fixture_history(root, expected):
@@ -1137,7 +1780,9 @@ def fixture_history(root, expected):
             os.utime(os.path.join(copy, rel), (ms / 1000, ms / 1000))
         return daily_history(collect_all(os.path.join(copy, "codex", "sessions"), os.path.join(copy, "claude", "projects"),
                                          os.path.join(copy, "dsh", "sessions"), os.path.join(copy, "opencode", "opencode.db"),
-                                         [os.path.join(copy, "gemini", "tmp")]), tz=timezone.utc)
+                                         [os.path.join(copy, "gemini", "tmp")], fixture_omp_roots(copy),
+                                         antigravity_stores(gemini_dir=os.path.join(copy, "antigravity"))),
+                             tz=timezone.utc)
 
 
 def write_history_fixture():
@@ -1172,18 +1817,30 @@ def discover(root, limit=20_000, deepseek=False, codex=False):
     return found[:limit]
 
 
-def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
+def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), limit=20_000,
+                  include_archived=False):
+    """(time, path, source, omp root) of every discovered file and Antigravity database, in startup order (5)."""
+    files = [(p, "codex", None) for p in discover(codex_root, limit=limit, codex=True)]
+    if include_archived:
+        archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
+        files += [(p, "codex", None) for p in discover(archived, limit=limit, codex=True)]
+    files += [(p, "claudeCode", None) for p in discover(claude_root, limit=limit)]
+    files += [(p, "deepseek", None) for p in discover(dsh_root, limit=limit, deepseek=True)]
+    files += [(p, "gemini", None) for d in gemini_dirs for p in discover_gemini(d, limit=limit)]
+    files += [(p, "omp", r) for r in OrderedDict.fromkeys(omp_dirs) for p in discover_omp(r, limit=limit)]
+    files += [(p, "antigravity", None) for s in ag_stores for p in discover_antigravity(s, limit=limit)]
+    timed = {(ag_mtime(p) if s == "antigravity" else os.path.getmtime(p), p, s, r) for p, s, r in files}
+    return sorted(timed, key=lambda t: (t[0], t[1]))
+
+
+def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=()):
     started = time.time()
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    files = ([(p, "codex") for p in discover(codex_root, codex=True)] + [(p, "claudeCode") for p in discover(claude_root)]
-             + [(p, "deepseek") for p in discover(dsh_root, deepseek=True)]
-             + [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d)])
-    files = [(os.path.getmtime(p), p, s) for p, s in files]
-    files.sort(key=lambda t: (t[0], t[1]))
+    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores)
     dedupe = Deduper()
     rows, read_files, read_bytes = [], 0, 0
-    for mtime, path, source in files:
+    for mtime, path, source, omp_root in files:
         if mtime * 1000 < today_start - 15 * 60_000:
             continue
         size = os.path.getsize(path)
@@ -1191,9 +1848,15 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
             continue
         if source == "gemini" and path.endswith(".json") and size > GEMINI_LEGACY_MAX:
             continue
-        offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 and not path.endswith(".jsonl.zst") else 0
-        state = FileState(path, source)
-        process_file(state, dedupe, offset)
+        if source == "antigravity":
+            state = antigravity_state(path, dedupe)
+            if state is None:
+                continue
+            offset = 0
+        else:
+            offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 and not path.endswith(".jsonl.zst") else 0
+            state = FileState(path, source, omp_root)
+            process_file(state, dedupe, offset)
         read_files += 1
         read_bytes += size - offset
         for r in state.responses.values():
@@ -1214,21 +1877,21 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=()):
                                   "bytesRead": read_bytes, "seedMs": int((time.time() - started) * 1000)}}))
 
 
-def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), include_archived=True):
+def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), omp_dirs=(), ag_stores=(),
+                include_archived=True):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
-    files = [(p, "codex") for p in discover(codex_root, limit=10 ** 9, codex=True)]
-    if include_archived:
-        archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
-        files += [(p, "codex") for p in discover(archived, limit=10 ** 9, codex=True)]
-    files += [(p, "claudeCode") for p in discover(claude_root, limit=10 ** 9)]
-    files += [(p, "deepseek") for p in discover(dsh_root, limit=10 ** 9, deepseek=True)]
-    files += [(p, "gemini") for d in gemini_dirs for p in discover_gemini(d, limit=10 ** 9)]
-    files = sorted({(os.path.getmtime(p), p, s) for p, s in files}, key=lambda t: (t[0], t[1]))
+    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, limit=10 ** 9,
+                          include_archived=include_archived)
     dedupe = Deduper(limit=10 ** 9)
     out = []
-    for _, path, source in files:
-        state = FileState(path, source)
-        process_file(state, dedupe)
+    for _, path, source, omp_root in files:
+        if source == "antigravity":
+            state = antigravity_state(path, dedupe)
+            if state is None:
+                continue
+        else:
+            state = FileState(path, source, omp_root)
+            process_file(state, dedupe)
         out += [(state.source, path, r) for r in state.responses.values()]
     if opencode_db and os.path.exists(opencode_db):
         for st in opencode_states(opencode_db, dedupe):
@@ -1278,6 +1941,9 @@ def main():
     parser.add_argument("--claude", default=None)
     parser.add_argument("--dsh", default=None)
     parser.add_argument("--gemini", action="append", default=None, help="Gemini CLI tmp folder (repeatable)")
+    parser.add_argument("--omp", action="append", default=None, help="omp sessions folder (repeatable)")
+    parser.add_argument("--antigravity", action="append", default=None,
+                        help="Antigravity store folder or its conversations folder (repeatable)")
     parser.add_argument("--write-history-fixture", action="store_true")
     args = parser.parse_args()
     home = os.path.expanduser("~")
@@ -1290,19 +1956,22 @@ def main():
     opencode_db = args.opencode or os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
                                                 "opencode", "opencode.db")
     gemini_dirs = args.gemini or gemini_roots()
+    omp_dirs = args.omp or omp_roots()
+    ag_stores = ([s for a in args.antigravity for s in antigravity_stores(setting=a)] if args.antigravity
+                 else antigravity_stores())
     if args.write_history_fixture:
         write_history_fixture()
         return
     if args.dump_history:
-        rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs),
-                             tz=timezone.utc if args.utc else None)
+        rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs, omp_dirs,
+                                         ag_stores), tz=timezone.utc if args.utc else None)
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
         return
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root, dsh_root, gemini_dirs)
+        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores)
     else:
         parser.print_help()
 

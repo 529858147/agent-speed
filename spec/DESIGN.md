@@ -90,6 +90,10 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | DeepSeek | `#4D6BFE` DeepSeek blue |
 | OpenCode | `#F4B13E` amber |
 | Gemini CLI | `#34B8F0` sky |
+| omp | `#84CC16` lime |
+| Antigravity | `#EC4899` pink |
+
+Pink is `#EC4899`, not the lighter `#F472B6` (too close to coral and lilac); lime is `#84CC16`, not the lighter `#A3E635`, which nearly vanishes on light backgrounds.
 
 ## 2. The orb (floating window)
 
@@ -570,6 +574,13 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
   **Preview effects** button: runs the demo driver for 20 s sweeping through every tier.
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
   Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
+  - omp: one row. The path is the default sessions root (METRICS 2); the status counts the sessions of the default
+    root and every named-profile root together. Change… picks one `sessions` folder and replaces all automatic roots;
+    Reset returns to them. Caption `settings.sources.ompHint`.
+  - Antigravity: one row. The path lists the stores found (`~/.gemini/antigravity-cli`, `antigravity`,
+    `antigravity-ide`); the status counts conversation databases (`source.sessions`). Change… picks one store folder
+    (or its `conversations` folder) and replaces all three; Reset returns to them. A chosen `*-backup` store is never
+    read (METRICS 4.8) and shows `source.folderMissing`. Caption `settings.sources.antigravityHint`.
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
   conversation content is never stored or displayed.
 

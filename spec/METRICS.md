@@ -8,8 +8,8 @@ shared fixtures in `spec/fixtures/`.
 
 | Term | Meaning |
 | --- | --- |
-| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`), `opencode`, `gemini` (Gemini CLI) |
-| Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. |
+| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`), `opencode`, `gemini` (Gemini CLI), `omp` (oh-my-pi), `antigravity` (Google Antigravity) |
+| Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. (OpenCode: one per session row, 4.5; Antigravity: one per conversation database, 4.8.) |
 | Response | One model API call that produced a usage record. |
 | Phase | `generating` (a request is in flight), `tools` (model finished, waiting for tool results), `idle` |
 
@@ -22,13 +22,16 @@ shared fixtures in `spec/fixtures/`.
 | DeepSeek Harness (`dsh`, desktop app and CLI) | `$DSH_HOME/sessions`, else `~/.dsh/sessions` | user setting |
 | OpenCode (CLI and desktop app) | `$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/opencode/opencode.db` (same form on Windows under `%USERPROFILE%`) | user setting (folder that contains `opencode.db`) |
 | Gemini CLI (interactive, `-p`, ACP/IDE sessions) | `<home>/.gemini/tmp`; on macOS also `<home>/.cache/.gemini/tmp` (seatbelt sandbox, v0.63+). `<home>` = `$GEMINI_CLI_HOME`, else `~` | user setting (one `tmp` folder; replaces both defaults) |
+| omp (oh-my-pi: TUI, `-p`, RPC, ACP) | The default root plus one root per named profile (4.7). Default: `$PI_CODING_AGENT_DIR/sessions`, else on macOS `$XDG_DATA_HOME/omp/sessions` when `$XDG_DATA_HOME/omp` exists, else `~/<cfg>/agent/sessions`, where `<cfg>` = `$PI_CONFIG_DIR`, else `.omp`. Profiles: `~/<cfg>/profiles/<name>/agent/sessions` for every folder `<name>` | user setting (one `sessions` folder; replaces every automatic root) |
+| Antigravity (CLI `agy`, desktop app, IDE, IDE extensions) | three store folders: `~/.gemini/antigravity-cli`, `~/.gemini/antigravity`, `~/.gemini/antigravity-ide` (each contains `conversations`) | user setting (one store folder, or its `conversations` folder; replaces all three) |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
 locally and are out of scope.
 
 Discovery: recursive enumeration of `*.jsonl` (Codex also `*.jsonl.zst`, 5.3; DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`; Gemini CLI:
-fixed depths, see 4.6), maximum depth 6, never follow symlinks, at most 20 000 files per root.
+fixed depths, see 4.6; omp: see 4.7; Antigravity: conversation databases, see 4.8), maximum depth 6, never follow
+symlinks, at most 20 000 files per root.
 The app never writes inside these folders.
 
 ## 3. Common rules
@@ -77,7 +80,8 @@ state change). For Claude, copied history is removed by deduplication (3.4).
 
 Each parser is a per-file state machine fed complete lines in order. It produces:
 - response upserts (`key`, `source`, `agentId`, `model`, `startMs`, `endMs`, normalized tokens)
-- phase updates (`phase`, `phaseSinceMs`, `inFlightStartMs`)
+- phase updates (`phase`, `phaseSinceMs`, `inFlightStartMs`; `inFlightStartMs` is null whenever the phase is not
+  `generating`)
 - metadata (`project` = last path component of `cwd`, `model`, `isSubagent`)
 - `lastLineMs` = the latest timestamp seen in the file
 
@@ -398,6 +402,399 @@ not read).
 - Derived from the Gemini CLI source (v0.66, evidence in `spec/research/gemini-cli.md`); not yet verified against real
   session files.
 
+### 4.7 omp (oh-my-pi)
+
+omp (`can1357/oh-my-pi`, MIT) is a fork of pi (`badlogic/pi-mono`) with its own JSONL session files. Upstream pi
+(`~/.pi/agent/sessions`, no request durations) is out of scope. Every model response is written once, complete, after
+its stream ended, with omp's own request start (`message.timestamp`) and measured request duration
+(`message.duration`); nothing is written while a request is in flight. Evidence: `spec/research/omp.md`.
+
+#### Format eras
+
+| Versions | Change | Effect on these rules |
+| --- | --- | --- |
+| ≤ 2.3 | binary `pi`, root `~/.pi/agent/sessions`, session version 2 | out of scope |
+| 3.0 – 6.9.0 | root `~/.omp/agent/sessions`, session version 3; assistant messages have no `duration` | `endMs` = entry timestamp |
+| 6.9.69+ | `duration` and `ttft` on assistant messages | `endMs = timestamp + duration` |
+| 16.3+ | the first physical line is a fixed 256-byte `title` slot, rewritten in place | ignored |
+| 17.2.5 – 17.2.8 | bucket folders named `<scope>-<basename>-<sha256>` (17.2.9 migrates them back) | none |
+| 18.1+ | `model_usage` entries (side calls), `completedAt` on assistant messages, `runtime` on entries | side calls count in totals; second `endMs` fallback |
+
+omp migrates older session files on load and rewrites them on its next write; files written today come almost
+entirely from 18.x.
+
+#### Roots and discovery
+
+- Automatic roots (section 2): the default root, then one root per named profile. Profile names are the folders in
+  `~/<cfg>/profiles` and, on macOS when `$XDG_DATA_HOME` is set, in `$XDG_DATA_HOME/omp/profiles`. A profile's root is
+  `$XDG_DATA_HOME/omp/profiles/<name>/sessions` on macOS when `$XDG_DATA_HOME/omp/profiles/<name>` exists, else
+  `~/<cfg>/profiles/<name>/agent/sessions`. Profiles ignore `$PI_CODING_AGENT_DIR`. `XDG_*` variables are never used on
+  Windows. Roots that do not exist are skipped; a path listed twice is scanned once.
+- Sessions written to custom folders (`--session-dir`, `--session`, `PI_CODING_AGENT_SESSION_DIR`; omp lists them in
+  `<agent dir>/custom-session-files/`) are read only when the user setting points at their folder.
+- Layout: `<root>/<bucket>/<YYYY-MM-DDTHH-MM-SS-mmmZ>_<sessionId>.jsonl` are main sessions (`<bucket>` encodes the
+  working directory, `sessionId` is a UUIDv7); `<root>/<bucket>/<stem>/<name>.jsonl` belong to the session
+  `<stem>.jsonl` (task sub-agents `<AgentId>.jsonl`, advisors `__advisor.jsonl` / `__advisor.<slug>.jsonl`, seance
+  consults); a sub-agent's own children nest the same way under `<stem>/<AgentId>/`.
+- Discovery: regular files (never symlinks) whose name ends in `.jsonl` and whose path relative to the root has at
+  least two components, within the depth limit of section 2. Every file or folder whose name starts with `.` is
+  skipped (`omp gc --compress` stages copies in `.omp-gc-compress-*`; rewrite temps are `.<name>.jsonl.<id>.tmp`).
+  Windows move-aside backups (`*.jsonl.<id>.bak`), archives (`*.jsonl.gz` under `<agent dir>/archive`, outside the
+  root) and artifacts (`*.log`, `*.md`, `*.patch`, `draft.txt`) do not match. Collab replicas (`~/.omp/collab`),
+  `omp render` working copies and sub-agents of `--no-session` runs are outside every root.
+
+Writes are single-line appends or full rewrites through a temp file renamed over the transcript (a new identity:
+section 5 resets the file). The title slot is overwritten in place without changing the file size.
+
+#### Record classification
+
+Every line is one JSON object, classified by `type`:
+
+1. `title` — the title slot. Ignored entirely.
+2. `session` — the header. Only the first one counts; later headers are ignored entirely.
+3. `message` — by `message.role`: `user`, `developer`, `assistant`, `toolResult`; any other role (`bashExecution`,
+   `pythonExecution`, `fileMention`, `custom`, `hookMessage`) only updates `lastLineMs`.
+4. `model_usage` — a side model call.
+5. `custom` with `customType == "session_exit"` — the omp process ended.
+6. anything else (`model_change`, `thinking_level_change`, `compaction`, `branch_summary`, `custom_message`, other
+   `custom`, `label`, …) — only `lastLineMs`.
+
+Lines before the header are ignored. Entries other than the header without a string `id` (version-1 files from before
+2026) or without a parseable `timestamp` are ignored entirely. When reading a file starts at an offset greater than 0
+(section 5), its header is read first: the first line of type `session` among the first two lines of the file (the
+title slot precedes it since 16.3).
+
+#### Timing model
+
+- An assistant `message` entry is appended once, at the end of its stream and before its tools run. Partial streaming
+  output is never persisted; there is no record while a request is in flight.
+- `message.timestamp` (Unix ms) is taken when the provider call starts, immediately before the request is built and
+  sent; it is never rewritten (not on in-provider retries, not on copies). `message.duration` (ms, monotonic) runs from
+  that instant to the end of the stream. `message.completedAt` (18.1+) is the wall clock when the message ended.
+- Therefore `startMs = message.timestamp`; `endMs = startMs + duration` (truncated to whole milliseconds; `duration`
+  has sub-millisecond digits) when `startMs` is known and `duration` is a finite number ≥ 0, else `completedAt`
+  (truncated) when it is a finite number > 0, else the entry `timestamp`. The interval includes request building, time
+  to first token and in-provider retries with their back-off; it excludes agent-level work before the call.
+- The input entry (`user`, `developer`), or the tool result that completes a batch, is written a few milliseconds
+  before the next request starts; it starts the in-flight estimate.
+
+State: `headerMs` (nullable), `pendingToolCalls` (set of ids), `phase` (starts `idle`).
+
+| Record | Action |
+| --- | --- |
+| header | `headerMs` = its `timestamp`; `project` from `cwd`; the header `timestamp` counts for `lastLineMs` |
+| any entry whose `timestamp` is earlier than `headerMs - 2000` | copied history (forks, branches, imports, moves): ignore completely |
+| `message` / `user` or `developer` | phase `generating`, `inFlightStartMs = ts`; `pendingToolCalls` cleared |
+| `message` / `assistant` | response (below) |
+| `message` / `toolResult` | remove `message.toolCallId` from `pendingToolCalls`. If `message.toolName == "yield"` and `message.isError` is not `true` → phase `idle` (a sub-agent's final yield ends its run). Else if phase is `tools` and `pendingToolCalls` is empty → phase `generating`, `inFlightStartMs = ts`. |
+| `model_usage` | side-call response (below); no phase change |
+| `custom` / `session_exit` | phase `idle`, `pendingToolCalls` cleared |
+| anything else | only `lastLineMs` |
+
+`message` / `assistant` (`m` = `message`):
+1. Skip the entry (only `lastLineMs`) unless `m.model`, `m.provider` and `m.api` are strings and `m.usage` is an
+   object (omp's own statistics apply the same guard).
+2. `stamp` = `m.timestamp` truncated to an integer when it is a finite number > 0, else the entry `timestamp` (ms).
+   `key = "omp:" + id + ":" + stamp` (decimal). If the key was first seen in another file, ignore the entry: no
+   response and no phase change (it still counts for `lastLineMs`). A repeat in the same file is an update (4.4).
+3. `stopReason` = `m.stopReason`; a missing or non-string value counts as `aborted`.
+4. When at least one of `usage.input`, `usage.output`, `usage.cacheRead`, `usage.cacheWrite` is > 0, emit a response:
+   `startMs = m.timestamp` when it is a finite number > 0 (else null), `endMs` as in the timing model, `final = true`,
+   `model = m.model`, tokens below. When `stopReason` is `error` or `aborted`, `startMs = null` (totals only: failed
+   and interrupted requests carry partial or no output). Messages whose four fields are all 0 (abort placeholders, the
+   synthetic message that closes a resumed interrupted turn) produce no response.
+5. Phase, also when step 4 emitted nothing: `stopReason` `error` or `aborted` → `idle`, `pendingToolCalls` cleared.
+   Else when `m.content` has blocks of type `toolCall` with a string `id` and `stopReason` is `toolUse`, `stop` or
+   `length` → `tools`, `pendingToolCalls` = those ids (omp runs tool calls under `stop` too; under `length` it writes
+   skipped results and continues). Else when `stopReason == "stop"` and `m.stopDetails.type == "pause_turn"` →
+   `generating`, `inFlightStartMs = endMs` (omp samples again). Otherwise `idle`.
+
+`model_usage` (18.1+) records side calls billed to the session (`purpose`: `auto-thinking`, `job-widget`, `ttsr`,
+`memory`, `find`, `task-completion-probe`, `auto-prewalk`, `auto-graph`, `unexpected-stop`, …). Same guard as step 1
+on the entry's own `model`, `provider`, `api` and `usage`; `key = "omp:" + id + ":" + <entry timestamp ms>`,
+deduplicated like step 2. When one of the four token fields is > 0, emit `startMs = null`, `endMs = ts`,
+`final = true`, `model = model`. These responses never set the agent's `model`.
+
+Verification target (once real files are available): per file, the token sums equal what `omp stats` stores for it (it
+reads exactly the assistant messages and `model_usage` entries), and each response's speed equals omp's own
+`output * 1000 / duration`.
+
+#### Tokens
+
+`usage` is omp's normalized `Usage` (every provider maps into it). Missing or non-numeric fields are 0, negatives clamp
+to 0.
+
+| Field | Value |
+| --- | --- |
+| `input` | `usage.input + usage.cacheRead + usage.cacheWrite` |
+| `cachedInput` | `usage.cacheRead` |
+| `cacheWriteInput` | `usage.cacheWrite` |
+| `output` | `usage.output` |
+| `reasoning` | `usage.reasoningTokens` (absent → 0) |
+
+`usage.input` is non-cached input only; `usage.output` already includes thinking and tool-call arguments, and
+`reasoningTokens` is a subset of it (absent when the provider does not report it). `usage.totalTokens` and
+`usage.orchestration` are not used (see approximations).
+
+#### Metadata
+
+- `project` = basename of the header `cwd` (split on `/` and `\`); null before the header is read.
+- `model` = `message.model` of the latest assistant response created or updated in this file.
+- `isSubagent` = the file's path relative to its root has three or more components (it lives inside a session's
+  artifacts folder: task sub-agents, advisors, seance consults). The header's `parentSession` is not used (forks and
+  branched main sessions carry it too).
+- `lastLineMs` = the latest parseable `timestamp` of the header and of every entry that is not copied history,
+  including entries ignored by deduplication and entries without usage.
+
+#### Deduplication and copied history
+
+- The key combines the entry `id` with the message's own `timestamp`; both survive every copy omp makes, and omp's
+  statistics deduplicate on the same pair (first file wins). The shared dedupe set (3.4) applies.
+- Copies with a fresh header: `/fork`, `/tree` branches, `--fork`, seance consults, the move to a sibling file when
+  another process owns the session, `persistCopy`. Copied entries keep their `id` and `timestamp` while the new header
+  gets the current time, so the copied-history rule removes them even when the source file is gone. A header
+  timestamp is set only when a session identity is created, never by lazy materialization or rewrites.
+- Imports: `/resume @claude` converts a Claude Code transcript into a new omp session, keeping each record's original
+  timestamp and Claude's usage under new entry ids (`/resume @codex` imports no usage). Those API calls are already
+  counted under `claudeCode` with other keys; the copied-history rule removes them.
+- Copies without a fresh header: forks and moves also copy the source's artifacts folder in the background, which
+  duplicates its sub-agent transcripts byte for byte. Only the dedupe set removes them; the copies are extra idle
+  agents without responses of their own.
+- Rewrites of the same file (migrations, `/rename` without a title slot, discarding a failed retry turn, recovery,
+  `omp gc --compress` on macOS, which replaces the file): section 5 resets the file and the same keys merge as
+  same-file updates. A response removed by a rewrite stays recorded.
+- Resume appends to the same file.
+
+#### Known approximations
+
+- `usage.orchestration` (provider-side orchestration tokens: billed and part of `totalTokens`, but not part of the
+  conversation) is not counted, so normalized `input + output` can be lower than `totalTokens`.
+- Error and aborted responses count in totals only; their partial streams never contribute speed.
+- In-flight state is inferred from neighbouring records. A brand-new session has no file until its first assistant
+  message completes, so the first request of every new session is invisible while in flight (it appears with its full
+  timing when it ends).
+- Agent-level retries (overload, rate limit, network) start a new request without writing a record: the phase stays
+  `idle` during the back-off and the retried request; its response still has exact timing.
+- Interrupting while tools run writes aborted tool results and ends the turn without a final record: the phase shows
+  `generating` until the 300-second staleness rule.
+- In-provider retries keep the original `timestamp`, so their back-off lowers the measured speed. Providers that run
+  tools inside one stream (Cursor exec channel, Devin, GitLab Duo workflows) include that tool time in `duration`.
+- Calls omp does not record are not counted (compaction summaries, titles, branch summaries, unpersisted refusals and
+  empty error turns, every side call before 18.1); totals match `omp stats`, not the provider bill.
+- GitLab Duo writes no `duration`; before 18.1 its responses end at the entry timestamp (a few ms after the stream).
+- Sub-agents nested deeper than the depth limit are not tracked.
+- Derived from the omp source (v18.12.6, evidence in `spec/research/omp.md`); not yet verified against real session
+  files.
+
+### 4.8 Antigravity
+
+Google Antigravity (the `agy` CLI, which replaced Gemini CLI for personal accounts on 2026-06-18; the 2.x desktop app;
+the Antigravity IDE; IDE extensions) runs a local language server that keeps one SQLite database per conversation.
+Every model call is a `PLANNER_RESPONSE` step row that carries its own usage and timestamps. Evidence:
+`spec/research/antigravity.md`.
+
+#### Format eras
+
+| Era | Conversation store | Effect on these rules |
+| --- | --- | --- |
+| Antigravity IDE 1.x, agy before 1.0.7 | `conversations/<id>.pb`, `implicit/<id>.pb`: encrypted protobuf | out of scope (never decrypted) |
+| agy 1.0.7 – 1.4.4, desktop app and IDE 2.x (since about June 2026) | `conversations/<id>.db`: SQLite (WAL) with protobuf blobs | read (below) |
+| forks in agy 1.2.17 | both `<id>.pb` (at fork time) and `<id>.db` (once the fork continues) | only the `.db` |
+| newer builds | also `brain/<id>/.system_generated/logs/transcript.jsonl` | out of scope (no usage) |
+
+The database schema (`PRAGMA user_version = 1`, 7 tables) and the protobuf field numbers below are unchanged from agy
+1.0.7 to 1.4.4; the IDE writes the same schema (verified at 2.2.1).
+
+#### Stores and discovery
+
+- Stores (section 2): `~/.gemini/antigravity-cli` (CLI), `~/.gemini/antigravity` (desktop app, IDE extensions, IDE
+  1.x), `~/.gemini/antigravity-ide` (IDE 2.x). A store is the language server's `--app_data_dir`; no environment
+  variable moves it. A store folder whose name ends in `-backup` (`antigravity-backup` holds a copy of `antigravity`)
+  is never read, not even when the user setting names it. A user setting that names a folder called `conversations`
+  is used as that folder directly.
+- Discovery: regular files (never symlinks) directly inside `<store>/conversations/` whose name is a UUID (8-4-4-4-12
+  hexadecimal digits, any case) followed by `.db`. Not sessions: `*.db-wal`, `*.db-shm`, `*.pb`, `implicit/`,
+  `*.trajectory.json` (sidecars of third-party exporters), `conversation_summaries.db` (in the store folder), `brain/`,
+  `annotations/`, `log/`.
+- Each database is one agent: agent id = absolute path of the `.db`; conversation id = its file name without `.db`. It
+  counts as one file for discovery statistics and the 20 000-file limit.
+- Gemini CLI (4.6) never reads below these stores, so nothing is counted twice between the two sources.
+
+#### Opening and querying
+
+Each database is opened with the rules of 4.5: read-only (`mode=ro`, never written), busy timeout 2 s, short read
+transactions; when the header says WAL (bytes 18 and 19 are both 2) and no `-wal` file exists (a closed
+conversation), open with `immutable=1`; otherwise open `mode=ro`, falling back to `immutable=1` only when no `-wal`
+file exists; an immutable connection is dropped on the next change of the `.db` or as soon as a `-wal` appears. Never
+create a file. A database that cannot be opened or queried contributes nothing and is retried on its next change; one
+without a `steps` table with the columns below carries the warning `unsupportedFormat` and contributes nothing (no agent).
+
+Only these queries run (`?` = the cursors of 5.4, `-1` for a complete read). The size guards keep large blobs unread:
+`gen_metadata` rows embed the whole prompt and reach hundreds of MB, so a row whose `size` column exceeds 1 MiB is
+never read, even when its blob would be small.
+
+```sql
+SELECT idx, step_type, status, CASE WHEN length(metadata) <= 1048576 THEN metadata END FROM steps WHERE idx > ? ORDER BY idx, rowid
+SELECT idx, CASE WHEN typeof(size) = 'integer' AND size <= 1048576 AND length(data) <= 1048576 THEN data END FROM gen_metadata WHERE idx > ? ORDER BY idx, rowid
+SELECT idx, CASE WHEN length(data) <= 1048576 THEN data END FROM executor_metadata WHERE idx > ? ORDER BY idx, rowid
+SELECT CASE WHEN length(data) <= 1048576 THEN data END FROM trajectory_metadata_blob ORDER BY rowid LIMIT 1
+```
+
+`step_payload` (prompts, responses, file contents) and the other blob columns are never read. NULL integers count as
+0; a NULL blob (absent or too large) is skipped without counting as malformed. The tables have no primary key: rows
+with the same `idx` are processed in `rowid` order, the later one replacing the earlier.
+
+#### Protobuf wire format
+
+Blobs are protobuf messages, decoded by a small hand-written walker (no protobuf library). A message is a sequence of
+fields; each starts with a varint key, field number `key >> 3`, wire type `key & 7`:
+
+| Wire type | Payload |
+| --- | --- |
+| 0 | varint: at most 10 bytes, 7 bits each, least significant group first |
+| 1 | 8 bytes (fixed64, double) |
+| 2 | a varint length, then that many bytes (string, bytes, nested message, packed repeated scalars) |
+| 5 | 4 bytes (fixed32, float) |
+
+Field number 0, wire types 3, 4 (groups), 6 and 7, a varint longer than 10 bytes, and a field that runs past the end of
+its buffer make the blob malformed. Unknown fields of every valid wire type are skipped, and so is a known field
+whose wire type differs from the one its type uses (except packed repeated scalars). proto3 omits default values:
+a missing number is 0, a missing string is empty, a missing message is absent. A non-repeated field that occurs more
+than once takes its last occurrence; where one value of a repeated message field is needed, its first occurrence is
+used. Repeated scalars (`step_indices`) are accepted packed (wire type 2) and unpacked (wire type 0). Varints are
+unsigned 64-bit; `int32` and `int64` fields reinterpret them as signed 64-bit (negative `int32` values are 10-byte
+varints). Strings are UTF-8 (invalid sequences become U+FFFD). A `Timestamp` is `{1: seconds (int64), 2: nanos
+(int32)}`; it is valid when `seconds > 0` and then equals `seconds * 1000 + nanos div 1 000 000` ms (nanos outside
+0 … 999 999 999 count as 0). A blob that is malformed, including any nested message these rules read, counts as one
+malformed line and is ignored.
+
+Fields used (all others are ignored):
+
+| Message (column) | Fields (number) |
+| --- | --- |
+| `CortexStepMetadata` (`steps.metadata`) | `created_at` 1, `viewable_at` 6, `finished_generating_at` 7, `completed_at` 8, `model_usage` 9, `last_completed_chunk_at` 22, `started_at` 32 (all `Timestamp` except 9) |
+| `ModelUsageStats` | `input_tokens` 2, `output_tokens` 3, `cache_read_tokens` 5, `message_id` 7 (string), `thinking_output_tokens` 9, `response_output_tokens` 10, `response_id` 11 (string) |
+| `CortexStepGeneratorMetadata` (`gen_metadata.data`) | `chat_model` 1, `step_indices` 2 (repeated uint32) |
+| `ChatModelMetadata` | `response_model` 19 (string), `model_display_name` 21 (string) |
+| `ExecutorMetadata` (`executor_metadata.data`) | `termination_reason` 1 (enum), `last_step_idx` 3 (int32), `cascade_config` 10 → `planner_config` 1 → `model_name` 28 (string) |
+| `CortexTrajectoryMetadata` (`trajectory_metadata_blob.data`) | `workspaces` 1 (repeated) → `workspace_folder_absolute_uri` 1 (string); `created_at` 2; `parent_conversation_id` 5 (string); `workspace_uris` 7 (repeated string); `subagent_spec` 8; `nesting_depth` 17 (int32) |
+
+Column enums: `step_type` 14 = `USER_INPUT`, 15 = `PLANNER_RESPONSE`; every other value is a tool or system step (for
+example 8 `VIEW_FILE`, 21 `RUN_COMMAND`, 127 `INVOKE_SUBAGENT`). `status` 1 `PENDING`, 2 `RUNNING`, 3 `DONE`,
+4 `INVALID`, 5 `CLEARED`, 6 `CANCELED`, 7 `ERROR`, 8 `GENERATING`, 9 `WAITING`, 11 `QUEUED`, 12 `INTERRUPTED`.
+*Open* statuses are 1, 2, 8, 9 and 11; every other value is *terminal*. `ModelUsageStats.model` and
+`CortexStepMetadata.generator_model` are enums whose current values are placeholders; they are not used.
+
+#### Step rows
+
+The trajectory metadata gives `createdMs` (= `created_at`), `project`, `isSubagent` and the parent link (6.7); while
+it is missing, every read retries it.
+
+Rows of `steps` are processed in `idx` order:
+1. Skip a row whose `metadata` is NULL. Skip a row and count one malformed line when its `metadata` does not decode or
+   a token field of its `model_usage` exceeds 10 000 000.
+2. If `createdMs` is known, `created_at` is valid and `created_at < createdMs - 2000`, the row is copied history (a
+   fork): ignore it completely.
+3. Every valid timestamp of the row's metadata counts for `lastLineMs`. The row with the highest `idx` processed so far
+   is the *latest row* (a re-read row replaces its earlier version).
+4. When `step_type == 15`, the status is terminal, `model_usage` is present and one of its five token fields is > 0,
+   the row is a response:
+   - `key` = `model_usage.response_id` when non-empty, else `model_usage.message_id` when non-empty, else
+     `"antigravity:" + conversation id + ":" + idx`. If the key was first seen in another database, no response.
+   - `endMs` = `finished_generating_at`, else `last_completed_chunk_at`, else `completed_at`; `startMs` = `created_at`
+     (null when invalid). When none of the three is valid, `endMs` = the latest valid timestamp of the row and
+     `startMs = null`; a row without any valid timestamp gives no response.
+   - Status 6, 7 or 12 (cancelled, error, interrupted) → `startMs = null` (totals only).
+   - `final = true`, `model` as in Metadata, tokens below. A later version of the row is an update (4.4).
+
+A `PLANNER_RESPONSE` row with an open status is in flight and produces no response yet, even when it already carries
+usage.
+
+#### Phase
+
+After every read (the startup read included) the phase is a function of the rows read so far:
+1. No latest row → `idle`.
+2. An `executor_metadata` row with `termination_reason != 0` and `last_step_idx >=` the latest row's `idx` (the run that
+   contains it has ended) → `idle`.
+3. Otherwise by the latest row:
+
+| Latest row | Phase |
+| --- | --- |
+| `PLANNER_RESPONSE`, open status | `generating`, `inFlightStartMs = created_at` |
+| `PLANNER_RESPONSE`, terminal status | `idle` (a response with tool calls is followed by its tool rows at once) |
+| `USER_INPUT`, status 6, 7 or 12 | `idle` |
+| `USER_INPUT`, any other status | `generating`, `inFlightStartMs = created_at` (the model call follows at once) |
+| other step, open status | `tools` |
+| other step, `DONE` | `generating`, `inFlightStartMs = completed_at`, else `created_at` (the next model call) |
+| other step, any other terminal status | `idle` |
+
+An invalid timestamp makes `inFlightStartMs` null. The staleness rule (6.7) applies.
+
+#### Timing model
+
+- A `PLANNER_RESPONSE` step is created when the planner starts the model call and is filled while the stream arrives;
+  `finished_generating_at` marks the end of generation. The duration therefore includes time to first token and the
+  planner's retries of the same call (`retry_infos`), as with Gemini CLI.
+- The matching `gen_metadata` row's `time_to_first_token + streaming_duration` should be close to `endMs - startMs`; it
+  is not used (and agy ≤ 1.1.17's `chat_start_metadata.created_at` neither).
+
+#### Tokens
+
+`model_usage` of the planner row (`ModelUsageStats`); missing fields are 0.
+
+| Field | Value |
+| --- | --- |
+| `input` | `input_tokens + cache_read_tokens` |
+| `cachedInput` | `cache_read_tokens` |
+| `cacheWriteInput` | 0 |
+| `output` | `output_tokens`; when it is 0, `thinking_output_tokens + response_output_tokens` |
+| `reasoning` | `thinking_output_tokens` |
+
+Unlike Gemini CLI's `usageMetadata`, `input_tokens` excludes cached input, and `output_tokens` already includes
+thinking (`output_tokens == thinking_output_tokens + response_output_tokens` on every audited real row).
+`cache_write_tokens` (4) is deprecated and 0.
+
+#### Metadata
+
+- `model` of a response: `chat_model.response_model` of the `gen_metadata` row with the lowest `idx` whose
+  `step_indices` contains the row's `idx`, else that row's `chat_model.model_display_name`; else the `model_name` of
+  the `executor_metadata` row with the smallest `last_step_idx >=` the row's `idx` (ties: lowest `idx`); else null.
+  Empty strings count as missing. The model is resolved from the rows read so far; when a later read changes it, the
+  response is updated (4.4). Serving variants (`-exp-b`) and routing labels (`gemini-pro-default`) are shown as they
+  are.
+- Agent `model` = the model of the response with the highest `idx` that has one.
+- `project` = basename of the first `workspace_uris` entry, else of the first `workspaces` entry's
+  `workspace_folder_absolute_uri`, else null. A URI (a scheme of two or more characters, such as `file:` or
+  `vscode-remote:`) loses its scheme and authority (`//host`) and is percent-decoded as UTF-8 (invalid escapes stay as
+  they are) before splitting on `/` and `\`; `file:///c%3A/Users/dev/projects/orbit` gives `orbit`.
+- `isSubagent` = `parent_conversation_id` non-empty, or `nesting_depth > 0`, or `subagent_spec` present.
+- `lastLineMs` = the latest valid timestamp among the processed rows' metadata and `createdMs`.
+
+#### Deduplication and copied history
+
+- The shared dedupe set (3.4) applies to response keys: the first database that emits a key owns it. This removes the
+  same conversation found in two stores (some machines hold byte copies in `antigravity` and `antigravity-ide`) and
+  history copied by `/fork`.
+- The copied-history rule (step 2) also drops forked rows that have no response id.
+- `/rewind` and cleared steps never remove counted responses.
+
+#### Known approximations
+
+- Antigravity timing semantics are not yet verified against real data: the meaning of `created_at` and
+  `finished_generating_at` for planner rows is inferred from field names, Windsurf-era semantics and one sanitized
+  timing sample (1.65 s and 2.36 s for two short answers).
+- Whether a planner row with status `GENERATING` is written before its stream ends is unknown; if it is not, the
+  in-flight phase comes only from the user-input and finished-tool rules.
+- Error, cancelled and interrupted planner responses count in totals only.
+- Model calls that are not planner steps (context checkpoints, titles, summaries, side questions) exist only in
+  `gen_metadata`, which is not scanned for responses, and usage of failed retry attempts (`retry_infos[].usage`) is
+  not counted: totals are lower than Antigravity's own `/usage`.
+- Usage written to a row after it reached a terminal status is seen only by the next complete read (startup, history).
+- Legacy encrypted conversations, transcript-only conversations, the Gemini macOS app's Antigravity integration and
+  the Python SDK runtime contribute nothing.
+- Derived from public reverse-engineering projects and the protobuf descriptors of agy 1.0.10 – 1.4.4 (evidence in
+  `spec/research/antigravity.md`); not yet verified against real conversation databases.
+
 ## 5. Reading files
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
@@ -446,6 +843,24 @@ is tracked shows up as a new file whose response keys are already owned by the `
 twice. Reading or re-reading a whole compressed file (or a legacy Gemini `.json`) while running happens off the
 live loop, so live updates never pause; its results are applied in one step when the read completes.
 
+### 5.4 Antigravity conversation databases
+Real users have hundreds of small conversation databases (one audit: 381); only recently changed ones are opened.
+
+- Startup: a database's modification time is the newer of `<id>.db` and `<id>.db-wal`; with that time it takes part
+  in the startup reading order of section 5 (and of section 8). Databases modified within `todayStartMs - 15 min` or
+  later are read completely (seeded). Older databases are not opened; the first time one changes while running, it is
+  read completely off the live loop (like a whole compressed file, 5.3) and its results are applied in one step.
+- Change detection: the file watcher on every `conversations` folder, plus the 1-second fallback, which stats the
+  `.db` and `.db-wal` of databases modified in the last 2 minutes, plus rediscovery every 10 seconds (new databases are
+  read completely). A change of either file marks the database dirty. The language server writes the WAL continuously
+  while a conversation is open, so a dirty database is read at most once every 500 ms.
+- Incremental read, one short transaction: `steps` rows with `idx` above the highest `idx` read so far, plus the current
+  versions of the rows last seen with an open status (`idx IN (…)`); `gen_metadata` and `executor_metadata` rows above
+  their own `idx` cursors; the trajectory metadata until it is found. Then the phase (4.8) is evaluated. A new identity
+  of the `.db` file resets the database (parser state, never the dedupe set) and reads it completely.
+- Connections: a connection idle for 60 seconds is closed, and at most 16 stay open (the least recently changed is
+  closed first). Reopening follows the open rules of 4.8.
+
 ## 6. Engine
 
 All engine functions take an explicit `nowMs` so they are deterministic and testable. Production calls them every
@@ -484,7 +899,8 @@ Per-source and per-agent live rates use the same formula restricted to that sour
 ### 6.4 Events (live only, never during seeding)
 - `responseCompleted` — the first emission of a key (4.4) whose `endMs >= nowMs - 120 000`, carrying source,
   project, model, output, total, duration and speed. Older responses that appear later (a whole-file source such as a
-  legacy Gemini `.json` or a `.jsonl.zst` read for the first time while running) update totals silently.
+  legacy Gemini `.json`, a `.jsonl.zst` read for the first time while running, or an older Antigravity database read
+  on its first change, 5.4) update totals silently.
 - `newPeak` — when the measured+estimated live output exceeds the previous peak of today by at least 1 tok/s, is at
   least 20 tok/s, and no `newPeak` was emitted in the last 60 seconds.
 
@@ -520,6 +936,12 @@ Parent links (`parentId`, an agent id or null):
   `[A-Za-z0-9_-]` replaced by `_`, equals `<dir>`; several candidates → prefer `.jsonl` over `.json`, then the
   earliest header `startTime`, then ordinal path. Nested sub-agents therefore attach to the main session; v0.33 – v0.36
   sub-agents (directly in `chats/`) have no parent.
+- omp: a file `<dir>/<name>.jsonl` whose path relative to its root has three or more components has the parent
+  `<dir>.jsonl` when that file is a tracked agent (a nested sub-agent attaches to the sub-agent that started it).
+- Antigravity: the tracked Antigravity database whose conversation id equals this database's
+  `parent_conversation_id` (compared case-insensitively); several (copies in two stores) → prefer the one in the same
+  `conversations` folder, then the ordinally smallest path. Sub-agents (browser, `invoke_subagent`, image generation)
+  are separate conversations; parallel conversations of the agent manager and battle-mode forks are independent agents.
 - Self references and cycles resolve to null.
 
 List:
@@ -558,10 +980,12 @@ Daily statistics are computed from the complete logs and kept permanently, so th
 logs (Claude Code removes transcripts after 30 days by default). Only aggregates are stored — never requests, keys in
 plain text, prompts or content.
 
-Scope: every discovered file of every enabled source with no date filter and no file-count limit (Codex `.jsonl.zst`
-and all Gemini roots with legacy `.json` included), plus Codex `archived_sessions` (the sibling of the sessions root)
-and the whole OpenCode database. Parsing uses exactly the rules of section 4 (same state
-machines, dedupe, copied-history rules) over whole files, in startup order (5).
+Scope: every discovered file of every enabled source with no date filter and no file-count limit (Codex `.jsonl.zst`,
+all Gemini roots with legacy `.json`, every omp root including profiles, and every Antigravity conversation database
+of every store included), plus Codex `archived_sessions` (the sibling of the sessions root) and the whole OpenCode
+database. Parsing uses exactly the rules of section 4 (same state machines, dedupe, copied-history rules) over whole
+files and complete database reads, in startup order (5; an Antigravity database's time is the newer of its `.db` and
+`-wal`, 5.4).
 
 Per local calendar day (date of `endMs`, `YYYY-MM-DD` in the computer's time zone at computation time) and source:
 `requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning`, `measuredOutput` and `measuredMs`
@@ -571,7 +995,8 @@ with at least one response), and per model `requests` and `output`. The day's av
 `peakToday` (all sources together), repeated on every source row of that day; a UI shows it only for all sources and
 combines rows with max, never sum.
 
-Incremental cache: for each file keep its identity (path, size, modification time), the 64-bit FNV-1a hashes of the
+Incremental cache: for each file keep its identity (path, size, modification time; for an Antigravity database also
+the size and modification time of its `-wal`), the 64-bit FNV-1a hashes of the
 response keys it owns, and its per-day contributions. On launch and periodically (every 10 minutes and at midnight),
 unchanged files reuse their contributions; new or changed files are re-parsed completely, skipping keys owned by any
 other file (ownership follows startup order); files that no longer exist keep their contributions. Daily totals are

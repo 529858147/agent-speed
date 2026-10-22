@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import antigravity_fixtures  # noqa: E402
 import gemini_fixtures  # noqa: E402
+import omp_fixtures  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
 T0 = int(datetime(2026, 10, 20, 10, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
@@ -466,16 +468,36 @@ order += gemini["order"]
 files.update(gemini["files"])
 mtimes.update(gemini["mtimes"])
 
+# --- omp ------------------------------------------------------------------------
+omp = omp_fixtures.write_fixtures(ROOT)
+assert min(omp["mtimes"].values()) > max(mtimes.values())
+order += omp["order"]
+files.update(omp["files"])
+mtimes.update(omp["mtimes"])
+
+# --- Antigravity: one SQLite database per conversation ---------------------------
+antigravity = antigravity_fixtures.write_fixtures(ROOT)
+assert min(antigravity["mtimes"].values()) > max(mtimes.values())
+mtimes.update(antigravity["mtimes"])
+
 with open(os.path.join(ROOT, "parser-expected.json"), "w", encoding="utf-8") as f:
-    json.dump({"_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database. Paths are "
-                           "relative to this folder. `mtimes` (Unix ms) give the modification times that produce "
-                           "`order`; apply them to a copy of this folder before computing daily history. Gemini "
-                           "`traces` give the phase after feeding a .jsonl file up to and including physical line "
-                           "`afterLine` (after the files before it in `order`).",
+    json.dump({"_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database, then the "
+                           "Antigravity databases in `antigravity.order` (same dedupe set). Paths are relative to this "
+                           "folder. `mtimes` (Unix ms) give the modification times that produce both orders; apply "
+                           "them to a copy of this folder before computing daily history. `traces` (Gemini, omp) give "
+                           "the phase after feeding a file up to and including physical line `afterLine` (after the "
+                           "files before it in `order`). omp: the folder `omp` plays ~/.omp, so its automatic roots "
+                           "are omp/agent/sessions and omp/profiles/*/agent/sessions; `omp.discover` lists what "
+                           "discovery finds there. Antigravity: the folder `antigravity` plays ~/.gemini (stores "
+                           "antigravity-cli, antigravity, antigravity-ide); each database is one agent whose id is its "
+                           "path; `{\"unsupported\": true}` marks a database that contributes no agent; reading must "
+                           "not create any file (no -wal or -shm).",
                "order": order, "files": files, "mtimes": mtimes,
                "opencode": {"database": opencode_rel, "agents": opencode_expected},
-               "gemini": {"discover": gemini["discover"], "traces": gemini["traces"]}}, f, indent=2,
-              ensure_ascii=False)
+               "gemini": {"discover": gemini["discover"], "traces": gemini["traces"]},
+               "omp": {"discover": omp["discover"], "traces": omp["traces"], "tailReads": omp["tailReads"]},
+               "antigravity": {"order": antigravity["order"], "discover": antigravity["discover"],
+                               "databases": antigravity["databases"]}}, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
 # --- Engine cases -------------------------------------------------------------

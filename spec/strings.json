@@ -954,6 +954,30 @@
     "en": "The Gemini CLI conversation folder.",
     "ja": "Gemini CLI の会話記録フォルダです。"
   },
+  "source.omp": {
+    "zh-Hant": "omp",
+    "zh-Hans": "omp",
+    "en": "omp",
+    "ja": "omp"
+  },
+  "source.antigravity": {
+    "zh-Hant": "Antigravity",
+    "zh-Hans": "Antigravity",
+    "en": "Antigravity",
+    "ja": "Antigravity"
+  },
+  "settings.sources.ompHint": {
+    "zh-Hant": "omp（oh-my-pi）的 sessions 資料夾，通常是 ~/.omp/agent/sessions。未選擇資料夾時，也會自動讀取各個具名設定檔。",
+    "zh-Hans": "omp（oh-my-pi）的 sessions 文件夹，通常是 ~/.omp/agent/sessions。未选择文件夹时，也会自动读取各个命名配置文件。",
+    "en": "The sessions folder of omp (oh-my-pi), usually ~/.omp/agent/sessions. Unless you choose a folder, named profiles are included automatically.",
+    "ja": "omp（oh-my-pi）の sessions フォルダです。通常は ~/.omp/agent/sessions です。フォルダを選ばない場合は、名前付きプロファイルも自動で読み込みます。"
+  },
+  "settings.sources.antigravityHint": {
+    "zh-Hant": "內含 conversations 的 Antigravity 資料夾，例如 ~/.gemini/antigravity-cli。命令列、桌面版與 IDE 的資料夾會自動讀取，對話紀錄只會讀取、不會變更。",
+    "zh-Hans": "包含 conversations 的 Antigravity 文件夹，例如 ~/.gemini/antigravity-cli。命令行、桌面版与 IDE 的文件夹会自动读取，对话记录只会读取、不会更改。",
+    "en": "The Antigravity folder that contains conversations, e.g. ~/.gemini/antigravity-cli. The CLI, desktop app and IDE folders are read automatically; conversations are only read, never changed.",
+    "ja": "conversations を含む Antigravity のフォルダです（例：~/.gemini/antigravity-cli）。CLI、デスクトップアプリ、IDE のフォルダは自動で読み込みます。会話は読み取るだけで、変更しません。"
+  },
   "warning.unsupportedFormat": {
     "zh-Hant": "%@ 的紀錄格式太舊，請更新該工具",
     "zh-Hans": "%@ 的记录格式太旧，请更新该工具",

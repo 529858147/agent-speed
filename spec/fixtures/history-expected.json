@@ -127,6 +127,50 @@
     },
     {
       "date": "2026-10-20",
+      "source": "omp",
+      "requests": 25,
+      "input": 288101,
+      "cachedInput": 198300,
+      "cacheWriteInput": 80920,
+      "output": 7685,
+      "reasoning": 3527,
+      "measuredOutput": 7416,
+      "measuredMs": 76035,
+      "unfinalized": 0,
+      "agents": 9,
+      "models": {
+        "claude-haiku-5": {
+          "requests": 3,
+          "output": 115
+        },
+        "claude-opus-5-5": {
+          "requests": 11,
+          "output": 2182
+        },
+        "claude-sonnet-4-5": {
+          "requests": 2,
+          "output": 275
+        },
+        "claude-sonnet-5-5": {
+          "requests": 4,
+          "output": 333
+        },
+        "duo-chat-sonnet-5-5": {
+          "requests": 1,
+          "output": 90
+        },
+        "gpt-5.5": {
+          "requests": 3,
+          "output": 4626
+        },
+        "gpt-5.5-mini": {
+          "requests": 1,
+          "output": 64
+        }
+      }
+    },
+    {
+      "date": "2026-10-20",
       "source": "opencode",
       "requests": 4,
       "input": 7909,
@@ -150,6 +194,86 @@
         "claude-sonnet-5-5": {
           "requests": 1,
           "output": 120
+        }
+      }
+    },
+    {
+      "date": "2026-10-21",
+      "source": "antigravity",
+      "requests": 16,
+      "input": 106830,
+      "cachedInput": 74100,
+      "cacheWriteInput": 0,
+      "output": 3357,
+      "reasoning": 1366,
+      "measuredOutput": 3255,
+      "measuredMs": 32700,
+      "unfinalized": 0,
+      "agents": 8,
+      "models": {
+        "": {
+          "requests": 1,
+          "output": 45
+        },
+        "Gemini 3.1 Pro (High)": {
+          "requests": 1,
+          "output": 350
+        },
+        "gemini-3.1-flash": {
+          "requests": 8,
+          "output": 542
+        },
+        "gemini-3.1-flash-b": {
+          "requests": 1,
+          "output": 30
+        },
+        "gemini-3.1-flash-lite": {
+          "requests": 1,
+          "output": 200
+        },
+        "gemini-3.1-pro": {
+          "requests": 1,
+          "output": 1200
+        },
+        "gemini-3.1-pro-high": {
+          "requests": 1,
+          "output": 480
+        },
+        "gemini-3.1-pro-high-exp-b": {
+          "requests": 1,
+          "output": 210
+        },
+        "gemini-3.1-pro-low": {
+          "requests": 1,
+          "output": 300
+        }
+      }
+    },
+    {
+      "date": "2026-10-21",
+      "source": "omp",
+      "requests": 3,
+      "input": 4300,
+      "cachedInput": 1200,
+      "cacheWriteInput": 0,
+      "output": 242,
+      "reasoning": 68,
+      "measuredOutput": 210,
+      "measuredMs": 3800,
+      "unfinalized": 0,
+      "agents": 1,
+      "models": {
+        "claude-sonnet-5-5": {
+          "requests": 1,
+          "output": 210
+        },
+        "duo-chat-sonnet-5-5": {
+          "requests": 1,
+          "output": 20
+        },
+        "gpt-5.5-mini": {
+          "requests": 1,
+          "output": 12
         }
       }
     }
