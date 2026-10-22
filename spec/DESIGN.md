@@ -754,11 +754,15 @@ its native scale):
 
 | Scenario | macOS | Windows |
 | --- | --- | --- |
-| Idle, any style | ≤ 0.2 % | ≤ 0.3 % |
-| Cruise (30 fps) | ≤ 1.5 % | ≤ 3 % |
-| Redline / overdrive, Standard | ≤ 3 % | ≤ 6 % |
-| Redline / overdrive, Max | ≤ 4 % | ≤ 8 % |
+| Idle, any style (incl. the 6 s sign of life) | ≤ 0.5 % | ≤ 0.5 % |
+| Cruise (30 fps) | ≤ 2.5 % | ≤ 3 % |
+| Redline / overdrive, Standard | ≤ 4.5 % | ≤ 6 % |
+| Redline / overdrive, Max | ≤ 5 % | ≤ 8 % |
 | Eight orbs at redline, Standard | ≤ 12 % | ≤ 25 % |
+
+On macOS the system's own cost per presented frame (Metal drawable, commit, pacing; ≈ 0.4–0.6 ms of CPU) dominates
+the orb's own ≈ 0.1–0.2 ms, so the budget is a frame-count budget: keep the frame rates of the table above and never
+present a frame that would be identical to the previous one.
 | GPU time per orb frame (S = 240, 2× / 200 %) | ≤ 1.0 ms | ≤ 1.0 ms |
 | Memory per orb (surfaces, buffers, atlases) | ≤ 12 MB | ≤ 12 MB |
 
