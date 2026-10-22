@@ -1002,6 +1002,18 @@
     "en": "All Sources",
     "ja": "すべてのソース"
   },
+  "history.range.today": {
+    "zh-Hant": "今天",
+    "zh-Hans": "今天",
+    "en": "Today",
+    "ja": "今日"
+  },
+  "history.range.yesterday": {
+    "zh-Hant": "昨天",
+    "zh-Hans": "昨天",
+    "en": "Yesterday",
+    "ja": "昨日"
+  },
   "history.range.7d": {
     "zh-Hant": "7 天",
     "zh-Hans": "7 天",
@@ -1098,6 +1110,12 @@
     "en": "%@ vs previous period",
     "ja": "前の期間比 %@"
   },
+  "history.summary.vsPreviousDay": {
+    "zh-Hant": "比前一天 %@",
+    "zh-Hans": "比前一天 %@",
+    "en": "%@ vs the day before",
+    "ja": "前日比 %@"
+  },
   "history.chart.output": {
     "zh-Hant": "每日輸出",
     "zh-Hans": "每日输出",
@@ -1109,6 +1127,18 @@
     "zh-Hans": "平均速度",
     "en": "Average speed",
     "ja": "平均速度"
+  },
+  "history.chart.bySource": {
+    "zh-Hant": "來源分布",
+    "zh-Hans": "来源分布",
+    "en": "By source",
+    "ja": "ソース別"
+  },
+  "history.chart.byModel": {
+    "zh-Hant": "模型分布",
+    "zh-Hans": "模型分布",
+    "en": "By model",
+    "ja": "モデル別"
   },
   "history.table.date": {
     "zh-Hant": "日期",

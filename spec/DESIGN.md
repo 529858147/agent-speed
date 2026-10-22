@@ -258,7 +258,13 @@ Opened from a source row (pre-selected source), the Today header's 歷史 button
 Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 
 1. **Toolbar** — leading: source picker (`history.allSources` plus every source with its color dot; sources without
-   any history are hidden). Center: range segmented control `7 天 · 30 天 · 90 天 · 今年 · 全部 · 自訂…`; 自訂 opens a
+   any history are hidden). Center: range segmented control `今天 · 昨天 · 7 天 · 30 天 · 90 天 · 今年 · 全部 · 自訂…`
+   (`history.range.today`, `history.range.yesterday`). A single-day range (今天, 昨天, or a custom range of one day)
+   compares with the day before (`history.summary.vsPreviousDay`), shows card sparklines over the 7 days ending on that
+   day with the selected day's point highlighted, replaces the daily chart with a breakdown of that day
+   (`history.chart.bySource` with 全部來源: one horizontal bar per source in its colour, sorted by output, with output,
+   share and average speed; with one source, `history.chart.byModel`: the same per model), and today's figures update
+   live (marked 進行中). The toolbar narrows the labels before it ever wraps. 自訂 opens a
    compact popover with two date pickers (`從` / `到`, clamped to the available data, the end never before the start)
    and `套用`. The resolved range is always spelled out under the title in the locale's date format (e.g.
    "2026/9/22 – 10/21 · 30 天"). Trailing: `匯出 CSV…` (the rows currently shown, locale-independent columns).
