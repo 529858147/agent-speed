@@ -103,6 +103,10 @@ dotnet test windows/tests/AgentSpeed.Presentation.Tests
 ```
 </details>
 
+## 友情链接
+
+- [LINUX DO 社区](https://linux.do/)
+
 ## 许可证
 
 [MIT](LICENSE) © 2026 zoefix

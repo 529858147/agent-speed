@@ -118,6 +118,10 @@ assets/     icon artwork
 install.sh  install.ps1
 ```
 
+## Friends
+
+- [LINUX DO community](https://linux.do/)
+
 ## License
 
 [MIT](LICENSE) © 2026 zoefix
