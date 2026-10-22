@@ -823,7 +823,8 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
       "redlineTotal": null,
       "titleTheme": null,
       "unit": "tokens",
-      "traffic": "sources"
+      "traffic": "sources",
+      "showName": null
     }
   ],
   "layouts": {
@@ -845,12 +846,14 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
 | `redlineOutput`, `redlineTotal` | `null` = the General redline of that metric; otherwise this orb's redline (same ranges). Heat, tiers and titles of the orb use it. |
 | `unit` | `"tokens"` (tok/s, default) or `"cost"` (the money unit of section 9); unknown → `"tokens"`. Copied by Add, Duplicate and Split. Heat, tiers and titles always follow tokens. |
 | `traffic` | `"sources"` (default: the traffic of the orb's own sources), `"machine"` (the whole computer) or `"off"`; absent (orbs saved by older builds) → `"sources"`, unknown → `"off"`. Copied by Add, Duplicate and Split; Merge keeps the target's. Older builds ignore it. Section 10. |
+| `showName` | `null` (default) follows the global `orbNames`; `true` / `false` shows or hides this orb's name plate (Name plate, below). Copied by Add, Duplicate and Split; Merge keeps the target's; absent or unknown → `null`. Older builds ignore it. |
 | `titleTheme` | `null` = the General title theme; otherwise a preset id or a custom set id (section 1, Title themes) naming this orb's titles, idle label and accessibility label. Deleting the custom set it names replaces it with that set's base preset (undo restores it); an unknown id counts as `null`. Added in this version without a format change: older builds ignore it. |
 | `layouts` | Positions per **display arrangement**: the key is the sorted list of connected display keys (macOS display UUID; Windows monitor device ID) joined with `+`. Each entry uses today's position record (edge-docked distance or fraction of the usable area, per axis) on the named display. At most 16 arrangements are kept (least recently used dropped). |
 
 Global (unchanged, shared by all orbs): Show floating orbs (master switch), Appearance, Language, metric, General
-redline, title theme (the default of every orb), Effects intensity, Celebrate new peaks, Response pulses. Effects stay
-global because the style already sets an orb's character.
+redline, title theme (the default of every orb), Effects intensity, Celebrate new peaks, Response pulses, name plates
+(`orbNames`: `"auto"` default, `"always"`, `"never"`; Name plate, below). Effects stay global because the style
+already sets an orb's character.
 
 **Arrangement changes.** When displays are connected, removed or rearranged, each orb takes its record from the layout
 of the new arrangement; if the arrangement is new, an orb keeps its record from the last arrangement when its display is
@@ -915,11 +918,125 @@ be removed (Remove is disabled; the master switch hides it).
   the screen edge is in the way, on the side facing the screen center, vertically centered; always clamped inside the
   usable area. Content: dot + name for up to two sources, else the first and `+n`; unavailable sources in secondary
   color with `source.notFound` / `source.disabled`. An all-sources orb shows `orbs.sources.all`, and only when more than
-  one orb exists (a single orb behaves exactly as today).
+  one orb exists (a single orb behaves exactly as today). While the orb shows a name plate, the chip is folded into the
+  plate instead of drawn as a second capsule (Name plate, below).
 - **Hover info line** inside the orb: `today.summary` over the orb's sources (today's output of those sources, the
   number of its agents).
 - **Settings highlight**: hovering, selecting or focusing an orb row in Settings rings that orb on the desktop (2 pt
   accent ring 4 pt outside the disc, 60 %, fading in over 0.15 s), so the user always knows which orb is which.
+
+### Name plate
+
+Each orb can carry its name on a small glass plate beside the disc — normally centered under it, the way a row of gauges
+carries engraved nameplates — so `Codex · Claude Code · Claude Desktop` reads at a glance on any wallpaper. Prototyped
+(2026-10-22) for every style in both appearances at 112, 148 and 196 pt on busy dark, light and photographic
+wallpapers, in tight rows, columns and clusters, with Latin, CJK, long and multi-source names.
+
+- **Chosen over**: lettering along the inside of the upper rim like a chronograph's brand ring (no free band in any
+  style: it runs into the LED arc and comet, the needle's graduations, the liquid's glass wall and the reactor's stator,
+  and sits at the 7 pt floor at 112); print on the dial above the value (that space holds the traffic readout and the
+  new-peak pill, and at 112 a name shrinks to `CL…`); a curved glass collar hugging the lower rim (charming alone, but
+  curved text reads worse, a row of them makes a wavy line, and long or CJK names tilt at the ends); plain text with a
+  shadow and no plate (breaks up on light and patterned wallpapers). One plate for all five styles: a mixed-style row
+  shares one baseline, and the plate repeats the orb's own glass instead of competing with any instrument.
+- **When it shows**: the orb's `showName` (`true` / `false`), else the global `orbNames`:
+
+  | `orbNames` | Plate |
+  | --- | --- |
+  | `"auto"` (default) | when two or more orbs are visible, or when the orb tracks some (not all) sources — so the classic single all-sources orb, and every migrated install, looks exactly as before |
+  | `"always"` | on every orb |
+  | `"never"` | on none |
+
+  Never drawn below S = 80 (`minimal` only: the plate would outweigh the orb's 7 pt title; the source chip still appears
+  on hover), nor while its orb is hidden.
+- **Content**: colour dots, then the orb's name (custom `name`, else automatic; data model above).
+  - Dots: one per tracked source in source order, at most three, each overlapping the previous by a third, the first in
+    front, separated by a 1 pt ring in the plate color; source colors as the bezel (light: darkened 10 %). All sources:
+    one spectrum dot, a conic gradient through every source color in source order from 12 o'clock. An unavailable
+    source: a hollow ring (stroke `max(1 pt, 0.18 d)`) in the secondary color.
+  - Text in neutral ink, never in a source color (sky, blue or pink text on glass is weak, and the dots already tie the
+    plate to the bezel and the agent dots). Latin as written, no capitals or wide tracking: names are proper nouns
+    (`omp`, `DeepSeek`), and capitals belong to the speed title.
+  - Shortening within the width budget (below); the type never shrinks: automatic pair `A + B` → `A +1`
+    (`orbs.name.more`) → `A… +1`; automatic `A +n` → `A… +n`; one source or a custom name → tail ellipsis `…` on a
+    grapheme boundary. `Claude Code + Claude Desktop` needs 171 pt at 112, 189 at 148 and 222 at 196, so in a tight row
+    it reads `Claude Code +1`, and hovering expands it (chip, below).
+- **Geometry** (pt):
+
+  | Measure | Rule | 112 | 148 | 196 |
+  | --- | --- | --- | --- | --- |
+  | Text size `f` | 0.066 S rounded to 0.5, clamped 9–12 | 9 | 10 | 12 |
+  | Plate height `h` | round(1.78 f), corner radius h / 2 | 16 | 18 | 21 |
+  | Gap to the disc `g` | round(0.034 S), clamped 4–7 | 4 | 5 | 7 |
+  | Dot `d` | max(5, 0.6 f) | 5.4 | 6 | 7.2 |
+  | Width budget, alone | 1.5 S | 168 | 222 | 294 |
+  | Width budget, tight row (12 pt gap) | S + 6 | 118 | 154 | 202 |
+
+  The first dot is concentric with the left end cap (its center h / 2 from the edge); the text starts 0.42 f after the
+  last dot; trailing padding 0.52 h. **Width budget**: 1.5 S; when another orb's disc overlaps the orb's horizontal
+  band (`|Δy| < (S + S_n) / 2`), a plate above or below may not pass the point that divides the distance between the
+  two centers in proportion to the two sizes, less 3 pt — equal orbs at the 12 pt snap gap get S + 6 each, so their
+  plates stay ≥ 6 pt apart. A side plate is limited by the usable area (3 pt inset) instead.
+- **Placement**: centered g below the disc (following the disc edge through the hover scale, so the gap stays). Orbs
+  whose discs are within 16 pt form a group (a row, a column, a cluster). A group takes the first placement that fits
+  every member — below, above, the side facing the center of the usable area (vertically centered on the disc, g from
+  its edge), the other side; if none fits all, each member takes its own first fit; if nothing fits, that orb's plate
+  hides (the chip still appears on hover). A plate fits when it stays 3 pt inside the usable area and 4 pt from every
+  other disc and plate. So a top row has its plates below, a row docked to the bottom edge has them above, a column
+  docked to a side edge lists its names toward the screen like a legend, and a 2 × 2 cluster puts the top pair's plates
+  above and the bottom pair's below. Placement is resolved on drag release (after the snap spring settles), on display
+  or arrangement changes, and when a name, size, visibility or plate setting changes; during a drag the plate keeps its
+  slot and travels with the orb.
+- **Type**: system font (section 6), semibold (600), tracking +0.012 em, or +0.04 em when the name contains CJK; one
+  line, never wrapped; centered on the plate by cap height (Latin) or the ideographic center (CJK); tabular digits.
+- **Material** — the orb's own glass, so the plate reads as part of the instrument:
+
+  | Token | Dark | Light |
+  | --- | --- | --- |
+  | Fill (vertical) | `rgba(32, 37, 52, 0.72)` → `rgba(12, 14, 20, 0.80)` over a background blur (macOS `.hudWindow`) | `rgba(255, 255, 255, 0.80)` → `rgba(241, 243, 248, 0.84)` over `.popover` |
+  | Rim | 1 px inner stroke white 16 % at the top → 4 % at the bottom; 0.5 px outer stroke black 35 % | 1 px inner highlight white 95 % at the top; 0.5 px outer stroke black 10 % |
+  | Shadow | black 38 %, y 1, blur 6 | black 14 %, y 1, blur 6 |
+  | Text | white 92 % | `#0B0D12` 88 % |
+  | Secondary (statuses) | white 66 % | black 60 % |
+
+  Worst case (the dark plate's blur over pure white, the light plate's over pure black): text 7.1:1 / 9.7:1, secondary
+  4.6:1 / 4.9:1. Reduce Transparency, and Windows (layered windows have no acrylic, as for the body): solid
+  `#1F2432 → #0E1016` / `#FFFFFF → #F0F2F6`. Increase Contrast: fill opacity 92–96 %, a 1 pt border white 42 % /
+  black 45 %, text 100 %, secondary 78 % / 72 %. Windows high contrast: `ButtonFace` fill, `ButtonText` text, a 1 px
+  `WindowText` border; the dots keep their colors inside a 1 px `WindowText` ring. The plate's opacity multiplies by the
+  orb's opacity, its fade when idle and the unavailable dim (55 %).
+- **Window and pointer**: the plate lives in the orb's chip overlay (non-activating; on macOS a child window of the orb,
+  so it moves with it; on Windows an owned window moved in the same `DeferWindowPos` batch), so a side plate can sit
+  beside the disc. It belongs to the orb: hovering it hovers the orb (scale, info line, chip), dragging it moves the
+  orb, right-click opens the orb's menu, double-click opens the dashboard, and with click-through it ignores the mouse
+  as well. Outside the capsule everything stays click-through. It draws above the orb's aura, sparks, embers, waves and
+  rays; the Settings highlight ring passes beneath it.
+- **Chip and undo**: while a plate shows, the source chip is folded into it. After 0.35 s of hover, during a drag and
+  for 2 s after a sources change, the plate's width springs (response 0.3 s, damping 0.86, about its center) to the
+  chip's content in the plate's own metrics — dot + name per source, statuses in the secondary color (`Gemini CLI ·
+  未偵測到`) — while the text crossfades (0.15 s), then returns. When the content would be the same (`Codex`), nothing
+  moves. After Add, Split or Merge the new orbs' plates fade in 0.28 s after landing and stay, in place of the 2 s
+  chips; the undo chip stacks 4 pt beyond the first resulting orb's plate (above it when the plate is above, else under
+  it), in the plate's metrics and material, with `orbs.undo` in the accent color.
+- **Motion**: appear — opacity 0 → 1, 4 pt from the disc side → 0, scale 0.96 → 1, 0.28 s ease-out; disappear — fade
+  0.18 s while moving 2 pt toward the disc. A new name crossfades (0.2 s) while the width springs (response 0.3 s,
+  damping 0.86, about its center); added or removed dots scale in or out (0.2 s). A new placement fades out at the old
+  slot (0.12 s) and in at the new one (0.2 s); a plate never travels across its disc. Reduce Motion: 0.15 s fades;
+  widths and placements jump.
+- **Inside the orb nothing changes**: value, title, agent dots, the traffic readout (section 10), the new-peak pill and
+  every effect keep their places whether the plate is on or off.
+- **Performance**: static — set with the platform text stack (Core Text / DirectWrite) into a cached layer, redrawn
+  only when its name, appearance, placement or width changes, at 60 fps only during a morph or fade, otherwise no
+  frames. The budgets of 2a are unchanged.
+- **Accessibility**: not an element of its own. The orb's label already begins with its name (`a11y.orb.named`), so
+  showing or hiding plates changes nothing for VoiceOver or Narrator, and a plate never shows anything the label and
+  hint lack (statuses are in `a11y.orb.unavailable` and `a11y.orb.sources`).
+- **Controls**: Settings → 懸浮窗 → master group: `orbs.names` popup (`orbs.names.auto` / `orbs.names.always` /
+  `orbs.names.never`) with the caption `orbs.names.hint`. Orb editor: `orbs.showName` popup — `orbs.showName.auto`
+  (filled with the current automatic result, `orbs.showName.on` or `orbs.showName.off`), a separator,
+  `orbs.showName.on`, `orbs.showName.off`. Context menu and the quick menu's per-orb submenu: `orbs.showName` with a
+  check mark on the effective state; choosing it stores the opposite as `true` / `false` for that orb (automatic is
+  restored in the editor).
 
 ### Unavailable sources
 
@@ -946,8 +1063,8 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
    tracked; unavailable ones show their status in secondary text and stay selectable. Unchecking the last tracked source
    is disabled (`orbs.sources.lastOne`). Checking `orbs.sources.all` replaces the set; checking a source on an
    all-sources orb makes the set that single source. It is followed by `orbs.unit` ▸ `orbs.unit.tokens` /
-   `orbs.unit.cost` (section 9) and `orbs.traffic` ▸ `orbs.traffic.sources` / `orbs.traffic.machine` /
-   `orbs.traffic.off` (section 10).
+   `orbs.unit.cost` (section 9), `orbs.traffic` ▸ `orbs.traffic.sources` / `orbs.traffic.machine` /
+   `orbs.traffic.off` (section 10) and `orbs.showName`, checked when the orb's name plate shows (Name plate).
 4. `menu.size` ▸ `menu.size.small` / `.medium` / `.large` (112 / 148 / 196; `minimal` sizes below 96 are set in
    Settings).
 5. `menu.effects` ▸ Off / Soft / Standard / Max (global).
@@ -975,11 +1092,13 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
   selected (Settings) or clicked (menu) orb's id, style, size, toggles and position.
 - **Motion**: split — the original scales to 0.85 and fades (0.2 s) while the children spring out of its center to
   their slots (stagger 60 ms, response 0.45 s, damping 0.78), their bezels draw on over 0.3 s and their chips appear
-  0.28 s after landing for 2 s. Merge is the reverse: the orbs fly to the target (0.3 s) and fade, the merged orb
-  springs from 0.85 to 1. Reduce Motion: 0.2 s crossfades in place.
+  0.28 s after landing for 2 s (with name plates showing, the plates appear then and stay). Merge is the reverse: the
+  orbs fly to the target (0.3 s) and fade, the merged orb springs from 0.85 to 1. Reduce Motion: 0.2 s crossfades in
+  place.
 - **Undo**: split, merge and remove can be undone for 8 s and restore the previous list and layout exactly. In Settings
   an inline banner above the orb list (`orbs.didSplit` / `orbs.didMerge` / `orbs.didRemove` · `orbs.undo`); on the
-  desktop an undo chip under the first resulting orb, stacked under its source chip. Removing with the Settings − button
+  desktop an undo chip under the first resulting orb, stacked under its source chip, or beyond its name plate (Name
+  plate). Removing with the Settings − button
   needs no confirmation because of the undo; the menu asks (it has no banner).
 
 ### Accessibility and keyboard
@@ -1593,7 +1712,8 @@ Calm and native: the platform's grouped form (macOS inset groups, Windows Fluent
 accent color for selection, no extra borders. The pane scrolls when taller than the window. Top to bottom:
 
 1. **Master group** — `settings.orb.show` switch; caption `orbs.allNote` (with `settings.bar` on macOS,
-   `settings.taskbar` on Windows).
+   `settings.taskbar` on Windows); then `orbs.names` popup (`orbs.names.auto` / `orbs.names.always` /
+   `orbs.names.never`, 2b Name plate) with the caption `orbs.names.hint`.
 2. **Orb list** — header `settings.orb` with `orbs.count` (`3 / 8`) trailing. One row per orb, 52 pt tall:
    - a **live thumbnail**: the real renderer at 38 pt (value only, section 2a LOD), effects capped at Soft, ≤ 15 fps,
      only while the pane is visible;
@@ -1620,6 +1740,8 @@ accent color for selection, no extra borders. The pane scrolls when taller than 
      description (`style.*.desc`).
    - **Size** — `menu.size.small` / `.medium` / `.large` presets (112 / 148 / 196) as a compact segmented control left of
      a slider (96–240, `minimal` 64–240, step 4) with the value in pt. **Opacity** — slider 40–100 % with the value.
+   - `orbs.showName` popup — `orbs.showName.auto` with the current automatic result, a separator, `orbs.showName.on`,
+     `orbs.showName.off` (2b Name plate); changing it fades the desktop plate in or out live.
    - Switches: `menu.alwaysOnTop`; `menu.clickThrough` with the platform hint (the orb is then controlled from the menu
      bar / taskbar orb submenu); `settings.orb.fadeIdle`; `settings.orb.allSpaces` (macOS). Footer: the platform's
      Reset Position for this orb (it returns to the default corner, or to the creation placement rule when another orb

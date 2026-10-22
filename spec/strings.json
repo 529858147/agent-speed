@@ -3552,6 +3552,60 @@
     "en": "Shows download and upload speed on the orb while there is traffic.",
     "ja": "通信があるときだけ、オーブにダウンロードとアップロードの速度を表示します。"
   },
+  "orbs.names": {
+    "zh-Hant": "名稱標籤",
+    "zh-Hans": "名称标签",
+    "en": "Name Labels",
+    "ja": "名前ラベル"
+  },
+  "orbs.names.auto": {
+    "zh-Hant": "自動",
+    "zh-Hans": "自动",
+    "en": "Automatic",
+    "ja": "自動"
+  },
+  "orbs.names.always": {
+    "zh-Hant": "一律顯示",
+    "zh-Hans": "始终显示",
+    "en": "Always",
+    "ja": "常に表示"
+  },
+  "orbs.names.never": {
+    "zh-Hant": "不顯示",
+    "zh-Hans": "不显示",
+    "en": "Never",
+    "ja": "表示しない"
+  },
+  "orbs.names.hint": {
+    "zh-Hant": "自動：有兩個以上的懸浮窗，或懸浮窗只追蹤部分來源時，在它旁邊顯示名稱。每個懸浮窗也能個別設定。",
+    "zh-Hans": "自动：有两个以上的悬浮窗，或悬浮窗只追踪部分来源时，在它旁边显示名称。每个悬浮窗也能单独设置。",
+    "en": "Automatic shows an orb's name when two or more orbs are visible or when it tracks only some sources. Each orb can override this.",
+    "ja": "自動：オーブが 2 つ以上あるとき、または一部のソースだけを表示するオーブに、名前を表示します。オーブごとにも設定できます。"
+  },
+  "orbs.showName": {
+    "zh-Hant": "顯示名稱",
+    "zh-Hans": "显示名称",
+    "en": "Show Name",
+    "ja": "名前を表示"
+  },
+  "orbs.showName.auto": {
+    "zh-Hant": "自動（%@）",
+    "zh-Hans": "自动（%@）",
+    "en": "Automatic (%@)",
+    "ja": "自動（%@）"
+  },
+  "orbs.showName.on": {
+    "zh-Hant": "顯示",
+    "zh-Hans": "显示",
+    "en": "On",
+    "ja": "オン"
+  },
+  "orbs.showName.off": {
+    "zh-Hant": "不顯示",
+    "zh-Hans": "不显示",
+    "en": "Off",
+    "ja": "オフ"
+  },
   "settings.traffic": {
     "zh-Hant": "網路流量",
     "zh-Hans": "网络流量",
