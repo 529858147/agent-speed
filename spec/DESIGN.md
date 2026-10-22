@@ -17,9 +17,11 @@ this document wins for the orb, the bar widget and all speed visuals.
 
 ## 1. Speed → heat
 
-`R` = redline speed of the selected metric. Output speed (default metric): setting default **400 tok/s**, range
-100–2000, step 50. Total throughput (includes cached input, typically ~1000× larger): its own setting, default
-**200k tok/s**, range 20k–2M. The redline slider edits the value of the current metric. `v` = live value of the
+`R` = redline speed of the selected metric. Output speed (default metric): setting default **2000 tok/s** (the
+slider's maximum), range 100–2000, step 50. Total throughput (includes cached input, typically ~1000× larger): its own
+setting, default **2M tok/s** (maximum), range 20k–2M. Settings migration: a stored redline equal to the old
+default (400 tok/s, 200 000 tok/s) counts as never set and moves to the new default once; any other stored value is
+kept. The redline slider edits the value of the current metric. `v` = live value of the
 selected metric.
 
 - Heat `h = min(1, (v / R) ^ 0.6)`.
@@ -42,7 +44,8 @@ the speed title.
 ### Speed titles (the visible label)
 
 The label under the value (orb, dashboard hero, accessibility) is a vehicle title from this ladder, colored with the
-heat color. Thresholds scale with `R` (shown values are for the default 400 tok/s), so every metric and redline
+heat color. Thresholds scale with `R` (shown values are for R = 400 tok/s; the default is 2000, where each is five times
+higher), so every metric and redline
 setting reads the same. Same hysteresis and 0.8 s hold as the effect tiers. Idle shows `tier.idle` (待機).
 
 | Key | zh-Hant | zh-Hans | English | 日本語 | Enter at | at R = 400 |
