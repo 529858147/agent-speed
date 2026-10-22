@@ -9,6 +9,15 @@ struct UsageKey: Hashable, Sendable {
 struct ModelTally: Equatable, Sendable {
     var requests = 0
     var output = 0
+    var measuredOutput = 0
+    var measuredMs: Int64 = 0
+
+    mutating func merge(_ other: ModelTally) {
+        requests += other.requests
+        output = output.saturatingAdd(other.output)
+        measuredOutput = measuredOutput.saturatingAdd(other.measuredOutput)
+        measuredMs += other.measuredMs
+    }
 }
 
 /// Aggregates of METRICS 8 for one (day, source), from one file or summed over files.
@@ -22,13 +31,17 @@ struct DayAggregate: Equatable, Sendable {
 
     mutating func add(_ record: ResponseRecord) {
         totals.add(record.usage, sign: 1)
+        var tally = models[record.model ?? ""] ?? ModelTally()
+        tally.requests += 1
+        tally.output = tally.output.saturatingAdd(record.usage.output)
         if record.isFinal, let timed = TimedResponse(record) {
             measuredOutput = measuredOutput.saturatingAdd(record.usage.output)
             measuredMs += timed.durationMs
+            tally.measuredOutput = tally.measuredOutput.saturatingAdd(record.usage.output)
+            tally.measuredMs += timed.durationMs
         }
         if !record.isFinal { unfinalized += 1 }
-        models[record.model ?? "", default: ModelTally()].requests += 1
-        models[record.model ?? "", default: ModelTally()].output += record.usage.output
+        models[record.model ?? ""] = tally
     }
 
     mutating func merge(_ other: DayAggregate) {
@@ -43,8 +56,7 @@ struct DayAggregate: Equatable, Sendable {
         unfinalized += other.unfinalized
         agents += other.agents
         for (model, tally) in other.models {
-            models[model, default: ModelTally()].requests += tally.requests
-            models[model, default: ModelTally()].output += tally.output
+            models[model, default: ModelTally()].merge(tally)
         }
     }
 
@@ -73,7 +85,10 @@ struct DayAggregate: Equatable, Sendable {
             agents: agents,
             peak: peak,
             models: models
-                .map { ModelUsage(model: $0.key, requests: $0.value.requests, output: $0.value.output) }
+                .map {
+                    ModelUsage(model: $0.key, requests: $0.value.requests, output: $0.value.output,
+                               measuredOutput: $0.value.measuredOutput, measuredMs: $0.value.measuredMs)
+                }
                 .sorted { $0.model.unicodeScalars.lexicographicallyPrecedes($1.model.unicodeScalars) }
         )
     }

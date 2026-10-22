@@ -86,7 +86,7 @@ enum HistoryAggregator {
         var measuredOutput = 0, unfinalized = 0, agents = 0
         var measuredMs: Int64 = 0
         var peak: Double?
-        var models: [String: (requests: Int, output: Int)] = [:]
+        var models: [String: ModelUsage] = [:]
         var sources: [SourceKind: Int] = [:]
         for record in records {
             let totals = record.totals
@@ -106,12 +106,15 @@ enum HistoryAggregator {
             }
             sources[record.source, default: 0] += max(0, totals.output)
             for model in record.models where !model.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                let current = models[model.model] ?? (0, 0)
-                models[model.model] = (current.requests + max(0, model.requests), current.output + max(0, model.output))
+                var current = models[model.model] ?? ModelUsage(model: model.model, requests: 0, output: 0)
+                current.requests += max(0, model.requests)
+                current.output += max(0, model.output)
+                current.measuredOutput += max(0, model.measuredOutput)
+                current.measuredMs += max(0, model.measuredMs)
+                models[model.model] = current
             }
         }
-        let modelList = models
-            .map { ModelUsage(model: $0.key, requests: $0.value.requests, output: $0.value.output) }
+        let modelList = models.values
             .sorted { lhs, rhs in
                 if lhs.output != rhs.output { return lhs.output > rhs.output }
                 if lhs.requests != rhs.requests { return lhs.requests > rhs.requests }

@@ -1,16 +1,27 @@
 import Foundation
 import Observation
 
+/// One model's share of a day and source (METRICS 8).
 public struct ModelUsage: Equatable, Sendable, Identifiable {
     public var id: String { model }
     public var model: String
     public var requests: Int
     public var output: Int
+    /// Output and widened duration of the model's measured responses.
+    public var measuredOutput: Int
+    public var measuredMs: Int64
 
-    public init(model: String, requests: Int, output: Int) {
+    public init(model: String, requests: Int, output: Int, measuredOutput: Int = 0, measuredMs: Int64 = 0) {
         self.model = model
         self.requests = requests
         self.output = output
+        self.measuredOutput = measuredOutput
+        self.measuredMs = measuredMs
+    }
+
+    /// Output tok/s over the model's measured responses.
+    public var averageSpeed: Double? {
+        measuredMs > 0 ? Double(measuredOutput) / (Double(measuredMs) / 1000) : nil
     }
 }
 
@@ -132,11 +143,16 @@ public enum PreviewHistory {
                 let daySpeed = speed * (0.75 + generator.unit() * 0.5)
                 let measuredMs = Int64(Double(output) / daySpeed * 1000)
                 let split = Double(0.55 + generator.unit() * 0.4)
+                // The first model takes a little more than its share of the time, so per-model speeds differ in previews.
+                let firstOutput = Int(Double(output) * split)
+                let firstMs = Int64(Double(measuredMs) * min(0.98, split * 1.04))
                 let usage = models.count == 1
-                    ? [ModelUsage(model: models[0], requests: requests, output: output)]
+                    ? [ModelUsage(model: models[0], requests: requests, output: output, measuredOutput: output, measuredMs: measuredMs)]
                     : [
-                        ModelUsage(model: models[0], requests: Int(Double(requests) * split), output: Int(Double(output) * split)),
-                        ModelUsage(model: models[1], requests: requests - Int(Double(requests) * split), output: output - Int(Double(output) * split)),
+                        ModelUsage(model: models[0], requests: Int(Double(requests) * split), output: firstOutput,
+                                   measuredOutput: firstOutput, measuredMs: firstMs),
+                        ModelUsage(model: models[1], requests: requests - Int(Double(requests) * split), output: output - firstOutput,
+                                   measuredOutput: output - firstOutput, measuredMs: measuredMs - firstMs),
                     ]
                 result.append(DailyUsage(
                     day: day,

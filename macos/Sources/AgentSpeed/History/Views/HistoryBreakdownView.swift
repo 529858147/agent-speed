@@ -201,7 +201,7 @@ private struct BreakdownRowContent: View {
             Text(verbatim: "–")
                 .font(HistoryFont.cell)
                 .foregroundStyle(.historySecondary)
-                .help(HistoryText.breakdownSpeedNote(item, l10n))
+                .help(l10n("history.noSpeed"))
         }
     }
 }

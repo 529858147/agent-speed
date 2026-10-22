@@ -98,8 +98,14 @@ struct HistoryTooltip: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 8)
+                        if let speed = HistoryAggregator.speed(measuredOutput: model.measuredOutput, measuredMs: model.measuredMs) {
+                            Text(HistoryText.speed(speed, l10n))
+                                .foregroundStyle(.historySecondary)
+                                .layoutPriority(1)
+                        }
                         Text(HistoryText.percent(share))
                             .foregroundStyle(.historySecondary)
+                            .layoutPriority(1)
                     }
                     .font(HistoryFont.tooltip)
                     GeometryReader { proxy in

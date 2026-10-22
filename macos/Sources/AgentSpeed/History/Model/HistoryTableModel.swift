@@ -90,7 +90,7 @@ enum HistoryTable {
         case .input: HistoryText.fullNumber(row.input, l10n)
         case .speed: row.averageSpeed.map { HistoryText.fullSpeed($0, l10n) }
         case .peak: row.peak.map { HistoryText.fullSpeed($0, l10n) }
-        case .models: row.models.isEmpty ? nil : row.models.map(\.model).joined(separator: "\n")
+        case .models: row.models.isEmpty ? nil : row.models.map { HistoryText.modelWithSpeed($0, l10n) }.joined(separator: "\n")
         case .requests, .cacheHit, .agents: nil
         }
     }

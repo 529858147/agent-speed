@@ -92,18 +92,21 @@ enum HistoryLogicChecks {
         check("single day: CSV holds that day only", dayCSV.count == 2 && dayCSV[1].hasPrefix("2026-10-21,all,"))
 
         // Breakdown of one day.
-        func record(_ source: SourceKind, output: Int, requests: Int, measured: Int, ms: Int64, models: [(String, Int, Int)]) -> DailyUsage {
+        // Models: name, requests, output, measured output, measured time.
+        func record(_ source: SourceKind, output: Int, requests: Int, measured: Int, ms: Int64,
+                    models: [(String, Int, Int, Int, Int64)]) -> DailyUsage {
             DailyUsage(
                 day: "2026-10-21", source: source,
                 totals: TokenTotals(requests: requests, input: output * 20, output: output),
                 measuredOutput: measured, measuredMs: ms, unfinalized: 0, agents: 1, peak: nil,
-                models: models.map { ModelUsage(model: $0.0, requests: $0.1, output: $0.2) }
+                models: models.map { ModelUsage(model: $0.0, requests: $0.1, output: $0.2, measuredOutput: $0.3, measuredMs: $0.4) }
             )
         }
         let dayRecords = [
-            record(.codex, output: 3000, requests: 6, measured: 3000, ms: 30_000, models: [("gpt-a", 4, 2000), ("gpt-b", 2, 1000)]),
-            record(.claudeCode, output: 5000, requests: 5, measured: 4000, ms: 20_000, models: [("opus", 5, 5000)]),
-            record(.omp, output: 2000, requests: 2, measured: 0, ms: 0, models: [("opus", 1, 1500)]),
+            record(.codex, output: 3000, requests: 6, measured: 3000, ms: 30_000,
+                   models: [("gpt-a", 4, 2000, 2000, 10_000), ("gpt-b", 2, 1000, 1000, 20_000)]),
+            record(.claudeCode, output: 5000, requests: 5, measured: 4000, ms: 20_000, models: [("opus", 5, 5000, 4000, 20_000)]),
+            record(.omp, output: 2000, requests: 2, measured: 1000, ms: 4000, models: [("opus", 1, 1500, 0, 0)]),
             record(.codex, output: 999, requests: 1, measured: 999, ms: 1000, models: []).with(day: "2026-10-20"),
         ]
         let bySource = HistoryBreakdown.build(dayRecords, day: today, source: nil)
@@ -112,16 +115,22 @@ enum HistoryLogicChecks {
         check("breakdown shares add up to 1", abs(bySource.items.reduce(0) { $0 + $1.share } - 1) < 1e-9
               && abs(bySource.items[0].share - 0.5) < 1e-9 && bySource.items[0].scale == 1)
         check("breakdown speed is measured output ÷ measured time", bySource.items[0].averageSpeed == 200
-              && bySource.items[1].averageSpeed == 100 && bySource.items[2].averageSpeed == nil)
+              && bySource.items[1].averageSpeed == 100 && bySource.items[2].averageSpeed == 250)
         let byModel = HistoryBreakdown.build(dayRecords, day: today, source: .codex)
         check("breakdown by model, most output first", byModel.kind == .byModel
               && byModel.items.map(\.subject) == [.model("gpt-a"), .model("gpt-b")]
               && abs(byModel.items.reduce(0) { $0 + $1.share } - 1) < 1e-9)
-        check("model speed only when time is not shared", byModel.items.allSatisfy { $0.averageSpeed == nil && $0.speedNotAttributable }
+        check("model speed is the model's measured output ÷ its measured time",
+              byModel.items.map(\.averageSpeed) == [200, 50]
               && HistoryBreakdown.build(dayRecords, day: today, source: .claudeCode).items.first?.averageSpeed == 200)
+        let merged = HistoryAggregator.daily(dayRecords, source: nil, range: DayRange(today, today)).first?.models.first
+        check("a model's time adds up across sources", merged == ModelUsage(
+            model: "opus", requests: 6, output: 6500, measuredOutput: 4000, measuredMs: 20_000)
+              && HistoryText.modelWithSpeed(merged!, l10n).hasSuffix("tok/s") == true)
         let withRest = HistoryBreakdown.build(dayRecords, day: today, source: .omp)
         check("output without a model name is gathered last", withRest.items.map(\.subject) == [.model("opus"), .otherModels]
-              && withRest.items.last?.output == 500 && abs(withRest.items.reduce(0) { $0 + $1.share } - 1) < 1e-9)
+              && withRest.items.last?.output == 500 && abs(withRest.items.reduce(0) { $0 + $1.share } - 1) < 1e-9
+              && withRest.items.first?.averageSpeed == nil && withRest.items.last?.averageSpeed == 250)
         check("breakdown of a day without usage is empty", HistoryBreakdown.build(dayRecords, day: today.adding(days: -5), source: nil).isEmpty
               && HistoryBreakdown.build(dayRecords, day: today, source: .gemini).isEmpty)
 

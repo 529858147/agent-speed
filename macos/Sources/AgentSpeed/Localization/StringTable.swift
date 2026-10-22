@@ -114,7 +114,6 @@ enum StringTable {
         "mac.dashboard.stopPreview": Entry("停止", "停止", "Stop", "停止"),
         "mac.history.a11y.item": Entry("%@：%@", "%@：%@", "%@: %@", "%@：%@"),
         "mac.history.a11y.join": Entry("，", "，", ", ", "、"),
-        "mac.history.breakdown.noModelSpeed": Entry("生成時間沒有依模型分開記錄", "生成时间没有按模型分别记录", "Generation time isn't recorded per model", "生成時間はモデルごとに記録されていません"),
         "mac.history.breakdown.otherModels": Entry("其他模型", "其他模型", "Other models", "その他のモデル"),
         "mac.history.breakdown.share": Entry("佔比", "占比", "Share", "割合"),
         "mac.history.breakdown.sourceHint": Entry("查看這個來源的模型分布", "查看这个来源的模型分布", "Show this source by model", "このソースをモデル別に表示"),

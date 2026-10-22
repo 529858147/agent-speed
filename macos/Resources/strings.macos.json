@@ -444,12 +444,6 @@
     "en": "Other models",
     "ja": "その他のモデル"
   },
-  "mac.history.breakdown.noModelSpeed": {
-    "zh-Hant": "生成時間沒有依模型分開記錄",
-    "zh-Hans": "生成时间没有按模型分别记录",
-    "en": "Generation time isn't recorded per model",
-    "ja": "生成時間はモデルごとに記録されていません"
-  },
   "mac.history.breakdown.sourceHint": {
     "zh-Hant": "查看這個來源的模型分布",
     "zh-Hans": "查看这个来源的模型分布",

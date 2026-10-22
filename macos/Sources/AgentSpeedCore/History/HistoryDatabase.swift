@@ -3,7 +3,8 @@ import Foundation
 /// The persistent daily-history store (METRICS 8): file identities, the 64-bit hashes of the response keys each file
 /// owns, per-file per-day contributions and day peaks. Only aggregates are stored — never keys in plain text or content.
 final class HistoryDatabase {
-    static let schemaVersion: Int64 = 1
+    /// 2: per-model `measured_output` and `measured_ms`.
+    static let schemaVersion: Int64 = 2
 
     enum Failure: Error, Equatable {
         /// Written by a newer version of the app; left untouched.
@@ -52,6 +53,17 @@ final class HistoryDatabase {
         let version = try scalar("PRAGMA user_version") ?? 0
         guard version <= Self.schemaVersion else { throw Failure.newerSchema }
         guard version < Self.schemaVersion else { return }
+        if version == 1 {
+            // The analysis version moved with it, so every file is analysed again and fills the new columns.
+            try connection.transaction {
+                try connection.execute("""
+                    ALTER TABLE contribution_models ADD COLUMN measured_output INTEGER NOT NULL DEFAULT 0;
+                    ALTER TABLE contribution_models ADD COLUMN measured_ms INTEGER NOT NULL DEFAULT 0;
+                    PRAGMA user_version = \(Self.schemaVersion);
+                    """)
+            }
+            return
+        }
         try connection.transaction {
             try connection.execute("""
                 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -87,6 +99,8 @@ final class HistoryDatabase {
                     model TEXT NOT NULL,
                     requests INTEGER NOT NULL,
                     output INTEGER NOT NULL,
+                    measured_output INTEGER NOT NULL,
+                    measured_ms INTEGER NOT NULL,
                     PRIMARY KEY (file_id, day, source, model)
                 ) WITHOUT ROWID;
                 CREATE TABLE IF NOT EXISTS day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
@@ -151,13 +165,15 @@ final class HistoryDatabase {
             aggregate.agents = Int(row.int64(12))
             entries[path]?.days[UsageKey(day: day, source: source)] = aggregate
         }
-        let models = try connection.prepare("SELECT file_id, day, source, model, requests, output FROM contribution_models")
+        let models = try connection.prepare(
+            "SELECT file_id, day, source, model, requests, output, measured_output, measured_ms FROM contribution_models")
         try models.forEachRow { row in
             guard let path = paths[row.int64(0)], let day = row.string(1),
                   let source = row.string(2).flatMap(SourceKind.init(rawValue:)), let model = row.string(3) else { return }
             let key = UsageKey(day: day, source: source)
             guard entries[path]?.days[key] != nil else { return }
-            entries[path]?.days[key]?.models[model] = ModelTally(requests: Int(row.int64(4)), output: Int(row.int64(5)))
+            entries[path]?.days[key]?.models[model] = ModelTally(
+                requests: Int(row.int64(4)), output: Int(row.int64(5)), measuredOutput: Int(row.int64(6)), measuredMs: row.int64(7))
         }
         return entries
     }
@@ -206,8 +222,8 @@ final class HistoryDatabase {
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                 """)
             let insertModel = try connection.prepare("""
-                INSERT INTO contribution_models (file_id, day, source, model, requests, output)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 """)
             var ids: [String: Int64] = [:]
             for (path, entry, keys) in files {
@@ -247,6 +263,8 @@ final class HistoryDatabase {
                         insertModel.bind(4, model)
                         insertModel.bind(5, tally.requests)
                         insertModel.bind(6, tally.output)
+                        insertModel.bind(7, tally.measuredOutput)
+                        insertModel.bind(8, tally.measuredMs)
                         try insertModel.run()
                     }
                 }

@@ -36,6 +36,8 @@ enum DumpHistory {
                 var tally = JSONLine()
                 tally.add("requests", model.requests)
                 tally.add("output", model.output)
+                tally.add("measuredOutput", model.measuredOutput)
+                tally.add("measuredMs", Int64?.some(model.measuredMs))
                 models.add(model.model, raw: tally.text)
             }
             line.add("models", raw: models.text)

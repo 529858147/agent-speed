@@ -18,11 +18,8 @@ struct BreakdownItem: Identifiable, Equatable, Sendable {
     let share: Double
     /// Output relative to the largest item (the bar length, 0…1).
     let scale: Double
-    /// Σ measured output ÷ Σ measured time. Nil when nothing was measured, or for a model whose records also hold other
-    /// models: the store keeps measured time per source and day, not per model (METRICS 8).
+    /// Σ measured output ÷ Σ measured time (per source, or per model, METRICS 8); nil when nothing was measured.
     let averageSpeed: Double?
-    /// The speed is unknown only because time is not stored per model.
-    let speedNotAttributable: Bool
 }
 
 /// A single day split by source (all sources) or by model (one source), most output first (DESIGN 4b, item 1).
@@ -61,8 +58,13 @@ enum HistoryBreakdown {
         var requests = 0
         var measuredOutput = 0
         var measuredMs: Int64 = 0
-        /// Some of the subject's output shares a record's measured time with another subject.
-        var shared = false
+
+        mutating func add(_ other: Tally) {
+            output += other.output
+            requests += other.requests
+            measuredOutput += other.measuredOutput
+            measuredMs += other.measuredMs
+        }
     }
 
     private static func bySource(_ records: [DailyUsage]) -> [BreakdownItem] {
@@ -78,36 +80,27 @@ enum HistoryBreakdown {
         return items(tallies)
     }
 
-    /// A record's measured time belongs to a model only when that model is the record's single contributor;
-    /// output no named model accounts for is gathered under `otherModels`.
+    /// Each model with its own measured output and time; what no named model accounts for (responses without a
+    /// model, rows stored before per-model time existed) is gathered under `otherModels`.
     private static func byModel(_ records: [DailyUsage]) -> [BreakdownItem] {
         var tallies: [BreakdownItem.Subject: Tally] = [:]
         for record in records {
-            var parts: [(BreakdownItem.Subject, output: Int, requests: Int)] = []
+            var named = Tally()
             for model in record.models {
                 let name = model.model.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty, model.output > 0 || model.requests > 0 else { continue }
-                parts.append((.model(name), max(0, model.output), max(0, model.requests)))
+                let part = Tally(output: max(0, model.output), requests: max(0, model.requests),
+                                 measuredOutput: max(0, model.measuredOutput), measuredMs: max(0, model.measuredMs))
+                tallies[.model(name), default: Tally()].add(part)
+                named.add(part)
             }
-            let named = parts.reduce(0) { $0 + $1.output }
-            let rest = max(0, record.totals.output) - named
-            if rest > 0 {
-                let namedRequests = parts.reduce(0) { $0 + $1.requests }
-                parts.append((.otherModels, rest, max(0, record.totals.requests - namedRequests)))
-            }
-            let sole = parts.count == 1
-            for part in parts {
-                var tally = tallies[part.0] ?? Tally()
-                tally.output += part.output
-                tally.requests += part.requests
-                if sole {
-                    tally.measuredOutput += max(0, record.measuredOutput)
-                    tally.measuredMs += max(0, record.measuredMs)
-                } else {
-                    tally.shared = true
-                }
-                tallies[part.0] = tally
-            }
+            let rest = Tally(
+                output: max(0, record.totals.output - named.output),
+                requests: max(0, record.totals.requests - named.requests),
+                measuredOutput: max(0, record.measuredOutput - named.measuredOutput),
+                measuredMs: max(0, record.measuredMs - named.measuredMs)
+            )
+            if rest.output > 0 { tallies[.otherModels, default: Tally()].add(rest) }
         }
         return items(tallies)
     }
@@ -117,15 +110,14 @@ enum HistoryBreakdown {
         let largest = tallies.values.map(\.output).max() ?? 0
         return tallies
             .map { subject, tally in
-                let speed = tally.shared ? nil : HistoryAggregator.speed(measuredOutput: tally.measuredOutput, measuredMs: tally.measuredMs)
+                let speed = HistoryAggregator.speed(measuredOutput: tally.measuredOutput, measuredMs: tally.measuredMs)
                 return BreakdownItem(
                     subject: subject,
                     output: tally.output,
                     requests: tally.requests,
                     share: total > 0 ? Double(tally.output) / Double(total) : 0,
                     scale: largest > 0 ? Double(tally.output) / Double(largest) : 0,
-                    averageSpeed: speed,
-                    speedNotAttributable: tally.shared
+                    averageSpeed: speed
                 )
             }
             .sorted(by: precedes)

@@ -200,7 +200,8 @@ enum HistoryText {
         }
         parts.append(labelled(l10n("history.table.agents"), fullNumber(day.agents, l10n), l10n))
         if !day.models.isEmpty {
-            parts.append(labelled(l10n("history.table.models"), topModels(day.models, l10n, max: 3), l10n))
+            let models = day.models.prefix(3).map { modelWithSpeed($0, l10n) } + (day.models.count > 3 ? [l10n("mac.history.models.more", day.models.count - 3)] : [])
+            parts.append(labelled(l10n("history.table.models"), models.joined(separator: ", "), l10n))
         }
         return labelled(dayTitle(day.day, today: today, l10n), join(parts, l10n), l10n)
     }
@@ -214,9 +215,12 @@ enum HistoryText {
         }
     }
 
-    /// What a missing breakdown speed means: not measured, or not stored per model.
-    static func breakdownSpeedNote(_ item: BreakdownItem, _ l10n: Localizer) -> String {
-        item.speedNotAttributable ? l10n("mac.history.breakdown.noModelSpeed") : l10n("history.noSpeed")
+    /// A model with its average speed when it was measured: `claude-opus-5-5 · 83 tok/s`.
+    static func modelWithSpeed(_ model: ModelUsage, _ l10n: Localizer) -> String {
+        guard let speed = HistoryAggregator.speed(measuredOutput: model.measuredOutput, measuredMs: model.measuredMs) else {
+            return model.model
+        }
+        return "\(model.model) · \(self.speed(speed, l10n))"
     }
 
     /// One breakdown bar for screen readers: `輸出：312,345，佔比：38%，平均速度：88.2 tok/s，請求：151`.
@@ -224,7 +228,7 @@ enum HistoryText {
         join([
             labelled(l10n("history.table.output"), fullNumber(item.output, l10n), l10n),
             labelled(l10n("mac.history.breakdown.share"), percent(item.share), l10n),
-            labelled(l10n("history.table.speed"), item.averageSpeed == nil ? breakdownSpeedNote(item, l10n) : fullSpeed(item.averageSpeed, l10n), l10n),
+            labelled(l10n("history.table.speed"), fullSpeed(item.averageSpeed, l10n), l10n),
             labelled(l10n("history.table.requests"), fullNumber(item.requests, l10n), l10n),
         ], l10n)
     }

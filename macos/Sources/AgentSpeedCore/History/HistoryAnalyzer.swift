@@ -7,7 +7,8 @@ import Foundation
 /// Not thread-safe: one owner (a serial queue) drives it.
 final class HistoryAnalyzer {
     /// Bumped whenever a parser change alters results; stored files of other versions are analysed again.
-    static let analysisVersion: Int64 = 1
+    /// 2: per-model measured output and time (METRICS 8).
+    static let analysisVersion: Int64 = 2
     static let opencodeFamily = "opencode"
     static let maxWorkers = 4
 

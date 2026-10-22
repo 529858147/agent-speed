@@ -43,7 +43,10 @@ struct HistoryTests {
     /// The JSON shape of `reference.py --dump-history`.
     static func json(_ day: DailyUsage) -> [String: Any] {
         var models: [String: Any] = [:]
-        for model in day.models { models[model.model] = ["requests": model.requests, "output": model.output] }
+        for model in day.models {
+            models[model.model] = ["requests": model.requests, "output": model.output, "measuredOutput": model.measuredOutput,
+                                   "measuredMs": model.measuredMs]
+        }
         return [
             "date": day.day, "source": day.source.rawValue, "requests": day.totals.requests, "input": day.totals.input,
             "cachedInput": day.totals.cachedInput, "cacheWriteInput": day.totals.cacheWriteInput,
@@ -141,7 +144,7 @@ struct HistoryTests {
         #expect(days[0].totals.requests == 3)
         #expect(days[0].totals.output == 151)
         #expect(days[0].agents == 2)
-        #expect(days[0].models == [ModelUsage(model: "m", requests: 3, output: 151)])
+        #expect(days[0].models == [ModelUsage(model: "m", requests: 3, output: 151, measuredOutput: 151, measuredMs: 12_000)])
         #expect(days[0].measuredMs == 12_000)
         #expect(days[1].totals.output == 7)
 
@@ -171,6 +174,41 @@ struct HistoryTests {
         #expect(cleared.filesAnalyzed == 2)
         #expect(fresh.map(\.day) == ["2026-10-20"], "clearing forgets days without logs")
         #expect(fresh[0].totals.output == 1151)
+    }
+
+    @Test func aVersionOneStoreMigratesAndRecomputesModelSpeeds() throws {
+        let scratch = try Scratch()
+        try scratch.directory.write("claude/p/a.jsonl", Self.claude([("m1", 100), ("m2", 50)]))
+        try FileManager.default.createDirectory(atPath: (scratch.storePath as NSString).deletingLastPathComponent,
+                                                withIntermediateDirectories: true)
+        let old = try SQLiteConnection(path: scratch.storePath, mode: .readWriteCreate)
+        try old.execute("""
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+            CREATE TABLE files (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, family TEXT NOT NULL, size INTEGER NOT NULL,
+                modified INTEGER NOT NULL, version INTEGER NOT NULL, keys BLOB NOT NULL);
+            CREATE TABLE contributions (file_id INTEGER NOT NULL, day TEXT NOT NULL, source TEXT NOT NULL,
+                requests INTEGER NOT NULL, input INTEGER NOT NULL, cached_input INTEGER NOT NULL,
+                cache_write_input INTEGER NOT NULL, output INTEGER NOT NULL, reasoning INTEGER NOT NULL,
+                measured_output INTEGER NOT NULL, measured_ms INTEGER NOT NULL, unfinalized INTEGER NOT NULL,
+                agents INTEGER NOT NULL, PRIMARY KEY (file_id, day, source)) WITHOUT ROWID;
+            CREATE TABLE contribution_models (file_id INTEGER NOT NULL, day TEXT NOT NULL, source TEXT NOT NULL,
+                model TEXT NOT NULL, requests INTEGER NOT NULL, output INTEGER NOT NULL,
+                PRIMARY KEY (file_id, day, source, model)) WITHOUT ROWID;
+            CREATE TABLE day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
+            INSERT INTO files VALUES (1, '\(scratch.directory.file("claude/p/gone.jsonl").path)', 'claude', 1, 1, 1, x'');
+            INSERT INTO contributions VALUES (1, '2026-10-01', 'claudeCode', 2, 10, 0, 0, 30, 0, 30, 1000, 0, 1);
+            INSERT INTO contribution_models VALUES (1, '2026-10-01', 'claudeCode', 'm', 2, 30);
+            PRAGMA user_version = 1;
+            """)
+        old.close()
+
+        let (report, days) = try scratch.run()
+        #expect(report.filesAnalyzed == 1)
+        #expect(days.map(\.day) == ["2026-10-01", "2026-10-20"], "a day without logs any more is kept")
+        #expect(days[0].models == [ModelUsage(model: "m", requests: 2, output: 30)], "its model speed stays unknown")
+        #expect(days[1].models == [ModelUsage(model: "m", requests: 2, output: 150, measuredOutput: 150, measuredMs: 8000)])
+        #expect(days[1].models.first?.averageSpeed == 150 / 8.0)
+        #expect(try scratch.run().0.filesAnalyzed == 0)
     }
 
     @Test func changedFileDoesNotStealKeysOwnedByOthers() throws {
