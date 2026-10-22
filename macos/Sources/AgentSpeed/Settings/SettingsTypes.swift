@@ -107,8 +107,22 @@ enum SettingsLimits {
         metric == .output ? redline : redlineTotal
     }
 
+    /// The slider's maximum (DESIGN 1).
     static func defaultRedline(for metric: SpeedMetric) -> Double {
+        metric == .output ? 2000 : 2_000_000
+    }
+
+    /// The default before it moved to the maximum: a stored value equal to it counts as never set (DESIGN 1).
+    static func formerDefaultRedline(for metric: SpeedMetric) -> Double {
         metric == .output ? 400 : 200_000
+    }
+
+    /// The redline to start from: a stored former default moves to the new default once (when `migrated` is false);
+    /// any other stored value is kept.
+    static func startingRedline(stored: Double?, metric: SpeedMetric, migrated: Bool) -> Double {
+        guard let stored else { return defaultRedline(for: metric) }
+        if !migrated, stored == formerDefaultRedline(for: metric) { return defaultRedline(for: metric) }
+        return stored
     }
 
     /// Slider increment at a value: 50 tok/s for output; two significant digits for total throughput
@@ -144,6 +158,4 @@ enum SettingsLimits {
         }
         return log(value / range.lowerBound) / log(range.upperBound / range.lowerBound)
     }
-    static let orbSize: ClosedRange<Double> = 96...240
-    static let orbOpacity: ClosedRange<Double> = 0.4...1
 }

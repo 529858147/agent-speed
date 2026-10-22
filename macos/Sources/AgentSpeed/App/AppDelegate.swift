@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     private let options: LaunchOptions
     private var model: AppModel?
     private var statusItem: StatusItemController?
-    private var orb: OrbWindowController?
+    private var orbs: OrbWindowManager?
     private var dashboard: DashboardController?
     private var settingsWindow: SettingsWindowController?
     private var historyWindow: HistoryWindowController?
@@ -24,6 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             NSApp.terminate(nil)
             return
         }
+        if let directory = options.orbFramesDirectory {
+            OrbFrameHarness.run(into: directory)
+            NSApp.terminate(nil)
+            return
+        }
+        if let directory = options.orbBenchDirectory {
+            OrbBenchmark.start(into: directory)
+            return
+        }
         #if DEBUG
         if let directory = options.heroCPUDirectory {
             HeroLiveHarness.start(into: directory)
@@ -32,6 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         if let directory = options.heroFramesDirectory {
             HeroFrameHarness.run(into: directory)
             NSApp.terminate(nil)
+            return
+        }
+        if let directory = options.orbsDemoDirectory {
+            OrbsDemoHarness.start(into: directory)
             return
         }
         if let directory = options.motionHarnessDirectory {
@@ -58,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             statusItem?.setHighlighted(shown)
             if !shown { model?.updates.clearUpdatedNotice() }
         }
-        orb = OrbWindowController(model: model)
+        orbs = OrbWindowManager(model: model)
 
         MainMenu.install(model: model)
         if options.demo { model.startDemoLoop() }
@@ -114,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
 
     func applicationWillTerminate(_ notification: Notification) {
         updateScheduler?.stop()
-        orb?.savePosition()
+        orbs?.shutdown()
         model?.shutdown()
     }
 
@@ -150,12 +163,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         historyWindow?.show(source: source)
     }
 
-    func setOrbVisible(_ visible: Bool) {
-        model?.settings.orbVisible = visible
+    func setOrbsVisible(_ visible: Bool) {
+        model?.orbs.masterVisible = visible
     }
 
-    func resetOrbPosition() {
-        orb?.resetPosition()
+    func resetOrbPosition(_ id: String) {
+        model?.orbs.resetPosition(id)
+    }
+
+    func showOrbSettings(_ id: String?) {
+        if let id { model?.orbs.settingsSelection = id }
+        showSettings(.orb)
     }
 
     func showUpdate() {

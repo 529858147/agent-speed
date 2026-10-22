@@ -75,6 +75,8 @@ struct LiveWindow: Sendable {
     private(set) var total = Rate.zero
     private(set) var estimatedShare = 0.0
     private(set) var bySource: [SourceKind: Rate] = [:]
+    /// The estimated part of `bySource` (unmeasured and in-flight).
+    private(set) var estimatedBySource: [SourceKind: Rate] = [:]
     private(set) var byAgent: [String: Rate] = [:]
     private(set) var estimates: [InFlightEstimate] = []
 
@@ -94,6 +96,7 @@ struct LiveWindow: Sendable {
         var measured = Rate.zero
         var estimated = Rate.zero
         var sourceTokens: [SourceKind: Rate] = [:]
+        var estimatedSourceTokens: [SourceKind: Rate] = [:]
         var agentTokens: [String: Rate] = [:]
 
         for response in measuredResponses {
@@ -114,6 +117,7 @@ struct LiveWindow: Sendable {
             let tokens = Rate(output: estimate.speed.output * overlap, total: estimate.speed.total * overlap)
             estimated.add(tokens)
             sourceTokens[estimate.source, default: .zero].add(tokens)
+            estimatedSourceTokens[estimate.source, default: .zero].add(tokens)
             agentTokens[estimate.agentId, default: .zero].add(tokens)
         }
 
@@ -141,6 +145,7 @@ struct LiveWindow: Sendable {
         let combined = measured.output + estimated.output
         estimatedShare = combined > 0 ? estimated.output / combined : 0
         bySource = sourceTokens.mapValues { Rate(output: $0.output / seconds, total: $0.total / seconds) }
+        estimatedBySource = estimatedSourceTokens.mapValues { Rate(output: $0.output / seconds, total: $0.total / seconds) }
         byAgent = agentTokens.mapValues { Rate(output: $0.output / seconds, total: $0.total / seconds) }
     }
 }

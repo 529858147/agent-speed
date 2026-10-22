@@ -1,101 +1,105 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
-/// Where an orb is shown; the embedded variant is capped at Soft effects and draws an opaque body.
-enum OrbStyle: Sendable {
-    case floating
-    case embedded
-}
-
-/// The orb instrument (DESIGN section 2): a static body under one GPU-drawn layer with the gauge, effects and readout
-/// (the dashboard's embedded orb carries the hero vehicle instead, DESIGN 4c). The GPU layer runs at 60 fps (the
-/// embedded orb at the display's cadence) only while something moves, at 10–30 fps while the hero's parked vehicle
-/// breathes, and is paused otherwise.
+/// The orb instrument in SwiftUI (DESIGN section 2): a static body under one GPU-drawn layer. Used for the dashboard's
+/// embedded orb (which carries the hero vehicle instead of the readout, DESIGN 4c) and for still frames of any style
+/// (previews). Floating orbs are AppKit windows (`OrbHostView`) on the shared frame clock.
 struct OrbView: View {
     /// The canvas is this many times the disc diameter so the aura and sparks can leave the disc.
     static let canvasScale: CGFloat = 1.5
 
     let model: AppModel
+    let feed: OrbFeed
     var diameter: CGFloat
-    var style: OrbStyle = .embedded
+    var surface: OrbSurface = .embedded
     var interaction: OrbInteraction?
 
     @State private var ownAnimator: OrbAnimator
     private let injectedAnimator: OrbAnimator?
     private let fixedTime: TimeInterval?
     private let forcesSolidBody: Bool
+    private let contentOverride: ((inout OrbContent) -> Void)?
 
     @Environment(\.orbStillTime) private var environmentStillTime
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
-    init(model: AppModel, diameter: CGFloat, style: OrbStyle = .embedded, interaction: OrbInteraction? = nil) {
+    init(model: AppModel, feed: OrbFeed? = nil, diameter: CGFloat, surface: OrbSurface = .embedded, interaction: OrbInteraction? = nil) {
         self.model = model
+        self.feed = feed ?? model.mainFeed
         self.diameter = diameter
-        self.style = style
+        self.surface = surface
         self.interaction = interaction
-        _ownAnimator = State(initialValue: OrbAnimator(style: style))
+        _ownAnimator = State(initialValue: OrbAnimator(surface: surface))
         injectedAnimator = nil
         fixedTime = nil
         forcesSolidBody = false
+        contentOverride = nil
     }
 
     /// A still frame at `time` from a prepared animator (previews).
-    init(model: AppModel, diameter: CGFloat, style: OrbStyle, animator: OrbAnimator, time: TimeInterval, interaction: OrbInteraction? = nil) {
+    init(model: AppModel, feed: OrbFeed? = nil, diameter: CGFloat, surface: OrbSurface, animator: OrbAnimator, time: TimeInterval,
+         interaction: OrbInteraction? = nil, content: ((inout OrbContent) -> Void)? = nil) {
         self.model = model
+        self.feed = feed ?? model.mainFeed
         self.diameter = diameter
-        self.style = style
+        self.surface = surface
         self.interaction = interaction
         _ownAnimator = State(initialValue: animator)
         injectedAnimator = animator
         fixedTime = time
         forcesSolidBody = true
+        contentOverride = content
     }
 
     private var canvasSide: CGFloat { diameter * Self.canvasScale }
 
     var body: some View {
         let animator = injectedAnimator ?? ownAnimator
-        let content = makeContent()
+        var content = OrbContentBuilder.content(model: model, feed: feed, diameter: diameter, dark: colorScheme == .dark,
+                                                contrast: contrast == .increased, style: animator.style,
+                                                showsReadout: surface != .embedded)
+        let _ = contentOverride?(&content)
         let reduceMotion = model.accessibility.reduceMotion
-        let hovered = style == .floating && (interaction?.isHovered ?? false)
+        let hovered = surface == .floating && (interaction?.isHovered ?? false)
         ZStack {
             OrbBody(
                 diameter: diameter,
                 canvasSide: canvasSide,
                 tokens: content.tokens,
-                opacity: model.settings.orbOpacity,
-                solid: forcesSolidBody || style == .embedded || model.accessibility.reduceTransparency,
-                increaseContrast: content.increaseContrast
+                opacity: 1,
+                solid: forcesSolidBody || surface == .embedded || model.accessibility.reduceTransparency,
+                increaseContrast: content.increaseContrast,
+                style: animator.style,
+                rim: content.bezel == nil
             )
             .equatable()
             .drawingGroup()
             if let stillTime = fixedTime ?? environmentStillTime {
-                let _ = fixedTime == nil ? animator.primeForStill(model: model) : ()
-                if let image = OrbSnapshot.image(
-                    OrbSceneBuilder.scene(content: content, animator: animator, model: model, canvasSide: canvasSide, scale: 2, time: stillTime),
-                    side: canvasSide,
-                    scale: 2
-                ) {
+                let _ = fixedTime == nil ? animator.primeForStill(model: model, gauge: feed.gauge) : ()
+                if let image = OrbStill.image(content: content, animator: animator, model: model, feed: feed,
+                                              canvasSide: canvasSide, time: stillTime) {
                     Image(decorative: image, scale: 2)
                 }
             } else {
-                OrbMetalView(mode: animator.frameMode, followsDisplay: style == .embedded, redrawKey: redrawKey(content: content)) { size, scale, time in
-                    OrbSceneBuilder.scene(content: content, animator: animator, model: model, canvasSide: size.width, scale: scale, time: time)
+                OrbMetalView(mode: animator.frameMode, followsDisplay: surface == .embedded, redrawKey: redrawKey(content: content)) { scene, size, scale, time in
+                    OrbSceneBuilder.build(into: &scene, content: content, animator: animator, model: model, feed: feed,
+                                          canvasSide: size.width, scale: scale, time: time)
                 }
                 .frame(width: canvasSide, height: canvasSide)
-                idleSweep(animator: animator, tokens: content.tokens)
+                if surface == .embedded { idleSweep(animator: animator, tokens: content.tokens) }
             }
         }
         .frame(width: canvasSide, height: canvasSide)
         .scaleEffect(hovered && !reduceMotion ? 1.03 : 1)
         .animation(reduceMotion ? nil : Motion.hover, value: hovered)
-        .padding(style == .embedded ? -(canvasSide - diameter) / 2 : 0)
+        .padding(surface == .embedded ? -(canvasSide - diameter) / 2 : 0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onAppear {
             guard fixedTime == nil, environmentStillTime == nil else { return }
-            animator.attach(model: model, interaction: interaction)
+            animator.attach(model: model, feed: feed, interaction: interaction)
         }
         .onDisappear {
             guard fixedTime == nil, environmentStillTime == nil else { return }
@@ -111,11 +115,10 @@ struct OrbView: View {
         var tier: SpeedTier
         var title: SpeedTitle
         var effects: EffectsLevel
-        var opacity: Double
     }
 
     private func redrawKey(content: OrbContent) -> AnyHashable {
-        let gauge = model.gauge
+        let gauge = feed.gauge
         let text = [content.unit, content.titleLabel, content.infoLine, content.language.rawValue]
             + content.generating.map(\.rawValue) + ["\(content.diameter)", "\(content.increaseContrast)"]
         return AnyHashable(RedrawKey(
@@ -125,13 +128,12 @@ struct OrbView: View {
             heat: gauge.targetHeat,
             tier: gauge.tier,
             title: gauge.title,
-            effects: model.settings.effects,
-            opacity: model.settings.orbOpacity
+            effects: model.settings.effects
         ))
     }
 
     private func idleSweep(animator: OrbAnimator, tokens: OrbTokens) -> some View {
-        let gauge = model.gauge
+        let gauge = feed.gauge
         let effects = animator.effects(for: model)
         let visible = interaction?.isVisibleOnScreen ?? true
         let color = tokens.isDark ? RGBColor.white.opacity(0.18) : HeatPalette.color(0.02).opacity(0.45)
@@ -145,29 +147,46 @@ struct OrbView: View {
         )
         .frame(width: canvasSide, height: canvasSide)
     }
+}
 
-    /// Reads the observable inputs here, in the body, so any change redraws even while frames are paused.
-    private func makeContent() -> OrbContent {
+/// Resolves an orb's content from observable state (read in a view body or an observation loop).
+@MainActor
+enum OrbContentBuilder {
+    static func content(model: AppModel, feed: OrbFeed, diameter: CGFloat, dark: Bool, contrast: Bool,
+                        style: OrbStyleKind, showsReadout: Bool) -> OrbContent {
         let l10n = model.l10n
-        let gauge = model.gauge
-        let snapshot = model.store.snapshot
-        let todayTokens = model.settings.metric == .output ? snapshot.today.output : snapshot.today.total
-        let generating = snapshot.agents.filter { $0.phase == .generating }.map(\.source)
-        let increaseContrast = contrast == .increased || model.accessibility.increaseContrast
+        let gauge = feed.gauge
         return OrbContent(
             diameter: diameter,
-            tokens: OrbTokens.forScheme(colorScheme),
-            increaseContrast: increaseContrast,
+            tokens: dark ? .dark : .light,
+            increaseContrast: contrast || model.accessibility.increaseContrast,
+            reduceTransparency: model.accessibility.reduceTransparency,
             unit: l10n("unit.tokS"),
             titleLabel: l10n(gauge.title.titleKey),
             previousTitleLabel: l10n(gauge.previousTitle.titleKey),
-            infoLine: l10n("today.summary", SpeedFormat.tokens(todayTokens), snapshot.agents.count),
+            infoLine: l10n("today.summary", SpeedFormat.tokens(feed.todayTokens), feed.agentCount),
             peakLabel: l10n("peak.new"),
             latinTracking: l10n.language.usesLatinCase,
             language: l10n.language,
-            generating: generating,
-            showsReadout: style == .floating
+            generating: feed.generating,
+            showsReadout: showsReadout,
+            style: style,
+            bezel: feed.bezel,
+            unavailableTitle: feed.unavailableTitleKey.map { l10n($0) }
         )
+    }
+}
+
+/// Still frames of an orb's dynamic layers (previews, the frame harness).
+@MainActor
+enum OrbStill {
+    private static var scene = OrbScene(capacity: 2048)
+
+    static func image(content: OrbContent, animator: OrbAnimator, model: AppModel, feed: OrbFeed, canvasSide: CGFloat,
+                      time: TimeInterval, scale: CGFloat = 2, contentScale: CGFloat = 1) -> CGImage? {
+        OrbSceneBuilder.build(into: &scene, content: content, animator: animator, model: model, feed: feed,
+                              canvasSide: canvasSide, scale: scale, time: time, contentScale: contentScale)
+        return OrbSnapshot.image(scene, side: canvasSide, scale: scale)
     }
 }
 

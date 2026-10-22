@@ -85,6 +85,8 @@ struct EngineOutput: Sendable {
     var live: Rate
     var liveEstimatedShare: Double
     var sourceLive: [SourceKind: Rate]
+    /// The estimated part of `sourceLive`.
+    var sourceLiveEstimated: [SourceKind: Rate]
     var agents: [EngineAgentStatus]
     var history: [HistoryPoint]
     var today: TokenTotals
@@ -94,6 +96,10 @@ struct EngineOutput: Sendable {
     var unfinalizedToday: Int
     var peakToday: Rate
     var peakTodayAtMs: Int64?
+    /// Today's measured output peak of every requested source set (METRICS 6.8).
+    var subsetPeaks: [SourceSet: Double]
+    /// The local midnight the output's "today" starts at.
+    var todayStartMs: Int64
     var lastResponse: ResponseSummary?
     var events: [SpeedEvent]
 }

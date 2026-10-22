@@ -49,6 +49,8 @@ enum HeroFrameHarness {
         )
         model.settings.language = .zhHant
         model.l10n.apply(.zhHant)
+        // The designer's scenarios are written for R = 400 tok/s.
+        model.settings.redlineOutput = 400
         var report = ""
         for clip in names.compactMap(Clip.init) {
             let frames = directory.appendingPathComponent(clip.name, isDirectory: true)

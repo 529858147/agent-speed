@@ -30,25 +30,9 @@ final class AppSettings {
     var barColoredGlyph: Bool { didSet { store(barColoredGlyph, .barColoredGlyph) } }
     var barShowsUnit: Bool { didSet { store(barShowsUnit, .barShowsUnit) } }
 
-    var orbVisible: Bool { didSet { store(orbVisible, .orbVisible) } }
-    var orbSize: Double {
-        didSet {
-            let clamped = orbSize.clamped(to: SettingsLimits.orbSize).rounded()
-            if clamped != orbSize { orbSize = clamped; return }
-            store(orbSize, .orbSize)
-        }
-    }
-    var orbOpacity: Double {
-        didSet {
-            let clamped = orbOpacity.clamped(to: SettingsLimits.orbOpacity)
-            if clamped != orbOpacity { orbOpacity = clamped; return }
-            store(orbOpacity, .orbOpacity)
-        }
-    }
-    var orbAlwaysOnTop: Bool { didSet { store(orbAlwaysOnTop, .orbAlwaysOnTop) } }
-    var orbClickThrough: Bool { didSet { store(orbClickThrough, .orbClickThrough) } }
-    var orbFadeWhenIdle: Bool { didSet { store(orbFadeWhenIdle, .orbFadeWhenIdle) } }
-    var orbAllSpaces: Bool { didSet { store(orbAllSpaces, .orbAllSpaces) } }
+    /// The floating orbs' master switch (DESIGN 2b). The single-orb keys of earlier versions (`orbVisible`, `orbSize`,
+    /// …) are only read once to migrate and never written again, so a downgrade restores the single orb.
+    var orbsVisible: Bool { didSet { store(orbsVisible, .orbsVisible) } }
 
     /// Dashboard agents list: every agent instead of the first rows (DESIGN section 4.4).
     var agentsExpanded: Bool { didSet { store(agentsExpanded, .agentsExpanded) } }
@@ -87,31 +71,30 @@ final class AppSettings {
 
     @ObservationIgnored private let defaults: UserDefaults
 
+    /// The store these settings live in (the floating orbs keep their document next to them).
+    var storage: UserDefaults { defaults }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance.rawValue) ?? "") ?? .auto
         language = LanguagePreference(rawValue: defaults.string(forKey: Key.language.rawValue) ?? "") ?? .system
         metric = SpeedMetric(rawValue: defaults.string(forKey: Key.metric.rawValue) ?? "") ?? .output
+        let redlinesMigrated = defaults.bool(forKey: Key.redlineDefaultsMigrated.rawValue)
         redlineOutput = SettingsLimits.snapRedline(
-            defaults.object(forKey: Key.redline.rawValue) as? Double ?? SettingsLimits.defaultRedline(for: .output),
+            SettingsLimits.startingRedline(stored: defaults.object(forKey: Key.redline.rawValue) as? Double,
+                                           metric: .output, migrated: redlinesMigrated),
             metric: .output
         )
         redlineTotal = SettingsLimits.snapRedline(
-            defaults.object(forKey: Key.redlineTotal.rawValue) as? Double ?? SettingsLimits.defaultRedline(for: .total),
+            SettingsLimits.startingRedline(stored: defaults.object(forKey: Key.redlineTotal.rawValue) as? Double,
+                                           metric: .total, migrated: redlinesMigrated),
             metric: .total
         )
         barMode = BarDisplayMode(rawValue: defaults.string(forKey: Key.barMode.rawValue) ?? "") ?? .glyphValue
         barColoredGlyph = defaults.object(forKey: Key.barColoredGlyph.rawValue) as? Bool ?? true
         barShowsUnit = defaults.object(forKey: Key.barShowsUnit.rawValue) as? Bool ?? true
-        orbVisible = defaults.object(forKey: Key.orbVisible.rawValue) as? Bool ?? true
-        orbSize = (defaults.object(forKey: Key.orbSize.rawValue) as? Double ?? 148)
-            .clamped(to: SettingsLimits.orbSize)
-        orbOpacity = (defaults.object(forKey: Key.orbOpacity.rawValue) as? Double ?? 1)
-            .clamped(to: SettingsLimits.orbOpacity)
-        orbAlwaysOnTop = defaults.object(forKey: Key.orbAlwaysOnTop.rawValue) as? Bool ?? true
-        orbClickThrough = defaults.object(forKey: Key.orbClickThrough.rawValue) as? Bool ?? false
-        orbFadeWhenIdle = defaults.object(forKey: Key.orbFadeWhenIdle.rawValue) as? Bool ?? false
-        orbAllSpaces = defaults.object(forKey: Key.orbAllSpaces.rawValue) as? Bool ?? true
+        orbsVisible = defaults.object(forKey: Key.orbsVisible.rawValue) as? Bool
+            ?? defaults.object(forKey: Key.orbVisible.rawValue) as? Bool ?? true
         agentsExpanded = defaults.object(forKey: Key.agentsExpanded.rawValue) as? Bool ?? false
         effects = EffectsLevel(rawValue: defaults.string(forKey: Key.effects.rawValue) ?? "") ?? .standard
         celebratePeaks = defaults.object(forKey: Key.celebratePeaks.rawValue) as? Bool ?? true
@@ -133,6 +116,12 @@ final class AppSettings {
         antigravityRoot = Self.url(defaults.string(forKey: Key.antigravityRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
         heroLastTitle = defaults.string(forKey: Key.heroLastTitle.rawValue)
+        if !redlinesMigrated {
+            // A stored former default now reads as the new default; persist it once so a later choice of 400 stays.
+            if defaults.object(forKey: Key.redline.rawValue) != nil { store(redlineOutput, .redline) }
+            if defaults.object(forKey: Key.redlineTotal.rawValue) != nil { store(redlineTotal, .redlineTotal) }
+            store(true, .redlineDefaultsMigrated)
+        }
     }
 
     var monitorConfiguration: MonitorConfiguration {
@@ -190,9 +179,9 @@ final class AppSettings {
     }
 
     private enum Key: String {
-        case appearance, language, metric, redline, redlineTotal
+        case appearance, language, metric, redline, redlineTotal, redlineDefaultsMigrated
         case barMode, barColoredGlyph, barShowsUnit
-        case orbVisible, orbSize, orbOpacity, orbAlwaysOnTop, orbClickThrough, orbFadeWhenIdle, orbAllSpaces
+        case orbVisible, orbsVisible
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources

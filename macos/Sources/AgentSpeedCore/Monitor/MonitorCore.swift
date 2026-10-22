@@ -4,7 +4,8 @@ import os
 /// Runs a `TranscriptSession` on a private serial queue: seeding, FSEvents, the fallback stat loop,
 /// rediscovery and periodic publishing.
 ///
-/// `@unchecked Sendable`: every mutable property is only touched on `queue`; the cancellation flag is locked.
+/// `@unchecked Sendable`: every mutable property is only touched on `queue`; the cancellation flag and the requested
+/// source sets are locked.
 final class MonitorCore: @unchecked Sendable {
     static let publishInterval: DispatchTimeInterval = .milliseconds(500)
     static let pollInterval: DispatchTimeInterval = .seconds(1)
@@ -20,6 +21,8 @@ final class MonitorCore: @unchecked Sendable {
     /// Runs before each whole-file read on its queue; tests use it to make a read slow.
     private let wholeFileReadHook: (@Sendable (String) -> Void)?
     private let cancelled = OSAllocatedUnfairLock(initialState: false)
+    /// Source sets whose measured peak each snapshot reports (METRICS 6.8).
+    private let subsets: OSAllocatedUnfairLock<Set<SourceSet>>
 
     private var session: TranscriptSession?
     private var watcher: DirectoryWatcher?
@@ -30,9 +33,15 @@ final class MonitorCore: @unchecked Sendable {
     private var needsRescan = false
     private var flushScheduled = false
 
-    init(configuration: MonitorConfiguration, mailbox: SnapshotMailbox, wholeFileReadHook: (@Sendable (String) -> Void)? = nil) {
+    init(
+        configuration: MonitorConfiguration,
+        mailbox: SnapshotMailbox,
+        subsets: Set<SourceSet> = [],
+        wholeFileReadHook: (@Sendable (String) -> Void)? = nil
+    ) {
         self.configuration = configuration
         self.mailbox = mailbox
+        self.subsets = OSAllocatedUnfairLock(initialState: subsets)
         self.wholeFileReadHook = wholeFileReadHook
     }
 
@@ -53,6 +62,17 @@ final class MonitorCore: @unchecked Sendable {
     }
 
     private var isCancelled: Bool { cancelled.withLock { $0 } }
+
+    /// Replaces the requested source sets from any thread; a running monitor publishes them promptly.
+    func setSubsets(_ sets: Set<SourceSet>) {
+        let changed = subsets.withLock { current in
+            guard current != sets else { return false }
+            current = sets
+            return true
+        }
+        guard changed else { return }
+        queue.async { [weak self] in self?.publish() }
+    }
 
     // MARK: - Lifecycle
 
@@ -100,7 +120,10 @@ final class MonitorCore: @unchecked Sendable {
 
         // Establish today's peak from the backlog so the first live tick cannot announce a stale record.
         let seededNow = Date()
-        _ = session.advance(nowMs: Clock.milliseconds(seededNow), todayStartMs: Self.todayStartMs(for: seededNow), emitsEvents: false)
+        _ = session.advance(
+            nowMs: Clock.milliseconds(seededNow), todayStartMs: Self.todayStartMs(for: seededNow), emitsEvents: false,
+            subsets: subsets.withLock { $0 }
+        )
         isLive = true
         updateWatcher()
         timers = [
@@ -183,7 +206,10 @@ final class MonitorCore: @unchecked Sendable {
         session.readDirtyDatabases()
         let now = Date()
         let todayStartMs = Self.todayStartMs(for: now)
-        let (output, events) = session.advance(nowMs: Clock.milliseconds(now), todayStartMs: todayStartMs, emitsEvents: true)
+        let requested = subsets.withLock { $0 }
+        let (output, events) = session.advance(
+            nowMs: Clock.milliseconds(now), todayStartMs: todayStartMs, emitsEvents: true, subsets: requested
+        )
         let context = SnapshotContext(session: session, todayStartMs: todayStartMs)
         mailbox.post(SnapshotBuilder.running(output, context: context), events: events)
     }

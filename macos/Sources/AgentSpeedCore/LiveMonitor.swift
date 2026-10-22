@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 public final class LiveMonitor {
     public private(set) var configuration: MonitorConfiguration
+    /// Source sets whose measured peak each snapshot reports in `subsetPeaks` (METRICS 6.8).
+    public private(set) var subsets: Set<SourceSet> = []
     private let store: SpeedStore
     private var core: MonitorCore?
     private var mailbox: SnapshotMailbox?
@@ -21,7 +23,7 @@ public final class LiveMonitor {
         let mailbox = SnapshotMailbox { [weak store] snapshot, events in
             store?.publishLive(snapshot, events: events)
         }
-        let core = MonitorCore(configuration: configuration, mailbox: mailbox)
+        let core = MonitorCore(configuration: configuration, mailbox: mailbox, subsets: subsets)
         self.mailbox = mailbox
         self.core = core
         core.start()
@@ -32,6 +34,13 @@ public final class LiveMonitor {
         core?.stop()
         mailbox = nil
         core = nil
+    }
+
+    /// Requests `SpeedSnapshot.subsetPeaks` for these sets (one per floating orb that tracks a subset). Kept across
+    /// restarts and configuration changes; a running monitor publishes a fresh snapshot promptly when they change.
+    public func setSubsets(_ sets: Set<SourceSet>) {
+        subsets = sets
+        core?.setSubsets(sets)
     }
 
     /// Applies new settings; transcripts are read again when the roots or the enabled sources change.

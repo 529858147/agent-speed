@@ -135,6 +135,8 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
     public var live: Rate
     public var today: TokenTotals
     public var activeAgents: Int
+    /// The estimated part of `live` (unmeasured responses and in-flight requests, METRICS 6.3), in the same units.
+    public var liveEstimated: Rate
 
     public init(
         kind: SourceKind,
@@ -144,7 +146,8 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         sessionCount: Int,
         live: Rate,
         today: TokenTotals,
-        activeAgents: Int
+        activeAgents: Int,
+        liveEstimated: Rate = .zero
     ) {
         self.kind = kind
         self.enabled = enabled
@@ -154,6 +157,7 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         self.live = live
         self.today = today
         self.activeAgents = activeAgents
+        self.liveEstimated = liveEstimated
     }
 }
 
@@ -225,6 +229,11 @@ public struct SpeedSnapshot: Equatable, Sendable {
     public var history: [HistoryPoint]
     public var lastResponse: ResponseSummary?
     public var warnings: [MonitorWarning]
+    /// Today's measured output peak of every source set requested with `LiveMonitor.setSubsets` (METRICS 6.8): the
+    /// maximum 3-bucket trailing average of the members' summed measured buckets, without the observed live part.
+    public var subsetPeaks: [SourceSet: Double]
+    /// Local midnight at which this snapshot's "today" starts; `.distantPast` before the monitor reported one.
+    public var dayStart: Date
 
     public init(
         timestamp: Date,
@@ -241,7 +250,9 @@ public struct SpeedSnapshot: Equatable, Sendable {
         toolsCount: Int,
         history: [HistoryPoint],
         lastResponse: ResponseSummary?,
-        warnings: [MonitorWarning]
+        warnings: [MonitorWarning],
+        subsetPeaks: [SourceSet: Double] = [:],
+        dayStart: Date = .distantPast
     ) {
         self.timestamp = timestamp
         self.state = state
@@ -258,6 +269,8 @@ public struct SpeedSnapshot: Equatable, Sendable {
         self.history = history
         self.lastResponse = lastResponse
         self.warnings = warnings
+        self.subsetPeaks = subsetPeaks
+        self.dayStart = dayStart
     }
 
     public static let empty = SpeedSnapshot(
@@ -275,7 +288,9 @@ public struct SpeedSnapshot: Equatable, Sendable {
         toolsCount: 0,
         history: [],
         lastResponse: nil,
-        warnings: []
+        warnings: [],
+        subsetPeaks: [:],
+        dayStart: .distantPast
     )
 }
 

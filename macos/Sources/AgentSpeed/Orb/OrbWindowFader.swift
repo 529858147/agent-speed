@@ -8,6 +8,8 @@ final class OrbWindowFader {
     private weak var panel: NSWindow?
     private(set) var isShown = false
     private(set) var isDimmed = false
+    /// An orb whose sources are all unavailable dims to 55 % (DESIGN 2b, Unavailable sources).
+    private(set) var factor: CGFloat = 1
     private var generation = 0
 
     init(panel: NSWindow) {
@@ -42,13 +44,29 @@ final class OrbWindowFader {
         }
     }
 
+    func setFactor(_ factor: CGFloat) {
+        guard factor != self.factor else { return }
+        self.factor = factor
+        guard isShown else { return }
+        fade(to: targetAlpha, duration: 0.2, timing: .easeOut)
+    }
+
+    /// Fades out and orders the panel out, then calls `completion` (removed and merged orbs).
+    func fadeOut(duration: TimeInterval, completion: @escaping @MainActor () -> Void) {
+        isShown = false
+        fade(to: 0, duration: duration, timing: .easeOut) { [weak self] in
+            self?.panel?.orderOut(nil)
+            completion()
+        }
+    }
+
     /// Re-applies front ordering after a level or Spaces change.
     func reorderIfShown() {
         guard isShown, let panel else { return }
         panel.orderFrontRegardless()
     }
 
-    private var targetAlpha: CGFloat { isShown ? (isDimmed ? Self.dimmedAlpha : 1) : 0 }
+    private var targetAlpha: CGFloat { isShown ? (isDimmed ? Self.dimmedAlpha : 1) * factor : 0 }
 
     private func fade(
         to alpha: CGFloat,
@@ -72,15 +90,17 @@ final class OrbWindowFader {
     }
 }
 
-/// Dims the orb after 60 s of idle speed (setting "fade when idle"). Event driven: one one-shot timer for the exact
-/// moment the dim is due, recomputed whenever the tier, the setting or the pointer state changes.
+/// Dims the orb after 60 s of idle speed (setting "fade when idle", per orb, from the orb's own gauge). Event driven:
+/// one one-shot timer for the exact moment the dim is due, recomputed whenever the tier, the setting or the pointer
+/// state changes.
 @MainActor
 final class OrbWindowIdleDimmer {
     static let idleDelay: TimeInterval = 60
     /// Dims again this long after the pointer leaves an orb that has been idle for a while.
     static let leaveDelay: TimeInterval = 1.5
 
-    private let model: AppModel
+    private let gauge: LiveGauge
+    private let enabled: @MainActor () -> Bool
     private let interaction: OrbInteraction
     private let apply: (Bool) -> Void
     private let armedAt = Clock.now
@@ -89,8 +109,9 @@ final class OrbWindowIdleDimmer {
     private var timer: Timer?
     private var loop: ObservationLoop?
 
-    init(model: AppModel, interaction: OrbInteraction, apply: @escaping (Bool) -> Void) {
-        self.model = model
+    init(gauge: LiveGauge, enabled: @escaping @MainActor () -> Bool, interaction: OrbInteraction, apply: @escaping (Bool) -> Void) {
+        self.gauge = gauge
+        self.enabled = enabled
         self.interaction = interaction
         self.apply = apply
         loop = ObservationLoop { [weak self] in self?.evaluate() }
@@ -103,8 +124,8 @@ final class OrbWindowIdleDimmer {
     }
 
     private func evaluate() {
-        let enabled = model.settings.orbFadeWhenIdle
-        let idle = model.gauge.tier == .idle
+        let enabled = enabled()
+        let idle = gauge.tier == .idle
         let engaged = interaction.isHovered || interaction.isDragging
         let now = Clock.now
         if engaged != wasEngaged {
@@ -117,7 +138,7 @@ final class OrbWindowIdleDimmer {
             apply(false)
             return
         }
-        let lastActive = now - model.gauge.idleDuration(at: now)
+        let lastActive = now - gauge.idleDuration(at: now)
         let due = max(lastActive + Self.idleDelay, armedAt + Self.idleDelay, pointerLeftAt + Self.leaveDelay)
         if now >= due {
             apply(true)

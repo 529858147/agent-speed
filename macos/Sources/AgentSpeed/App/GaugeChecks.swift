@@ -36,6 +36,25 @@ enum GaugeChecks {
         gauge.ingest(32, now: Clock.now)
         check("steady value keeps the title", gauge.title == .sportsCar)
 
+        // The redline default moved to the slider's maximum; a stored former default moves once (DESIGN 1).
+        let suite = "AgentSpeedRedlineCheck"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        if let defaults = UserDefaults(suiteName: suite) {
+            check("fresh install defaults to 2000 / 2M", AppSettings(defaults: defaults).redlineOutput == 2000
+                && AppSettings(defaults: defaults).redlineTotal == 2_000_000)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            defaults.set(400.0, forKey: "redline")
+            defaults.set(200_000.0, forKey: "redlineTotal")
+            let migrated = AppSettings(defaults: defaults)
+            check("stored former defaults move to the new defaults", migrated.redlineOutput == 2000 && migrated.redlineTotal == 2_000_000)
+            migrated.redlineOutput = 400
+            check("a later choice of 400 is kept", AppSettings(defaults: defaults).redlineOutput == 400)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            defaults.set(650.0, forKey: "redline")
+            check("any other stored value is kept", AppSettings(defaults: defaults).redlineOutput == 650)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+        }
+
         let report = results.map { "\($0.1 ? "PASS" : "FAIL")  \($0.0)" }.joined(separator: "\n")
         try? (report + "\n").write(to: directory.appendingPathComponent("gauge-checks.txt"), atomically: true, encoding: .utf8)
         for (name, passed) in results where !passed {

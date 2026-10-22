@@ -11,8 +11,11 @@ protocol AppCommands: AnyObject {
     func showSettings(_ pane: SettingsPane?)
     /// Opens the Usage History window filtered to `source` (all sources when nil).
     func showHistory(source: SourceKind?)
-    func setOrbVisible(_ visible: Bool)
-    func resetOrbPosition()
+    /// The floating orbs' master switch (DESIGN 2b).
+    func setOrbsVisible(_ visible: Bool)
+    func resetOrbPosition(_ id: String)
+    /// Opens Settings → Floating orbs with `id` selected.
+    func showOrbSettings(_ id: String?)
     /// Opens the update window on the current update state.
     func showUpdate()
     /// Manual check from a menu: opens the update window, which reports the result.
@@ -30,6 +33,10 @@ final class AppModel {
     let settings: AppSettings
     let l10n: Localizer
     let gauge: LiveGauge
+    /// The all-sources orb feed: the dashboard hero and every orb tracking all sources read it.
+    let mainFeed: OrbFeed
+    /// The floating orbs (DESIGN 2b).
+    let orbs: OrbsController
     let accessibility: AccessibilityState
     let launchAtLogin: LaunchAtLogin
     let updates: UpdateController
@@ -45,6 +52,7 @@ final class AppModel {
     @ObservationIgnored private var demoLoops = false
     @ObservationIgnored private var loops: [ObservationLoop] = []
     @ObservationIgnored private var appliedConfiguration: MonitorConfiguration?
+    @ObservationIgnored private var orbSubsets: Set<SourceSet> = []
 
     init(
         store: SpeedStore = SpeedStore(),
@@ -58,6 +66,8 @@ final class AppModel {
         self.updates = updates ?? UpdateController()
         l10n = Localizer(preference: settings.language)
         gauge = LiveGauge()
+        mainFeed = OrbFeed(gauge: gauge)
+        orbs = OrbsController(defaults: settings.storage)
         accessibility = AccessibilityState()
         launchAtLogin = LaunchAtLogin()
         gauge.redline = settings.redline
@@ -87,6 +97,24 @@ final class AppModel {
             self.gauge.ingest(self.value(of: snapshot.live), now: Clock.now)
         })
         loops.append(ObservationLoop { [weak self] in
+            guard let self else { return }
+            let snapshot = self.store.snapshot
+            let today = self.settings.metric == .output ? snapshot.today.output : snapshot.today.total
+            self.mainFeed.set(
+                generating: snapshot.agents.filter { $0.phase == .generating }.map(\.source),
+                todayTokens: today,
+                agentCount: snapshot.agents.count
+            )
+            self.mainFeed.redlineOutput = self.settings.redline(for: .output)
+        })
+        store.addEventListener { [weak self] event in
+            guard let feed = self?.mainFeed else { return }
+            switch event {
+            case .responseCompleted(let response): feed.emit(.response(output: response.outputTokens, speed: response.speed))
+            case .newPeak: feed.emit(.newPeak)
+            }
+        }
+        loops.append(ObservationLoop { [weak self] in
             // The effects preview sweeps every title; it must not replace the vehicle the agents last reached.
             guard let self, let key = self.gauge.title.vehicleKey, !self.store.isPreviewing else { return }
             if self.settings.heroLastTitle != key { self.settings.heroLastTitle = key }
@@ -96,10 +124,12 @@ final class AppModel {
             let previewing = self.store.isPreviewing
             if self.isPreviewing != previewing { self.isPreviewing = previewing }
         })
+        orbs.activate(model: self)
         guard live else { return }
         let monitor = LiveMonitor(store: store, configuration: settings.monitorConfiguration)
         self.monitor = monitor
         appliedConfiguration = settings.monitorConfiguration
+        monitor.setSubsets(orbSubsets)
         monitor.start()
         loops.append(ObservationLoop { [weak self] in
             guard let self else { return }
@@ -146,7 +176,15 @@ final class AppModel {
         history.clear()
     }
 
+    /// The source sets of the orbs tracking a subset, whose peaks the engine reports (METRICS 6.8).
+    func setOrbSubsets(_ sets: Set<SourceSet>) {
+        guard sets != orbSubsets else { return }
+        orbSubsets = sets
+        monitor?.setSubsets(sets)
+    }
+
     func shutdown() {
+        orbs.shutdown()
         demo?.stop()
         historyStartTimer?.invalidate()
         historyService?.stop()

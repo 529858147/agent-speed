@@ -6,7 +6,12 @@ import AppKit
 final class OrbWindowVisibilityMonitor {
     var onChange: (() -> Void)?
 
-    private(set) var isOccluded = false
+    /// Read live: a window shown while already covered gets no occlusion notification, because its state does not
+    /// change.
+    var isOccluded: Bool {
+        guard let window, window.isVisible else { return false }
+        return !window.occlusionState.contains(.visible)
+    }
     private(set) var screensAsleep = false
     private(set) var sessionInactive = false
 
@@ -17,10 +22,7 @@ final class OrbWindowVisibilityMonitor {
         self.window = window
         let center = NotificationCenter.default
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(center, NSWindow.didChangeOcclusionStateNotification, object: window) { monitor in
-            guard let window = monitor.window else { return }
-            monitor.isOccluded = window.isVisible && !window.occlusionState.contains(.visible)
-        }
+        observe(center, NSWindow.didChangeOcclusionStateNotification, object: window) { _ in }
         observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.screensAsleep = true }
         observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.screensAsleep = false }
         observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { $0.sessionInactive = true }
@@ -42,9 +44,8 @@ final class OrbWindowVisibilityMonitor {
         let token = center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let before = self.allowsVisibility
                 update(self)
-                if before != self.allowsVisibility { self.onChange?() }
+                self.onChange?()
             }
         }
         tokens.append((center, token))

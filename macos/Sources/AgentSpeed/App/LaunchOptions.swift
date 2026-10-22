@@ -4,6 +4,10 @@ import Foundation
 struct LaunchOptions: Sendable {
     var demo = false
     var previewDirectory: URL?
+    /// `--orb-frames DIR`: records floating orbs frame by frame, see `OrbFrameHarness`.
+    var orbFramesDirectory: URL?
+    /// `--orb-bench DIR`: measures the floating orbs' CPU and GPU time on screen, see `OrbBenchmark`.
+    var orbBenchDirectory: URL?
     /// `--check-updates-now`: run a manual update check right after launch.
     var checkUpdatesNow = false
     /// `--install-update-now`: check, then install an available update without waiting for the button.
@@ -19,6 +23,8 @@ struct LaunchOptions: Sendable {
     var heroFramesDirectory: URL?
     /// `--hero-cpu DIR`: measures the app's CPU with the dashboard open and closed, see `HeroLiveHarness`.
     var heroCPUDirectory: URL?
+    /// `--orbs-demo DIR`: shows three orbs, drags, splits and merges them and captures the region, see `OrbsDemoHarness`.
+    var orbsDemoDirectory: URL?
     #endif
 
     static func parse(_ arguments: [String] = CommandLine.arguments) -> LaunchOptions {
@@ -32,6 +38,14 @@ struct LaunchOptions: Sendable {
                 options.checkUpdatesNow = true
             case "--install-update-now":
                 options.installUpdateNow = true
+            case "--orb-frames":
+                if let path = iterator.next() {
+                    options.orbFramesDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--orb-bench":
+                if let path = iterator.next() {
+                    options.orbBenchDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
             case "--render-previews":
                 if let path = iterator.next() {
                     options.previewDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
@@ -44,6 +58,10 @@ struct LaunchOptions: Sendable {
             case "--hero-cpu":
                 if let path = iterator.next() {
                     options.heroCPUDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--orbs-demo":
+                if let path = iterator.next() {
+                    options.orbsDemoDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
             case "--hero-frames":
                 if let path = iterator.next() {

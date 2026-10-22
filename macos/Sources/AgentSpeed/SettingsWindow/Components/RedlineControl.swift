@@ -5,15 +5,40 @@ import SwiftUI
 /// tick where each speed title begins. The slider moves along a 0…1 position: linear for output speed, logarithmic
 /// for total throughput.
 struct RedlineControl: View {
-    let settings: AppSettings
+    /// The redline being edited (the General one, or a floating orb's own) and the metric it belongs to.
+    let redline: Binding<Double>
+    let metric: SpeedMetric
     let l10n: Localizer
     var reduceMotion = false
     /// The title hovered or focused in the ladder below; its tick is emphasized.
     var highlightedTitle: SpeedTitle?
+    /// The row title; the General redline's by default.
+    var title: String?
+
+    /// The General redline of the selected metric.
+    init(settings: AppSettings, l10n: Localizer, reduceMotion: Bool = false, highlightedTitle: SpeedTitle? = nil) {
+        self.init(
+            redline: Binding(get: { settings.redline }, set: { settings.redline = $0 }),
+            metric: settings.metric,
+            l10n: l10n,
+            reduceMotion: reduceMotion,
+            highlightedTitle: highlightedTitle
+        )
+    }
+
+    init(redline: Binding<Double>, metric: SpeedMetric, l10n: Localizer, reduceMotion: Bool = false,
+         highlightedTitle: SpeedTitle? = nil, title: String? = nil) {
+        self.title = title
+        self.redline = redline
+        self.metric = metric
+        self.l10n = l10n
+        self.reduceMotion = reduceMotion
+        self.highlightedTitle = highlightedTitle
+    }
 
     var body: some View {
-        let title = l10n("settings.redline")
-        let valueText = l10n("mac.settings.speedValue", SpeedFormat.speed(settings.redline))
+        let title = self.title ?? l10n("settings.redline")
+        let valueText = l10n("mac.settings.speedValue", SpeedFormat.speed(redline.wrappedValue))
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(alignment: .firstTextBaseline) {
                 RowTitle(title)
@@ -34,14 +59,15 @@ struct RedlineControl: View {
                 .padding(.top, Spacing.xxs)
         }
         .padding(.vertical, Spacing.xxs)
-        .animation(reduceMotion ? nil : Motion.layout, value: settings.metric)
+        .animation(reduceMotion ? nil : Motion.layout, value: metric)
     }
 
     private var position: Binding<Double> {
-        let settings = settings
+        let redline = redline
+        let metric = metric
         return Binding(
-            get: { SettingsLimits.position(ofRedline: settings.redline, metric: settings.metric) },
-            set: { settings.redline = SettingsLimits.redline(atPosition: $0, metric: settings.metric) }
+            get: { SettingsLimits.position(ofRedline: redline.wrappedValue, metric: metric) },
+            set: { redline.wrappedValue = SettingsLimits.redline(atPosition: $0, metric: metric) }
         )
     }
 
@@ -53,15 +79,14 @@ struct RedlineControl: View {
         case .decrement: sign = -1
         @unknown default: return
         }
-        let metric = settings.metric
-        let current = settings.redline
+        let current = redline.wrappedValue
         let position = SettingsLimits.position(ofRedline: current, metric: metric)
         var next = SettingsLimits.redline(atPosition: position + sign / 40, metric: metric)
         if next == current {
             let step = SettingsLimits.redlineStep(at: current, metric: metric)
             next = SettingsLimits.snapRedline(current + sign * step, metric: metric)
         }
-        settings.redline = next
+        redline.wrappedValue = next
     }
 }
 

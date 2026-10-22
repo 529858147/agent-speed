@@ -20,7 +20,7 @@ struct HeroSection: View {
         let context = l10n("agents.context", snapshot.generatingCount, snapshot.toolsCount)
 
         HStack(spacing: Spacing.l) {
-            OrbView(model: model, diameter: DashboardLayout.orbDiameter, style: .embedded)
+            OrbView(model: model, diameter: DashboardLayout.orbDiameter, surface: .embedded)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HeroReadout(

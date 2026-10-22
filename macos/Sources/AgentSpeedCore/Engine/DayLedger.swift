@@ -16,6 +16,7 @@ struct DayLedger: Sendable {
     private var outputBuckets: [Double]
     private var totalBuckets: [Double]
     private var cachedPeak: MeasuredPeak?
+    private var sourceSeconds: SourceSeconds
 
     struct MeasuredPeak: Equatable, Sendable {
         var output: Double = 0
@@ -28,6 +29,7 @@ struct DayLedger: Sendable {
         firstSecond = ResponseTiming.second(of: dayStartMs)
         outputBuckets = Array(repeating: 0, count: Self.capacitySeconds)
         totalBuckets = Array(repeating: 0, count: Self.capacitySeconds)
+        sourceSeconds = SourceSeconds(firstSecond: firstSecond, capacity: Self.capacitySeconds)
     }
 
     func contains(_ record: ResponseRecord) -> Bool { record.endMs >= dayStartMs }
@@ -65,6 +67,7 @@ struct DayLedger: Sendable {
             }
         }
         cachedPeak = nil
+        sourceSeconds.apply(timed, source: record.source, sign: sign)
     }
 
     /// Maximum 3-bucket trailing average of the measured one-second buckets.
@@ -89,4 +92,16 @@ struct DayLedger: Sendable {
         cachedPeak = peak
         return peak
     }
+
+    /// Maximum 3-bucket trailing average of today's measured output summed over `set` (METRICS 6.8).
+    mutating func measuredPeakOutput(for set: SourceSet) -> Double {
+        sourceSeconds.measuredPeak(for: set)
+    }
+
+    /// Sources that have per-second buckets today.
+    var sourcesWithBuckets: SourceSet { sourceSeconds.allocated }
+
+    /// Subset peaks computed rather than answered from the cache, and the blocks they scanned (tests).
+    var subsetPeakScans: Int { sourceSeconds.peakScans }
+    var subsetScannedBlocks: Int { sourceSeconds.scannedBlocks }
 }

@@ -6,10 +6,16 @@ struct SettingsPaneView: View {
     let model: AppModel
 
     static let width: CGFloat = 520
+    /// The floating orb pane lists live orbs and five style cards in a row (DESIGN 5: content up to 680 pt).
+    static let wideWidth: CGFloat = 680
+
+    static func width(for pane: SettingsPane) -> CGFloat {
+        pane == .orb ? wideWidth : width
+    }
 
     var body: some View {
         content
-            .frame(width: Self.width)
+            .frame(width: Self.width(for: pane))
             .fixedSize(horizontal: false, vertical: true)
     }
 

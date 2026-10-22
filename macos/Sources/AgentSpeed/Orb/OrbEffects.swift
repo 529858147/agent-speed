@@ -1,17 +1,19 @@
 import Foundation
 
-/// What a given effects level allows (DESIGN section 2, Effects intensity), after Reduce Motion and the
-/// embedded cap.
+/// What a given effects level allows (DESIGN section 2, Effects intensity), after Reduce Motion and the cap of the
+/// embedded orb and of the Settings previews (Soft).
 struct OrbEffects: Equatable {
     let level: EffectsLevel
     let reduceMotion: Bool
 
-    init(level: EffectsLevel, reduceMotion: Bool, style: OrbStyle) {
+    init(level: EffectsLevel, reduceMotion: Bool, surface: OrbSurface) {
         var level = reduceMotion ? min(level, .soft) : level
-        if style == .embedded { level = min(level, .soft) }
+        if surface != .floating { level = min(level, .soft) }
         self.level = level
         self.reduceMotion = reduceMotion
     }
+
+    var isMax: Bool { level == .max }
 
     var ambient: Bool { level >= .soft }
     var breathing: Bool { level >= .soft }

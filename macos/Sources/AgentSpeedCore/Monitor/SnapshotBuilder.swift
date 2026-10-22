@@ -11,6 +11,13 @@ struct SnapshotContext: Sendable {
 
     var sources: [SourceKind: SourceInfo]
     var warnings: [MonitorWarning]
+    var todayStartMs: Int64
+
+    init(sources: [SourceKind: SourceInfo], warnings: [MonitorWarning] = [], todayStartMs: Int64) {
+        self.sources = sources
+        self.warnings = warnings
+        self.todayStartMs = todayStartMs
+    }
 
     init(session: TranscriptSession, todayStartMs: Int64) {
         let counts = session.sessionCounts(todayStartMs: todayStartMs)
@@ -35,6 +42,7 @@ struct SnapshotContext: Sendable {
         let malformed = session.malformedLines
         if malformed > 0 { warnings.append(.malformedLines(malformed)) }
         self.warnings = warnings
+        self.todayStartMs = todayStartMs
     }
 
     /// Warnings that depend on the engine's view of today.
@@ -70,7 +78,8 @@ enum SnapshotBuilder {
                 sessionCount: info?.sessionCount ?? 0,
                 live: output.sourceLive[kind] ?? .zero,
                 today: output.todayBySource[kind] ?? TokenTotals(),
-                activeAgents: agents.filter { $0.source == kind && $0.phase == .generating }.count
+                activeAgents: agents.filter { $0.source == kind && $0.phase == .generating }.count,
+                liveEstimated: output.sourceLiveEstimated[kind] ?? .zero
             )
         }
         return SpeedSnapshot(
@@ -88,7 +97,9 @@ enum SnapshotBuilder {
             toolsCount: agents.filter { $0.phase == .tools }.count,
             history: output.history,
             lastResponse: output.lastResponse,
-            warnings: context.warnings(for: output)
+            warnings: context.warnings(for: output),
+            subsetPeaks: output.subsetPeaks,
+            dayStart: date(output.todayStartMs)
         )
     }
 
@@ -111,6 +122,7 @@ enum SnapshotBuilder {
             )
         }
         snapshot.warnings = context.warnings
+        snapshot.dayStart = date(context.todayStartMs)
         return snapshot
     }
 

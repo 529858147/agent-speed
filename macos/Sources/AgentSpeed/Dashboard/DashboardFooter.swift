@@ -9,12 +9,13 @@ struct DashboardFooter: View {
 
     var body: some View {
         let l10n = model.l10n
-        let orbVisible = model.settings.orbVisible
-        let orbAction = l10n(orbVisible ? "menu.hideOrb" : "menu.showOrb")
+        let orbVisible = model.orbs.masterVisible
+        let plural = model.orbs.orbs.count > 1
+        let orbAction = l10n(orbVisible ? (plural ? "menu.hideOrbs" : "menu.hideOrb") : (plural ? "menu.showOrbs" : "menu.showOrb"))
 
         HStack(spacing: 2) {
             Button {
-                model.commands?.setOrbVisible(!orbVisible)
+                model.commands?.setOrbsVisible(!orbVisible)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: orbVisible ? "circle.circle.fill" : "circle.circle")

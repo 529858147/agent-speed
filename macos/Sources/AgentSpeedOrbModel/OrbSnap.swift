@@ -1,37 +1,42 @@
 import CoreGraphics
 
 /// A display's full and usable frames in global screen coordinates.
-struct OrbSnapScreen: Equatable, Sendable {
-    var frame: CGRect
-    var visibleFrame: CGRect
+public struct OrbSnapScreen: Equatable, Sendable {
+    public var frame: CGRect
+    public var visibleFrame: CGRect
+
+    public init(frame: CGRect, visibleFrame: CGRect) {
+        self.frame = frame
+        self.visibleFrame = visibleFrame
+    }
 }
 
 /// Pure placement geometry for the floating orb. Every position is the disc center; distances are measured from
 /// the disc edge.
-enum OrbSnap {
+public enum OrbSnap {
     /// Releasing the disc this close to a usable edge (or past it) snaps it to `margin`.
-    static let threshold: CGFloat = 24
-    static let margin: CGFloat = 12
+    public static let threshold: CGFloat = 24
+    public static let margin: CGFloat = 12
     /// Default distance from the top-right corner of the usable area.
-    static let defaultInset: CGFloat = 24
+    public static let defaultInset: CGFloat = 24
 
     // MARK: Release
 
-    static func snapped(_ center: CGPoint, radius: CGFloat, in visible: CGRect) -> CGPoint {
+    public static func snapped(_ center: CGPoint, radius: CGFloat, in visible: CGRect) -> CGPoint {
         CGPoint(
             x: snapAxis(center.x, radius: radius, low: visible.minX, high: visible.maxX),
             y: snapAxis(center.y, radius: radius, low: visible.minY, high: visible.maxY)
         )
     }
 
-    static func clamped(_ center: CGPoint, radius: CGFloat, in visible: CGRect) -> CGPoint {
+    public static func clamped(_ center: CGPoint, radius: CGFloat, in visible: CGRect) -> CGPoint {
         CGPoint(
             x: clampAxis(center.x, radius: radius, low: visible.minX, high: visible.maxX),
             y: clampAxis(center.y, radius: radius, low: visible.minY, high: visible.maxY)
         )
     }
 
-    static func defaultCenter(radius: CGFloat, in visible: CGRect) -> CGPoint {
+    public static func defaultCenter(radius: CGFloat, in visible: CGRect) -> CGPoint {
         clamped(
             CGPoint(x: visible.maxX - defaultInset - radius, y: visible.maxY - defaultInset - radius),
             radius: radius,
@@ -41,7 +46,7 @@ enum OrbSnap {
 
     /// New center after a diameter change: edges the disc is docked to keep their distance, otherwise the center
     /// stays put; the result is always fully inside `visible`.
-    static func resized(_ center: CGPoint, from oldRadius: CGFloat, to newRadius: CGFloat, in visible: CGRect) -> CGPoint {
+    public static func resized(_ center: CGPoint, from oldRadius: CGFloat, to newRadius: CGFloat, in visible: CGRect) -> CGPoint {
         CGPoint(
             x: resizeAxis(center.x, from: oldRadius, to: newRadius, low: visible.minX, high: visible.maxX),
             y: resizeAxis(center.y, from: oldRadius, to: newRadius, low: visible.minY, high: visible.maxY)
@@ -49,7 +54,7 @@ enum OrbSnap {
     }
 
     /// Index of the screen the disc belongs to: the one whose frame contains the center, else the nearest.
-    static func screenIndex(for point: CGPoint, in screens: [OrbSnapScreen]) -> Int? {
+    public static func screenIndex(for point: CGPoint, in screens: [OrbSnapScreen]) -> Int? {
         if let index = screens.firstIndex(where: { $0.frame.contains(point) }) { return index }
         return screens.indices.min { distanceSquared(point, to: screens[$0].frame) < distanceSquared(point, to: screens[$1].frame) }
     }
@@ -58,7 +63,7 @@ enum OrbSnap {
 
     /// Rects the disc center can occupy while dragging without resistance: each usable area inset by the radius,
     /// plus bridges across edges shared by two displays so the disc can travel between them.
-    static func dragRegion(screens: [OrbSnapScreen], radius: CGFloat) -> [CGRect] {
+    public static func dragRegion(screens: [OrbSnapScreen], radius: CGFloat) -> [CGRect] {
         let allowed = screens.map { inset($0.visibleFrame, by: radius) }
         var region = allowed
         for i in screens.indices {
@@ -93,7 +98,7 @@ enum OrbSnap {
     /// Follows `point` freely inside `region` and resists beyond it like a rubber band. Each rect proposes its own
     /// stretched position; they are blended by inverse distance so the result stays continuous around the concave
     /// corners of multi-display arrangements.
-    static func rubberBanded(_ point: CGPoint, region: [CGRect], radius: CGFloat) -> CGPoint {
+    public static func rubberBanded(_ point: CGPoint, region: [CGRect], radius: CGFloat) -> CGPoint {
         guard !region.isEmpty else { return point }
         let limit = max(24, radius * 0.6)
         var sum = CGPoint.zero
@@ -113,7 +118,7 @@ enum OrbSnap {
 
     // MARK: Axes
 
-    static func clampAxis(_ value: CGFloat, radius: CGFloat, low: CGFloat, high: CGFloat) -> CGFloat {
+    public static func clampAxis(_ value: CGFloat, radius: CGFloat, low: CGFloat, high: CGFloat) -> CGFloat {
         let lower = low + radius
         let upper = high - radius
         guard lower <= upper else { return (low + high) / 2 }

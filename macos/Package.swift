@@ -29,9 +29,14 @@ let package = Package(
             name: "AgentSpeedHero",
             path: "Sources/AgentSpeedHero"
         ),
+        .target(
+            name: "AgentSpeedOrbModel",
+            dependencies: ["AgentSpeedCore"],
+            path: "Sources/AgentSpeedOrbModel"
+        ),
         .executableTarget(
             name: "AgentSpeed",
-            dependencies: ["AgentSpeedCore", "AgentSpeedHero"],
+            dependencies: ["AgentSpeedCore", "AgentSpeedHero", "AgentSpeedOrbModel"],
             path: "Sources/AgentSpeed"
         ),
         .executableTarget(
@@ -48,6 +53,11 @@ let package = Package(
             name: "AgentSpeedHeroTests",
             dependencies: ["AgentSpeedHero"],
             path: "Tests/AgentSpeedHeroTests"
+        ),
+        .testTarget(
+            name: "AgentSpeedOrbModelTests",
+            dependencies: ["AgentSpeedOrbModel", "AgentSpeedCore"],
+            path: "Tests/AgentSpeedOrbModelTests"
         ),
     ]
 )

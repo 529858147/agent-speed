@@ -8,6 +8,10 @@ import Metal
 @MainActor
 enum HeroBenchmark {
     static func run(model: AppModel, into directory: URL) {
+        // The designer's scenarios are written for R = 400 tok/s.
+        let redline = model.settings.redlineOutput
+        model.settings.redlineOutput = 400
+        defer { model.settings.redlineOutput = redline }
         var lines: [String] = []
         #if DEBUG
         lines.append("build: debug (use a release build for representative numbers)")

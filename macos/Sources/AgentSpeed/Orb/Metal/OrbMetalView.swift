@@ -1,7 +1,9 @@
 import MetalKit
 import SwiftUI
 
-/// Hosts the GPU-drawn layers of the orb. Runs at 60 fps while active and draws only on demand while paused.
+/// Hosts the GPU-drawn layers of the dashboard's embedded orb. Runs at the display's cadence while active and draws
+/// only on demand while paused. (Floating orbs and Settings previews draw through `OrbCanvasView` on the shared
+/// frame clock instead.)
 struct OrbMetalView: NSViewRepresentable {
     let mode: OrbAnimator.FrameMode
     /// Active frames follow the display's cadence (the refresh rate divided down to no less than 60 fps) instead of a
@@ -9,7 +11,7 @@ struct OrbMetalView: NSViewRepresentable {
     var followsDisplay = false
     /// Changes whenever a paused orb must redraw once (content or settled values changed).
     let redrawKey: AnyHashable
-    let scene: @MainActor (CGSize, CGFloat, TimeInterval) -> OrbScene
+    let scene: @MainActor (inout OrbScene, CGSize, CGFloat, TimeInterval) -> Void
 
     func makeNSView(context: Context) -> OrbMTKView {
         let view = OrbMTKView()
@@ -36,13 +38,14 @@ struct OrbMetalView: NSViewRepresentable {
 }
 
 final class OrbMTKView: MTKView, MTKViewDelegate {
-    var sceneProvider: (@MainActor (CGSize, CGFloat, TimeInterval) -> OrbScene)?
+    var sceneProvider: (@MainActor (inout OrbScene, CGSize, CGFloat, TimeInterval) -> Void)?
     var redrawKey: AnyHashable?
     var followsDisplay = false {
         didSet { if followsDisplay != oldValue { reapply() } }
     }
     private let encoder: OrbEncoder?
     private var mode: OrbAnimator.FrameMode?
+    private var scene = OrbScene(capacity: 1024)
 
     init() {
         let gpu = OrbGPU.shared
@@ -109,13 +112,16 @@ final class OrbMTKView: MTKView, MTKViewDelegate {
         guard let encoder, let sceneProvider, bounds.width > 0,
               let pass = currentRenderPassDescriptor, let drawable = currentDrawable else { return }
         let scale = window?.backingScaleFactor ?? 2
-        let scene = sceneProvider(bounds.size, scale, Clock.now)
+        sceneProvider(&scene, bounds.size, scale, Clock.now)
         encoder.render(scene, size: bounds.size, scale: scale, pass: pass, present: drawable)
     }
 }
 
-/// Renders a scene offscreen (previews).
+/// Renders a scene offscreen (previews and the frame harness).
+@MainActor
 enum OrbSnapshot {
+    private static var encoder: OrbEncoder?
+
     static func image(_ scene: OrbScene, side: CGFloat, scale: CGFloat) -> CGImage? {
         guard let gpu = OrbGPU.shared else { return nil }
         let pixels = Int((side * scale).rounded())
@@ -128,7 +134,9 @@ enum OrbSnapshot {
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        OrbEncoder(gpu: gpu).render(scene, size: CGSize(width: side, height: side), scale: scale, pass: pass, present: nil, waitUntilCompleted: true)
+        let encoder = Self.encoder ?? OrbEncoder(gpu: gpu)
+        Self.encoder = encoder
+        encoder.render(scene, size: CGSize(width: side, height: side), scale: scale, pass: pass, present: nil, waitUntilCompleted: true)
         let bytesPerRow = pixels * 4
         var bytes = [UInt8](repeating: 0, count: bytesPerRow * pixels)
         texture.getBytes(&bytes, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, pixels, pixels), mipmapLevel: 0)

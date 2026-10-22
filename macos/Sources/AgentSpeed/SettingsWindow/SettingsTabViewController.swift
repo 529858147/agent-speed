@@ -71,7 +71,7 @@ final class SettingsTabViewController: NSTabViewController {
     /// Sizes the window so its content area matches the selected pane, keeping the top edge in place.
     func fitWindowToSelectedPane(animated: Bool) {
         guard isViewLoaded, let window = view.window, let height = heights[selectedPane] else { return }
-        var target = NSSize(width: SettingsPaneView.width, height: height.rounded(.up))
+        var target = NSSize(width: SettingsPaneView.width(for: selectedPane), height: height.rounded(.up))
         if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
             let chrome = window.frame.height - view.frame.height
             target.height = min(target.height, (visible.height - chrome - Self.screenMargin).rounded(.down))

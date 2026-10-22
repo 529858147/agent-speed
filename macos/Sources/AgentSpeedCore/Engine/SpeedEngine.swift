@@ -75,7 +75,8 @@ struct SpeedEngine: Sendable {
 
     // MARK: - Computation
 
-    mutating func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool) -> EngineOutput {
+    /// `subsets` are the source sets whose measured peak today is reported in `subsetPeaks` (METRICS 6.8).
+    mutating func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool, subsets: Set<SourceSet> = []) -> EngineOutput {
         rollOverIfNeeded(todayStartMs: todayStartMs)
         prune(nowMs: nowMs, todayStartMs: todayStartMs)
 
@@ -113,11 +114,17 @@ struct SpeedEngine: Sendable {
         }
         previousPeakOutput = peak.output
 
+        var subsetPeaks = [SourceSet: Double](minimumCapacity: subsets.count)
+        for set in subsets {
+            subsetPeaks[set] = ledger?.measuredPeakOutput(for: set) ?? 0
+        }
+
         return EngineOutput(
             nowMs: nowMs,
             live: live,
             liveEstimatedShare: window.estimatedShare,
             sourceLive: window.bySource,
+            sourceLiveEstimated: window.estimatedBySource,
             agents: agentList(nowMs: nowMs, window: window, references: references),
             history: history,
             today: ledger?.totals ?? TokenTotals(),
@@ -126,6 +133,8 @@ struct SpeedEngine: Sendable {
             unfinalizedToday: ledger?.unfinalized ?? 0,
             peakToday: peak,
             peakTodayAtMs: peak.output > 0 ? peakAt : nil,
+            subsetPeaks: subsetPeaks,
+            todayStartMs: todayStartMs,
             lastResponse: lastResponse,
             events: events
         )

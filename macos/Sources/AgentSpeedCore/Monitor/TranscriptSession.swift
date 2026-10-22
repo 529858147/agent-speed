@@ -510,13 +510,18 @@ final class TranscriptSession {
 
     // MARK: - Engine
 
-    func advance(nowMs: Int64, todayStartMs: Int64, emitsEvents: Bool) -> (output: EngineOutput, events: [SpeedEvent]) {
+    func advance(
+        nowMs: Int64,
+        todayStartMs: Int64,
+        emitsEvents: Bool,
+        subsets: Set<SourceSet> = []
+    ) -> (output: EngineOutput, events: [SpeedEvent]) {
         if parentLinksAreStale {
             parentLinks = AgentParents.resolve(Array(parentMembers.values), direct: opencodeLinks)
             engine.setParents(parentLinks)
             parentLinksAreStale = false
         }
-        let output = engine.advance(nowMs: nowMs, todayStartMs: todayStartMs, emitsEvents: emitsEvents)
+        let output = engine.advance(nowMs: nowMs, todayStartMs: todayStartMs, emitsEvents: emitsEvents, subsets: subsets)
         let events = pendingEvents + output.events
         pendingEvents.removeAll()
         return (output, events)

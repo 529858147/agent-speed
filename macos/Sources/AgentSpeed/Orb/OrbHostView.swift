@@ -12,8 +12,9 @@ protocol OrbHostViewDelegate: AnyObject {
     func hostPress()
 }
 
-/// Content view of the orb panel: the clipped desktop blur behind the SwiftUI renderer. Only the disc takes part in
-/// hit testing; the rest of the canvas lets clicks through. The disc is also the single accessibility element.
+/// Content view of the orb panel: the clipped desktop blur, the static body (SwiftUI, redrawn only when its inputs
+/// change) and the Metal canvas of the dynamic layers. Only the disc takes part in hit testing; the rest of the canvas
+/// lets clicks through. The disc is also the single accessibility element.
 final class OrbHostView: NSView {
     /// Extra reach around the disc edge for pointer hits.
     static let hitTolerance: CGFloat = 2
@@ -25,28 +26,91 @@ final class OrbHostView: NSView {
     var accessibilityLabelText = ""
     var accessibilityValueText = ""
     var accessibilityHelpText = ""
+    /// Custom VoiceOver actions (DESIGN 2b, Accessibility and keyboard).
+    var accessibilityActions: [NSAccessibilityCustomAction] = []
+    /// Called when the effective appearance changes (light / dark body and tokens).
+    var onAppearanceChange: ((Bool) -> Void)?
 
     let blurView = OrbBlurView(frame: .zero)
-    private let hostingView: NSHostingView<OrbHostContent>
+    let canvas = OrbCanvasView(frame: .zero)
+    private let bodyView: NSHostingView<OrbBody>
     private(set) var discDiameter: CGFloat
     private(set) var hoverScale: CGFloat = 1
     private var trackingArea: NSTrackingArea?
+    private var bodyInputs: OrbBody
+    /// The Settings highlight ring (DESIGN 2b): 2 pt accent ring 4 pt outside the disc at 60 %.
+    private let highlightLayer = CAShapeLayer()
+    private var isHighlighted = false
 
-    init(content: OrbHostContent, diameter: CGFloat) {
+    init(diameter: CGFloat) {
         discDiameter = diameter
-        hostingView = NSHostingView(rootView: content)
-        super.init(frame: NSRect(x: 0, y: 0, width: OrbPanel.side(for: diameter), height: OrbPanel.side(for: diameter)))
+        let side = OrbPanel.side(for: diameter)
+        bodyInputs = OrbBody(diameter: diameter, canvasSide: side, tokens: .dark, opacity: 1, solid: false, increaseContrast: false)
+        bodyView = NSHostingView(rootView: bodyInputs)
+        super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
         wantsLayer = true
 
-        hostingView.sizingOptions = []
-        hostingView.safeAreaRegions = []
-        hostingView.frame = bounds
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.setAccessibilityElement(false)
+        bodyView.sizingOptions = []
+        bodyView.safeAreaRegions = []
+        bodyView.frame = bounds
+        bodyView.autoresizingMask = [.width, .height]
+        bodyView.setAccessibilityElement(false)
+        canvas.frame = bounds
+        canvas.autoresizingMask = [.width, .height]
 
         addSubview(blurView)
-        addSubview(hostingView)
+        addSubview(bodyView)
+        addSubview(canvas)
+        highlightLayer.fillColor = nil
+        highlightLayer.lineWidth = 2
+        highlightLayer.opacity = 0
+        highlightLayer.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        layer?.addSublayer(highlightLayer)
         updateBlurFrame()
+    }
+
+    /// Rings the orb on the desktop while its Settings row is hovered, selected or focused (fade-in 0.15 s).
+    func setHighlighted(_ highlighted: Bool) {
+        guard highlighted != isHighlighted else { return }
+        isHighlighted = highlighted
+        highlightLayer.strokeColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = highlightLayer.presentation()?.opacity ?? highlightLayer.opacity
+        animation.toValue = highlighted ? 1 : 0
+        animation.duration = highlighted ? 0.15 : 0.2
+        highlightLayer.opacity = highlighted ? 1 : 0
+        highlightLayer.add(animation, forKey: "fade")
+        updateHighlightPath()
+    }
+
+    private func updateHighlightPath() {
+        let radius = discDiameter * hoverScale / 2 + 4 + 1
+        highlightLayer.frame = bounds
+        highlightLayer.path = CGPath(ellipseIn: CGRect(x: bounds.midX - radius, y: bounds.midY - radius, width: 2 * radius, height: 2 * radius),
+                                     transform: nil)
+        if highlightLayer.superlayer != nil, layer?.sublayers?.last !== highlightLayer {
+            highlightLayer.removeFromSuperlayer()
+            layer?.addSublayer(highlightLayer)
+        }
+    }
+
+    var isDark: Bool { effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?(isDark)
+    }
+
+    /// Updates the static body; redraws only when an input changed.
+    func setBody(_ update: (inout OrbBody) -> Void) {
+        var next = bodyInputs
+        update(&next)
+        next = OrbBody(diameter: discDiameter, canvasSide: bounds.width, tokens: next.tokens, opacity: next.opacity,
+                       solid: next.solid, increaseContrast: next.increaseContrast, style: next.style, rim: next.rim,
+                       scale: hoverScale)
+        guard next != bodyInputs else { return }
+        bodyInputs = next
+        bodyView.rootView = next
     }
 
     @available(*, unavailable)
@@ -59,6 +123,8 @@ final class OrbHostView: NSView {
         discDiameter = diameter
         self.hoverScale = hoverScale
         updateBlurFrame()
+        setBody { _ in }
+        if isHighlighted { updateHighlightPath() }
     }
 
     /// Whether a point in screen coordinates is on the disc (including the hover scale and tolerance).
@@ -77,6 +143,8 @@ final class OrbHostView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updateBlurFrame()
+        setBody { _ in }
+        if isHighlighted { updateHighlightPath() }
     }
 
     override var isOpaque: Bool { false }
@@ -141,6 +209,8 @@ final class OrbHostView: NSView {
         delegate?.hostShowMenu(nil)
         return true
     }
+
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? { accessibilityActions }
 
     // MARK: Geometry
 

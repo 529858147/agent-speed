@@ -1,94 +1,107 @@
+import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
+/// Settings → 懸浮窗 (DESIGN 5, Floating orb pane): the master switch, the orb list with live thumbnails, and the
+/// editor of the selected orb — sources, style cards, size and opacity, window behaviour and Advanced. Every change
+/// applies live and persists immediately. Thumbnails and style cards draw only while the pane is visible.
 struct OrbPane: View {
     let model: AppModel
 
+    @State private var activity = OrbPaneActivity()
+    @State private var hovered: String?
+    @State private var advancedExpanded: Bool
+    @State private var cardFeeds = OrbStyleCardFeeds()
+
+    @Environment(\.orbStillTime) private var stillTime
+
+    init(model: AppModel, advancedExpanded: Bool = false) {
+        self.model = model
+        _advancedExpanded = State(initialValue: advancedExpanded)
+    }
+
+    private var orbs: OrbsController { model.orbs }
+
+    /// The orb the editor shows: the Settings selection when it still exists, else the first.
+    private var selected: OrbConfig? {
+        orbs.settingsSelection.flatMap { orbs.orb($0) } ?? orbs.orbs.first
+    }
+
     var body: some View {
-        @Bindable var settings = model.settings
         let l10n = model.l10n
-        let hidden = !settings.orbVisible
+        let live = activity.visible && stillTime == nil
         Form {
             Section {
-                SettingToggle(title: l10n("settings.orb.show"), isOn: $settings.orbVisible)
-            }
-
-            Section {
-                SliderRow(
-                    title: l10n("settings.orb.size"),
-                    value: $settings.orbSize,
-                    range: SettingsLimits.orbSize,
-                    step: 4,
-                    valueText: l10n("mac.settings.orb.sizeValue", Int(settings.orbSize.rounded()))
-                ) {
-                    SliderEndDot(size: 6)
-                } maximumLabel: {
-                    SliderEndDot(size: 12)
-                }
-
-                SegmentedRow(
-                    title: l10n("mac.settings.orb.presets"),
-                    selection: presetBinding,
-                    segmentWidth: 64,
-                    count: OrbSizePreset.allCases.count
-                ) {
-                    ForEach(OrbSizePreset.allCases) { preset in
-                        Text(l10n(preset.titleKey)).tag(Optional(preset))
-                    }
-                }
-
-                SliderRow(
-                    title: l10n("settings.orb.opacity"),
-                    value: opacityBinding,
-                    range: SettingsLimits.orbOpacity,
-                    step: 0.05,
-                    valueText: l10n("mac.settings.percentValue", Int((settings.orbOpacity * 100).rounded()))
-                ) {
-                    SliderEndDot(size: 9, opacity: 0.35)
-                } maximumLabel: {
-                    SliderEndDot(size: 9)
-                }
-            }
-            .disabled(hidden)
-
-            Section {
-                SettingToggle(title: l10n("menu.alwaysOnTop"), isOn: $settings.orbAlwaysOnTop)
                 SettingToggle(
-                    title: l10n("menu.clickThrough"),
-                    subtitle: l10n("mac.settings.orb.clickThroughHint"),
-                    isOn: $settings.orbClickThrough
+                    title: l10n("settings.orb.show"),
+                    subtitle: l10n("orbs.allNote", l10n("settings.bar")),
+                    isOn: Binding(get: { orbs.masterVisible }, set: { orbs.masterVisible = $0 })
                 )
-                SettingToggle(title: l10n("settings.orb.fadeIdle"), isOn: $settings.orbFadeWhenIdle)
-                SettingToggle(title: l10n("settings.orb.allSpaces"), isOn: $settings.orbAllSpaces)
-            } footer: {
-                HStack {
-                    Spacer()
-                    Button(l10n("mac.settings.orb.resetPosition")) {
-                        model.commands?.resetOrbPosition()
-                    }
-                }
             }
-            .disabled(hidden)
+
+            if let orb = selected {
+                OrbListSection(model: model, selection: orb.id, active: live, hovered: $hovered)
+
+                OrbSourcesSection(model: model, orb: orb) {
+                    OrbEditorHeading(model: model, orb: orb)
+                }
+                OrbStyleCards(model: model, orb: orb, feeds: cardFeeds, active: live)
+                OrbLookSection(model: model, orb: orb)
+                OrbSwitchesSection(model: model, orb: orb)
+                OrbAdvancedSection(model: model, orb: orb, expanded: $advancedExpanded)
+            }
         }
         .settingsForm()
+        .background(OrbPaneActivityReader(activity: $activity))
+        .onAppear {
+            if stillTime != nil { cardFeeds.settle(at: 2.6) }
+            updateFeeds()
+            updateHighlight()
+        }
+        .onDisappear {
+            cardFeeds.stop()
+            if orbs.highlightedOrb != nil { orbs.highlightedOrb = nil }
+        }
+        .onChange(of: activity) {
+            updateFeeds()
+            updateHighlight()
+        }
+        .onChange(of: model.accessibility.reduceMotion) { updateFeeds() }
+        .onChange(of: hovered) { updateHighlight() }
+        .onChange(of: orbs.settingsSelection) { updateHighlight() }
     }
 
-    /// The preset matching the current size, or none while the size is custom.
-    private var presetBinding: Binding<OrbSizePreset?> {
-        let settings = model.settings
-        return Binding(
-            get: { OrbSizePreset.allCases.first { abs($0.diameter - settings.orbSize) < 0.5 } },
-            set: { preset in
-                if let preset { settings.orbSize = preset.diameter }
-            }
-        )
+    private func updateFeeds() {
+        guard stillTime == nil else { return }
+        cardFeeds.setActive(activity.visible, reduceMotion: model.accessibility.reduceMotion)
     }
 
-    /// Opacity in whole percent steps, so the readout and the stored value always agree.
-    private var opacityBinding: Binding<Double> {
-        let settings = model.settings
-        return Binding(
-            get: { settings.orbOpacity },
-            set: { settings.orbOpacity = ($0 * 100).rounded() / 100 }
-        )
+    /// Hovering a row rings its orb on the desktop; the selected orb is ringed while this pane is in front (DESIGN 2b).
+    private func updateHighlight() {
+        guard stillTime == nil else { return }
+        let target = hovered ?? (activity.visible && activity.key ? selected?.id : nil)
+        if orbs.highlightedOrb != target { orbs.highlightedOrb = target }
+    }
+}
+
+/// The editor's heading: the selected orb's colour dots and name (17 pt semibold).
+struct OrbEditorHeading: View {
+    let model: AppModel
+    let orb: OrbConfig
+
+    var body: some View {
+        let orbs = model.orbs
+        HStack(spacing: Spacing.xs) {
+            let dots = orbs.dots(of: orb.id)
+            if !dots.isEmpty { OrbSourceDots(dots: dots, size: 8) }
+            Text(orbs.displayName(of: orb.id))
+                .font(.system(size: 17, weight: .semibold))
+                .lineLimit(1)
+            Spacer()
+        }
+        .foregroundStyle(.primary)
+        .padding(.top, Spacing.xxs)
+        .padding(.bottom, Spacing.xs)
+        .accessibilityAddTraits(.isHeader)
     }
 }

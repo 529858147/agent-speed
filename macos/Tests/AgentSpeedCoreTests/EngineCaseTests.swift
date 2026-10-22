@@ -46,8 +46,12 @@ struct EngineCaseTests {
         }
         for query in try #require(spec["queries"] as? [[String: Any]]) {
             let now = try #require(query.int64("nowMs"))
-            let output = engine.advance(nowMs: now, todayStartMs: todayStartMs, emitsEvents: false)
+            let subsets = try (query["subsets"] as? [[String: Any]] ?? []).map(Self.subset)
+            let output = engine.advance(
+                nowMs: now, todayStartMs: todayStartMs, emitsEvents: false, subsets: Set(subsets.map(\.sources))
+            )
             let label = "\(name) @ \(now)"
+            Self.expectSubsets(subsets, output: output, label: label)
             Self.expectClose(output.live.output, query.double("liveOutput"), "\(label) liveOutput")
             Self.expectClose(output.live.total, query.double("liveTotal"), "\(label) liveTotal")
             Self.expectClose(output.liveEstimatedShare, query.double("estimatedShare"), "\(label) estimatedShare")
@@ -86,6 +90,45 @@ struct EngineCaseTests {
         }
     }
 
+    struct SubsetQuery {
+        var sources: SourceSet
+        var liveOutput: Double?
+        var peakTodayOutput: Double?
+    }
+
+    static func subset(_ spec: [String: Any]) throws -> SubsetQuery {
+        let names = try #require(spec["sources"] as? [String])
+        let kinds = try names.map { try #require(SourceKind(rawValue: $0)) }
+        return SubsetQuery(
+            sources: SourceSet(kinds),
+            liveOutput: spec.double("liveOutput"),
+            peakTodayOutput: spec.double("peakTodayOutput")
+        )
+    }
+
+    /// METRICS 6.8: the subset's live value is the sum of its sources' live rates, and a fresh orb's peak combines
+    /// the engine's measured subset peak with that live value.
+    static func expectSubsets(_ subsets: [SubsetQuery], output: EngineOutput, label: String) {
+        guard !subsets.isEmpty else { return }
+        let snapshot = SnapshotBuilder.running(output, context: .fixture(todayStartMs: output.todayStartMs))
+        for subset in subsets {
+            let kinds = subset.sources.kinds.map(\.rawValue).joined(separator: "+")
+            let live = subset.sources.kinds.reduce(0) { $0 + (output.sourceLive[$1]?.output ?? 0) }
+            expectClose(live, subset.liveOutput, "\(label) [\(kinds)] liveOutput")
+            let reading = OrbSubset.reading(snapshot, sources: subset.sources)
+            expectClose(reading.live.output, live, "\(label) [\(kinds)] reading.live")
+            #expect(reading.state == .available, "\(label) [\(kinds)] state")
+            var tracker = SubsetPeakTracker()
+            _ = tracker.update(
+                liveOutput: reading.live.output,
+                measuredPeakOutput: output.subsetPeaks[subset.sources],
+                dayStartMs: output.todayStartMs,
+                nowMs: output.nowMs
+            )
+            expectClose(tracker.peakTodayOutput, subset.peakTodayOutput, "\(label) [\(kinds)] peakTodayOutput")
+        }
+    }
+
     static func expectClose(
         _ actual: Double?,
         _ expected: Double?,
@@ -100,5 +143,16 @@ struct EngineCaseTests {
         default:
             Issue.record("\(label): \(String(describing: actual)) != \(String(describing: expected))", sourceLocation: sourceLocation)
         }
+    }
+}
+
+extension SnapshotContext {
+    /// Every source enabled with a readable root.
+    static func fixture(todayStartMs: Int64) -> SnapshotContext {
+        let info = SourceInfo(enabled: true, rootPath: "/fixture", available: true, sessionCount: 0)
+        return SnapshotContext(
+            sources: Dictionary(uniqueKeysWithValues: SourceKind.allCases.map { ($0, info) }),
+            todayStartMs: todayStartMs
+        )
     }
 }

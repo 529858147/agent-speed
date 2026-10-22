@@ -10,7 +10,8 @@ final class HeroTimeline {
     static let orbDiameter = DashboardLayout.orbDiameter
 
     let model: AppModel
-    let animator = OrbAnimator(style: .embedded)
+    let animator = OrbAnimator(surface: .embedded)
+    private var scene = OrbScene(capacity: 1024)
     private(set) var time: TimeInterval
     private(set) var value = 0.0
     var dark = true
@@ -63,8 +64,8 @@ final class HeroTimeline {
     }
 
     private func step() {
-        _ = OrbSceneBuilder.scene(content: content(), animator: animator, model: model,
-                                  canvasSide: Self.orbDiameter * OrbView.canvasScale, scale: 2, time: time)
+        OrbSceneBuilder.build(into: &scene, content: content(), animator: animator, model: model, feed: model.mainFeed,
+                              canvasSide: Self.orbDiameter * OrbView.canvasScale, scale: 2, time: time)
     }
 
     func content() -> OrbContent {
@@ -92,7 +93,7 @@ final class HeroTimeline {
     }
 
     func orbView() -> some View {
-        OrbView(model: model, diameter: Self.orbDiameter, style: .embedded, animator: animator, time: time)
+        OrbView(model: model, diameter: Self.orbDiameter, surface: .embedded, animator: animator, time: time)
             .appEnvironment(model)
             .environment(\.colorScheme, dark ? .dark : .light)
     }

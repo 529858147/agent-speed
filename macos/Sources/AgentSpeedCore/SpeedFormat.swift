@@ -34,7 +34,7 @@ public enum SpeedFormat {
         if round(billions, digits: 2) < 10 { return fixed(billions, digits: 2) + "B" }
         if round(billions, digits: 1) < 100 { return fixed(billions, digits: 1) + "B" }
         // Three significant digits; beyond 999B the integer simply grows.
-        return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), billions.rounded()) + "B"
+        return String(format: "%.0f", locale: posix, billions.rounded()) + "B"
     }
 
     private static func round(_ value: Double, digits: Int) -> Double {
@@ -42,7 +42,10 @@ public enum SpeedFormat {
         return (value * scale).rounded() / scale
     }
 
+    /// Created once: the orb readouts format their value up to four times a second.
+    private static let posix = Locale(identifier: "en_US_POSIX")
+
     private static func fixed(_ value: Double, digits: Int) -> String {
-        String(format: "%.\(digits)f", locale: Locale(identifier: "en_US_POSIX"), value)
+        String(format: digits == 1 ? "%.1f" : "%.2f", locale: posix, value)
     }
 }

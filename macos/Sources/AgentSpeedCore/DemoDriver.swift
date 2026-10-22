@@ -18,6 +18,7 @@ public final class DemoDriver {
     private var peakAnnounced = false
     private var today = TokenTotals.zero
     private var lastResponse: ResponseSummary?
+    private static let estimatedShare = 0.15
 
     private struct FakeAgent {
         let id: String
@@ -123,8 +124,8 @@ public final class DemoDriver {
             history.removeFirst()
             history.append(HistoryPoint(
                 time: Date(timeIntervalSince1970: TimeInterval(lastHistorySecond)),
-                measured: Rate(output: speed * 0.85, total: speed * 0.85 * 24),
-                estimated: Rate(output: speed * 0.15, total: speed * 0.15 * 24)
+                measured: Rate(output: speed * (1 - Self.estimatedShare), total: speed * (1 - Self.estimatedShare) * 24),
+                estimated: Rate(output: speed * Self.estimatedShare, total: speed * Self.estimatedShare * 24)
             ))
         }
 
@@ -184,14 +185,15 @@ public final class DemoDriver {
                     cachedInput: today.cachedInput / sourceCount,
                     output: today.output / sourceCount
                 ),
-                activeAgents: agentStatuses.filter { $0.source == kind && $0.phase == .generating }.count
+                activeAgents: agentStatuses.filter { $0.source == kind && $0.phase == .generating }.count,
+                liveEstimated: Rate(output: live * Self.estimatedShare, total: live * Self.estimatedShare * 24)
             )
         }
         return SpeedSnapshot(
             timestamp: now,
             state: .running,
             live: Rate(output: speed, total: speed * 24),
-            liveEstimatedShare: 0.15,
+            liveEstimatedShare: Self.estimatedShare,
             peakToday: Rate(output: peak, total: peak * 24),
             peakTodayAt: peak > 0 ? now : nil,
             averageToday: peak > 0 ? peak * 0.4 : nil,
@@ -202,7 +204,8 @@ public final class DemoDriver {
             toolsCount: speed > 0.5 ? agents.count - generating : 0,
             history: history,
             lastResponse: lastResponse,
-            warnings: []
+            warnings: [],
+            dayStart: Calendar.current.startOfDay(for: now)
         )
     }
 

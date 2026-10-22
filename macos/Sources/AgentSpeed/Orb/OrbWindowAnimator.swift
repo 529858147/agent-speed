@@ -14,6 +14,10 @@ enum OrbWindowMotion: Sendable {
     static let hover = OrbWindowMotion.spring(response: 0.32, damping: 0.72)
     /// Reduce Motion replacement for springs.
     static let reduced = OrbWindowMotion.ease(duration: 0.15)
+    /// A created or split orb springs in (DESIGN 2b, Placement and Split motion).
+    static let entrance = OrbWindowMotion.spring(response: 0.45, damping: 0.78)
+    /// The disc following the pointer while dragging near other orbs: critically damped, settle 0.12 s.
+    static let follow = OrbWindowMotion.spring(response: 0.12, damping: 1)
 }
 
 /// One animated scalar, sampled in closed form so retargeting keeps position and velocity continuous.
@@ -104,6 +108,11 @@ final class OrbWindowAnimator {
         var center: CGPoint
         var diameter: CGFloat
         var hoverScale: CGFloat
+        /// Entrance and exit scale (created, split and merged orbs), 1 at rest.
+        var presence: CGFloat = 1
+
+        /// The scale the disc is drawn at.
+        var scale: CGFloat { hoverScale * presence }
     }
 
     /// Called whenever the state changes, at most once per display frame while animating.
@@ -115,6 +124,7 @@ final class OrbWindowAnimator {
     private var y: OrbWindowChannel
     private var diameter: OrbWindowChannel
     private var hoverScale: OrbWindowChannel
+    private var presence = OrbWindowChannel(1, tolerance: 0.0005)
     private weak var view: NSView?
     private var link: CADisplayLink?
     private lazy var proxy = OrbWindowDisplayLinkProxy(owner: self)
@@ -140,7 +150,8 @@ final class OrbWindowAnimator {
 
     /// Final values once every running animation has settled.
     var targetState: State {
-        State(center: CGPoint(x: x.target, y: y.target), diameter: diameter.target, hoverScale: hoverScale.target)
+        State(center: CGPoint(x: x.target, y: y.target), diameter: diameter.target, hoverScale: hoverScale.target,
+              presence: presence.target)
     }
 
     var isMovingCenter: Bool { x.isActive || y.isActive }
@@ -181,6 +192,18 @@ final class OrbWindowAnimator {
         run()
     }
 
+    /// Sets the entrance scale at once (before an entrance animation).
+    func setPresence(_ value: CGFloat) {
+        presence.set(value)
+        publish()
+    }
+
+    func animate(presence target: CGFloat, motion: OrbWindowMotion?) {
+        guard let motion else { presence.set(target); publish(); return }
+        presence.animate(to: target, motion: motion, at: CACurrentMediaTime())
+        run()
+    }
+
     func animate(hoverScale target: CGFloat, motion: OrbWindowMotion?) {
         guard let motion else { hoverScale.set(target); publish(); return }
         hoverScale.animate(to: target, motion: motion, at: CACurrentMediaTime())
@@ -203,6 +226,7 @@ final class OrbWindowAnimator {
         y.settle(at: time)
         diameter.settle(at: time)
         hoverScale.settle(at: time)
+        presence.settle(at: time)
         onChange?(state(at: time))
         if !isAnimating { stop() }
         if wasMoving, !isMovingCenter { onCenterSettled?() }
@@ -212,11 +236,12 @@ final class OrbWindowAnimator {
         State(
             center: CGPoint(x: x.value(at: time), y: y.value(at: time)),
             diameter: diameter.value(at: time),
-            hoverScale: hoverScale.value(at: time)
+            hoverScale: hoverScale.value(at: time),
+            presence: presence.value(at: time)
         )
     }
 
-    private var isAnimating: Bool { x.isActive || y.isActive || diameter.isActive || hoverScale.isActive }
+    private var isAnimating: Bool { x.isActive || y.isActive || diameter.isActive || hoverScale.isActive || presence.isActive }
 
     private func run() {
         guard isAnimating else { stop(); publish(); return }
@@ -237,6 +262,7 @@ final class OrbWindowAnimator {
         y.set(target.center.y)
         diameter.set(target.diameter)
         hoverScale.set(target.hoverScale)
+        presence.set(target.presence)
     }
 
     private func publish() {

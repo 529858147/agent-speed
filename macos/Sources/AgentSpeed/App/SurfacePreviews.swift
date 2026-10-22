@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
 /// Orb and menu bar renders for `--render-previews`.
@@ -21,70 +22,88 @@ enum SurfacePreviews {
 
     static let sizes: [CGFloat] = [112, 148, 196]
 
+    /// Every style × state × size, light and dark (DESIGN 2a), plus the `led` stills under their historical names.
     static func renderOrbs(model: AppModel, into directory: URL) {
         let redline = model.settings.redline
         for dark in [false, true] {
+            let scheme = dark ? "dark" : "light"
             var sheet: [[NSImage]] = []
             for size in sizes {
                 var row: [NSImage] = []
                 for sample in tiers {
                     let image = orbImage(model: model, size: size, dark: dark, speed: redline * sample.fraction, tier: sample.tier)
                     if let image {
-                        PreviewSnapshot.write(image, to: directory.appendingPathComponent("orb-\(sample.name)-\(Int(size))-\(dark ? "dark" : "light").png"))
-                        row.append(NSImage(cgImage: image, size: .zero))
+                        PreviewSnapshot.write(image, to: directory.appendingPathComponent("orb-\(sample.name)-\(Int(size))-\(scheme).png"))
+                        row.append(pointImage(image))
                     }
                 }
                 sheet.append(row)
             }
-            writeSheet(sheet, dark: dark, to: directory.appendingPathComponent("orb-sheet-\(dark ? "dark" : "light").png"))
+            writeSheet(sheet, dark: dark, to: directory.appendingPathComponent("orb-sheet-\(scheme).png"))
 
             let extras: [(String, OrbExtra)] = [("peak", .peak), ("hover", .hover), ("pulse", .pulse)]
             for (name, extra) in extras {
                 if let image = orbImage(model: model, size: 196, dark: dark, speed: redline * 0.95, tier: .redline, extra: extra) {
-                    PreviewSnapshot.write(image, to: directory.appendingPathComponent("orb-\(name)-196-\(dark ? "dark" : "light").png"))
+                    PreviewSnapshot.write(image, to: directory.appendingPathComponent("orb-\(name)-196-\(scheme).png"))
                 }
             }
+            for style in OrbStyleKind.allCases {
+                renderStyleSheet(model: model, style: style, dark: dark, into: directory)
+            }
         }
+    }
+
+    /// Columns: idle, cruise, boost, overdrive, redline, beyond the redline, new peak, hover, pulse; rows: sizes.
+    static func renderStyleSheet(model: AppModel, style: OrbStyleKind, dark: Bool, into directory: URL) {
+        let redline = model.settings.redline
+        let columns: [(Double, OrbExtra)] = tiers.map { ($0.fraction, OrbExtra.none) } + [(0.95, .peak), (0.6, .hover), (0.6, .pulse)]
+        let rowSizes: [CGFloat] = (style == .minimal ? [64] : [96]) + [148, 240]
+        var rows: [[NSImage]] = []
+        for size in rowSizes {
+            rows.append(columns.compactMap { fraction, extra in
+                stageImage(model: model, style: style, size: size, dark: dark, value: redline * fraction, extra: extra)
+                    .map(pointImage)
+            })
+        }
+        writeSheet(rows, dark: dark, to: directory.appendingPathComponent("orb-style-\(style.rawValue)-\(dark ? "dark" : "light").png"))
+    }
+
+    /// An @2x still as an image of its point size, so sheets are written at 2× and not 4×.
+    static func pointImage(_ image: CGImage) -> NSImage {
+        NSImage(cgImage: image, size: CGSize(width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
     }
 
     enum OrbExtra {
         case none, peak, hover, pulse
     }
 
-    static func orbImage(model: AppModel, size: CGFloat, dark: Bool, speed: Double, tier: SpeedTier, extra: OrbExtra = .none) -> CGImage? {
-        let snapshot = PreviewData.snapshot(speed: speed, redline: model.settings.redline)
-        model.store.publishLive(snapshot)
-        let now = Clock.now
-        PreviewRenderer.snapGauge(model, to: speed, tier: tier, now: now - 3)
-        let interaction = OrbInteraction()
-        interaction.isHovered = extra == .hover
-        let animator = OrbAnimator(style: .floating)
-        animator.attach(model: model, interaction: interaction)
-        let effects = animator.effects(for: model)
-        let gauge = model.gauge
-        let input = OrbAnimator.StepInput(
-            heat: gauge.heat(at: now),
-            overdrive: gauge.overdrive(at: now),
-            tier: tier,
-            effects: effects,
-            dark: dark,
-            hovered: extra == .hover
-        )
+    /// A still of `style` at `value` after 2.4 s at that speed (and the extra event in flight).
+    static func stageImage(model: AppModel, style: OrbStyleKind, size: CGFloat, dark: Bool, value: Double, extra: OrbExtra = .none,
+                           level: EffectsLevel = .standard, configure: ((OrbPreviewStage) -> Void)? = nil) -> CGImage? {
+        let stage = OrbPreviewStage(model: model, style: style, diameter: size, dark: dark, level: level)
+        defer { stage.stop() }
+        configure?(stage)
+        stage.reset(value: value)
+        stage.hovered = extra == .hover
+        stage.run(for: 2.4, at: value)
         switch extra {
-        case .peak: animator.celebrate(at: now - 0.62)
-        case .pulse: animator.addPulse(at: now - 0.2, strength: 0.9, heat: gauge.heat(at: now))
-        case .none, .hover: break
+        case .peak:
+            stage.animator.celebrate(at: stage.time)
+            stage.run(for: 0.62, at: value)
+        case .pulse:
+            stage.animatorPulse(speed: value, output: 4000)
+            stage.run(for: 0.2, at: value)
+        case .hover:
+            stage.run(for: 0.6, at: value)
+        case .none:
+            break
         }
-        animator.prewarm(from: now - 2.4, to: now, input: input)
-        let view = OrbView(model: model, diameter: size, style: .floating, animator: animator, time: now, interaction: interaction)
-            .appEnvironment(model)
-            .environment(\.colorScheme, dark ? .dark : .light)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        renderer.isOpaque = false
-        let image = renderer.cgImage
-        animator.detach()
-        return image
+        return stage.image()
+    }
+
+    static func orbImage(model: AppModel, size: CGFloat, dark: Bool, speed: Double, tier: SpeedTier, extra: OrbExtra = .none) -> CGImage? {
+        model.store.publishLive(PreviewData.snapshot(speed: speed, redline: model.settings.redline))
+        return stageImage(model: model, style: .led, size: size, dark: dark, value: speed, extra: extra)
     }
 
     static func renderMenuBar(model: AppModel, into directory: URL) {

@@ -24,6 +24,12 @@ enum PreviewRenderer {
         if wants("orb") {
             SurfacePreviews.renderOrbs(model: model, into: directory)
         }
+        if wants("orbs") {
+            OrbsPreviews.render(model: model, into: directory)
+        }
+        if only?.contains("upgrade") == true {
+            OrbsPreviews.renderUpgrade(model: model, into: directory)
+        }
         if wants("menubar") {
             SurfacePreviews.renderMenuBar(model: model, into: directory)
         }
@@ -87,15 +93,51 @@ enum PreviewRenderer {
         }
         if wants("settings") {
             publish(model, speed: redline * 0.4)
+            settleOrbs(model)
             for pane in SettingsPane.allCases {
                 for dark in [false, true] {
                     PreviewSnapshot.writeHosted(
-                        SettingsPaneView(pane: pane, model: model).appEnvironment(model),
+                        SettingsPaneView(pane: pane, model: model).appEnvironment(model).environment(\.orbStillTime, Clock.now),
                         dark: dark,
                         to: directory.appendingPathComponent("settings-\(pane.rawValue)-\(dark ? "dark" : "light").png")
                     )
                 }
             }
+            // Three orbs, the second selected with its own redline, and Advanced open.
+            let orbs = model.orbs
+            if let first = orbs.orbs.first?.id, let pair = orbs.add(copying: first), let single = orbs.add(copying: pair) {
+                orbs.setSources(.explicit([.claudeCode, .claudeDesktop]), of: pair)
+                orbs.setStyle(.needle, of: pair)
+                orbs.setSources(.explicit([.codex]), of: single)
+                orbs.setStyle(.liquid, of: single)
+                orbs.setSize(128, of: single)
+                orbs.setStyle(.reactor, of: first)
+                orbs.setSize(112, of: first)
+                orbs.setRedline(800, metric: model.settings.metric, of: pair)
+                orbs.settingsSelection = pair
+                orbs.dismissUndo()
+                settleOrbs(model)
+                for dark in [false, true] {
+                    PreviewSnapshot.writeHosted(
+                        OrbPane(model: model, advancedExpanded: true)
+                            .frame(width: SettingsPaneView.width(for: .orb))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .appEnvironment(model)
+                            .environment(\.orbStillTime, Clock.now),
+                        dark: dark,
+                        to: directory.appendingPathComponent("settings-orb-advanced-\(dark ? "dark" : "light").png")
+                    )
+                }
+            }
+        }
+    }
+
+    /// Lets the floating orbs read the published snapshot, then settles their gauges (Settings thumbnails).
+    static func settleOrbs(_ model: AppModel) {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        for orb in model.orbs.orbs {
+            guard let gauge = model.orbs.runtime(orb.id)?.feed.gauge else { continue }
+            gauge.snap(to: gauge.rawValue, now: Clock.now - 3)
         }
     }
 

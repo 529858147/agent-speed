@@ -23,7 +23,7 @@ enum TitlePreviews {
                         guard let image = SurfacePreviews.orbImage(model: model, size: size, dark: dark, speed: speed, tier: tier) else {
                             return nil
                         }
-                        return NSImage(cgImage: image, size: .zero)
+                        return SurfacePreviews.pointImage(image)
                     }
                     let rows = stride(from: 0, to: images.count, by: 7).map { Array(images[$0..<min($0 + 7, images.count)]) }
                     SurfacePreviews.writeSheet(rows, dark: dark, to: directory.appendingPathComponent(
