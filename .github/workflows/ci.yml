@@ -22,6 +22,8 @@ jobs:
         run: command -v zstd || (sudo apt-get update && sudo apt-get install -y zstd)
       - name: Check fixtures with the reference implementation
         run: python3 spec/tools/reference.py --check-fixtures
+      - name: Validate vehicle art
+        run: python3 spec/tools/vehicles.py
       - name: Lint installer
         run: shellcheck install.sh
 
