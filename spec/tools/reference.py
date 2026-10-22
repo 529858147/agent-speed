@@ -1261,13 +1261,13 @@ def antigravity_state(db_path, dedupe):
         if traj:
             st.project, st.is_subagent, st.parent_session = traj["project"], traj["subagent"], traj["parent"]
         st.file_created = created
-        gens = [g for _, blob in ag_rows(db, "SELECT idx, CASE WHEN typeof(size) = 'integer' AND size <= %d AND "
-                                             "length(data) <= %d THEN data END FROM gen_metadata WHERE idx > -1 "
-                                             "ORDER BY idx, rowid" % (AG_BLOB_MAX, AG_BLOB_MAX))
+        gens = [g for _, blob in ag_last_per_idx(ag_rows(
+                    db, "SELECT idx, CASE WHEN typeof(size) = 'integer' AND size <= %d AND length(data) <= %d THEN data "
+                        "END FROM gen_metadata WHERE idx > -1 ORDER BY idx, rowid" % (AG_BLOB_MAX, AG_BLOB_MAX)))
                 for g in [ag_decode(st, blob, ag_generation)] if g]
-        execs = [dict(e, idx=idx) for idx, blob in ag_rows(db, "SELECT idx, CASE WHEN length(data) <= %d THEN data END "
-                                                                "FROM executor_metadata WHERE idx > -1 ORDER BY idx, "
-                                                                "rowid" % AG_BLOB_MAX)
+        execs = [dict(e, idx=idx) for idx, blob in ag_last_per_idx(ag_rows(
+                    db, "SELECT idx, CASE WHEN length(data) <= %d THEN data END FROM executor_metadata WHERE idx > -1 "
+                        "ORDER BY idx, rowid" % AG_BLOB_MAX))
                  for e in [ag_decode(st, blob, ag_executor)] if e]
 
         def model_for(idx):
@@ -1280,9 +1280,9 @@ def antigravity_state(db_path, dedupe):
         times = [created] if created is not None else []
         latest = None
         models = {}
-        for idx, step_type, status, blob in ag_rows(
+        for idx, step_type, status, blob in ag_last_per_idx(ag_rows(
                 db, "SELECT idx, step_type, status, CASE WHEN length(metadata) <= %d THEN metadata END FROM steps "
-                    "WHERE idx > -1 ORDER BY idx, rowid" % AG_BLOB_MAX):
+                    "WHERE idx > -1 ORDER BY idx, rowid" % AG_BLOB_MAX)):
             idx, step_type, status = idx or 0, step_type or 0, status or 0
             step = ag_decode(st, blob, ag_step)
             if step is None:
@@ -1320,6 +1320,14 @@ def antigravity_state(db_path, dedupe):
         return st
     finally:
         db.close()
+
+
+def ag_last_per_idx(rows):
+    """Rows with the same idx are processed in rowid order, the later one replacing the earlier (METRICS 4.8)."""
+    last = OrderedDict()
+    for row in rows:
+        last[row[0]] = row
+    return list(last.values())
 
 
 def ag_phase(latest, execs):
