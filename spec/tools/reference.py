@@ -1631,6 +1631,16 @@ def check_fixtures():
                 order, parent_map = agent_list(case["responses"], case["agents"], q["nowMs"])
                 if order != q["agentsOrder"] or parent_map != q["agentParents"]:
                     failures.append("%s: agents %r %r" % (case["name"], order, parent_map))
+            for sub in q.get("subsets", []):
+                chosen = set(sub["sources"])
+                resp = [r for r in case["responses"] if r["source"] in chosen]
+                ags = [a for a in case["agents"] if a["source"] in chosen]
+                got = (live_rate(resp, ags, q["nowMs"])[0],
+                       today_stats(resp, case.get("todayStartMs", 0), q["nowMs"])["peak"])
+                for name, val in zip(("liveOutput", "peakTodayOutput"), got):
+                    if abs(val - sub[name]) > 1e-6:
+                        failures.append("%s %s: %s expected %r got %r" % (case["name"], sub["sources"], name,
+                                                                         sub[name], val))
             if "todayRequests" in q:
                 st = today_stats(case["responses"], case.get("todayStartMs", 0), q["nowMs"])
                 checks = (("todayRequests", st["requests"]), ("todayOutput", st["output"]),

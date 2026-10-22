@@ -603,10 +603,23 @@ cases = [
                   "peakTodayOutput": 150.0,
                   "historyMeasuredOutput": {str(B): 50.0, str(B + 1000): 50.0, str(B + 2000): 350.0,
                                             str(B + 3000): 50.0, str(B + 4000): 0.0}}]},
+    {"name": "orb subsets (METRICS 6.8)",
+     "todayStartMs": DAY,
+     "agents": [agent("a1", "codex", "m1", last=B + 2000), agent("a2", "claudeCode", "m2", last=B + 3000)],
+     "responses": [er("r1", "a1", "codex", "m1", B, B + 2000, 400),
+                   er("r2", "a2", "claudeCode", "m2", B, B + 3000, 300)],
+     "queries": [{"nowMs": B + 3000, "liveOutput": 700 / 3, "liveTotal": 700 / 3, "estimatedShare": 0.0,
+                  "subsets": [{"sources": ["codex"], "liveOutput": 400 / 3, "peakTodayOutput": 400 / 3},
+                              {"sources": ["claudeCode"], "liveOutput": 100.0, "peakTodayOutput": 100.0},
+                              {"sources": ["codex", "claudeCode"], "liveOutput": 700 / 3,
+                               "peakTodayOutput": 700 / 3},
+                              {"sources": ["gemini"], "liveOutput": 0.0, "peakTodayOutput": 0.0}]}]},
 ]
 with open(os.path.join(ROOT, "engine-cases.json"), "w", encoding="utf-8") as f:
     json.dump({"_comment": "Times are Unix ms. Unless a case sets todayStartMs, use 0. Compare floats with 1e-6 "
-                           "absolute tolerance. historyMeasuredOutput maps bucket start ms to tok/s.",
+                           "absolute tolerance. historyMeasuredOutput maps bucket start ms to tok/s. `subsets` evaluate "
+                           "6.8 for a source set: live output and today's peak over only those sources' responses "
+                           "and agents.",
                "cases": cases}, f, indent=2)
     f.write("\n")
 print("fixtures written to", ROOT)

@@ -902,7 +902,8 @@ Per-source and per-agent live rates use the same formula restricted to that sour
   legacy Gemini `.json`, a `.jsonl.zst` read for the first time while running, or an older Antigravity database read
   on its first change, 5.4) update totals silently.
 - `newPeak` — when the measured+estimated live output exceeds the previous peak of today by at least 1 tok/s, is at
-  least 20 tok/s, and no `newPeak` was emitted in the last 60 seconds.
+  least 20 tok/s, and no `newPeak` was emitted in the last 60 seconds. This is the all-sources event; floating orbs that
+  track a subset of sources use their own `newPeak_A` (6.8).
 
 ### 6.5 History
 One-second buckets for the last 300 seconds, oldest first. Bucket `k` covers `[k*1000, (k+1)*1000)`.
@@ -918,7 +919,9 @@ output and total.
   `unfinalizedUsage(count)`.
 - `averageToday = Σ output / Σ duration` over today's measured responses (null when none).
 - `peakToday`: maximum over today of the 3-bucket trailing average of *measured* one-second buckets, combined with the
-  maximum live value observed while running. Keep a per-second measured array for the current day.
+  maximum live value observed while running. Keep a per-second measured array for the current day **per source**
+  (`measured_s[k]`; the all-sources array is their sum), allocated only for sources with data today (86 400 Float32,
+  ≈ 0.34 MB each), so subsets can be evaluated (6.8).
 - On day change everything for "today" restarts at zero.
 
 ### 6.7 Agents list
@@ -960,6 +963,31 @@ List:
 UIs indent an agent by its depth in this tree and draw connectors from parent to children. To avoid jitter a UI may
 keep its previous order between groups or between siblings whose live values are nearly equal, but it never splits a
 group or shows a child without its parent.
+
+### 6.8 Orb subsets
+
+A floating orb (DESIGN 2b) tracks a source set `A`: `all` (every enabled source) or an explicit set. Everything below
+is evaluated per orb on every engine tick (500 ms) from per-source values the engine already has; an orb with
+`A = all` gets exactly the all-sources values. Only enabled sources count; a disabled or undetected source in `A`
+contributes nothing (the orb shows it as unavailable).
+
+- **Live value**: `live_A = Σ_{s ∈ A} live_s` (6.3 per source, `output` or `total` per the selected metric), which equals
+  6.3 restricted to the responses and agents of `A` because the formula is additive. `liveEstimatedShare_A =
+  Σ estimated_s / Σ (measured_s + estimated_s)` over `A` (0 when both are 0).
+- **Agents**: the agents list (6.7) filtered to sources in `A`; an orb's dots are its agents in phase `generating`
+  (order and cap as DESIGN 2). The hover line counts the filtered agents and `Σ_{s ∈ A} today.output_s` (6.6).
+- **Events**: `responseCompleted` is delivered to every orb whose `A` contains the response's source.
+- **`peakToday_A`**: the maximum over today of the 3-bucket trailing average of `Σ_{s ∈ A} measured_s[k]` (6.6),
+  combined with the maximum `live_A` observed while running. It is kept in memory per orb, rebuilt from the per-source
+  arrays after a relaunch (as `peakToday`) and reset at the day change. When an orb is created or its set `A` changes,
+  `peakToday_A` is recomputed from the arrays (the live component restarts at that value).
+- **`newPeak_A`**: the 6.4 rule applied to `live_A` against `peakToday_A` — exceeds it by at least 1 tok/s, is at least
+  20 tok/s, and this orb emitted no `newPeak_A` in the last 60 seconds (live output, like 6.4, whatever the selected
+  metric). After a create or a set change no `newPeak_A` is emitted for 60 seconds, so editing an orb never
+  celebrates. For `A = all`, `newPeak_A` is `newPeak`.
+- **Heat, tiers, titles**: computed by the UI from `live_A` with the orb's redline (DESIGN 1 and 2b), each orb with its
+  own trackers.
+- The history store (8) is unaffected: its `peak` stays the all-sources `peakToday`.
 
 ## 7. Number formatting (both platforms)
 

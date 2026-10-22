@@ -1,5 +1,5 @@
 {
-  "_comment": "Times are Unix ms. Unless a case sets todayStartMs, use 0. Compare floats with 1e-6 absolute tolerance. historyMeasuredOutput maps bucket start ms to tok/s.",
+  "_comment": "Times are Unix ms. Unless a case sets todayStartMs, use 0. Compare floats with 1e-6 absolute tolerance. historyMeasuredOutput maps bucket start ms to tok/s. `subsets` evaluate 6.8 for a source set: live output and today's peak over only those sources' responses and agents.",
   "cases": [
     {
       "name": "single completed response",
@@ -769,6 +769,93 @@
             "1000000003000": 50.0,
             "1000000004000": 0.0
           }
+        }
+      ]
+    },
+    {
+      "name": "orb subsets (METRICS 6.8)",
+      "todayStartMs": 999996400000,
+      "agents": [
+        {
+          "id": "a1",
+          "source": "codex",
+          "model": "m1",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000002000,
+          "parentId": null
+        },
+        {
+          "id": "a2",
+          "source": "claudeCode",
+          "model": "m2",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": null
+        }
+      ],
+      "responses": [
+        {
+          "key": "r1",
+          "agentId": "a1",
+          "source": "codex",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000002000,
+          "input": 0,
+          "output": 400,
+          "final": true
+        },
+        {
+          "key": "r2",
+          "agentId": "a2",
+          "source": "claudeCode",
+          "model": "m2",
+          "startMs": 1000000000000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 300,
+          "final": true
+        }
+      ],
+      "queries": [
+        {
+          "nowMs": 1000000003000,
+          "liveOutput": 233.33333333333334,
+          "liveTotal": 233.33333333333334,
+          "estimatedShare": 0.0,
+          "subsets": [
+            {
+              "sources": [
+                "codex"
+              ],
+              "liveOutput": 133.33333333333334,
+              "peakTodayOutput": 133.33333333333334
+            },
+            {
+              "sources": [
+                "claudeCode"
+              ],
+              "liveOutput": 100.0,
+              "peakTodayOutput": 100.0
+            },
+            {
+              "sources": [
+                "codex",
+                "claudeCode"
+              ],
+              "liveOutput": 233.33333333333334,
+              "peakTodayOutput": 233.33333333333334
+            },
+            {
+              "sources": [
+                "gemini"
+              ],
+              "liveOutput": 0.0,
+              "peakTodayOutput": 0.0
+            }
+          ]
         }
       ]
     }

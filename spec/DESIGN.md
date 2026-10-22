@@ -97,8 +97,9 @@ Pink is `#EC4899`, not the lighter `#F472B6` (too close to coral and lilac); lim
 
 ## 2. The orb (floating window)
 
-A circular smoked-glass instrument. Diameter `S` (setting 96–240 pt/DIP, default 148). The window is `1.5 S` square so
-the aura and sparks can leave the disc; everything outside the disc is fully transparent and ignores clicks wherever
+A circular smoked-glass instrument. This section defines the shared frame and the default style, `led`; section 2a adds
+four more styles and section 2b lets the user float several orbs, each tracking its own sources. Diameter `S` (per orb,
+96–240 pt/DIP, `minimal` 64–240, default 148). The window is `1.5 S` square so the aura and sparks can leave the disc; everything outside the disc is fully transparent and ignores clicks wherever
 the platform allows it. The orb follows the Appearance setting. The dark variant is described inline below; the
 light variant ("porcelain") changes only these tokens:
 
@@ -163,15 +164,16 @@ along the unlit segments as a sign of life. Optional "fade when idle" (setting):
 45 % opacity; restore instantly on activity or hover.
 
 Hover: the orb scales to 1.03 (spring), the title label crossfades to a compact info line
-(`今日 1.2M · 3 個 agent`), and the cursor shows it is draggable.
+(`今日 1.2M · 3 個 agent`, counted over the orb's sources), and the cursor shows it is draggable. An orb tracking a
+subset of sources also shows its source chip (2b).
 
 Interaction:
-- Drag anywhere on the disc to move. On release within 24 pt of a screen edge, snap to a 12 pt margin (spring).
-  Position (center point, per display) persists.
+- Drag anywhere on the disc to move. On release within 24 pt of a screen edge, snap to a 12 pt margin (spring); other
+  orbs attract it magnetically (2b). Position (per orb, per display arrangement, 2b) persists.
 - Double-click: open the dashboard.
-- Right-click: context menu — Size (S / M / L presets 112 / 148 / 196), Effects (Off / Soft / Standard / Max),
-  Always on top, Click-through, Hide floating orb, Settings…, Quit.
-- Click-through mode: the orb ignores all mouse events; it is controlled from the menu bar / taskbar.
+- Right-click: the orb's context menu (2b) — style, sources, size (S / M / L presets 112 / 148 / 196), effects (Off /
+  Soft / Standard / Max), always on top, click-through, add / duplicate / split / merge, hide, remove, settings, quit.
+- Click-through mode (per orb): the orb ignores all mouse events; it is controlled from the menu bar / taskbar.
 
 Effects intensity (setting, default Standard):
 
@@ -182,10 +184,606 @@ Effects intensity (setting, default Standard):
 | Standard | Everything above, sparks, embers, skew; jitter only at redline |
 | Max | Standard with 1.6× particle rates, stronger bloom, and a faint heat-distortion shimmer at redline |
 
-System "Reduce Motion" caps the level at Soft and replaces movement with crossfades.
+System "Reduce Motion" caps the level at Soft and replaces movement with crossfades. The table describes `led`; every
+other style has its own row set in 2a.
 
-Performance: when idle and not hovered, render at ≤ 10 fps (or only on change). Particles use a fixed-size pool
-(≤ 400). The renderer pauses entirely while the orb is hidden or fully occluded.
+Performance: the frame policy and budget of 2a apply to every style, `led` included (idle is static apart from the 6 s
+sweep, active is capped at 60 fps, never the display rate). Particles use a fixed-size pool (≤ 400). The renderer
+pauses entirely while the orb is hidden or fully occluded.
+
+## 2a. Orb styles
+
+Every floating orb has a **style**: `led` (the LED gauge of section 2, the default), `needle`, `liquid`, `reactor` or
+`minimal`. The styles are one family: they share the disc and window, the body, the aura, the readout, the agent dots,
+the response wave, the new-peak pill, hover, the source bezel (2b), the effects levels, accessibility and the frame
+policy below; each one adds its own instrument between the body and the readout. The dashboard hero (section 4) always
+uses `led` with the hero vehicle.
+
+| Key | Name (`style.*`) | Personality | Primary encoding of `h` |
+| --- | --- | --- | --- |
+| `led` | LED 儀表 | precise, electric | lit segments of a 270° arc |
+| `needle` | 指針轉速錶 | mechanical, physical, racing | needle angle on a 270° dial with a red zone |
+| `liquid` | 能量液球 | organic, luminous, alive | liquid level in a glass sphere |
+| `reactor` | 反應爐 | sci-fi, rotational energy | arc length and spin of counter-rotating rings |
+| `minimal` | 極簡圓環 | quiet, typographic | one thin progress ring |
+
+Conventions for this section: `c` = disc center, `S` = diameter, radii and lengths are fractions of `S`, angles are
+degrees clockwise from 3 o'clock in screen space (y down). A *dial position* `n` maps to the angle `135° + 270° n` (the
+LED arc). `heat(x)` is the heat palette; the *label color* is the title token (dark: heat; light: heat darkened 18 %
+OKLab L, stepped to ≥ 4.5:1 against the body); *hot* is `mix(heat(h), #FFF7D6, 0.55 + 0.45 o)` in dark and
+`mix(label color, #FFB020, 0.3)` in light. Glows are Gaussian with standard deviation `σ` (a canvas `shadowBlur` of
+`2σ`), in points, independent of the backing scale. "Additive" applies to dark only; light uses normal blending.
+`h_raw = min(1, (v / R)^0.6)` and `o_raw` are the unsmoothed values of section 1 (they step with the 500 ms engine tick);
+`h`, `o` are the smoothed ones. Every speed-dependent oscillation uses an accumulated phase (4c resolved detail 3).
+
+### Shared foundation
+
+- **Window, body, rim, shadow, Reduce Transparency**: section 2, layer 2, unless a style's table overrides a token.
+- **Aura**: section 2, layer 1, for every style except `minimal` (no aura). Its breathing and the idle sweep run on one
+  global clock, so several orbs breathe and sweep together.
+- **Readout**: section 2, layer 6 — same fonts, weights, tokens, glow (σ 0.035 S), forward lean (`−6° h` from
+  overdrive), redline jitter and title slide — placed by the style's frame:
+
+  | Style | Value size · baseline · max width | Unit | Title baseline · size · max width | Agent dots | Pill center |
+  | --- | --- | --- | --- | --- | --- |
+  | `led` | 0.24 S · c + 0.012 S · 0.62 S | 0.072 S, 0.104 S below the value | 0.09 S below the unit · 0.062 S · 0.58 S | c + 0.3785 S | c − 0.232 S |
+  | `needle` | 0.205 S · c + 0.035 S · 0.40 S (inside the hub) | 0.062 S, 0.08 S below | fixed at c + 0.338 S (dial gap under the hub) · 0.062 S · 0.46 S; hover line ≤ 0.42 S at 85 % size | c + 0.405 S | c − 0.175 S |
+  | `liquid` | as `led` | as `led` | as `led` | c + 0.3785 S, with a 1.2 pt halo | as `led` |
+  | `reactor` | 0.205 S · c + 0.03 S · 0.46 S (core window) | 0.062 S, 0.08 S below | 0.074 S below the unit · 0.058 S · 0.50 S | c + 0.252 S (inside the core) | c − 0.172 S |
+  | `minimal` | 0.30 S · c + 0.07 S · 0.66 S | none | 0.098 S below the value · 0.068 S · 0.62 S | none | c − 0.25 S |
+
+  - The value shrinks to its max width. Titles shrink to 80 % and are never truncated (section 1); the hover info line
+    shrinks to 70 %. Unit and title never go below 7 pt; below S = 64 (thumbnails, 2b and section 5) only the value is
+    drawn.
+  - **Odometer**: on a value change only the characters that changed roll, each clipped to its own character cell,
+    travel 0.92 × the value size, 0.24 s ease-out (up when rising). Different lengths crossfade in 0.12 s. No roll with
+    Off, Reduce Motion, `minimal` and S < 80 (the text simply updates).
+  - Readout text is always drawn above every effect. Particles that pass behind it fade to 35 % inside the *readout
+    zone* (an ellipse 0.30 S × 0.19 S around `c + (0, 0.07 S)`, Gaussian falloff) so it never competes with them.
+- **Agent dots**: section 2, layer 6, at the style's position; only the orb's own agents (2b). None in `minimal`.
+- **Response pulse** (`responseCompleted` of the orb's sources, 2b): the shockwave of section 2, layer 7, for every
+  style except `minimal`, plus the style's accent below. Pulses toggle: Settings → Effects → Response pulses.
+- **New peak** (per orb, METRICS 6.8): the pill of section 2, layer 8, for every style; the 24 gold rays for every style
+  except `minimal`; plus the style's accent below. Toggle: Celebrate new peaks.
+- **Tier flash**: an effect-tier change brightens the style's primary lit element by 25 % for 0.4 s.
+- **Idle** (tier idle): value `0` in the idle value color, `tier.idle` in the secondary color, the instrument at rest.
+  **Sign of life**: every 6 s on the global clock (skipping one that would start less than 2 s after entering idle) a
+  0.9 s event as listed per style; `minimal` has none.
+- **Hover**: scale 1.03 (spring), the title crossfades (0.2 s) to the info line (`today.summary`, counted over the orb's
+  sources), plus the source chip of 2b. Unchanged otherwise.
+- **Style change**: the outgoing and incoming renderers crossfade for 0.25 s (Reduce Motion: cut); springs, trackers
+  and particles live in the orb, not in the style, so the value never jumps.
+
+### 2a.1 `led` — LED gauge
+
+Section 2, layers 1–8, unchanged; it is the reference for the family. Additions: the shared rules above (odometer,
+readout zone, text floors), the frame policy and budget below, and LOD: S < 120 halves the spark and ember rates;
+thumbnails draw the 36 segments without bloom.
+
+### 2a.2 `needle` — Analog needle tachometer
+
+A classic racing tachometer: graduated dial, red zone, a heavy needle that sweeps from the zero stop to the redline,
+trembles at speed and pins against the peg beyond the redline, and shift lights that flash at the redline. The needle
+shows `n = h` on the LED's 270° scale; the red zone starts at the redline-tier threshold `n_r = 0.75^0.6 = 0.8415`.
+
+Layers, back to front:
+
+1. **Aura**, **body**: shared.
+2. **Dial band**: a ring stroke centered at r 0.41 S, width 0.075 S, over the scale (n −0.004 → 1.004); white 2.8 % /
+   black 3.5 %.
+3. **Red zone**: arc centered at r 0.4655 S, width 0.017 S, butt caps, n_r → 1; `#F43F5E` at 62 % (dark) / `#E11D48` at
+   80 % (light). In the redline tier its opacity pulses 80 → 100 % at `2 + o` Hz; Standard and Max add a glow σ `0.025 S (0.6 + 0.4 o)`
+   (× 1.3 at Max) in the same color.
+4. **Graduations**: 41 ticks at n = k/40, outer radius 0.445 S, round caps; every 5th is major (9): length 0.062 S,
+   width 0.014 S; minor: 0.03 S, 0.0075 S. Unlit: white 50 % / 24 % (major / minor; Increase Contrast × 1.6), light
+   black 42 % / 20 %; unlit ticks inside the red zone use the red-zone color at 85 % / 60 %. **Lit** (`n_k ≤` needle,
+   not idle): `heat(n_k)` (light: its label color) at 95 %; the last lit tick blends 75 % toward `#FFF7D6` (light: 25 %
+   toward `#FFB020`); lit majors glow σ 0.015 S (dark, Soft and up).
+5. **Trace**: an arc at r 0.366 S, width 0.011 S, from n = 0 to the needle; each point in `heat(its n)`, opacity rising
+   from 30 % at 0 to 100 % at the needle, × 0.70 additive (dark) / × 0.85 (light). Hidden at idle.
+6. **Stop pins**: dots of radius 0.011 S at r 0.405 S, n = −0.034 and n = 1.034; white 32 % / black 28 %.
+7. **Shift lights** (S ≥ 120): five lamps of radius 0.019 S on r 0.33 S at −110°, −100°, −90°, −80°, −70°, housings
+   white 8 % / black 9 %. Lamp i lights when the needle passes n = 0.70, 0.735, 0.77, 0.805, 0.8415, in `heat(that n)`
+   (light: darkened 15 %), glow σ 0.02 S (dark). In the redline tier all five flash together at **3 Hz** (opacity
+   28 → 100 % through `smoothstep(−0.35, 0.35, sin φ)`, ≈ 50 % duty) in `mix(heat(0.97), #FFF7D6, 0.55)` (light
+   `#F59E0B`). This is the product's only blinking element and never exceeds 3 flashes per second.
+8. **Wake** (Soft and up, while the needle turns faster than 12°/s): an annular wedge r 0.235 → 0.43 S trailing the
+   needle by `4° + 0.085 s × |ω|` (≤ 55°), `heat(h)` from 32 % at the needle to 0, additive.
+9. **Needle**: a tapered blade from the counterweight (r −0.09 S, hidden under the hub) through the pivot (width
+   0.062 S) to a round tip at r 0.44 S (width 0.012 S). Fill `heat(h)` blended `0.05 + 0.45 o` toward `#FFF7D6`
+   (dark) / the label color (light); idle `#9EA8BA` at 75 %. Dark: glow σ 0.0275 S at `0.45 + 0.35 h` (× 1.25 at
+   Max). Light: drop shadow black 22 %, offset (0.006, 0.01) S, σ 0.007 S. Spine: a 0.0045 S line from r 0.21 S to the
+   tip, `#FFF7D6` 75 % (dark) / white 55 % (light).
+10. **Peg sparks** (Standard and up), below.
+11. **Hub**: a disc of radius 0.235 S, vertical gradient `#262C3C → #0C0E14` at 95 % (light `#FFFFFF → #ECEFF5` at
+    98 %), drop shadow black 55 % / 16 %, σ 0.025 S, y 0.012 S; a chrome bezel stroke 0.013 S with a 135° gradient
+    white 42 % → 10 % → 22 % (light: white → `#A0A8B6` 55 % → `#78808E` 60 %).
+12. **Readout, agent dots, wave, rays, pill**: shared (frame table).
+
+Motion:
+
+- **Needle dynamics**: target `n* = h_raw` (0 at idle), plus `0.02 + 0.05 o_raw` while `o_raw > 0` so it presses into
+  the peg. An underdamped spring, frequency 1.5 Hz, damping ratio 0.55 (≈ 12 % overshoot on a step), integrated in
+  sub-steps ≤ 1/480 s. Stops at n = −0.012 and 1.012; hitting one reverses the velocity × −0.32 (a small bounce).
+  Off and Reduce Motion: the needle follows the smoothed `h` directly.
+- **Tremble** (Standard and Max): amplitude `A = smoothstep(0.55, 1, h) × (0.3° + 1.0° o)` (× 1.4 at Max), offset
+  `A (0.5 sin φ1 + 0.3 sin(φ2 + 1.3) + 0.2 sin(φ3 + 2.1))` at 11.3 / 17.9 / 26.1 Hz, added after the spring and
+  clamped by the stops: pinned at the peg it reads as the needle chattering against the pin.
+- **Peg sparks** (while pinned: needle ≥ 1.0105 and target > 1.012): `25 + 70 o` per s (× 1.6 Max) from the contact
+  point at r 0.405 S, speed 0.35–0.9 S/s along the clockwise tangent ±30°, plus 0.2 S/s outward, gravity 1.1 S/s²,
+  drag 2/s, life 0.22–0.55 s; streaks (velocity × 0.025 s), width 0.8–1.6 pt, `#FFF7D6` → `heat(0.95)` (light
+  `#FFB020` → label color). Pools: 48 (Standard), 80 (Max).
+- **Pulse accent**: the tip flares for 0.35 s — glow + 0.0175 S σ and a radial `#FFF7D6` (light `#FFB020`) spot of
+  radius 0.06 S at 70 % × strength.
+- **New-peak accent — the gauge sweep**: displayed `n + (1.012 − n)(smoothstep(0, 0.38, τ) − smoothstep(0.5, 1.0, τ))`
+  for τ ∈ [0, 1] s: the needle swings to the peg and back, like an instrument cluster's start-up sweep; the shift lights
+  fire once with it.
+- **Title change**: shared slide. **Tier flash**: lit ticks and trace.
+- **Idle**: needle on the zero stop, slate; trace and lamps dark. Sign of life: the 6 s sweep brightens the graduations
+  as a band `exp(−90 d²)` (+35 % dark / +25 % light) travelling n −0.15 → 1.15 in 0.9 s, in step with `led`.
+
+| Effects | `needle` |
+| --- | --- |
+| Off | needle on the smoothed `h` (no overshoot or tremble), red zone and lamps steady, no wake, aura breathing or pulses |
+| Soft | spring overshoot and stop bounce, wake, shift-light flash, aura breathing, pulses with the tip flare; no tremble or sparks |
+| Standard | Soft + tremble, peg sparks, red-zone glow |
+| Max | Standard with sparks × 1.6, glows × 1.25, tremble × 1.4 |
+
+Reduce Motion: as Off for motion (lamps steady-lit at the redline instead of flashing), crossfades for titles and the
+new peak (pill only). Increase Contrast: ticks × 1.6 opacity, a 1 pt outline around the needle (black 60 % dark /
+white light), glows × 0.5. Windows high contrast: ticks, needle and trace in the theme's text color, red zone in its
+highlight color, no glow, wake or sparks. LOD: S < 120 drops the minor ticks and the shift lights; thumbnails show dial
+band, red zone, majors, needle and value.
+
+### 2a.3 `liquid` — Liquid energy orb
+
+A glass sphere of glowing liquid. The level rises with speed, the surface waves grow, luminous motes stream up, and at
+the redline it boils, splashes and steams; beyond it the core turns white-hot.
+
+Layers, back to front (everything from 3 to 9 is clipped to the inner glass, r 0.455 S):
+
+1. **Aura**: shared.
+2. **Body**: section 2 without the lens highlight; dark gradient `#181D2B → #07090D`, light `#FFFFFF → #E4E8F0`.
+   **Volume shading**: radial gradient centered at `c − (0.12, 0.16) S`, clear to 75 % of 0.5 S, then to black 42 %
+   (light: `#1E283C` 12 %) at the edge.
+3. **Light spill**: a 0.22 S band above the surface in the liquid color `L` from 0 to 16 % (additive; light 10 %),
+   × `0.4 + 0.6 h`.
+4. **Back wave** (S ≥ 120): the surface below with phase + 1.7 rad, 75 % amplitude, raised 0.008 S, filled with `L`
+   darkened 25 % (light 8 %) at 55 % of the front opacity.
+5. **Liquid body**: vertical gradient from `min(y_L, c + 0.2 S) − 0.04 S` to the bottom, `L` at `α` → `L` darkened 62 %
+   (light 14 %) at `α + 0.2`. `L = heat(h)` (dark) / `mix(heat(h), white, 0.12)` (light); `α = 0.46 + 0.10 h` (dark) /
+   0.80 (light); idle: slate at 0.40 / 0.55. Then a **spherical shade** over the liquid: radial from 35 % of the radius
+   (center `c − (0.06, 0.08) S`) to black 50 % (light `#283042` 14 %) at the glass, so the liquid reads as a glowing
+   volume, not a flat fill. Then the **inner glow** (additive), kept below the readout: radial at
+   `(c_x, max(y_L + 0.08 S, c_y + 0.38 S))`, radius 0.32 S, `mix(L, #FFF7D6, 0.25 + 0.45 o)` at
+   `(0.26 + 0.2 o)(0.3 + 0.7 h)` (× 1.25 Max; light `L` at 10 %). Then the **readout scrim** (dark only): an elliptical
+   radial gradient centered at `c + (0, 0.1 S)`, radii 0.36 × 0.26 S, black 35 % → 30 % at 55 % → 0. Together they keep
+   the white readout ≥ 4.5:1 on every heat color up to full overdrive (computed worst case: value 5.0:1, title
+   4.55:1).
+6. **Energy currents** (Soft and up, S ≥ 120, not Reduce Motion): three filaments at 25 / 50 / 75 % of the depth,
+   `y = depth + 0.03 S sin(7u + φ) + 0.015 S sin(13u − 1.7 φ)` across the width, widths 0.018 / 0.014 / 0.010 S,
+   blurred σ 0.006 S, `mix(L, #FFF7D6, 0.35 + 0.4 o)` at 10 % (light: white 22 %) × `(0.4 + 0.6 h)`, drifting with the
+   wave phase.
+7. **Motes and bubbles**, **pops**, **splashes**, **steam**, **falling droplets** (below).
+8. **Meniscus**: the surface stroked at `(0.008 + 0.004 h) S` in `mix(L, #FFF7D6, 0.45 + 0.5 o)` with glow
+   σ `(0.015 + 0.015 h) S` (× 1.3 Max); light: `heat(h)` darkened 25 %; idle white 28 % / slate 50 %.
+9. **Glass**: wall stroke 0.006 S at r 0.455 S (white 9 % / black 6 %); bottom caustic: arc r 0.475 S, 55° → 125°,
+   width 0.02 S, σ 0.008 S, `L` at `0.35 (0.3 + 0.7 h)` (light 0.3); specular ellipse 0.2 × 0.12 S rotated −34° at
+   `c − (0.17, 0.22) S`, white 13 % / 75 % → 0; rim glint arc r 0.42 S, 200° → 236°, width 0.012 S, white 22 % / 95 %.
+10. **Readout split by the surface**: above the surface in the normal tokens; below it in white 97 % / unit white 80 % /
+    title white 94 %, each with a black 55 % shadow σ 0.015 S (dark), or ink `#0B0D12` 94 % / unit 72 % / title =
+    `heat(h)` darkened 55 % without glow (light). The title therefore never sits in its own color on its own color.
+11. **Agent dots** with a 1.2 pt halo (black 55 % / white 75 %), wave, rays, pill: shared.
+
+Surface and level:
+
+- Level (fraction of the inner diameter): `f* = 0.08 + 0.74 h + 0.06 o` (idle 0.08) through an underdamped spring,
+  0.75 Hz, damping 0.62 (a gentle slosh after a change); Off and Reduce Motion: critically damped, settle 0.9 s. Mean
+  surface `y_L = c_y + 0.455 S − 0.91 S f`.
+- `y(x) = y_L + A [0.55 sin(2π x / 0.9 S + φ1) + 0.30 sin(2π x / 0.47 S − φ2) + 0.15 sin(2π x / 0.23 S + φ3)] + chop +
+  ripples` with `A = (0.004 + 0.02 h + 0.018 o) S` (Soft × 0.6, idle 0.002 S, Off/Reduce Motion 0) through a spring
+  (settle 0.8 s); phase rates φ1 `0.25 + 0.5 h + 0.3 o`, φ2 `0.4 + 0.8 h + 0.4 o`, φ3 `0.9 + 1.6 h` Hz. The two
+  counter-moving components make a sloshing standing wave rather than a conveyor belt.
+- **Boil chop** (redline tier, Standard and up): `0.006 S (0.5 + 0.5 o) sin(2π x / 0.11 S + φ4)(0.7 + 0.3 sin(x /
+  0.05 S + 1.7 φ4))`, φ4 3.1 Hz; halved below S 120.
+- **Ripples** (≤ 4): `−A_r e^(−τ/0.75) exp(−((d − 0.42 S τ) / 0.075 S)²) cos(2π (d − 0.42 S τ) / 0.1 S)`, `d` = distance
+  from the impact, `A_r = 0.022 S (0.6 + 0.6 strength)`.
+
+Particles:
+
+- **Motes / bubbles** rise from near the bottom (x uniform in ±60 % of the radius), speed `(0.08 + 0.35 h + 0.25 o)
+  S/s × U(0.7, 1.3)`, accelerating `(0.12 + 0.2 h) S/s²`, wobble 0.006 S at 2.3 Hz, radius `(0.006 + 0.01 h) S ×
+  U(0.6, 1.4)` (≥ 0.9 pt). Their look follows `hot = smoothstep(0.35, 0.9, h)`: cool ones are glass bubbles (a ring
+  of 28 % of the radius, white 50 % / 85 %, and a highlight dot); hot ones are luminous motes (radial gradient to
+  2 × the radius: `mix(L, #FFF7D6, 0.9)` 95 % → 40 % at 35 % → 0, additive). They pop at the surface (a ring growing
+  to 2.5 × in 0.25 s); while boiling, 55 % also throw 1–2 splash droplets.
+- Rates: Soft `0.6 + 3 h` per s (≤ 6 alive); Standard `1.5 + 12 h` (+ `6 + 10 o` in the redline tier) per s, pool 32
+  (16 below S 120); Max × 1.6, pool 48.
+- **Splash droplets** (pool 40): ±0.25 S/s sideways, 0.35–0.7 S/s up, gravity 2.2 S/s², radius 0.006–0.011 S, gone
+  when they fall back in.
+- **Steam** (redline tier, Standard and up): `2 + 4 o` wisps per s (× 1.6 Max, pool 12), soft discs of radius
+  0.03–0.06 S doubling as they rise 0.06–0.12 S/s for 0.8–1.4 s, `#FFF7D6` 12 % (light white 18 %) × `sin(π u)`.
+
+Events:
+
+- **Pulse accent**: a droplet (teardrop of radius `(0.012 + 0.006 strength) S` in the response's heat color) appears
+  0.16 S above the surface (never above c − 0.414 S, never below c − 0.3 S) and falls at 2.6 S/s²; at impact a ripple,
+  3–6 splash droplets (Standard and up) and 2 / 6 bubbles (Soft / Standard). At most 3 droplets in flight.
+- **New-peak accent**: the level surges (velocity + 0.9/s on a 0.9 Hz, damping 0.45 spring: ≈ +0.1 of the diameter),
+  a gold band (`#FACC15` 45 %, ±0.06 S) rises from the bottom to the surface over 0.9 s, and 22 gold motes stream up.
+- **Tier flash**: the meniscus.
+- **Idle**: a slate pool at 8 %, flat (static), no motes. Sign of life: one cool bubble rises from the bottom-left and
+  pops (≤ 1.2 s, 30 fps).
+
+| Effects | `liquid` |
+| --- | --- |
+| Off | static level by `h`, frozen surface shape, no particles, currents or droplets, fixed glow |
+| Soft | waves × 0.6, ≤ 6 bubbles, currents, droplets with ripples (no splash), aura breathing; no boil, steam or splash |
+| Standard | full waves and motes, boil chop, splashes, steam, surge |
+| Max | Standard with particles × 1.6 and glows × 1.25 |
+
+Reduce Motion: flat static surface (A = 0), the level eases critically damped, no particles, currents or droplets;
+boiling reads as a brighter meniscus and inner glow; the new peak is the pill plus the gold band as a 0.3 s crossfade.
+Increase Contrast: meniscus × 1.5 width, readout shadow 75 %, glows × 0.5. Windows high contrast: the liquid is a solid
+fill in the theme's highlight color at 35 %, meniscus in the highlight color, no particles or glows. Reduce
+Transparency: solid body and α + 0.15. LOD: S < 120 drops the back wave, currents and steam, halves the chop and caps
+the motes at 16; thumbnails show the still liquid and the value.
+
+### 2a.4 `reactor` — Reactor energy ring
+
+A sci-fi core: a dark core window carries the readout; around it three counter-rotating energy rings spin up with
+speed, lengthen until they close into a solid ring of fire beyond the redline, and throw lightning arcs.
+
+Layers, back to front:
+
+1. **Aura**: shared. **Body**: dark `#141824 → #06070B`; light as section 2 with the bottom `#E5E9F1`.
+2. **Stator**: a full ring r 0.468 S, width 0.006 S, unlit token × 1.4; 24 notches r 0.456 → 0.474 S, width 0.005 S
+   (every 6th × 2.6 opacity; 4 notches below S 120).
+3. **Tracks**: unlit rings under rotor A (r 0.425 S, width 0.024 S) and rotor C (r 0.338 S, width 0.009 S).
+4. **Corona** (not idle): radial gradient r 0.30 → 0.40 S, `heat(h)` (dark: blended `0.2 o` toward `#FFF7D6`) at
+   `(0.10 + 0.42 h)` × breathing (±15 %, `0.3 + 1.7 h` Hz) + pulse flare (+0.25 fading over 0.35 s), additive (light
+   `0.06 + 0.2 h`), × 1.2 at Max.
+5. **Rotor A** (outer, clockwise): three arcs 120° apart, each `20° + 90° h + 10° o` long (capped at 120°: at full
+   overdrive they join into a closed ring), width 0.024 S (idle 0.6 ×). Each arc is a gradient from the tail
+   (`heat(h)` at 25 % dark / 50 % light) to the head (*hot*), glow σ 0.015 S (dark, × 1.3 Max).
+6. **Rotor B** (middle, counter-clockwise): 24 coils (12 of 13° below S 120), 7.5° long, width 0.018 S at r 0.383 S.
+   Energy `e_i = 0.18 + 0.82 (½ + ½ cos(3 θ_i − ψ))^2.2 (0.35 + 0.65 h)`: three bright bands run clockwise — against
+   the coils — at `ψ̇ = 0.15 + 1.4 h + 0.6 o` rev/s; color `heat(h)`, blending toward *hot* above e 0.75; opacity `e`.
+   Idle: slate at 25 %.
+7. **Rotor C** (inner, clockwise, fastest): two arcs 180° apart, `14° + 130° h + 20° o` long (≤ 175°), width 0.009 S,
+   gradient as A.
+8. **Lightning** (redline tier, Standard and up): `1.5 + 6 o` bolts per s (× 1.6 Max), at most 3 alive (Max 4). A bolt
+   lives 0.09–0.18 s and is re-randomized every 50 ms: from the core rim (r 0.306 S) to rotor A (r 0.425 S) within
+   ±29°, or — when `o > 0.3`, 40 % of bolts — leaping outward from r 0.437 S to r 0.56–0.66 S, into the aura (still
+   inside the 1.5 S window). An 8-segment polyline with perpendicular jitter `±0.048 S sin(π u)`, three strokes: glow
+   0.03 S `heat(0.92)` 28 %, body 0.011 S 75 %, core 0.0045 S `#FFF7D6` (light: label color of 0.9 and `#FFB020`),
+   full for 20 % of its life, then fading. 6 sparks at the far end (0.2–0.6 S/s, drag 3/s, 0.15–0.4 s; pool 40, Max 64).
+   Flashes that brighten the corona are limited to 3 per second.
+9. **Pulse flare**: a ring from r 0.30 to 0.50 S in 0.32 s (ease-out), width 0.012 S → 0, in the response's heat color
+   at 55 %; it hands over to the shared wave at the disc edge.
+10. **Core window**: a disc r 0.30 S, radial gradient `#181C28 → #080A0F` at 97 % (light white → `#EEF1F6`); rim 0.009 S
+    in `mix(heat(h), hot, 0.4 o)` at `60 + 40 h` %, glow σ `(0.015 + 0.015 h) S` (dark); idle: unlit token × 2.2.
+11. **Readout, agent dots (inside the window), wave, rays, pill**: shared.
+
+Motion: rotor speeds in rev/s, integrated as angles: A `0.03 + 0.45 h^1.3 + 0.35 o + k`; B `−(0.02 + 0.30 h^1.3 +
+0.25 o + 0.6 k)`; C `0.05 + 1.1 h^1.3 + 0.7 o + 1.2 k`. The pulse kick `k += 0.25 × strength` decays with τ 0.5 s, so
+every completed response visibly spins the reactor up. At the redline rotor C turns ≈ 1.2 rev/s (≈ 7° per frame at
+60 fps, smooth); at full overdrive ≈ 1.9 rev/s.
+
+- **New-peak accent — lock**: each rotor swings forward (in its direction of travel) to the nearest pose with an arc
+  head at 12 o'clock (symmetry 120° / 15° / 180°) over 0.42 s (`easeOutBack`, overshoot 1.2), holds to 0.57 s while all
+  three flash gold `#FACC15` (intensity `1 − |τ/0.42 − 1| / 0.35`), then spins on from the locked pose.
+- **Tier flash**: corona and arc heads.
+- **Idle**: rotors stopped where they were, arcs at minimum length in slate at 38 % (light 45 %), corona off, core rim
+  unlit. Sign of life: a light band (+60 %, Gaussian, ≈ 1/7 of the circle wide) runs once around rotor B in 0.9 s.
+
+| Effects | `reactor` |
+| --- | --- |
+| Off | rotors still (arc lengths and color still encode `h`), steady corona, no bands, flares, kicks or lightning |
+| Soft | rotation, energy bands, corona breathing, pulse flares and kicks, lock; no lightning or sparks |
+| Standard | Soft + lightning and sparks |
+| Max | Standard with bolts and sparks × 1.6 (4 alive), glows × 1.3, corona × 1.2 |
+
+Reduce Motion: rotors frozen, bands static, corona steady, no lightning; the lock becomes a 0.3 s gold crossfade.
+Increase Contrast: unlit tracks × 2, rotor tails at 60 %, glows × 0.5. Windows high contrast: rings in the theme's
+text color, heads in its highlight color, no corona, glow or lightning. LOD: S < 120 has 12 coils and 4 notches;
+thumbnails draw rotors A and C and the core only.
+
+### 2a.5 `minimal` — Minimal ring
+
+Only the number, one thin progress ring and the title; almost nothing moves. The calmest style, and the one that stays
+clear at small sizes (it alone may go down to 64 pt).
+
+Layers, back to front:
+
+1. **Body**: section 2 without the lens highlight. No aura, agent dots, unit, wave or rays.
+2. **Track**: a full circle r 0.425 S, width `w = max(2.5 pt, 0.034 S)`, unlit token × 1.15.
+3. **Progress**: from 12 o'clock clockwise over `360° × p` with `p = h + o` (0 → 2): the first lap fills to the
+   redline, a **second lap** runs over the first beyond it (complete at `v = 2R`), the way an activity ring passes 100 %.
+   Round caps; a conic gradient from the label color darkened 28 % (light 10 %) at the start to the label color at the
+   head; the second lap is the head color throughout and its head casts a shadow onto the lap below (black 55 % / 22 %,
+   σ `0.35 w`, from 0.02 rad behind to 0.07 rad ahead of the head). Dark, from boost up: glow σ `0.0125 S` at 35 %.
+4. **Head dot** (redline and pulses): radius `0.32 w` at the head, `mix(head, #FFF7D6, 0.6)` (light: head).
+5. **Readout**: frame table; the value never rolls, titles crossfade in 0.25 s instead of sliding.
+
+Motion: the ring follows the smoothed `h` and `o`. The only continuous animation: in the redline tier the glow
+breathes at 1 Hz (σ `0.0125 → 0.025 S`, opacity 35 → 70 %) and the head dot shows at `0.6 ×` the breath. Pulse accent:
+the head dot and glow blink (+30 %, 0.4 s); no wave. New peak: the ring tints toward gold (`#FACC15` / light `#C99700`)
+by `sin(π τ / 0.7)` over 0.7 s, plus the pill. Idle: the track only; no sign of life, so an idle `minimal` orb draws
+no frames at all.
+
+| Effects | `minimal` |
+| --- | --- |
+| Off | no glow, breathing or blink |
+| Soft, Standard | as described |
+| Max | Standard with the glow × 1.3 |
+
+Reduce Motion: steady glow (no breathing), the gold tint and blink become 0.2 s crossfades. Increase Contrast: track
+× 2, ring width × 1.25, no glow. Windows high contrast: track in the theme's gray text color, ring in its highlight
+color. Sizes 64–240 pt; at S < 80 the title uses 7 pt and the ring keeps `w ≥ 2.5 pt`.
+
+### Frame policy and performance budget (normative for every style, `led` included)
+
+The orb runs all day and there may be eight of them; a single Windows orb at the redline costs ≈ 38 % of one core today
+on the 144 Hz 4K reference machine. Every style must stay far below that.
+
+**Frame classes.** All orbs on a display share **one** frame clock (macOS: one `CADisplayLink` per screen; Windows:
+one `CompositionTarget.Rendering` subscription or one DXGI/DComp frame callback), and each orb renders only on its own
+k-th tick. "60 fps" means the integer divisor of the refresh rate closest to 60 (ties to the higher: 144 Hz → 72,
+120 → 60, 60 → 60); "30 fps" likewise (144 → 28.8, 120 → 30); "15 fps" likewise. The display refresh rate itself is
+never used above 72.
+
+| State | `led` | `needle` | `liquid` | `reactor` | `minimal` |
+| --- | --- | --- | --- | --- | --- |
+| Idle, not hovered | static; 30 fps during the 0.9 s sweep every 6 s | static; 30 fps sweep | static; 30 fps for the 1.2 s bubble | static; 30 fps sweep | static, never animates |
+| Cruise, boost (`h < 0.45`) | 30 fps | 30 fps; 60 while the needle turns > 90°/s | 30 fps | 30 fps | 30 fps while a spring settles, else static |
+| Overdrive, redline | 60 fps | 60 fps | 60 fps (Soft: 30) | 60 fps | as above; 15 fps for the redline breathing |
+| Transitions (title, peak, pulse, hover, style change) | 60 fps for their duration | 60 | 60 | 60 | 30 |
+| Off or Reduce Motion | on change only: a value tick (≤ 2/s) renders the spring at 30 fps until it settles (change < 0.001), then stops | same | same | same | same |
+
+- "Static" means no frames: the last frame stays on screen; the next one is drawn on data change, hover or the next
+  scheduled sign of life (a single timer, not polling).
+- When **four or more orbs** are in the 60 fps class at once, all of them drop to 30 fps except the hovered or most
+  recently interacted one.
+- Rendering pauses entirely while an orb is hidden, faded below 5 % opacity mid-fade, fully occluded (macOS
+  `occlusionState`; Windows `DwmGetWindowAttribute(DWMWA_CLOAKED)` and monitor-off / session-lock notifications), or on
+  a Space that is not visible. Data keeps flowing; the first frame after resuming shows the current state, never a
+  catch-up animation.
+
+**Budgets** (release build, Standard effects, S = 148 and S = 240, one orb unless stated; CPU = main + render threads,
+% of one core averaged over 10 s; reference machines: an M1/M2 MacBook Air at 2× and the Windows 144 Hz 4K machine at
+its native scale):
+
+| Scenario | macOS | Windows |
+| --- | --- | --- |
+| Idle, any style | ≤ 0.2 % | ≤ 0.3 % |
+| Cruise (30 fps) | ≤ 1.5 % | ≤ 3 % |
+| Redline / overdrive, Standard | ≤ 3 % | ≤ 6 % |
+| Redline / overdrive, Max | ≤ 4 % | ≤ 8 % |
+| Eight orbs at redline, Standard | ≤ 12 % | ≤ 25 % |
+| GPU time per orb frame (S = 240, 2× / 200 %) | ≤ 1.0 ms | ≤ 1.0 ms |
+| Memory per orb (surfaces, buffers, atlases) | ≤ 12 MB | ≤ 12 MB |
+
+Targets are part of the definition of done: each platform ships a benchmark harness that drives every style through
+the scenario of the prototype (idle → climb → redline → overdrive → back) and reports these numbers.
+
+**Techniques (required).**
+
+- GPU only: every layer is a primitive of one instanced signed-distance-field pipeline (the macOS `OrbShaderSource`
+  shapes — rounded rect, circle, ring, capsule, radial, arc — plus `polyline` for bolts and the liquid surface strip and
+  `wedge` for the needle wake). Glows are the analytic Gaussian of the distance, never a blur pass; the liquid's
+  surface, body, currents and spherical shade are one fragment shader evaluating `y(x)` per pixel; text comes from a
+  glyph atlas (digits, `.kMB–`, the unit and the current titles per language, built once per size).
+- No per-frame allocation: instance buffers and particle pools are sized once from the style's maximum budget (ring
+  buffers), paths and geometry are rebuilt only on a size or appearance change; WPF: frozen resources only.
+- CPU per frame ≤ 0.25 ms for state updates (springs, particles) at the maximum budget.
+- **Windows**: the current path — a WPF layered window (`AllowsTransparency`) whose `DrawingVisual`s are rebuilt every
+  frame and read back by `UpdateLayeredWindow` at the display rate — is the likely source of the 38 % (to be
+  confirmed with a profile on the reference machine). The animated orb draws with
+  Direct3D 11 into a composition swap chain (`CreateSwapChainForComposition`, premultiplied alpha) hosted by
+  DirectComposition in a `WS_EX_NOREDIRECTIONBITMAP` window, running an HLSL port of the same instanced SDF shader as
+  macOS (one shared instance layout). Click-through outside the disc and the click-through mode keep today's behaviour
+  (WS_EX_TRANSPARENT toggled by cursor position); verify that it works with the composition window on Windows 10 and 11.
+  WPF effects (`BlurEffect`, `DropShadowEffect`) are not allowed on animated content. If the WPF path is kept, it must
+  meet the same budget, measured on the reference machine.
+
+## 2b. Multiple orbs
+
+The user can float up to **eight** orbs, each tracking any combination of sources — for example one orb for Claude
+Code + Claude Desktop and one for Codex — with its own position, size, style and window options. An orb's value,
+heat, title, tiers, agent dots, pulses, new peaks and hover line count only its own sources. The dashboard, the menu bar
+/ taskbar widget and their accessibility always show all sources.
+
+### Data model
+
+Persisted as one JSON value in the settings store (key `orbs`), written atomically on every change:
+
+```json
+{
+  "version": 1,
+  "orbs": [
+    {
+      "id": "6F1C2A9E-…",
+      "name": null,
+      "sources": ["claudeCode", "claudeDesktop"],
+      "style": "needle",
+      "size": 148,
+      "opacity": 1.0,
+      "alwaysOnTop": true,
+      "clickThrough": false,
+      "fadeWhenIdle": false,
+      "allSpaces": true,
+      "visible": true,
+      "redlineOutput": null,
+      "redlineTotal": null
+    }
+  ],
+  "layouts": {
+    "<arrangement key>": { "<orb id>": { "display": "<display key>", "xAnchor": "high", "x": 12, "yAnchor": "fraction", "y": 0.31 } }
+  }
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | UUID, never reused. |
+| `name` | Custom name, 1–32 characters, trimmed; `null` = automatic: `orbs.sources.all` for all sources, the source name for one, `orbs.name.pair` for two, `orbs.name.more` (first source + count) for three or more, in source order (METRICS 1). |
+| `sources` | `"all"` (every enabled source, including sources detected or added later) or a non-empty array of METRICS 1 keys, stored in source order without duplicates. Unknown keys from a newer version are kept and ignored. |
+| `style` | `led` · `needle` · `liquid` · `reactor` · `minimal`; unknown → `led`. |
+| `size` | 96–240 pt/DIP (`minimal` 64–240), clamped when the style changes (a 72 pt `minimal` becomes 96 pt `needle`). |
+| `opacity` | 0.4–1.0. |
+| `alwaysOnTop`, `clickThrough`, `fadeWhenIdle`, `allSpaces` | As the former global settings, now per orb (`allSpaces` macOS only). |
+| `visible` | Hides one orb without removing it. |
+| `redlineOutput`, `redlineTotal` | `null` = the General redline of that metric; otherwise this orb's redline (same ranges). Heat, tiers and titles of the orb use it. |
+| `layouts` | Positions per **display arrangement**: the key is the sorted list of connected display keys (macOS display UUID; Windows monitor device ID) joined with `+`. Each entry uses today's position record (edge-docked distance or fraction of the usable area, per axis) on the named display. At most 16 arrangements are kept (least recently used dropped). |
+
+Global (unchanged, shared by all orbs): Show floating orbs (master switch), Appearance, Language, metric, General
+redline, Effects intensity, Celebrate new peaks, Response pulses. Effects stay global because the style already sets an
+orb's character.
+
+**Arrangement changes.** When displays are connected, removed or rearranged, each orb takes its record from the layout
+of the new arrangement; if the arrangement is new, an orb keeps its record from the last arrangement when its display is
+still connected, else moves to the main display keeping its anchors. Overlaps are then resolved in list order: a later
+orb slides to the nearest free touching position (below). Nothing is ever placed off-screen.
+
+**Migration** (first launch of the multi-orb version, when `orbs` is absent): create one orb — new id, `name null`,
+`sources "all"`, `style "led"`, `size` = old `orbSize`, `opacity` = `orbOpacity`, the four toggles from the old keys,
+`visible true` — and put the old per-display positions into the current arrangement's layout (every old display key is
+kept as that orb's fallback record). The master switch takes the old `orbVisible`. The old keys are left untouched and
+never written again, so a downgrade restores the single orb. After migration the orb looks and sits exactly as before
+(test: same window frame and style).
+
+**Defaults**: a fresh install has one orb tracking all sources, `led`, 148 pt, at today's default position.
+
+**Limits**: 1–8 orbs. Add, Duplicate and Split are disabled at 8 (tooltip `orbs.limit`); a split that would exceed 8
+creates the first sources in order until 8 and says so in its undo banner (`orbs.didSplitLimited`). The last orb cannot
+be removed (Remove is disabled; the master switch hides it).
+
+### Creating, placing and snapping
+
+- **Add**: copies the style, size, opacity and toggles of the selected orb (Settings) or the clicked orb (menu). Its
+  sources: the first detected, enabled source (source order) that no orb tracks *explicitly*; if every detected source
+  is tracked explicitly, `"all"`. From the menu the new orb shows its chip for 2 s; from Settings it is selected and its
+  editor opens.
+- **Duplicate**: an exact copy with a new id; a custom name gets ` 2` appended.
+- **Placement** of a new orb: on the display of the orb it came from (else the main display), try the four touching
+  slots of that orb — left, below, right, above (12 pt gap, centers aligned) — and take the first one fully inside the
+  usable area that overlaps no orb (disc + 12 pt). Otherwise search a 24 pt grid outward from that orb for the nearest
+  free spot; if the display is full, cascade +24 / +24 pt from it, clamped inside the usable area. It springs in from
+  0.6 × scale and 0 opacity (response 0.45 s, damping 0.78; Reduce Motion: 0.2 s fade).
+- **Screen edges**: today's rule — released within 24 pt of a usable edge, the disc snaps to a 12 pt margin.
+- **Orb to orb**: while dragging, each other orb on the display offers a touching position at a 12 pt gap along the
+  line between the centers; within 16 pt of it the dragged disc is pulled in (the disc follows the pointer through a
+  critically damped spring, settle 0.12 s, so the pull feels magnetic, not sticky). Release springs into place
+  (response 0.35 s, damping 0.8). Released overlapping another orb, the disc slides to the nearest free touching
+  position.
+- **Alignment**: when the dragged center is within 8 pt of another orb's center x or y and the two discs are within
+  64 pt of each other (edge to edge), it aligns; a 1 pt dashed guide in the accent color at 60 % shows while dragging.
+  Priority: screen edge, then orb-to-orb touching, then alignment (alignment alone never pulls a disc away from an edge
+  it is docked to).
+- **Z-order**: all orbs use the window level of their `alwaysOnTop`; among orbs the last dragged or clicked is in front.
+  Because snapping prevents overlap, the order rarely shows. Orbs never take keyboard focus (non-activating, as today).
+- **Click-through** and **fade when idle** are per orb. Fade uses the orb's own idle state (its sources idle for 60 s)
+  and multiplies its opacity.
+- **Master switch**: hides or shows all orbs. Turning it on while every orb is individually hidden makes them all
+  visible. The quick menu (menu bar / tray) keeps one item, `menu.showOrb` / `menu.hideOrb` with one orb and
+  `menu.showOrbs` / `menu.hideOrbs` with several; with several orbs it adds a `settings.orb` submenu listing each orb
+  (colour dots + name) with Show, Click-through and `menu.orb.settings` — the way back to a click-through orb.
+
+### Identity at a glance
+
+- **Source bezel**: an orb tracking a subset replaces the disc's white rim highlight with a colour rim of width
+  `max(1 pt, 0.0105 S)` (1 px in thumbnails) on the disc edge, split into equal arcs clockwise from 12 o'clock in source
+  order with 4° gaps, in the source colors at 85 % (light: darkened 10 %, 90 %). An unavailable source's arc is dashed
+  (1.2 w on, 1.4 w off) in the unlit token × 2.5. Orbs tracking all sources keep the plain rim. Together with the
+  agent dots, which are already in source colors, this identifies an orb without any label.
+- **Source chip**: a capsule shown after 0.35 s of hover, during a drag, and for 2 s after the orb is created, split,
+  merged or its sources change. Height 18 pt, 11 pt semibold, radius 9, padding 8, 6 pt colour dots; dark
+  `rgba(20, 22, 30, 0.82)`, light `rgba(255, 255, 255, 0.9)`, hairline border and a soft shadow; drawn in a separate
+  non-activating overlay so it may extend past the orb window. Placed centered 6 pt below the disc; when another orb or
+  the screen edge is in the way, on the side facing the screen center, vertically centered; always clamped inside the
+  usable area. Content: dot + name for up to two sources, else the first and `+n`; unavailable sources in secondary
+  color with `source.notFound` / `source.disabled`. An all-sources orb shows `orbs.sources.all`, and only when more than
+  one orb exists (a single orb behaves exactly as today).
+- **Hover info line** inside the orb: `today.summary` over the orb's sources (today's output of those sources, the
+  number of its agents).
+- **Settings highlight**: hovering, selecting or focusing an orb row in Settings rings that orb on the desktop (2 pt
+  accent ring 4 pt outside the disc, 60 %, fading in over 0.15 s), so the user always knows which orb is which.
+
+### Unavailable sources
+
+A source is unavailable when it is disabled (Settings → Data Sources) or not detected (no folder and no data today).
+An orb never deletes or rewrites its sources because of that.
+
+- Some unavailable: the orb works with the rest; their bezel arcs are dashed and the chip greys them.
+- All unavailable: the orb dims to 55 % of its opacity, shows the value `–` (en dash) in the idle value color and the
+  title `source.disabled` if every source is disabled, else `source.notFound`; the instrument rests, there is no sign of
+  life and no hover info line (the chip explains: `Gemini CLI · 未偵測到`). Accessibility: `a11y.orb.unavailable`.
+  When a source comes back, the orb wakes through the normal start-up.
+- An all-sources orb is never unavailable.
+
+### Context menu (right-click on an orb)
+
+Native menu (macOS `NSMenu`, Windows Fluent context menu), check marks on the leading side, submenus open away from the
+screen edge:
+
+1. Header (disabled): the orb's colour dots and name.
+2. `orbs.style` ▸ the five style names, check on the current one.
+3. `orbs.sources` ▸ `orbs.sources.all`, separator, every source in source order with its colour dot and a check when
+   tracked; unavailable ones show their status in secondary text and stay selectable. Unchecking the last tracked source
+   is disabled (`orbs.sources.lastOne`). Checking `orbs.sources.all` replaces the set; checking a source on an
+   all-sources orb makes the set that single source.
+4. `menu.size` ▸ `menu.size.small` / `.medium` / `.large` (112 / 148 / 196; `minimal` sizes below 96 are set in
+   Settings).
+5. `menu.effects` ▸ Off / Soft / Standard / Max (global).
+6. Separator; `menu.alwaysOnTop`, `menu.clickThrough` (this orb).
+7. Separator; `orbs.add`; `menu.orb.duplicate`; `menu.orb.split` (enabled when the orb tracks two or more available
+   sources, or all sources with two or more detected); `menu.orb.mergeAll` (enabled with two or more orbs).
+8. Separator; `menu.orb.hide` (with one visible orb this item is `menu.hideOrb`, the master switch);
+   `menu.orb.remove` (two or more orbs; asks `orbs.remove.confirm` / `orbs.remove.detail` with a destructive
+   `orbs.remove.button` and Cancel).
+9. Separator; `menu.orb.settings` (opens Settings → 懸浮窗 with this orb selected; macOS shows ⌘,); `menu.dashboard`;
+   `menu.quit` (⌘Q).
+
+### Split and merge
+
+- **Split this orb** (menu): one orb per available source of its set (all detected, enabled sources for an
+  all-sources orb), in source order. The first keeps the orb's id and position; the others are new orbs with the same
+  style, size, opacity and toggles and automatic names. They form a tidy row extending toward the screen interior from
+  the original position — a column when the original is docked to a left or right edge — with 12 pt gaps and aligned
+  centers, wrapping into a second row or column when the display runs out; orbs in the way are pushed along the same
+  axis.
+- **Split by source** (Settings): replaces all orbs by one orb per detected, enabled source, styled like the selected
+  orb, laid out from the first orb's position by the same rule. Disabled with `orbs.split.unavailable` when fewer than
+  two sources are detected.
+- **Merge** (Settings `orbs.merge`, menu `menu.orb.mergeAll`): replaces all orbs by one all-sources orb that keeps the
+  selected (Settings) or clicked (menu) orb's id, style, size, toggles and position.
+- **Motion**: split — the original scales to 0.85 and fades (0.2 s) while the children spring out of its center to
+  their slots (stagger 60 ms, response 0.45 s, damping 0.78), their bezels draw on over 0.3 s and their chips appear
+  0.28 s after landing for 2 s. Merge is the reverse: the orbs fly to the target (0.3 s) and fade, the merged orb
+  springs from 0.85 to 1. Reduce Motion: 0.2 s crossfades in place.
+- **Undo**: split, merge and remove can be undone for 8 s and restore the previous list and layout exactly. In Settings
+  an inline banner above the orb list (`orbs.didSplit` / `orbs.didMerge` / `orbs.didRemove` · `orbs.undo`); on the
+  desktop an undo chip under the first resulting orb, stacked under its source chip. Removing with the Settings − button
+  needs no confirmation because of the undo; the menu asks (it has no banner).
+
+### Accessibility and keyboard
+
+- Each orb window is one accessibility element. Label: `a11y.orb.named` (`Claude Code + Claude Desktop：每秒 128 個
+  token，高鐵`); with a single all-sources orb, today's `a11y.orb`. Unavailable: `a11y.orb.unavailable`. Hint /
+  help: `a11y.orb.sources` (`追蹤 Claude Code、Claude Desktop`; names joined with `list.separator`). Updated at most
+  once per second.
+- Actions (VoiceOver custom actions; UI Automation Invoke and the context menu key): `menu.dashboard`,
+  `a11y.orb.showMenu`, `a11y.orb.moveCorner` (cycles top-right → bottom-right → bottom-left → top-left of its display,
+  placed as a drag release, skipping occupied corners to the next free touching slot), `menu.orb.settings`.
+- Keyboard: orbs never take focus; everything is reachable from Settings (below) and the quick menu's orb submenu.
+
+### Engine
+
+Per orb, from the per-source data the engine already keeps (METRICS 6.8): live value = the sum of the per-source live
+rates of its sources; its own tier and title trackers (section 1 hysteresis and hold) with its redline; its agents and
+`responseCompleted` events filtered by source; its own `peakToday` and `newPeak`. Editing an orb's sources recomputes
+its peak and suppresses its celebration for 60 s, so changing settings never fires confetti.
 
 ## 3. Menu bar (macOS) and taskbar (Windows) widget
 
@@ -574,8 +1172,7 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
   of that threshold, wrapping across lines. The values update live while the slider is dragged; hovering or focusing a
   title highlights its tick. With Total throughput the same list shows that metric's values (compact `k`/`M`).
 - **選單列 / 工作列 Menu bar / Taskbar** — Display mode, Colored glyph, Show unit.
-- **懸浮窗 Floating orb** — Show, Size (slider + presets), Opacity (40–100 %), Always on top, Click-through,
-  Fade when idle, Show on all Spaces (macOS).
+- **懸浮窗 Floating orbs** — the orb list and the per-orb editor (Floating orb pane, below).
 - **特效 Effects** — Intensity (Off / Soft / Standard / Max), Celebrate new peaks, Response pulses,
   **Preview effects** button: runs the demo driver for 20 s sweeping through every tier.
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
@@ -592,6 +1189,54 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 
 All settings apply live without restart and persist immediately.
 
+### Floating orb pane (懸浮窗)
+
+Calm and native: the platform's grouped form (macOS inset groups, Windows Fluent cards), content up to 680 pt wide,
+13 pt text, 11 pt secondary captions, groups 10 pt radius, spacing from section 6, hairline separators, the system
+accent color for selection, no extra borders. The pane scrolls when taller than the window. Top to bottom:
+
+1. **Master group** — `settings.orb.show` switch; caption `orbs.allNote` (with `settings.bar` on macOS,
+   `settings.taskbar` on Windows).
+2. **Orb list** — header `settings.orb` with `orbs.count` (`3 / 8`) trailing. One row per orb, 52 pt tall:
+   - a **live thumbnail**: the real renderer at 38 pt (value only, section 2a LOD), effects capped at Soft, ≤ 15 fps,
+     only while the pane is visible;
+   - the name (13 pt; custom or automatic) over `orbs.row.detail` (style name · size) in secondary;
+   - trailing: the orb's live value (`128 tok/s`, tertiary, tabular; `–` when unavailable) and an eye toggle
+     (`orbs.visible`); a hidden orb's row dims to 50 % and its value reads `orbs.hidden`.
+   - Selection tints the row with the accent; hovering, selecting or focusing a row rings that orb on the desktop (2b).
+     Rows reorder by drag (list order only). Keyboard: ↑ / ↓ select, Space toggles visibility, ⌘D / Ctrl+D duplicates,
+     ⌫ / Delete removes, Tab moves into the editor.
+   - List footer: borderless `+` (`orbs.add`), `−` (`orbs.remove`) and `orbs.duplicate` on the left; text buttons
+     `orbs.split` and `orbs.merge` on the right, with `orbs.split.hint` / `orbs.merge.hint` as help tags; merge is
+     disabled with one orb, split with fewer than two detected sources (`orbs.split.unavailable`). After split, merge or
+     remove an inline banner above the list offers `orbs.undo` for 8 s.
+3. **Editor of the selected orb**, headed by its colour dots and name (17 pt semibold):
+   - **`orbs.sources`** — first row `orbs.sources.all` (checkbox, caption `orbs.sources.allHint`), then every source in
+     source order: checkbox, colour dot, name, trailing status (`source.notFound` / `source.disabled`) in secondary.
+     With all sources on, the rows show checked and disabled. The last checked source cannot be unchecked (help tag
+     `orbs.sources.lastOne`).
+   - **`orbs.style`** — five cards in one row (≈ 120 × 112 pt; 3 + 2 rows below 560 pt of width): an animated preview
+     (the real renderer at 64 pt, effects Soft, looping cruise → redline → cruise every 8 s, each card 1.6 s later than
+     the previous, ≤ 24 fps, only while visible; with Reduce Motion a still frame at the redline) above the style name
+     (`style.*`); the selected card has a 2 pt accent ring and a faint accent fill. Arrow keys move between cards; each
+     card's accessibility label is `orbs.preview.a11y`. Below the cards the selected style's name (semibold) and its
+     description (`style.*.desc`).
+   - **Size** — `menu.size.small` / `.medium` / `.large` presets (112 / 148 / 196) as a compact segmented control left of
+     a slider (96–240, `minimal` 64–240, step 4) with the value in pt. **Opacity** — slider 40–100 % with the value.
+   - Switches: `menu.alwaysOnTop`; `menu.clickThrough` with the platform hint (the orb is then controlled from the menu
+     bar / taskbar orb submenu); `settings.orb.fadeIdle`; `settings.orb.allSpaces` (macOS). Footer: the platform's
+     Reset Position for this orb (it returns to the default corner, or to the creation placement rule when another orb
+     is there).
+   - **`orbs.advanced`** disclosure (collapsed; its summary lists `orbs.name`, `settings.redline`): `orbs.name` text
+     field (placeholder `orbs.name.auto` with the automatic name; empty = automatic); `settings.redline` as a
+     segmented `orbs.redline.global` / `orbs.redline.custom`, with custom showing the General slider (same range, step
+     and title ladder, for the current metric) and the caption `orbs.redline.hint`.
+4. Every change applies live and persists immediately: the desktop orb crossfades to a new style (0.25 s), springs to
+   a new size around its docked edges, and shows its source chip for 2 s after a sources change.
+
+The thumbnails and previews together stay under 3 % of one core while the pane is visible and draw nothing when it is
+not.
+
 ## 6. Typography & spacing
 
 - macOS: system font (SF Pro; PingFang TC/SC and Hiragino Sans chosen automatically). Windows: `Segoe UI Variable`
@@ -604,6 +1249,8 @@ All settings apply live without restart and persist immediately.
 
 - Every interactive element is reachable by keyboard and has an accessible label.
 - The orb exposes its value as an accessibility element (`每秒 128 個 token，加速`), updated at most once per second.
+  With several orbs each one is named after its sources and offers custom actions (2b, Accessibility and keyboard).
+- Blinking is limited to the needle's shift lights and the reactor's bolt flashes, both ≤ 3 flashes per second.
 - Respect Reduce Motion, Reduce Transparency (solid body instead of blur), Increase Contrast (stronger strokes),
   and high-contrast themes on Windows.
 - Text contrast ≥ 4.5:1 for all secondary text.

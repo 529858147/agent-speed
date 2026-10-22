@@ -1295,5 +1295,365 @@
     "zh-Hans": "%@（%@）",
     "en": "%@, %@",
     "ja": "%@（%@）"
+  },
+  "style.led": {
+    "zh-Hant": "LED 儀表",
+    "zh-Hans": "LED 仪表",
+    "en": "LED Gauge",
+    "ja": "LED ゲージ"
+  },
+  "style.led.desc": {
+    "zh-Hant": "36 顆 LED 隨速度依序點亮，原本的經典樣式。",
+    "zh-Hans": "36 颗 LED 随速度依次点亮，原来的经典样式。",
+    "en": "36 LEDs light up as the speed climbs. The original look.",
+    "ja": "36 個の LED が速度に合わせて点灯する、おなじみのスタイル。"
+  },
+  "style.needle": {
+    "zh-Hant": "指針轉速錶",
+    "zh-Hans": "指针转速表",
+    "en": "Needle Tachometer",
+    "ja": "針式タコメーター"
+  },
+  "style.needle.desc": {
+    "zh-Hant": "賽車轉速錶：指針掃進紅區，全速時頂住限位。",
+    "zh-Hans": "赛车转速表：指针扫进红区，全速时顶住限位。",
+    "en": "A racing tach: the needle sweeps into the red zone and pins at full speed.",
+    "ja": "レーシングタコメーター。針がレッドゾーンへ振れ、全開でストッパーに張り付きます。"
+  },
+  "style.liquid": {
+    "zh-Hant": "能量液球",
+    "zh-Hans": "能量液球",
+    "en": "Liquid Energy",
+    "ja": "リキッドエナジー"
+  },
+  "style.liquid.desc": {
+    "zh-Hant": "發光液體隨速度上漲翻騰，到紅線時沸騰。",
+    "zh-Hans": "发光液体随速度上涨翻腾，到红线时沸腾。",
+    "en": "Glowing liquid rises and churns with speed, and boils at the redline.",
+    "ja": "光る液体が速度とともに満ちて波立ち、レッドラインで沸騰します。"
+  },
+  "style.reactor": {
+    "zh-Hant": "反應爐",
+    "zh-Hans": "反应堆",
+    "en": "Reactor",
+    "ja": "リアクター"
+  },
+  "style.reactor.desc": {
+    "zh-Hant": "反向旋轉的能量環越轉越快，紅線時迸出電弧。",
+    "zh-Hans": "反向旋转的能量环越转越快，红线时迸出电弧。",
+    "en": "Counter-rotating energy rings spin up and throw arcs at the redline.",
+    "ja": "逆回転するエネルギーリングが加速し、レッドラインで放電します。"
+  },
+  "style.minimal": {
+    "zh-Hant": "極簡圓環",
+    "zh-Hans": "极简圆环",
+    "en": "Minimal Ring",
+    "ja": "ミニマルリング"
+  },
+  "style.minimal.desc": {
+    "zh-Hant": "只有數字、細圓環和稱號；最安靜，縮小也清楚。",
+    "zh-Hans": "只有数字、细圆环和称号；最安静，缩小也清楚。",
+    "en": "Just the number, a thin ring and the title. The calmest, and clear even when small.",
+    "ja": "数字と細いリング、称号だけ。いちばん静かで、小さくても読みやすい。"
+  },
+  "orbs.style": {
+    "zh-Hant": "樣式",
+    "zh-Hans": "样式",
+    "en": "Style",
+    "ja": "スタイル"
+  },
+  "orbs.sources": {
+    "zh-Hant": "來源",
+    "zh-Hans": "来源",
+    "en": "Sources",
+    "ja": "ソース"
+  },
+  "orbs.sources.all": {
+    "zh-Hant": "全部來源",
+    "zh-Hans": "全部来源",
+    "en": "All Sources",
+    "ja": "すべてのソース"
+  },
+  "orbs.sources.allHint": {
+    "zh-Hant": "包含之後新增或偵測到的來源。",
+    "zh-Hans": "包含之后新增或检测到的来源。",
+    "en": "Includes sources that are added or detected later.",
+    "ja": "あとから追加・検出されたソースも含みます。"
+  },
+  "orbs.sources.lastOne": {
+    "zh-Hant": "每個懸浮窗至少要追蹤一個來源。",
+    "zh-Hans": "每个悬浮窗至少要追踪一个来源。",
+    "en": "An orb tracks at least one source.",
+    "ja": "オーブには少なくとも 1 つのソースが必要です。"
+  },
+  "orbs.count": {
+    "zh-Hant": "%d / %d",
+    "zh-Hans": "%d / %d",
+    "en": "%d / %d",
+    "ja": "%d / %d"
+  },
+  "orbs.add": {
+    "zh-Hant": "新增懸浮窗",
+    "zh-Hans": "新增悬浮窗",
+    "en": "Add Orb",
+    "ja": "オーブを追加"
+  },
+  "orbs.remove": {
+    "zh-Hant": "移除懸浮窗",
+    "zh-Hans": "移除悬浮窗",
+    "en": "Remove Orb",
+    "ja": "オーブを削除"
+  },
+  "orbs.duplicate": {
+    "zh-Hant": "複製",
+    "zh-Hans": "复制",
+    "en": "Duplicate",
+    "ja": "複製"
+  },
+  "orbs.split": {
+    "zh-Hant": "依來源拆分",
+    "zh-Hans": "按来源拆分",
+    "en": "Split by Source",
+    "ja": "ソースごとに分割"
+  },
+  "orbs.split.hint": {
+    "zh-Hant": "為每個偵測到的來源各建立一個懸浮窗，排成整齊的一列。",
+    "zh-Hans": "为每个检测到的来源各建立一个悬浮窗，排成整齐的一行。",
+    "en": "Creates one orb for each detected source, lined up in a tidy row.",
+    "ja": "検出されたソースごとにオーブを 1 つずつ作り、きれいに並べます。"
+  },
+  "orbs.split.unavailable": {
+    "zh-Hant": "偵測到兩個以上的來源後才能拆分。",
+    "zh-Hans": "检测到两个以上的来源后才能拆分。",
+    "en": "Available once two or more sources are detected.",
+    "ja": "2 つ以上のソースが検出されると分割できます。"
+  },
+  "orbs.merge": {
+    "zh-Hant": "合併成一個",
+    "zh-Hans": "合并成一个",
+    "en": "Merge into One",
+    "ja": "1 つにまとめる"
+  },
+  "orbs.merge.hint": {
+    "zh-Hant": "把所有懸浮窗換成一個追蹤全部來源的懸浮窗。",
+    "zh-Hans": "把所有悬浮窗换成一个追踪全部来源的悬浮窗。",
+    "en": "Replaces all orbs with a single orb that tracks every source.",
+    "ja": "すべてのオーブを、全ソースを表示する 1 つのオーブにまとめます。"
+  },
+  "orbs.didSplit": {
+    "zh-Hant": "已拆分成 %d 個懸浮窗",
+    "zh-Hans": "已拆分成 %d 个悬浮窗",
+    "en": "Split into %d orbs",
+    "ja": "%d 個のオーブに分割しました"
+  },
+  "orbs.didSplitLimited": {
+    "zh-Hant": "已拆分成 %d 個懸浮窗，已達上限",
+    "zh-Hans": "已拆分成 %d 个悬浮窗，已达上限",
+    "en": "Split into %d orbs, the maximum",
+    "ja": "%d 個のオーブに分割しました（上限）"
+  },
+  "orbs.didMerge": {
+    "zh-Hant": "已合併成一個懸浮窗",
+    "zh-Hans": "已合并成一个悬浮窗",
+    "en": "Merged into one orb",
+    "ja": "1 つのオーブにまとめました"
+  },
+  "orbs.didRemove": {
+    "zh-Hant": "已移除「%@」",
+    "zh-Hans": "已移除“%@”",
+    "en": "Removed “%@”",
+    "ja": "「%@」を削除しました"
+  },
+  "orbs.undo": {
+    "zh-Hant": "復原",
+    "zh-Hans": "撤销",
+    "en": "Undo",
+    "ja": "取り消す"
+  },
+  "orbs.limit": {
+    "zh-Hant": "最多可以有 %d 個懸浮窗",
+    "zh-Hans": "最多可以有 %d 个悬浮窗",
+    "en": "You can have up to %d orbs",
+    "ja": "オーブは最大 %d 個までです"
+  },
+  "orbs.name": {
+    "zh-Hant": "名稱",
+    "zh-Hans": "名称",
+    "en": "Name",
+    "ja": "名前"
+  },
+  "orbs.name.auto": {
+    "zh-Hant": "自動（%@）",
+    "zh-Hans": "自动（%@）",
+    "en": "Automatic (%@)",
+    "ja": "自動（%@）"
+  },
+  "orbs.name.pair": {
+    "zh-Hant": "%@ + %@",
+    "zh-Hans": "%@ + %@",
+    "en": "%@ + %@",
+    "ja": "%@ + %@"
+  },
+  "orbs.name.more": {
+    "zh-Hant": "%@ +%d",
+    "zh-Hans": "%@ +%d",
+    "en": "%@ +%d",
+    "ja": "%@ +%d"
+  },
+  "orbs.visible": {
+    "zh-Hant": "顯示這個懸浮窗",
+    "zh-Hans": "显示这个悬浮窗",
+    "en": "Show This Orb",
+    "ja": "このオーブを表示"
+  },
+  "orbs.hidden": {
+    "zh-Hant": "已隱藏",
+    "zh-Hans": "已隐藏",
+    "en": "Hidden",
+    "ja": "非表示"
+  },
+  "orbs.advanced": {
+    "zh-Hant": "進階",
+    "zh-Hans": "高级",
+    "en": "Advanced",
+    "ja": "詳細設定"
+  },
+  "orbs.redline.global": {
+    "zh-Hant": "跟隨一般設定（%@）",
+    "zh-Hans": "跟随通用设置（%@）",
+    "en": "Same as General (%@)",
+    "ja": "一般設定に合わせる（%@）"
+  },
+  "orbs.redline.custom": {
+    "zh-Hant": "自訂",
+    "zh-Hans": "自定义",
+    "en": "Custom",
+    "ja": "カスタム"
+  },
+  "orbs.redline.hint": {
+    "zh-Hant": "只追蹤一個來源時速度通常較低，可以為這個懸浮窗設定較低的紅線。",
+    "zh-Hans": "只追踪一个来源时速度通常较低，可以为这个悬浮窗设置较低的红线。",
+    "en": "A single source is usually slower, so this orb can have a lower redline.",
+    "ja": "単一のソースは速度が低めなので、このオーブだけレッドラインを下げられます。"
+  },
+  "orbs.allNote": {
+    "zh-Hant": "面板與%@一律顯示全部來源。",
+    "zh-Hans": "面板与%@始终显示全部来源。",
+    "en": "The dashboard and the %@ always show every source.",
+    "ja": "ダッシュボードと%@には常にすべてのソースが表示されます。"
+  },
+  "orbs.row.detail": {
+    "zh-Hant": "%@ · %d pt",
+    "zh-Hans": "%@ · %d pt",
+    "en": "%@ · %d pt",
+    "ja": "%@ · %d pt"
+  },
+  "orbs.preview.a11y": {
+    "zh-Hant": "「%@」樣式預覽",
+    "zh-Hans": "“%@”样式预览",
+    "en": "%@ style preview",
+    "ja": "「%@」スタイルのプレビュー"
+  },
+  "orbs.remove.confirm": {
+    "zh-Hant": "要移除「%@」嗎？",
+    "zh-Hans": "要移除“%@”吗？",
+    "en": "Remove “%@”?",
+    "ja": "「%@」を削除しますか？"
+  },
+  "orbs.remove.detail": {
+    "zh-Hant": "其他懸浮窗不受影響，之後隨時可以再新增。",
+    "zh-Hans": "其他悬浮窗不受影响，之后随时可以再新增。",
+    "en": "Other orbs aren't affected, and you can add it again at any time.",
+    "ja": "ほかのオーブには影響しません。あとでいつでも追加できます。"
+  },
+  "orbs.remove.button": {
+    "zh-Hant": "移除",
+    "zh-Hans": "移除",
+    "en": "Remove",
+    "ja": "削除"
+  },
+  "menu.orb.duplicate": {
+    "zh-Hant": "複製這個懸浮窗",
+    "zh-Hans": "复制这个悬浮窗",
+    "en": "Duplicate This Orb",
+    "ja": "このオーブを複製"
+  },
+  "menu.orb.split": {
+    "zh-Hant": "依來源拆分這個懸浮窗",
+    "zh-Hans": "按来源拆分这个悬浮窗",
+    "en": "Split This Orb by Source",
+    "ja": "このオーブをソースごとに分割"
+  },
+  "menu.orb.mergeAll": {
+    "zh-Hant": "合併所有懸浮窗",
+    "zh-Hans": "合并所有悬浮窗",
+    "en": "Merge All Orbs",
+    "ja": "すべてのオーブをまとめる"
+  },
+  "menu.orb.hide": {
+    "zh-Hant": "隱藏這個懸浮窗",
+    "zh-Hans": "隐藏这个悬浮窗",
+    "en": "Hide This Orb",
+    "ja": "このオーブを隠す"
+  },
+  "menu.orb.remove": {
+    "zh-Hant": "移除這個懸浮窗…",
+    "zh-Hans": "移除这个悬浮窗…",
+    "en": "Remove This Orb…",
+    "ja": "このオーブを削除…"
+  },
+  "menu.orb.settings": {
+    "zh-Hant": "懸浮窗設定…",
+    "zh-Hans": "悬浮窗设置…",
+    "en": "Orb Settings…",
+    "ja": "オーブの設定…"
+  },
+  "menu.showOrbs": {
+    "zh-Hant": "顯示所有懸浮窗",
+    "zh-Hans": "显示所有悬浮窗",
+    "en": "Show All Orbs",
+    "ja": "すべてのオーブを表示"
+  },
+  "menu.hideOrbs": {
+    "zh-Hant": "隱藏所有懸浮窗",
+    "zh-Hans": "隐藏所有悬浮窗",
+    "en": "Hide All Orbs",
+    "ja": "すべてのオーブを隠す"
+  },
+  "a11y.orb.named": {
+    "zh-Hant": "%@：每秒 %@ 個 token，%@",
+    "zh-Hans": "%@：每秒 %@ 个 token，%@",
+    "en": "%@: %@ tokens per second, %@",
+    "ja": "%@：毎秒 %@ トークン、%@"
+  },
+  "a11y.orb.unavailable": {
+    "zh-Hant": "%@：沒有可用的來源",
+    "zh-Hans": "%@：没有可用的来源",
+    "en": "%@: no source available",
+    "ja": "%@：利用できるソースがありません"
+  },
+  "a11y.orb.sources": {
+    "zh-Hant": "追蹤 %@",
+    "zh-Hans": "追踪 %@",
+    "en": "Tracks %@",
+    "ja": "%@ を表示"
+  },
+  "a11y.orb.showMenu": {
+    "zh-Hant": "顯示選單",
+    "zh-Hans": "显示菜单",
+    "en": "Show Menu",
+    "ja": "メニューを表示"
+  },
+  "a11y.orb.moveCorner": {
+    "zh-Hant": "移到下一個角落",
+    "zh-Hans": "移到下一个角落",
+    "en": "Move to Next Corner",
+    "ja": "次の隅へ移動"
+  },
+  "list.separator": {
+    "zh-Hant": "、",
+    "zh-Hans": "、",
+    "en": ", ",
+    "ja": "、"
   }
 }
