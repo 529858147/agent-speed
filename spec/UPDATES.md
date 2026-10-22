@@ -1,8 +1,9 @@
 # Agent Speed — Update Specification
 
-Automatic update checks with one-click install. Both platforms implement exactly this behaviour. The only network
-traffic Agent Speed ever makes is described here; it sends nothing about the user except the standard HTTP headers
-listed below.
+Automatic update checks with one-click install. Both platforms implement exactly this behaviour. It sends nothing
+about the user except the standard HTTP headers listed below. All network traffic of Agent Speed — this update check,
+the daily price-table sync and the exchange rates — and the master switch that turns it off are listed in
+`spec/NETWORK.md`; with that switch off, nothing in this document runs (manual checks included).
 
 ## 1. Source of truth
 

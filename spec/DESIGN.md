@@ -43,10 +43,12 @@ the speed title.
 
 ### Speed titles (the visible label)
 
-The label under the value (orb, dashboard hero, accessibility) is a vehicle title from this ladder, colored with the
-heat color. Thresholds scale with `R` (shown values are for R = 400 tok/s; the default is 2000, where each is five times
-higher), so every metric and redline
-setting reads the same. Same hysteresis and 0.8 s hold as the effect tiers. Idle shows `tier.idle` (待機).
+The label under the value (orb, dashboard hero, accessibility) is the speed title, colored with the heat color: one of
+**13 levels**, the rows of this table from top to bottom, named by the selected **title theme** (below). The default
+theme, Vehicles, names them with this ladder. Thresholds scale with `R` (shown values are for R = 400 tok/s; the
+default is 2000, where each is five times higher), so every metric and redline
+setting reads the same. Same hysteresis and 0.8 s hold as the effect tiers. Idle shows the theme's idle label
+(Vehicles: `tier.idle`, 待機).
 
 | Key | zh-Hant | zh-Hans | English | 日本語 | Enter at | at R = 400 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -65,8 +67,200 @@ setting reads the same. Same hysteresis and 0.8 s hold as the effect tiers. Idle
 | `title.rocket` | 火箭 | 火箭 | ROCKET | ロケット | `1.0 R` | 400 |
 
 A title change slides the old label up/out and the new one up/in (0.35 s); the gauge flash is reserved for effect-tier
-changes, so climbing the ladder feels lively but never noisy. A title that does not fit the label width shrinks (down
-to 80 % of the label size); it is never truncated.
+changes, so climbing the ladder feels lively but never noisy. A title that does not fit the label width first tightens
+its tracking (linearly, down to 0), then shrinks (down to 80 % of the label size, never below the 7 pt floor of 2a);
+if it still does not fit it is drawn centered past the label width. It is never truncated (Title length, below).
+
+### Title themes
+
+A title theme names the 13 levels and the idle state. Nine presets ship; the user can add up to **eight custom sets**
+next to them. The theme is chosen in Settings → General (section 5) and applies to every surface; a floating orb may
+override it in its Advanced settings (2b).
+
+- **One ladder, many names.** Every theme has exactly 13 titles on the thresholds above plus one idle label. The title
+  tracker (hysteresis, 0.8 s hold, per orb with its redline) works on the level (0 = idle, 1–13) and never looks at the
+  theme. Changing the theme never changes a level, a threshold, heat or an effect tier: the label crossfades (0.25 s)
+  to the new name without any level-up effect, and the dashboard hero crossfades between vehicle and title badge
+  (0.3 s; Reduce Motion: cut).
+- **Ids and keys.** Preset ids are fixed words; custom sets use a UUID. Strings: `titles.<id>.name`, the idle label
+  `titles.<id>.idle` and the titles `titles.<id>.1` … `titles.<id>.13`. Vehicles keeps its `title.*` keys (the rows
+  of the table above) and `tier.idle`. An unknown id (a newer version, a deleted set) falls back as described under
+  Custom title sets; with nothing else to fall back to it is `vehicles`.
+
+| Picker order | Id | Name (zh-Hant · en) | Hero center (4c) |
+| --- | --- | --- | --- |
+| 1 (default) | `vehicles` | 交通工具 · Vehicles | the vehicle |
+| 2 | `animals` | 動物 · Animals | title badge |
+| 3 | `wind` | 蒲福風級 · Beaufort Scale | title badge |
+| 4 | `space` | 宇宙 · Cosmos | title badge |
+| 5 | `cultivation` | 修真境界 · Cultivation | title badge |
+| 6 | `wuxia` | 武學境界 · Martial Arts | title badge |
+| 7 | `mage` | 魔法位階 · Arcane Ranks | title badge |
+| 8 | `gameRank` | 遊戲段位 · Game Ranks | title badge |
+| 9 | `engineer` | 工程師職涯 · Engineer Career | title badge |
+| then | custom sets, in creation order | their own names | vehicle when based on `vehicles`, else badge |
+
+The physical themes come first (how fast things move), then the ranks (how far someone has risen). The ladders
+(zh-Hant; zh-Hans and 日本語 are in `spec/strings.json`):
+
+| Level | Enter at | R = 2000 | `animals` | `wind` | `space` | `cultivation` | `wuxia` | `mage` | `gameRank` | `engineer` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| idle | `v < 0.5` for 3 s | – | 打盹 | 風平浪靜 | 休眠 | 閉關 | 打坐 | 冥想 | 掛機 | 下班 |
+| 1 | `v ≥ 0.5` | 0.5 | 蝸牛 | 無風 | 星塵 | 凡人 | 初學乍練 | 學徒 | 菜鳥 | 實習生 |
+| 2 | `0.02 R` | 40 | 烏龜 | 軟風 | 流星 | 練氣 | 粗通皮毛 | 見習法師 | 黑鐵 | 初級工程師 |
+| 3 | `0.03 R` | 60 | 刺蝟 | 輕風 | 彗星 | 築基 | 略知一二 | 法師 | 青銅 | 工程師 |
+| 4 | `0.04 R` | 80 | 老鼠 | 微風 | 月球 | 金丹 | 漸入佳境 | 大法師 | 白銀 | 資深工程師 |
+| 5 | `0.06 R` | 120 | 松鼠 | 和風 | 行星 | 元嬰 | 略有小成 | 魔導師 | 黃金 | 技術主管 |
+| 6 | `0.08 R` | 160 | 貓 | 清風 | 恆星 | 化神 | 駕輕就熟 | 大魔導師 | 白金 | 主任工程師 |
+| 7 | `0.12 R` | 240 | 兔子 | 強風 | 紅巨星 | 煉虛 | 融會貫通 | 賢者 | 翡翠 | 架構師 |
+| 8 | `0.17 R` | 340 | 袋鼠 | 疾風 | 超新星 | 合體 | 爐火純青 | 大賢者 | 鑽石 | 首席工程師 |
+| 9 | `0.24 R` | 480 | 馬 | 大風 | 中子星 | 大乘 | 出類拔萃 | 傳奇 | 大師 | 技術總監 |
+| 10 | `0.34 R` | 680 | 獵豹 | 烈風 | 黑洞 | 渡劫 | 出神入化 | 半神 | 宗師 | 技術副總 |
+| 11 | `0.5 R` | 1000 | 蝙蝠 | 狂風 | 星系 | 真仙 | 登峰造極 | 神 | 王者 | CTO |
+| 12 | `0.7 R` | 1400 | 金鵰 | 暴風 | 類星體 | 金仙 | 一代宗師 | 主神 | 傳奇 | 傳奇工程師 |
+| 13 | `1.0 R` | 2000 | 遊隼 | 颶風 | 大爆炸 | 道祖 | 天下無雙 | 創世神 | 榜首 | 10x 工程師 |
+
+English:
+
+| Level | `animals` | `wind` | `space` | `cultivation` | `wuxia` | `mage` | `gameRank` | `engineer` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| idle | NAPPING | BECALMED | DORMANT | SECLUSION | AT REST | MEDITATING | AFK | OFF DUTY |
+| 1 | SNAIL | FORCE 0 | STARDUST | MORTAL | NOVICE | NOVICE | ROOKIE | INTERN |
+| 2 | TORTOISE | FORCE 1 | METEOR | QI REFINING | DABBLER | APPRENTICE | IRON | JUNIOR |
+| 3 | HEDGEHOG | FORCE 2 | COMET | FOUNDATION | LEARNER | MAGE | BRONZE | ENGINEER |
+| 4 | MOUSE | FORCE 3 | MOON | GOLD CORE | PROMISING | HIGH MAGE | SILVER | SENIOR |
+| 5 | SQUIRREL | FORCE 4 | PLANET | NASCENT | CAPABLE | MAGUS | GOLD | TECH LEAD |
+| 6 | CAT | FORCE 5 | STAR | SPIRIT | SKILLED | ARCHMAGE | PLATINUM | STAFF |
+| 7 | RABBIT | FORCE 6 | RED GIANT | VOID | ADEPT | SAGE | EMERALD | ARCHITECT |
+| 8 | KANGAROO | FORCE 7 | SUPERNOVA | INTEGRATION | EXPERT | GREAT SAGE | DIAMOND | PRINCIPAL |
+| 9 | HORSE | FORCE 8 | PULSAR | MAHAYANA | ELITE | LEGEND | MASTER | DIRECTOR |
+| 10 | CHEETAH | FORCE 9 | BLACK HOLE | TRIBULATION | VIRTUOSO | DEMIGOD | ELITE | VP ENG |
+| 11 | BAT | FORCE 10 | GALAXY | IMMORTAL | PARAGON | DEITY | CHAMPION | CTO |
+| 12 | EAGLE | FORCE 11 | QUASAR | CELESTIAL | LEGEND | HIGH GOD | LEGEND | LEGEND |
+| 13 | FALCON | FORCE 12 | BIG BANG | DAO LORD | PEERLESS | CREATOR | #1 | 10X DEV |
+
+Notes on the presets:
+
+- `animals` is ordered by commonly cited top speeds: snail 0.05 km/h, tortoise 0.3, hedgehog ≈ 7, mouse 13, squirrel
+  32, cat 48, rabbit 56, kangaroo 71, horse 88 (quarter horse), cheetah ≈ 110, Brazilian free-tailed bat 160 (level
+  flight), golden eagle 240–320 (dive), peregrine falcon 389 (dive).
+- `wind` is the Beaufort scale, force 0–12, with each language's official names (Taiwan CWA, China GB/T 28591 — force
+  5 is 清劲风 —, Japan JMA 静穏 … 颶風); English uses `FORCE n`, because the WMO names (up to MODERATE BREEZE) do not fit
+  the readout. 無風 is a level here, so the idle label is 風平浪靜 / BECALMED / 凪.
+- Localized ladders are ladders in their own right: only the level order must match. 日本語 `wuxia` uses the
+  traditional budō license grades (入門 · 見習い · 初伝 · 中伝 · 奥伝 · 免許皆伝 · 師範代 · 師範 · 達人 · 名人 · 宗師 · 武聖 ·
+  天下無双), `cultivation` keeps the Chinese stage names in shinjitai, the English ladders use short words of the field
+  (QI REFINING, GOLD CORE, NASCENT …), and `space` level 9 is PULSAR in English (a neutron star) because NEUTRON STAR
+  does not fit.
+- `gameRank` uses generic rank words only (no league or trademarked rank names).
+
+**Rules for a good ladder** (every preset; custom sets are the user's to name, held only to the text rules below):
+
+1. Monotonic: every title is unmistakably above the previous one for someone who knows the field (measured speed,
+   an official scale, the canonical order of stages or careers). Level 1 is the humblest active state, level 13 the
+   field's summit.
+2. Recognisable, plain words of the field; no trademarks.
+3. Unique inside the theme, and the idle label is never one of the 13: it comes from the theme's world but must
+   plainly mean "at rest" (打盹, 下班, 掛機, AFK …) and is drawn in the secondary color like `tier.idle`.
+4. Short: within the title length budget in every language (below); a localized rendering may differ from a literal
+   translation to stay short and natural.
+5. One line, no trailing punctuation; English in uppercase (the readout uppercases Latin anyway).
+
+**Title length.** `w7` = the width of a title in the readout's title style (system font, semibold, uppercase for
+Latin) at the 7 pt floor with its tracking tightened to 0 — the narrowest the readout can set it without going below
+7 pt.
+
+| Budget | `w7` | Guarantee |
+| --- | --- | --- |
+| Comfortable | ≤ 44.2 pt | fits every style at every size from 96 pt (`minimal` from 72 pt) |
+| Maximum | ≤ 51.5 pt | fits every style from the Small size preset (112 pt) up; on smaller orbs it may run past the label width, centered, never truncated |
+
+Up to six CJK characters are comfortable (42 pt) and seven reach the maximum (49 pt); in English about eight letters
+are comfortable and ten to eleven reach the maximum. Measured on macOS (SF Pro, PingFang, Hiragino Sans), every
+preset title of the eight new themes is within the maximum in all four languages and most are comfortable; between the
+two: English QI REFINING, FOUNDATION, INTEGRATION, TRIBULATION, SUPERNOVA, BLACK HOLE, APPRENTICE, GREAT SAGE,
+MEDITATING and 日本語 ブラックホール, 10xエンジニア. Vehicles predates the budget and keeps its names: English
+MOTORCYCLE (52.2 pt) and BULLET TRAIN (53.4 pt) exceed the maximum, SPORTS CAR, FIGHTER JET and HYPERSONIC the
+comfortable budget. Each platform has a unit test that measures every preset title in every language with its own
+fonts (Windows: Segoe UI Variable, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI, semibold) and fails above
+the maximum, except those two Vehicles titles.
+
+**Where the theme applies.**
+
+| Surface | Theme |
+| --- | --- |
+| Floating orb: title label, idle label, accessibility label (`a11y.orb`, `a11y.orb.named`) | the orb's own theme (2b), else General |
+| Settings → 懸浮窗: style preview cards, the Advanced redline title list | the selected orb's theme |
+| Dashboard hero: title text, hero vehicle or title badge, its accessibility | General |
+| Settings → General: the redline title list and its heat-strip ticks, the theme picker | General (the selected theme) |
+| Menu bar / taskbar widget, quick menu, Usage History, CSV export | none (they show no titles) |
+
+`heroLastTitle` (4c) stays a vehicle key and is used only while the hero shows vehicles. Titles are not stored in
+history.
+
+### Custom title sets
+
+A custom set is a named copy of a theme whose titles the user can rename, one field per level plus the idle label.
+Presets and custom sets live side by side in the picker; a custom set is used exactly like a preset.
+
+- **Creating**: `titles.duplicateEdit` on any card (preset or custom) or the `titles.custom.new` card, which copies the
+  selected theme. The copy is selected at once and its editor opens with the name field focused. Its **base** is the
+  preset it came from (a copy of a custom set inherits that set's base and texts), so a set is always one step from a
+  preset. Name: `titles.custom.copyName` with the source's name in the current language (`修真境界（自訂）`), plus ` 2`,
+  ` 3` … when taken; from then on the name is literal text (1–32 characters, trimmed; committing an empty name keeps
+  the previous one). Up to 8 custom sets (`titles.custom.limit`).
+- **Fields**: 13 titles and the idle label. An **empty field** shows and uses the base preset's title in the current
+  language, drawn as the field's placeholder, and keeps following the language. A filled field is literal text, the
+  same in every language; only the readout's case rule applies to it (Latin uppercase on the orb and the badge when the
+  app language is English; the editor, the redline title list and accessibility use the text as typed).
+- **Text rules**, applied on commit (Return, focus leaving the field, or 0.8 s without typing; never during an IME
+  composition): Unicode NFC; control characters (Cc), line and paragraph separators and bidi controls (U+202A–202E,
+  U+2066–2069) removed; tabs, line breaks and other spaces (U+3000 included) become one ASCII space; runs of spaces
+  collapse; trimmed. Emoji with emoji presentation are removed and `titles.custom.noEmoji` shows (titles are drawn in
+  the heat color and color glyphs cannot be tinted); text symbols such as ★ ✦ ∞ stay. At most 24 grapheme clusters.
+- **Length**: a custom title must fit the maximum budget, measured in the title style of the current app language
+  (uppercased for English). Text beyond it is cut at the last whole grapheme cluster that fits; `titles.custom.tooLong`
+  shows for 4 s and is announced. The caption `titles.custom.lengthHint` states the limit in words. After a language
+  change a stored title may exceed the budget (uppercase is wider); it then follows the fitting order of section 1.
+- **Base**: the editor's `titles.custom.base` popup changes the base; filled fields stay, empty ones follow the new base
+  at once.
+- **Reset**: a filled row's reset button (`titles.custom.reset`) empties it (field undo restores it);
+  `titles.custom.resetAll` empties all 14 fields with an inline banner `titles.custom.didReset` · `orbs.undo` for 8 s.
+- **Duplicate**: as Creating. **Delete** (card menu, ⌫ / Delete on a focused card, or the editor's footer): no
+  confirmation; an inline banner `titles.custom.didDelete` · `orbs.undo` for 8 s. Wherever the set was used (General,
+  orb overrides) its base preset takes its place; undo restores the set with the same id, its position and every
+  reference.
+- **Hero**: a set based on `vehicles` keeps the vehicle drawing (its levels still mean those vehicles; caption
+  `titles.custom.vehicleArt`); every other set shows the title badge.
+- **Text atlas**: the orb's glyph atlas (2a) holds the titles of every theme in use (presets per language, custom text
+  as typed), rebuilt when a set changes.
+- **Persistence**: one JSON value in the settings store (key `titleThemes`), written atomically on every commit:
+
+```json
+{
+  "version": 1,
+  "selected": "cultivation",
+  "custom": [
+    {
+      "id": "3E0B6C1A-…",
+      "name": "我的修仙路",
+      "base": "cultivation",
+      "idle": "",
+      "titles": ["", "", "", "結丹", "", "", "", "", "", "", "", "飛升", ""]
+    }
+  ]
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `selected` | A preset id or a custom `id`; default and fallback `vehicles`. Absent key = fresh install (no migration needed). |
+| `custom[].id` | UUID, never reused. |
+| `custom[].base` | A preset id; unknown → `vehicles`. |
+| `custom[].titles` | Exactly 13 strings, level 1 first (padded with `""` or cut on load); `""` = the base's title. |
+| `custom[].idle` | `""` = the base's idle label. |
+
+Stored text is re-normalized on load (text rules, not the length cut). Import and export are not provided.
 
 ### Heat palette (interpolate in OKLab or linear RGB between stops)
 
@@ -150,7 +344,7 @@ Layers, back to front:
      Rolling digit transition on change. From boost upward the value gets a heat-colored glow (radius `0.035 S`).
      From overdrive upward the value leans forward: skew `-6° * h` (motion feel). At redline add a 0.6 px jitter
      (≤ 30 Hz) — disabled in "soft" effects and with Reduce Motion.
-   - Unit `tok/s`: `0.072 S`, medium, white 55 %, tracking +0.5.
+   - Unit `tok/s` (or the money unit `US$/s`, per orb, section 9): `0.072 S`, medium, white 55 %, tracking +0.5.
    - Title label (speed title, section 1): `0.062 S`, semibold, uppercase for Latin, tracking +1.6, in the heat
      color, below the unit. A title change slides the old label up/out and the new one up/in (0.35 s); an effect-tier
      change also flashes the gauge (+25 % brightness, 0.4 s).
@@ -162,9 +356,9 @@ Layers, back to front:
 8. **New peak** — on `newPeak`: 24 gold rays burst from the disc edge, the gauge sweeps 0 → current in 0.5 s, and a
    pill label `新紀錄 NEW PEAK` (localized) springs in above the value for 1.8 s.
 
-Idle state: value `0` in white 60 %, label `待機`, gauge dim, comet hidden, and every 6 s a slow light sweep runs
-along the unlit segments as a sign of life. Optional "fade when idle" (setting): after 60 s idle, fade the window to
-45 % opacity; restore instantly on activity or hover.
+Idle state: value `0` in white 60 %, the title theme's idle label (`待機` for Vehicles, section 1), gauge dim, comet
+hidden, and every 6 s a slow light sweep runs along the unlit segments as a sign of life. Optional "fade when idle"
+(setting): after 60 s idle, fade the window to 45 % opacity; restore instantly on activity or hover.
 
 Hover: the orb scales to 1.03 (spring), the title label crossfades to a compact info line
 (`今日 1.2M · 3 個 agent`, counted over the orb's sources), and the cursor shows it is draggable. An orb tracking a
@@ -235,9 +429,9 @@ OKLab L, stepped to ≥ 4.5:1 against the body); *hot* is `mix(heat(h), #FFF7D6,
   | `reactor` | 0.205 S · c + 0.03 S · 0.46 S (core window) | 0.062 S, 0.08 S below | 0.074 S below the unit · 0.058 S · 0.50 S | c + 0.252 S (inside the core) | c − 0.172 S |
   | `minimal` | 0.30 S · c + 0.07 S · 0.66 S | none | 0.098 S below the value · 0.068 S · 0.62 S | none | c − 0.25 S |
 
-  - The value shrinks to its max width. Titles shrink to 80 % and are never truncated (section 1); the hover info line
-    shrinks to 70 %. Unit and title never go below 7 pt; below S = 64 (thumbnails, 2b and section 5) only the value is
-    drawn.
+  - The value shrinks to its max width. Titles tighten, then shrink to 80 %, and are never truncated (section 1); the
+    hover info line shrinks to 70 %. Unit and title never go below 7 pt; below S = 64 (thumbnails, 2b and section 5)
+    only the value is drawn.
   - **Odometer**: on a value change only the characters that changed roll, each clipped to its own character cell,
     travel 0.92 × the value size, 0.24 s ease-out (up when rising). Different lengths crossfade in 0.12 s. No roll with
     Off, Reduce Motion, `minimal` and S < 80 (the text simply updates).
@@ -249,7 +443,8 @@ OKLab L, stepped to ≥ 4.5:1 against the body); *hot* is `mix(heat(h), #FFF7D6,
 - **New peak** (per orb, METRICS 6.8): the pill of section 2, layer 8, for every style; the 24 gold rays for every style
   except `minimal`; plus the style's accent below. Toggle: Celebrate new peaks.
 - **Tier flash**: an effect-tier change brightens the style's primary lit element by 25 % for 0.4 s.
-- **Idle** (tier idle): value `0` in the idle value color, `tier.idle` in the secondary color, the instrument at rest.
+- **Idle** (tier idle): value `0` in the idle value color, the idle label of the orb's title theme (section 1; Vehicles:
+  `tier.idle`) in the secondary color, the instrument at rest.
   **Sign of life**: every 6 s on the global clock (skipping one that would start less than 2 s after entering idle) a
   0.9 s event as listed per style; `minimal` has none.
 - **Hover**: scale 1.03 (spring), the title crossfades (0.2 s) to the info line (`today.summary`, counted over the orb's
@@ -576,7 +771,8 @@ the scenario of the prototype (idle → climb → redline → overdrive → back
   shapes — rounded rect, circle, ring, capsule, radial, arc — plus `polyline` for bolts and the liquid surface strip and
   `wedge` for the needle wake). Glows are the analytic Gaussian of the distance, never a blur pass; the liquid's
   surface, body, currents and spherical shade are one fragment shader evaluating `y(x)` per pixel; text comes from a
-  glyph atlas (digits, `.kMB–`, the unit and the current titles per language, built once per size).
+  glyph atlas (digits, `.kMB–`, the unit and the titles of the title themes in use — presets in the current language,
+  custom titles as typed — built once per size and rebuilt when a theme or custom set changes).
 - No per-frame allocation: instance buffers and particle pools are sized once from the style's maximum budget (ring
   buffers), paths and geometry are rebuilt only on a size or appearance change; WPF: frozen resources only.
 - CPU per frame ≤ 0.25 ms for state updates (springs, particles) at the maximum budget.
@@ -618,7 +814,9 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
       "allSpaces": true,
       "visible": true,
       "redlineOutput": null,
-      "redlineTotal": null
+      "redlineTotal": null,
+      "titleTheme": null,
+      "unit": "tokens"
     }
   ],
   "layouts": {
@@ -638,11 +836,13 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
 | `alwaysOnTop`, `clickThrough`, `fadeWhenIdle`, `allSpaces` | As the former global settings, now per orb (`allSpaces` macOS only). |
 | `visible` | Hides one orb without removing it. |
 | `redlineOutput`, `redlineTotal` | `null` = the General redline of that metric; otherwise this orb's redline (same ranges). Heat, tiers and titles of the orb use it. |
+| `unit` | `"tokens"` (tok/s, default) or `"cost"` (the money unit of section 9); unknown → `"tokens"`. Copied by Add, Duplicate and Split. Heat, tiers and titles always follow tokens. |
+| `titleTheme` | `null` = the General title theme; otherwise a preset id or a custom set id (section 1, Title themes) naming this orb's titles, idle label and accessibility label. Deleting the custom set it names replaces it with that set's base preset (undo restores it); an unknown id counts as `null`. Added in this version without a format change: older builds ignore it. |
 | `layouts` | Positions per **display arrangement**: the key is the sorted list of connected display keys (macOS display UUID; Windows monitor device ID) joined with `+`. Each entry uses today's position record (edge-docked distance or fraction of the usable area, per axis) on the named display. At most 16 arrangements are kept (least recently used dropped). |
 
 Global (unchanged, shared by all orbs): Show floating orbs (master switch), Appearance, Language, metric, General
-redline, Effects intensity, Celebrate new peaks, Response pulses. Effects stay global because the style already sets an
-orb's character.
+redline, title theme (the default of every orb), Effects intensity, Celebrate new peaks, Response pulses. Effects stay
+global because the style already sets an orb's character.
 
 **Arrangement changes.** When displays are connected, removed or rearranged, each orb takes its record from the layout
 of the new arrangement; if the arrangement is new, an orb keeps its record from the last arrangement when its display is
@@ -664,10 +864,10 @@ be removed (Remove is disabled; the master switch hides it).
 
 ### Creating, placing and snapping
 
-- **Add**: copies the style, size, opacity and toggles of the selected orb (Settings) or the clicked orb (menu). Its
-  sources: the first detected, enabled source (source order) that no orb tracks *explicitly*; if every detected source
-  is tracked explicitly, `"all"`. From the menu the new orb shows its chip for 2 s; from Settings it is selected and its
-  editor opens.
+- **Add**: copies the style, size, opacity, toggles and title theme of the selected orb (Settings) or the clicked orb
+  (menu). Its sources: the first detected, enabled source (source order) that no orb tracks *explicitly*; if every
+  detected source is tracked explicitly, `"all"`. From the menu the new orb shows its chip for 2 s; from Settings it is
+  selected and its editor opens.
 - **Duplicate**: an exact copy with a new id; a custom name gets ` 2` appended.
 - **Placement** of a new orb: on the display of the orb it came from (else the main display), try the four touching
   slots of that orb — left, below, right, above (12 pt gap, centers aligned) — and take the first one fully inside the
@@ -737,7 +937,8 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
 3. `orbs.sources` ▸ `orbs.sources.all`, separator, every source in source order with its colour dot and a check when
    tracked; unavailable ones show their status in secondary text and stay selectable. Unchecking the last tracked source
    is disabled (`orbs.sources.lastOne`). Checking `orbs.sources.all` replaces the set; checking a source on an
-   all-sources orb makes the set that single source.
+   all-sources orb makes the set that single source. It is followed by `orbs.unit` ▸ `orbs.unit.tokens` /
+   `orbs.unit.cost` (section 9).
 4. `menu.size` ▸ `menu.size.small` / `.medium` / `.large` (112 / 148 / 196; `minimal` sizes below 96 are set in
    Settings).
 5. `menu.effects` ▸ Off / Soft / Standard / Max (global).
@@ -752,9 +953,9 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
 
 ### Split and merge
 
-- **Split this orb** (menu): one orb per available source of its set (all detected, enabled sources for an
-  all-sources orb), in source order. The first keeps the orb's id and position; the others are new orbs with the same
-  style, size, opacity and toggles and automatic names. They form a tidy row extending toward the screen interior from
+- **Split this orb** (menu): one orb per available source of its set (all detected, enabled sources for an all-sources
+  orb), in source order. The first keeps the orb's id and position; the others are new orbs with the same style, size,
+  opacity, toggles and title theme and automatic names. They form a tidy row extending toward the screen interior from
   the original position — a column when the original is docked to a left or right edge — with 12 pt gaps and aligned
   centers, wrapping into a second row or column when the display runs out; orbs in the way are pushed along the same
   axis.
@@ -779,7 +980,7 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
   help: `a11y.orb.sources` (`追蹤 Claude Code、Claude Desktop`; names joined with `list.separator`). Updated at most
   once per second.
 - Actions (VoiceOver custom actions; UI Automation Invoke and the context menu key): `menu.dashboard`,
-  `a11y.orb.showMenu`, `a11y.orb.moveCorner` (cycles top-right → bottom-right → bottom-left → top-left of its display,
+  `a11y.orb.showMenu`, `a11y.orb.toggleUnit` (section 9), `a11y.orb.moveCorner` (cycles top-right → bottom-right → bottom-left → top-left of its display,
   placed as a drag release, skipping occupied corners to the next free touching slot), `menu.orb.settings`.
 - Keyboard: orbs never take focus; everything is reachable from Settings (below) and the quick menu's orb submenu.
 
@@ -803,7 +1004,8 @@ Glanceable and calm; it must never jitter in width.
   (4–5 pt gap, never more). The item hugs its content: its width grows immediately when the formatted value gets
   longer and shrinks only after the shorter width has held for 6 s, so with tabular digits it changes only when the
   digit count changes and never flickers. Idle value uses the secondary label color.
-- Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting).
+- Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting). With `settings.liveUnit` set to money the value
+  is the live cost rate and the unit `US$/s` (section 9).
 - Display modes (setting): glyph + value (default), value only, glyph only.
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.
 - The widget follows the system/taskbar light or dark theme for text; the glyph keeps heat colors.
@@ -816,14 +1018,15 @@ Follows system light/dark. Corner radius: platform default (macOS 12–16 pt, Wi
 Sections (top to bottom, 16 pt spacing, hairline separators):
 
 1. **Hero** — a 112 pt orb (same component, ring effects capped at Soft) on the left, its center carrying the hero
-   vehicle of the current speed title (section 4c); on the right the value at 44 pt bold tabular with `tok/s`, the
-   speed title in heat color, and one line of context: `生成中 3 · 工具 1`.
+   vehicle of the current speed title (Vehicles theme) or the title badge (every other theme; section 4c); on the
+   right the value at 44 pt bold tabular with `tok/s`, the speed title of the General title theme in heat color, and
+   one line of context: `生成中 3 · 工具 1`.
 2. **Live chart** — last 2 minutes (segmented control 1m / 2m / 5m), height 96. Smooth area chart (Catmull-Rom),
    fill = vertical gradient mapped through the heat palette by value, line 1.5 px. The in-flight estimated part is
    drawn with 45 % opacity and a dashed top line at the right edge. A dashed horizontal line marks today's peak with a
    small label. Hover/drag shows a crosshair with time and value.
 3. **Sources** — one row per detected source: colored dot, name, live tok/s (right), today's output tokens
-   (secondary); a live value below 0.05 shows the tertiary `–` like the agents list. Each row is a button that
+   (secondary; with today's cost, section 9); a live value below 0.05 shows the tertiary `–` like the agents list. Each row is a button that
    opens the Usage History window (section 4b) pre-filtered to that source:
    on hover the row gets a subtle highlight and a trailing chevron fades in; keyboard focusable; a11y hint "顯示用量歷史". Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
    Sources still lists every source with its status); a source that is detected but disabled is dimmed.
@@ -842,7 +1045,8 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
    inside a fixed-height region (12 rows tall) so the panel never outgrows the screen. The hidden count counts agents,
    not groups. The expanded/collapsed
    choice is remembered.
-5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time. The section header
+5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time and 今日費用 (section 9). The
+   hero's value follows `settings.liveUnit` (section 9). The section header
    carries a small "歷史" text button (clock glyph) that opens the Usage History window for all sources.
 6. **Footer** — floating orb toggle, metric info button (ⓘ explaining the measurement in one paragraph), settings,
    quit.
@@ -871,7 +1075,7 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
    compact popover with two date pickers (`從` / `到`, clamped to the available data, the end never before the start)
    and `套用`. The resolved range is always spelled out under the title in the locale's date format (e.g.
    "2026/9/22 – 10/21 · 30 天"). Trailing: `匯出 CSV…` (the rows currently shown, locale-independent columns).
-2. **Summary** — four cards in a row (two rows when narrow): 輸出 token, 輸入 token（含快取）, 請求, 平均速度 (Σ measured
+2. **Summary** — four cards in a row (two rows when narrow; a fifth, 費用, in section 9): 輸出 token, 輸入 token（含快取）, 請求, 平均速度 (Σ measured
    output ÷ Σ measured time over the range, never an average of daily averages). Each card: large tabular value,
    a secondary line (活躍 N 天 / 單日最高 date / 比前一段期間 +12%, colored green/red only for the delta), and a tiny
    sparkline of the range. Values use the compact formatter (METRICS 7) with full numbers in the tooltip.
@@ -887,7 +1091,7 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 4. **Daily table** — newest first; columns: 日期 (date + weekday; 今天 / 昨天 for the latest two), 請求, 輸出, 輸入（含快取）,
    快取命中 (cachedInput ÷ input, percentage), 平均速度 (tok/s, `history.noSpeed` when none), 峰值 (if recorded;
    all-sources view only),
-   Agent, 主要模型 (up to 2 model names, rest as "+n"). Sortable headers, tabular digits, right-aligned numbers,
+   Agent, 主要模型 (up to 2 model names, rest as "+n"); plus 費用 after 輸入 (section 9, also for chart, tooltips and CSV). Sortable headers, tabular digits, right-aligned numbers,
    alternating subtle row tint, hover highlight linked with the chart, keyboard navigation, copy row as text.
    Days without data inside the range are not listed (the chart shows the gap).
 5. **Footer** (secondary text) — left: analysis state: `history.analyzing` with a thin progress bar and
@@ -902,7 +1106,9 @@ spinner. All numbers and dates follow the selected language; weeks start per loc
 
 The empty center of the dashboard hero orb (section 4.1) carries a glowing line drawing of the current speed title's
 vehicle, moving at a pace set by the live value. It belongs to the instrument rather than sitting on it: one stroke
-weight, the heat colors and the same glow as the LED gauge and the comet. The floating orb keeps its readout.
+weight, the heat colors and the same glow as the LED gauge and the comet. The floating orb keeps its readout. The
+vehicle belongs to the Vehicles title theme (and custom sets based on it); with any other theme the center carries the
+title badge instead (Hero title badge, at the end of this section).
 
 Source of truth: `spec/assets/vehicles.json` (art, rigs, emitters and the per-vehicle motion constants).
 `python3 spec/tools/vehicles.py` validates it; `--export` regenerates `spec/assets/vehicles/*.svg` (generated, never
@@ -1164,6 +1370,112 @@ stay capped at Soft as in section 4. Reduce Motion still caps the vehicle layer 
 12. At Soft, start-up engine shake (motorcycle, rocket) stays; redline camera shake needs Standard or higher.
 13. The spring `settle` time leaves ≈ 1.5 % of the step at `settle` (ω = 6.2 / settle); the behaviour is defined by ω.
 
+### Hero title badge (every title theme except Vehicles)
+
+With any title theme other than Vehicles — custom sets based on Vehicles keep the vehicle — the hero orb's center
+carries a glowing typographic badge of the current title instead of the vehicle: a medallion that ranks up. It reuses
+the vehicle layer's canvas (100 × 100 units on `0.72 S`), placement, soft mask (solid to r 42, clear at 49), layer
+order, colors `C` and `H` (Color and glow), the smoothed `h` and `o`, `wake`, camera shake, frame policy and budget.
+Like the vehicle it is decorative. The numbers below were tuned on an HTML prototype of the badge.
+
+**Title layout** (computed once per text, language, appearance and size, then cached). System font at its heaviest
+weight up to Heavy (macOS SF Pro Heavy with PingFang / Hiragino Sans at their heaviest; Windows Segoe UI Variable
+Display Bold with Microsoft JhengHei UI / YaHei UI / Yu Gothic UI Bold), Latin in uppercase with tracking +0.05 em
+(0 when the one-line size would fall below 14 units), CJK +0.04 em. `s1` = the largest size, in 0.5-unit steps from
+the maximum down to 9, at which the title fits 72 units on one line; maximum 34 units for a single grapheme, else 28
+(CJK) / 26 (Latin, two graphemes) / 22 (Latin).
+
+1. **Seal**: zh-Hant and zh-Hans titles of exactly four Han characters (初學乍練, 一代宗師, 風平浪靜, 技術主管) stack as
+   2 × 2 at 21 units, line advance 1.04 em — the shape of a seal. Japanese never uses the seal.
+2. **Two lines** when the title has a break opportunity — a space, or, in Han-only text of five or more characters,
+   after the second character (five) or at the middle (six or more) — and some size from 22 units (Latin 20) down to
+   13 that is also at least `1.15 s1` fits both lines in 72 units: the largest such size with the most balanced
+   break, line advance 1.1 em, each line centered (RED / GIANT, FORCE / 7, 初級 / 工程師, 10x / 工程師). Runs of kana
+   or Latin letters never break.
+3. Otherwise **one line** at `s1` (a single long word such as TRIBULATION or ブラックホール gets ≈ 9.5–12 units); it is
+   never truncated.
+
+The block is centered optically: the ink box of all lines (cap and ideograph bounds, not the line boxes) sits on
+(50, 50).
+
+**Layers**, back to front, all inside the mask:
+
+1. **Halo** — radial gradient at (50, 50), r 0 → 34 units, `C` at `0.10 + 0.22 h` (dark, additive) / `0.05 + 0.08 h`
+   (light) fading to 0, × `wake`; breathes ±10 % on the aura's period (section 2, layer 1). None with Increase
+   Contrast.
+2. **Speed streaks** — the 4c speed lines (pool, counts, caps per effects level, lengths, speeds, opacities, fade-in,
+   accent at redline), driven by a badge ground speed `G* = lerp(60, 900, h) + 300 o` units/s (0 when parked) through a
+   critically damped spring, settle 0.9 s, with `lo = 60`; born only in the bands y 16–33 and 67–84, so they never
+   cross the title.
+3. **Medallion** — two rings at r 33 and 30.5 units, weight 0.8 / 0.5, `C` at 34 % / 16 % (light 42 % / 22 %;
+   Increase Contrast 60 % / 30 %), × `(0.6 + 0.4 wake)`. They are not drawn inside the title's ink box grown by 2.5
+   units, so a wide title interrupts them like a coin legend.
+4. **Rank pips** — 13 dots on r 37.5 from 216° to 324° (9° apart, across the top), radius 1.05 units: pip k is lit for
+   k ≤ the current level, in the heat color of its threshold `(T_k / R)^0.6` (light: its label color, ≥ 3:1 on the
+   body); the current level's pip has radius 1.45 and a glow σ 1.2 (dark); unlit pips white 12 % / black 12 %
+   (Increase Contrast 30 %). The pips say "level k of 13" for every theme, custom sets included.
+5. **Orbit motes** — comets running clockwise on the outer ring: 12 slots at `φ + 2π slot / 12`, filled in the order 0,
+   6, 3, 9, 1, 7, 4, 10, 2, 8, 5, 11 so any count is evenly spread; count `2 + 6 h` (fractional: the last one fades in),
+   × 1.5 at Max, capped at 4 / 8 / 12 for Soft / Standard / Max. `φ` advances at `ω`, a critically damped spring
+   (settle 0.6 s) toward `2π (0.06 + 0.9 h + 0.5 o)` rad/s (0 when parked), on an accumulated phase. Each mote: a trail
+   arc of `8° + 40° h`, weight 1.2 → 0.35 and opacity 1 → 0 toward its tail, in `C`; a head dot of radius 1.0 in `H`;
+   × `wake`.
+6. **Embers** (Standard and Max, from the overdrive tier up) — born on the lower ring arc (30°–150°), rising at 18–34
+   units/s with a lateral drift `6 sin(seed + 7 age)`, life 0.6–1.1 s, `6 + 26 o` per s (Max × 1.6), drawn as streaks of
+   velocity × 0.022 s from the flame core (`#FFF7D6`, light `#FFB020`) to `C`. They share the vehicle layer's pool (64).
+7. **Flash and shockwave** — transitions, below.
+8. **Title** — fill `C`; dark adds a vertical gradient from `mix(C, H, 0.45)` at the top of the ink box to `C` at its
+   bottom, both ends moving toward `#FFF7D6` by `0.35 o` / `0.2 o` beyond the redline. Glow: the glyphs blurred with
+   σ `1.0 + 1.6 h + 0.6 o` units (× 1.2 at Max) at `0.30 + 0.45 h + 0.15 o`, additive, in `C` (dark); light uses the
+   undarkened `heat(h)` at `0.16 + 0.22 h` with normal blending, so the glow reads as a warm halo and never as a gray
+   shadow. Off: fixed glow 0.30 / 0.20. Increase Contrast: glow × 0.5 and a solid fill.
+9. **Sheen** (Standard and Max, `h ≥ 0.45`) — a diagonal band 18 units wide, `#FFF7D6` at 40 % (dark) / white at 50 %
+   (light), masked to the glyphs, crosses them left to right in 0.7 s, once every `max(1.4, 5 − 3.5 h)` s on an
+   accumulated phase: energy without moving the letters.
+10. **Sparks** — the level-up burst, below.
+
+At the redline tier (Standard and Max) the 4c camera shake moves the content, never the mask.
+
+**Transitions** start on the title-change event, like the label slide and the vehicle (`τ` = time since the change;
+≤ 0.75 s).
+
+| | Outgoing title | Incoming title | Extras |
+| --- | --- | --- | --- |
+| Level up | scale 1 → 1.12 (easeOutCubic, 0.22 s), opacity `1 − smoothstep(τ / 0.16)` | from `τ = 0.08`: opacity `smoothstep((τ − 0.08) / 0.12)`, scale spring 0.72 → 1 (response 0.42 s, damping 0.6, ≈ 4 % overshoot), glow +80 % decaying with a 0.25 s time constant | at `τ = 0.06` the 4c flash (radius 8 → 40 units, 0.35 s, opacity 0.42 dark / 0.26 light × `(1 − u)²` × `min(1.6, 1 + 0.2 (titles climbed − 1))`, × 0.6 at Soft) and a shockwave ring r 33 → 44 (easeOutCubic, 0.5 s, weight 1.6 → 0, `H` at 70 % → 0); the newly lit pips pop in order 45 ms apart from `τ = 0.10` (spring 0 → 1, response 0.3 s, damping 0.5); a burst of `10 + 3 (climbed − 1)` sparks (≤ 18; Soft 6) from the title's edge, 40–90 units/s, drag 2.5/s, life 0.35–0.6 s |
+| Level down | sinks 5 units (easeInOutSine) and fades over 0.3 s | from `τ = 0.12`: settles from 3 units above (easeOutCubic) while fading in over 0.35 s | the pips above the new level fade out together over 0.35 s; no flash, ring or sparks |
+| Start-up (idle → title) | the idle label fades out over 0.25 s | fades in over 0.25 s, scale spring 0.85 → 1, glow +50 % (0.3 s) | `wake` recolors slate → heat; the outer ring draws on clockwise from 12 o'clock (0.45 s, easeOutCubic); pips light from 1 up, 35 ms apart from `τ = 0.12`; the flash at 60 % |
+| Parking (title → idle) | fades out over 0.4 s | the idle label fades in over 0.4 s | pips go dark from the top, 30 ms apart; `wake` → 0 fades halo, glow, motes (their `ω` springs to 0) and streaks |
+| Reduce Motion | 0.3 s crossfade | 0.3 s crossfade | pips crossfade; nothing else |
+| Off | cut | cut | none |
+
+A jump across several titles is one transition to the final title (the pips catch up in sequence). A change during a
+running transition starts from what is on screen (4c resolved detail 9). When the new level has the same text (a
+custom set may repeat a name) the title does not transition; color and pips still follow. A theme change crossfades
+the title in 0.25 s with no effects.
+
+**Idle.** The theme's idle label, laid out by the same rules, in `C(0)` slate (light: slate stepped to 4.5:1 on the
+body) at 55 % (dark) / 70 % (light) × breathing `0.86 + 0.14 sin(2π t / 4.8)`; no halo, glow, motes, streaks, embers or
+sheen; medallion at 60 %, pips unlit. Every 6 s the 4c idle light band (18 units, x −10 → 110 in 0.9 s, 0.63 s into the
+gauge sweep) crosses the glyphs only: `#FFF7D6` at 75 % (dark) / slate at 60 % (light). After the agents stop the title
+holds through hysteresis while `h` falls, so color, glow, motes and streaks calm down before parking, as the vehicle
+coasts.
+
+| Effects | Badge |
+| --- | --- |
+| Off | static title and pips, fixed glow, no halo breathing, motes, streaks, embers, sheen or sparks; cuts |
+| Soft | halo breathing, ≤ 4 motes, ≤ 5 streaks, transitions with the flash at 60 %, ring and pip pops, 6-spark bursts, start-up and parking; no embers, sheen or shake |
+| Standard | Soft plus ≤ 8 motes, ≤ 9 streaks, embers, sheen, full bursts, camera shake at the redline |
+| Max | Standard with 1.6× particles, ≤ 12 motes, ≤ 14 streaks, glow × 1.2, shake × 1.4 |
+
+**Accessibility and performance.** Reduce Motion caps the badge at Soft and removes motion: no motes, streaks,
+embers, sheen, scale, offsets, flash, ring or sparks; speed reads from glow, color and the lit pips; transitions are
+0.3 s crossfades; idle is static. Increase Contrast as above; Windows high-contrast themes: title, rings and lit pips
+in the highlight color, unlit pips as outlines in the gray-text color, no glow, halo, motes, streaks or particles.
+Hidden from VoiceOver and UI Automation (the hero announces value and title). Runs, renders and budgets exactly as the
+vehicle layer (Accessibility and performance, above): the glyphs of each title are turned into a cached path or texture
+once; the glow blends two pre-blurred copies (σ 1.6 and 4.2 units) per frame instead of blurring per frame; fixed pools
+(motes 12, streaks 16, particles 64 shared); no per-frame allocation.
+
 ## 5. Settings
 
 Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluent WPF window with Mica). Sections:
@@ -1172,14 +1484,17 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
   Launch at login, Speed metric
   (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50). Under the slider the heat
   strip carries one thin tick per speed title (positions `(t / R)^0.6`, so they stay put while the values move); below
-  it `settings.redline.hint` and the `title.ladder` list: every title followed by its threshold at the current
-  redline (`自行車 8 · 電動自行車 12 · … · 火箭 400`), title in secondary color, value semibold tabular in the heat color
-  of that threshold, wrapping across lines. The values update live while the slider is dragged; hovering or focusing a
-  title highlights its tick. With Total throughput the same list shows that metric's values (compact `k`/`M`).
-- **選單列 / 工作列 Menu bar / Taskbar** — Display mode, Colored glyph, Show unit.
+  it `settings.redline.hint` and the `title.ladder` list: every title of the selected title theme followed by its
+  threshold at the current redline (at R = 2000: `自行車 40 · 電動自行車 60 · … · 火箭 2.00k`), title in secondary
+  color, value semibold tabular in the heat color of that threshold, wrapping across lines. The values update live
+  while the slider is dragged; hovering or focusing a title highlights its tick. With Total throughput the same list
+  shows that metric's values (compact `k`/`M`). Below the redline: the title theme picker and the custom set editor
+  (Title themes, below).
+- **選單列 / 工作列 Menu bar / Taskbar** — Display mode, Colored glyph, Show unit, `settings.liveUnit` (section 9).
 - **懸浮窗 Floating orbs** — the orb list and the per-orb editor (Floating orb pane, below).
 - **特效 Effects** — Intensity (Off / Soft / Standard / Max), Celebrate new peaks, Response pulses,
   **Preview effects** button: runs the demo driver for 20 s sweeping through every tier.
+- **費用 Cost** — currency, live value unit, subscription marks, price table status (section 9).
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
   Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
   - omp: one row. The path is the default sessions root (METRICS 2); the status counts the sessions of the default
@@ -1190,9 +1505,67 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
     (or its `conversations` folder) and replaces all three; Reset returns to them. A chosen `*-backup` store is never
     read (METRICS 4.8) and shows `source.folderMissing`. Caption `settings.sources.antigravityHint`.
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
-  conversation content is never stored or displayed.
+  conversation content is never stored or displayed. With the cost feature: `privacy.statement` and the Network group
+  with the master switch (section 9, `spec/NETWORK.md`).
 
 All settings apply live without restart and persist immediately.
+
+### Title themes (一般)
+
+A group below the redline, in the same calm grouped style as the Floating orb pane (inset group, 13 pt text, 11 pt
+captions, accent selection, no extra borders). Every change applies live everywhere and persists at once.
+
+1. **Header** `titles.theme` with the caption `titles.theme.hint`.
+2. **Theme cards** — a grid of 3 columns (2 below 560 pt of width), 8 pt gaps; each card 64 pt tall, 10 pt radius, a
+   subtle fill one step above the group. Content: the theme name (13 pt semibold) over a **preview strip** (11 pt,
+   one line): levels 1, 5, 9 and 13 of that theme joined by a tertiary ` · `, each title in the heat color of its
+   threshold (light: its label color) — `步行 · 汽車 · 磁浮列車 · 火箭`, `凡人 · 元嬰 · 大乘 · 道祖`; a custom set shows
+   its effective titles. The strip may end in `…` inside the card (it is a preview; the full ladder is in the list
+   above and in the editor). Its tooltip lists the whole ladder with the thresholds at the current redline (at R = 2000:
+   `凡人 0.5 · 練氣 40 · 築基 60 · … · 道祖 2.00k`). The selected card has a 2 pt accent ring, a faint accent fill and
+   an accent check badge at its top trailing corner; hover lightens the fill (0.2 s ease-out).
+   - The nine presets first, in picker order; then the small header `titles.custom` with the custom sets in creation
+     order and a last dashed card `titles.custom.new` (accent text with a `+`), disabled at eight sets with the tooltip
+     `titles.custom.limit`.
+   - A `⋯` button fades in at the top trailing corner of a custom card on hover, focus or selection; it and the context
+     menu (right-click, the context-menu key) offer: presets — `titles.duplicateEdit`; custom sets —
+     `titles.custom.edit`, `titles.custom.duplicate`, `titles.custom.delete`. A new set appears with a 0.35 s spring
+     (scale 0.85 → 1 with the fade; Reduce Motion: fade).
+   - Keyboard: arrow keys move between cards (row-major), Space or Return selects, ⌘D / Ctrl+D duplicates and edits,
+     ⌫ / Delete deletes a custom set (undo banner). Accessibility: a radio group labelled `titles.theme`; each card is a
+     radio button labelled `titles.card.a11y` (name and the strip's titles joined with `list.separator`); custom cards
+     add the `titles.custom.more.a11y` actions.
+3. **Banner** for delete and reset all: `titles.custom.didDelete` / `titles.custom.didReset` with `orbs.undo`, 8 s,
+   above the editor (as the orb list's banner).
+4. **Editor**, shown below the cards while a custom set is selected (height spring 0.35 s; Reduce Motion: fade),
+   headed `titles.custom.editing` (17 pt semibold). Two columns from 600 pt of width — the form, and a 200 pt preview
+   column that stays in view while the pane scrolls; below that width the preview sits above the form.
+   - `titles.custom.name` text field; `titles.custom.base` popup with the nine presets; caption
+     `titles.custom.baseHint` (plus `titles.custom.vehicleArt` when the base is Vehicles).
+   - **Title table**: a header row (`titles.custom.speedColumn` with the unit, `titles.custom.titleColumn`), then 14
+     rows 30 pt tall with hairline separators: the idle row (`titles.custom.idleRow` in secondary in the speed column),
+     then levels 1–13. Columns: the level number (11 pt, tertiary, right-aligned); the threshold at the current redline
+     and metric (semibold tabular, heat color of that threshold, right-aligned; at R = 2000: 0.5, 40, 60, 80, 120,
+     160, 240, 340, 480, 680, 1.00k, 1.40k, 2.00k), updating live with the redline slider; the text field, whose
+     placeholder is the base's title in the current language; a reset button (`↺`, `titles.custom.reset`) that fades in
+     when the field has text. The focused row gets a faint accent wash.
+   - Caption `titles.custom.lengthHint`; footer text buttons `titles.custom.resetAll`, `titles.custom.duplicate` and,
+     trailing, the destructive `titles.custom.delete`.
+   - **Live preview**: the dashboard hero orb at 112 pt (badge, or the vehicle for a Vehicles-based set) and a floating
+     orb at 96 pt in the style of the orb selected in the 懸浮窗 pane (default the first orb), both with Standard
+     effects, ≤ 30 fps and only while visible; captions `menu.dashboard` / `settings.orb` with the size. They show the
+     focused row's level at 1.05 × its threshold (idle row: idle); moving the focus to another row plays the real
+     transition — down the table a level-up, up the table a level-down — so the editor is where the ladder can be felt.
+     Typing updates the text live without a transition. With no field focused they show level 13. Reduce Motion: the
+     same, with crossfades. The 96 pt orb shows at once when a title will tighten or shrink.
+   - Keyboard: Tab / Shift-Tab through the fields; ↑ / ↓ move between the rows' fields; Return commits and moves down;
+     Esc restores the value the field had when it was focused; ⌘Z / Ctrl+Z undoes inside the field. Accessibility: each
+     field is labelled `titles.custom.row.a11y` (level, threshold with unit, base title) or `titles.custom.idle.a11y`;
+     reset buttons `titles.custom.reset`; `titles.custom.tooLong` and `titles.custom.noEmoji` are announced politely;
+     the previews are images labelled with `titles.custom.preview` and the title shown.
+
+The editor and its previews stay under the 3 % budget of the 懸浮窗 pane's thumbnails while visible and draw nothing
+when hidden.
 
 ### Floating orb pane (懸浮窗)
 
@@ -1232,10 +1605,13 @@ accent color for selection, no extra borders. The pane scrolls when taller than 
      bar / taskbar orb submenu); `settings.orb.fadeIdle`; `settings.orb.allSpaces` (macOS). Footer: the platform's
      Reset Position for this orb (it returns to the default corner, or to the creation placement rule when another orb
      is there).
-   - **`orbs.advanced`** disclosure (collapsed; its summary lists `orbs.name`, `settings.redline`): `orbs.name` text
-     field (placeholder `orbs.name.auto` with the automatic name; empty = automatic); `settings.redline` as a
-     segmented `orbs.redline.global` / `orbs.redline.custom`, with custom showing the General slider (same range, step
-     and title ladder, for the current metric) and the caption `orbs.redline.hint`.
+   - **`orbs.advanced`** disclosure (collapsed; its summary lists `orbs.name`, `titles.theme`, `settings.redline`):
+     `orbs.name` text field (placeholder `orbs.name.auto` with the automatic name; empty = automatic); `titles.theme`
+     popup — `orbs.titleTheme.global` with the General theme's name, a separator, the nine presets, a separator, the
+     custom sets — with the caption `orbs.titleTheme.hint` (2b `titleTheme`; editing sets happens in General);
+     `settings.redline` as a segmented `orbs.redline.global` / `orbs.redline.custom`, with custom showing the General
+     slider (same range, step and title ladder in this orb's theme, for the current metric) and the caption
+     `orbs.redline.hint`.
 4. Every change applies live and persists immediately: the desktop orb crossfades to a new style (0.25 s), springs to
    a new size around its docked edges, and shows its source chip for 2 s after a sources change.
 
@@ -1253,8 +1629,10 @@ not.
 ## 7. Accessibility
 
 - Every interactive element is reachable by keyboard and has an accessible label.
-- The orb exposes its value as an accessibility element (`每秒 128 個 token，加速`), updated at most once per second.
+- The orb exposes its value as an accessibility element (`每秒 128 個 token，加速`; money unit: `a11y.orb.cost`,
+  section 9), updated at most once per second.
   With several orbs each one is named after its sources and offers custom actions (2b, Accessibility and keyboard).
+  The title in it comes from the orb's title theme (section 1); custom titles are read exactly as typed.
 - Blinking is limited to the needle's shift lights and the reactor's bolt flashes, both ≤ 3 flashes per second.
 - Respect Reduce Motion, Reduce Transparency (solid body instead of blur), Increase Contrast (stronger strokes),
   and high-contrast themes on Windows.
@@ -1265,3 +1643,209 @@ not.
 Languages: zh-Hant (primary), zh-Hans, en, ja. Follow the system language unless overridden in settings (section 0).
 All shared strings live in `spec/strings.json`; each platform embeds that table (copied at build time or as a
 resource) and keeps platform-only strings in its own table with all four languages. Never hard-code user-visible text.
+Preset title themes are localized ladders (`titles.<id>.*`, section 1); a custom title is user text and is shown the
+same in every language, while an empty custom field follows the language through its base preset.
+
+## 9. Cost (money unit)
+
+Agent Speed can show what the live activity costs: next to tok/s there is a money unit such as US$/s or ¥/s, today's
+cost on the dashboard and each day's cost in the usage history. Numbers come from METRICS 9 (tokens × the model's
+official API price, converted at display time); network rules for the price table and exchange rates are in
+`spec/NETWORK.md`.
+
+### Principles
+
+- **A display unit, not a new instrument.** Heat, gauge, tiers, titles, sparks, peaks, new-peak celebrations and the
+  hero vehicle always follow the token metric (section 1), so switching an orb to money never changes how hot it looks
+  and never celebrates by itself. Only the value, the unit line, the hover line and accessibility change.
+- **API-equivalent, said once.** Every cost is an estimate at API list prices, labelled `cost.apiEquivalent` (API
+  等值) where a cost first appears on a surface (section header, card title, unit menu item, tooltip, accessibility),
+  never repeated on every number. `cost.apiEquivalent.hint` explains it in tooltips and Settings.
+- **Unknown is never zero.** Responses of models without a price are left out and said so calmly: `–` when nothing is
+  priced, a small `≥` when part of the value is missing, and a notice with the count. Free and local models are a real
+  `0`.
+- **Calm.** Same typography, tokens, spacing and motion as the token values; no green or red money colors, no flags, no
+  currency animations. Numbers use tabular digits.
+
+### Currency
+
+Setting `settings.currency` (Settings → Cost), default **USD**. The supported currencies, their decimals and symbols
+are `spec/assets/currencies.json`; names are `currency.<code>` in `spec/strings.json`.
+
+- **Picker**: a button showing `code · name` opens a searchable list (macOS: a popover with a search field and a list,
+  ≈ 320 × 400 pt; Windows: a Fluent flyout with an `AutoSuggestBox` above a `ListView`). The search field has focus;
+  typing filters by code, localized name and English name — case-, width- and diacritic-insensitive, matching the
+  start of any word (`dol` finds every dollar, `yen` and `円` find JPY, `nt` finds TWD). Groups: `settings.currency.common`
+  — USD first, then the UI language's home currencies (zh-Hant: TWD, HKD, MOP; zh-Hans: CNY; ja: JPY), then the
+  remaining `common` ranks in order — and `settings.currency.all`, every other currency sorted by localized name.
+  While searching the groups collapse into one ranked list (code matches first). Rows: code (semibold, tabular, fixed
+  width) · name · symbol (secondary, trailing); the current currency has a check. ↑ / ↓ move, Return selects, Escape
+  closes; an empty result shows `settings.currency.noResults`. Selecting applies live everywhere (values crossfade
+  0.2 s) and, for a non-USD currency without fresh rates, starts a rate fetch (NETWORK 4) while showing the bundled or
+  last rates at once.
+- **Rate status** (under the picker, 11 pt secondary, hidden for USD): `rates.status`
+  (`US$1 = NT$32.55 · 2026/10/22 · open.er-api.com`: one US dollar and its value, both in amount format with at least
+  4 significant digits, the rate date, the provider's host), with `rates.attribution` as a small link when ExchangeRate-API
+  is the source, `rates.fallback` with the bundled date before the first fetch, `rates.stale` after 7 days, and a
+  borderless `rates.refresh` button (disabled while refreshing, `rates.refreshing`; disabled with
+  `settings.network.offHint` when the network is off). Errors show `rates.failed` in place of the status for 6 s, then
+  the status returns.
+- **Symbols**: `symbols[<UI language>]` when present, else `symbol` (`$` in English and `US$` elsewhere; `¥` for CNY in
+  简体中文 and for JPY in 日本語, else `CN¥` / `JP¥`; `NT$`, `HK$`, `€`, `£`, `₩`, …). The symbol precedes the number;
+  a symbol that ends in a letter is followed by a no-break space (`CHF 0.42`, `RM 1.20`). The four UI languages all
+  write `.` for decimals and `,` for grouping, so formatting does not otherwise depend on the language.
+
+### Money formatting
+
+Two forms, both never in scientific notation, never negative, tabular digits. `d` = the currency's `digits`. Values
+are decimals: `amount = costMicroUsd × rate / 1 000 000` (rates per second the same way) in decimal arithmetic (Swift
+`Decimal`, C# `decimal`), never binary floating point, so both platforms print the same digits. Rounding is half up.
+A value that rounds into the next row uses that row (`0.9996` → `1.00`, `99.96` → `100`).
+
+**Rate** (the live value per second):
+
+| Value | Rule | Examples |
+| --- | --- | --- |
+| exactly 0 | `0` | `0` |
+| < 0.000 000 5 | `<0.000001` | `<0.000001` |
+| < 1 | 2 significant digits (at most 6 decimals), then *trim* | `0.0042`, `0.03` (USD, from 0.030), `0.50`, `0.3` (JPY), `0.000081` |
+| < 100 | 3 significant digits, then *trim* | `4.20` (USD), `12.30` (USD, from 12.3), `4.2` (JPY, from 4.20), `56.1` (KRW) |
+| < 1 000 000 | integer with grouping | `128`, `1,234` |
+| else | METRICS 7 compact | `1.28M` |
+
+*Trim*: drop trailing fractional zeros beyond `d` decimals, then pad with zeros to `d` decimals.
+
+**Amount** (today, history, breakdowns, tooltips):
+
+| Value | Rule | Examples |
+| --- | --- | --- |
+| exactly 0 | `0` with `d` decimals | `0.00` (USD), `0` (JPY) |
+| < 0.000 000 5 | `<0.000001` | `<0.000001` |
+| < 1 | as the rate: 2 significant digits, then *trim* | `0.42`, `0.042`, `0.03`, `0.0042`, `0.42` (JPY) |
+| < 1 000 000 | `d` decimals with grouping | `12.34`, `1,234.56`, `1,235` (TWD), `12,345` (KRW) |
+| else | METRICS 7 compact | `1.28M` |
+
+An amount is shown with its symbol in front (`$12.34`, `NT$1,235`, `₩1.28M`, `CHF 0.42`); a rate is shown as the number
+with the unit `cost.unitPerSecond` after it (`0.0042 US$/s`), or on the orb as the number over the unit line. Examples
+(number · unit): `0.0042` · `$/s` (en, USD) · `0.0042` · `US$/s` (zh-Hant, USD) · `0.03` · `¥/s` and `4.20` · `¥/s`
+(zh-Hans, CNY) · `0.66` · `¥/s` (ja, JPY) · `0.14` · `NT$/s` · `5.57` · `₩/s`. Tooltips add, for a non-USD currency,
+the USD amount in secondary text: `NT$1,235（US$37.94）`. Test vectors: `spec/fixtures/money-format.json`
+(`python3 spec/tools/prices.py` checks them with a reference formatter).
+
+The unit is `cost.unitPerSecond` (`%@/s` with the symbol: `US$/s`, `¥/s`). Where a unit can be hidden (menu bar
+`settings.bar.unit` off, `minimal` orbs), the rate carries the symbol in front instead, like an amount: `$0.0042`.
+
+### Orb
+
+- **Per-orb unit**: the 2b data model gains `"unit": "tokens" | "cost"` (default `tokens`; unknown values → `tokens`).
+  Add, Duplicate and Split copy it; Merge keeps the target's; the single-orb migration sets `tokens`.
+- **Value**: the orb's live cost rate (METRICS 9.5) over its sources, without subscription sources unless
+  `settings.cost.includeSubscriptions` is on; rate format; the unit line shows `cost.unitPerSecond`. The odometer, glow,
+  lean and jitter work exactly as for tok/s (they are driven by the token heat). The value shrinks to the style's max
+  width like any value.
+- **Partial**: when `liveCostKnownShare < 0.995` and the value is not 0, a `≥` precedes the value at 60 % of its size
+  in the secondary color (baseline-aligned, part of the value's width); the hover line becomes `cost.partial`.
+- **Nothing priced**: live output > 0 but `liveCostKnownShare == 0` → value `–` in the idle value color, hover line
+  `cost.unknownModels` with up to two model names (`+n`).
+- **Subscription only**: every source of the orb is marked as a subscription and excluded → value `0`, hover line
+  `cost.subscriptionOnly`.
+- **Idle**: `0` with the unit line; title `tier.idle` as always.
+- **Hover line** in money mode: `cost.today.summary` (`今日 US$4.20 · 3 個 agent`, today's billable cost of the
+  orb's sources, METRICS 9.6) instead of `today.summary`.
+- **Switching** — three ways, all per orb, all persisted at once:
+  1. **Click the unit**: a single click (press and release within 4 pt of movement and 0.5 s) on the unit line toggles
+     the unit. Hit area: the unit text bounds grown to at least 44 × 20 pt, clipped to the disc. The toggle fires when
+     the system double-click interval has passed without a second click, so a double-click still opens the dashboard
+     and never toggles; a drag that starts on the unit moves the orb. Hover over the hit area raises the unit text from
+     55 % to 85 % with a 0.5 pt underline at 40 % (0.15 s) and shows `orbs.unit.toggleHint` as a tooltip after 0.8 s; the
+     cursor stays the drag cursor elsewhere on the disc and becomes the pointing hand over the unit. In `minimal` (no
+     unit line) the value is the hit area. Click-through orbs ignore clicks: use the menu bar / taskbar orb submenu.
+  2. **Context menu**: `orbs.unit` ▸ `orbs.unit.tokens` (`tok/s`) / `orbs.unit.cost` (`US$/s · API 等值`), check on
+     the current one; placed after `orbs.sources` (2b item 3). The quick menu's per-orb submenu (2b master switch) has
+     the same item.
+  3. **Settings** → 懸浮窗 → orb editor: `orbs.unit` as a two-segment control (`tok/s` | `US$/s`) directly under the
+     style cards.
+- **Transition**: the value and the unit slide up/out and up/in like a title change (0.3 s, the new value already in
+  the new unit); Reduce Motion: 0.15 s crossfade. The thumbnail in Settings shows the same value.
+
+### Menu bar, taskbar and dashboard
+
+- **Setting** `settings.liveUnit` (Settings → Cost; also in 選單列 / 工作列): `tok/s` (default) or money, shared by the
+  menu bar / taskbar widget and the dashboard hero. Clicking the hero's unit toggles it (single click, immediate — the
+  hero has no double-click action) with the same hover affordance.
+- **Widget**: `[glyph] 0.0042 US$/s`, or `$0.0042` with the unit hidden. The width rule of section 3 is unchanged
+  (the value's length changes only at a new digit count). Glyph: token heat, as always.
+- **Hero**: value 44 pt with `US$/s`, the speed title below (token heat), context line unchanged. `≥` and `–` as on
+  the orb.
+- **Sources**: the secondary line becomes `1.2M · US$4.20` (today's output · today's cost of that source); `–` for the
+  cost when every response of the source today is unpriced, a `≥` before it when some are; a subscription source shows
+  `cost.subscription.tag` (訂閱) instead of an amount unless subscriptions are included, then its API-equivalent amount.
+  The row's live value follows `settings.liveUnit`.
+- **Today**: a full-width row under the 2×2 grid, styled like 今日峰值: `today.cost` with the caption
+  `cost.apiEquivalent`, the amount (semibold, tabular) trailing, and an ⓘ button. The ⓘ popover (≈ 280 pt): per-source
+  amounts with colour dots and thin share bars (sorted by cost), `cost.unpriced` when today has unpriced responses,
+  `cost.subscriptionExcluded` listing excluded sources, and the rate line (`rates.status`) for a non-USD currency.
+- **Metric info** (ⓘ in the footer): `cost.info` is appended as a second paragraph.
+
+### Usage history
+
+- **Summary**: a fifth card `history.summary.cost` (費用（API 等值）): the range's cost (amount format), secondary line
+  `history.summary.costPerDay` (日均 over active days) or the delta vs the previous period (same rules as the other
+  cards), and a sparkline of daily cost. Five cards share one row from 860 pt of content width (the default window), else 3 + 2.
+- **Chart**: a two-segment control in the chart header, `history.chart.output` | `history.chart.cost`. With 費用 the
+  bars show daily cost stacked by source in source colors (single source: one bar in its color), the right axis and the
+  speed line are hidden, and today's bar is hatched as usual. The tooltip card always carries a cost line
+  (`history.table.cost`: `US$4.20`, with `≥` and `history.unpricedDay` when some responses are unpriced) and the top 3
+  models show their cost next to their share (a free or local model shows `cost.free`, an unpriced one
+  `cost.unknown`). Single-day breakdowns sort and size the bars by the chosen metric.
+- **Table**: column 費用 (`history.table.cost`) after 輸入（含快取）: amount format; `≥` prefix plus tooltip
+  `history.unpricedDay` when some responses are unpriced; `–` when none is priced or the day has no cost data
+  (tooltip `history.costUnavailable`). Sortable; copy row includes it.
+- **Subscriptions**: when at least one source is marked, the toolbar shows a checkbox `history.includeSubscriptions`
+  (initially `settings.cost.includeSubscriptions`; the window remembers its own choice). Excluded sources keep their
+  tokens everywhere but add nothing to cost cards, bars or the column; in the source picker they carry the tag
+  `cost.subscription.tag`. Selecting such a source directly shows its API-equivalent cost (the card title then reads
+  `history.summary.costApi`).
+- **Unknown prices**: when the range has unpriced responses, the footer's left side adds `history.unpricedNotice`
+  with a `history.unpricedNotice.show` link; its popover lists the models (name, requests, source dot) with
+  `history.unpricedModels.hint`.
+- **Frozen days**: the cost card's tooltip says `history.costFrozen`; a day's cost never changes when prices change
+  (METRICS 9.7).
+- **Rate note**: for a non-USD currency the footer's right side starts with `rates.historyNote` (以 2026/10/22 的匯率換算)
+  before `history.privacy`.
+- **CSV**: adds `cost_usd` (exact, 6 decimals, from micro-USD; empty when the day has no cost data),
+  `unpriced_requests`, `price_version`, and for a non-USD display currency `cost_<code>` (lower-case code, the
+  currency's `digits` + 2 decimals) converted with the rate in use. Subscription exclusion does not apply to CSV: every
+  row has its own cost and the `source` column.
+
+### Settings → Cost (費用)
+
+A new pane between 特效 and 資料來源, the platform's grouped form like the other panes:
+
+1. **Currency** — the picker and rate status (above).
+2. **Live value** — `settings.liveUnit` (`settings.liveUnit.tokens` / `settings.liveUnit.cost`), caption: orbs choose
+   their own unit (`settings.liveUnit.hint`).
+3. **Subscriptions** — caption `settings.cost.subscriptionsHint`; one row per detected source (colour dot, name,
+   trailing switch `settings.cost.subscription`); below, `settings.cost.includeSubscriptions` with
+   `settings.cost.includeSubscriptionsHint`. Defaults: no source marked, include off.
+4. **Price table** — status `prices.status` (version · updated date · model count; `prices.bundled` when the bundled
+   table is current), `prices.lastSync` (relative time, `prices.never` before the first sync), the `prices.autoSync`
+   switch with `prices.autoSync.hint`, a `prices.check` button with inline result (`prices.checking`,
+   `prices.upToDate`, `prices.updatedTo`, `prices.failed`, `prices.newerSchema`), and a `prices.viewSource` link that
+   opens the table on GitHub. When today has unpriced models, `prices.unknownToday` lists them (selectable text, so
+   the user can report them).
+
+**About**: the privacy text becomes `privacy.statement`; a **Network** group (`settings.network`) holds the master
+switch with `settings.network.hint`, followed by the update controls of UPDATES 4. With the switch off the update,
+price and rate controls are disabled and show `settings.network.offHint`.
+
+### Accessibility
+
+- Orb in money mode: label `a11y.orb.cost` (`每秒 0.0042 美元（API 等值），高鐵`, the number formatted as shown, the
+  currency's name instead of its symbol); named orbs `a11y.orb.costNamed`; partial values wrap the amount in
+  `a11y.orb.costAtLeast`; nothing priced → `a11y.orb.costUnknown`. Same 1 s update limit.
+- The unit toggle is the custom action `a11y.orb.toggleUnit` (VoiceOver action, UI Automation and the context-menu
+  key); a change is announced once as `a11y.unitChanged`. The hero's unit is a button with the same label.
+- Every amount reads with the currency's name (`12.34 美元`); `≥` reads as `a11y.orb.costAtLeast`, `–` as
+  `cost.unknown`. Nothing relies on color.
+- The currency list is a standard list with a search field; each row reads `code, name`.

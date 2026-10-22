@@ -48,10 +48,24 @@ Every response carries:
 | `input` (total input) | `input_tokens` (already includes cached) | `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` |
 | `cachedInput` | `cached_input_tokens` | `cache_read_input_tokens` |
 | `cacheWriteInput` | `cache_write_input_tokens` (absent → 0) | `cache_creation_input_tokens` |
+| `cacheWrite1hInput` (the part of `cacheWriteInput` written with a 1-hour lifetime) | 0 | `cache_creation.ephemeral_1h_input_tokens` (absent → 0), at most `cacheWriteInput` |
 | `output` (includes reasoning) | `output_tokens` | `output_tokens` |
 | `reasoning` | `reasoning_output_tokens` | `output_tokens_details.thinking_tokens` (absent → 0) |
 
-Missing numeric fields are 0. Negative values are clamped to 0. `total = input + output`.
+Missing numeric fields are 0. Negative values are clamped to 0. `total = input + output`. Every other source has
+`cacheWrite1hInput = 0` (their logs do not separate cache lifetimes; Claude Code writes about a third of its cache
+with the 1-hour lifetime, which costs 2× input instead of 1.25×). On a repeated Claude line the field merges with
+`max` like the others (4.1).
+
+Every response also carries `provider` (string or null): the API provider the agent says it used, only for pricing
+(9.2). Codex: `payload.model_provider` of the file's first `session_meta` (`openai`, or the user's own key such as
+`custom`). DeepSeek Harness: `data.message.source.provider`, else the latest `request/header` `config.provider`.
+OpenCode: `data.model.providerID`. omp: `message.provider` (assistant) or the entry's `provider` (`model_usage`). Every
+other source: null. Empty strings count as null.
+
+Every response also carries `fast` (boolean): the request ran in a provider's fast mode, which has its own prices
+(9.3). Claude: `message.usage.speed == "fast"` on any of the message's lines (merged with `or`). Every other source:
+false (Codex records only the user's speed setting, not the tier a request was billed at).
 
 ### 3.3 Response timing
 - `endMs` = timestamp of the usage record (Claude: the latest line of that message).
@@ -894,7 +908,8 @@ Window `W = 3000 ms`, interval `[nowMs - W, nowMs]`.
 A completed response replaces its own in-flight estimate automatically, because a response ending moves the agent
 out of `generating` or starts a new in-flight interval at the response end.
 
-Per-source and per-agent live rates use the same formula restricted to that source or agent.
+Per-source and per-agent live rates use the same formula restricted to that source or agent. The live cost rate
+(9.5) uses the same window, intervals, estimates and reference responses.
 
 ### 6.4 Events (live only, never during seeding)
 - `responseCompleted` — the first emission of a key (4.4) whose `endMs >= nowMs - 120 000`, carrying source,
@@ -922,6 +937,7 @@ output and total.
   maximum live value observed while running. Keep a per-second measured array for the current day **per source**
   (`measured_s[k]`; the all-sources array is their sum), allocated only for sources with data today (86 400 Float32,
   ≈ 0.34 MB each), so subsets can be evaluated (6.8).
+- `todayCost`: today's cost and unpriced responses, per source as well (9.6).
 - On day change everything for "today" restarts at zero.
 
 ### 6.7 Agents list
@@ -987,6 +1003,9 @@ contributes nothing (the orb shows it as unavailable).
   celebrates. For `A = all`, `newPeak_A` is `newPeak`.
 - **Heat, tiers, titles**: computed by the UI from `live_A` with the orb's redline (DESIGN 1 and 2b), each orb with its
   own trackers.
+- **Cost**: an orb showing the money unit (DESIGN 9) shows `liveCost_A = Σ_{s ∈ A, s billable} liveCost_s` and the
+  known share over the same sources (9.5); its hover line uses `Σ todayCost_s` (9.6). Heat, titles and `newPeak_A`
+  still use `live_A`.
 - The history store (8) is unaffected: its `peak` stays the all-sources `peakToday`.
 
 ## 7. Number formatting (both platforms)
@@ -1031,3 +1050,214 @@ other file (ownership follows startup order); files that no longer exist keep th
 the sums over files. The history store is versioned: a parser change bumps the version and triggers a full
 recomputation that keeps previously stored days for which no logs exist any more. "Clear history" (settings) deletes
 the store and recomputes from the current logs.
+
+Cost (9.7): every row also has `costMicroUsd` and `unpricedRequests`, every model `costMicroUsd` and
+`unpricedRequests`, and every date a `priceVersion`. The cost feature bumps the store version; days kept from an
+older store whose logs no longer exist have no cost data (`costMicroUsd` null, `unpricedRequests` null): UIs show
+them as unavailable (DESIGN 9), never as 0.
+
+## 9. Cost
+
+Agent Speed estimates what the counted responses would cost at the providers' official API list prices — the
+*API-equivalent* cost (DESIGN 9). Costs are exact integers in US dollars; conversion to the display currency happens
+only when a value is shown (9.8). `spec/tools/prices.py` implements 9.1–9.3 and 9.7; `reference.py` uses it for 9.5–9.7
+and `--dump-history` / `--dump-today` (`--prices PATH` selects another table).
+
+### 9.1 Price table
+
+`spec/assets/prices.json` is bundled with every build and synced daily from this repository (NETWORK 3). The
+*current* table is the higher `version` of the bundled table and the synced copy. `python3 spec/tools/prices.py`
+validates it (the same rules apps apply to a download) and runs its `tests`.
+
+| Field | Meaning |
+| --- | --- |
+| `schema` | `1`. A table with another schema is never used by a build that does not know it. |
+| `version` | Positive integer, increased by one with every published change, never reused. |
+| `updated` | `YYYY-MM-DD` of the change. |
+| `currency`, `unit` | `"USD"`, `"perMillionTokens"`. |
+| `providers` | key → `{name, url}`, `url` = the provider's official pricing page. |
+| `normalize` | The lists used by 9.2. |
+| `models[]` | `id` (lowercase, the provider's API id), `provider`, `name`, `status` (`current` · `preview` · `legacy` · `deprecated` · `retired`; retired models stay so that old days keep a price), either `prices` (with optional `tiers`, `offPeak`, `periods` and `fast`) or `"free": true`, optional `aliases`, `source` (https URL of the page the prices come from, or an archived copy of it for past prices), `checked` (date it was verified, ≤ `updated`), optional `note`. |
+| `unknown[]` | `{match: "exact" \| "prefix", value, reason}`: ids known to have no public price (internal or opaque ids). |
+| `tests[]` | `{model, provider?, expect}`: `expect` is a model id, `free` or `unknown` (9.2). |
+
+**Price set**: `input` (uncached input), `cachedInput` (cache read; absent → `input`), `cacheWrite` (cache write with
+the default lifetime, e.g. Anthropic's 5 minutes; absent → `input`), `cacheWrite1h` (1-hour cache write; absent →
+`cacheWrite`), `output` (includes reasoning). Values are USD per million tokens, 0 – 10 000, with at most 6 decimals.
+Implementations convert every price to the integer `p = price × 1 000 000` — micro-USD per million tokens, which is
+pico-USD per token — by parsing the JSON number as a decimal, or by rounding `price × 1e6` to the nearest integer
+(exact for at most 6 decimals).
+
+**Tiers**: `tiers` = `[{above, …the same fields as prices}]`, `above` strictly ascending. The tier with the highest
+`above` that is less than the response's `input` (3.2: all input, cached and cache writes included) replaces the
+prices for the *whole* response. Thresholds are exclusive: "more than 200 000 tokens" is `above: 200000`, "200 000 or
+more" is `above: 199999`.
+
+**Periods**: `periods` = `[{from?, to?, prices, tiers?, offPeak?, note?}]`, at least one bound, never overlapping.
+Bounds are UTC instants, `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MMZ`; a period covers `from ≤ endMs < to`. A
+response whose `endMs` lies in a period uses that period's `prices`, `tiers` and `offPeak` (absent = none) instead of
+the model's. Periods carry announced future price changes, earlier prices for old days, promotions, and retired ids
+that the provider bills at another model's price. Instants, not local dates, so every computer prices alike.
+
+**Off-peak**: `offPeak` = `{peakUtc, peakWeekdays, offPeakDates?, prices, tiers?}` (DeepSeek bills half price outside
+its peak hours). A response is at peak when the UTC date of its `endMs` is not in `offPeakDates`, its ISO weekday (1 =
+Monday) is in `peakWeekdays`, and its UTC time of day lies in one of the `peakUtc` windows (`HH:MM-HH:MM`, start
+inclusive, end exclusive). Otherwise it uses the `offPeak` prices and tiers.
+
+**Fast mode**: `fast` = `{prices, tiers?}`, used instead of everything above (periods and off-peak included) for a
+response with `fast` (3.2) or an id that selects fast mode (9.2). A fast response of a model without `fast` prices
+has an unknown cost: never the cheaper standard price.
+
+**Free**: `"free": true` — every response of the model costs 0, a known value.
+
+### 9.2 Model resolution
+
+Input: a response's `model` and `provider` (3.2). Result: a priced entry, `free` or `unknown`. No fuzzy matching:
+everything these rules do not reach needs an explicit alias.
+
+1. `provider`, trimmed and lowercased, is in `normalize.freeProviders` (local runtimes: `ollama`, `lmstudio`,
+   `llama.cpp`, …) and the lowercased model does not end with an entry of `cloudSuffixes` (Ollama Cloud models run
+   remotely) → **free**. A base URL is never used: local proxies to paid APIs exist.
+2. Missing or empty model → **unknown**.
+3. Candidate keys, formed in this order, each one looked up as soon as it is formed; the first hit wins. A key equal to
+   an `id` or alias resolves to that entry (`free` when the entry is free); otherwise a key that equals an `exact`
+   `unknown` value or starts with a `prefix` one is **unknown** with its reason.
+
+   | Step | Key | Example |
+   | --- | --- | --- |
+   | exact | remove every `[…]` group, collapse whitespace, trim, lowercase | `claude-opus-5-5[1m]`, `Claude-Opus-5-5` → `claude-opus-5-5` |
+   | route | the part after the last `/` | `anthropic/claude-sonnet-4.5` → `claude-sonnet-4.5`; `models/gemini-2.5-pro` |
+   | cloud | `<region>.` (from `bedrockRegions`) is removed when a `<vendor>.` (from `bedrockVendors`) follows; a leading `<vendor>.` is removed and then a trailing `-v<N>` or `-v<N>:<M>`; a trailing `@YYYYMMDD` becomes `-YYYYMMDD`, any other trailing `@…` is removed | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` → `claude-sonnet-4-5-20250929`; `claude-opus-5-5@default` → `claude-opus-5-5` |
+   | free | the key ends with an entry of `freeSuffixes` (and is longer) → **free**, no lookup | `deepseek-v4.1-flash-free`, `…:free` |
+   | variant | remove entries of `variantSuffixes` at the end, repeatedly | `gpt-5.5:nitro:exacto` → `gpt-5.5` |
+   | rewrite | the first `rewrites` entry whose `prefix` starts the key replaces that prefix with `to` | `duo-chat-sonnet-5-5` → `claude-sonnet-5-5` |
+   | fast | a key ending with an entry of `fastSuffixes` loses it and selects fast mode for this and every later step: a hit on an entry with `fast` prices is priced in fast mode, a hit on an entry without them is **unknown** | `claude-opus-5-5-fast` → `claude-opus-5-5` (fast); `claude-sonnet-5-5-fast` → unknown |
+   | date | for keys starting with an entry of `dateSuffixPrefixes`, remove a trailing `-` and 8 digits | `claude-sonnet-4-5-20250929` → `claude-sonnet-4-5` |
+   | modifier | for the first `modifierSuffixes` entry whose `prefix` starts the key, remove its suffixes at the end repeatedly, as long as more than the prefix remains | `claude-opus-5-thinking-max` → `claude-opus-5`; `gemini-3.1-pro-high` → `gemini-3.1-pro` |
+   | dotHyphen | for keys starting with an entry of `dotHyphenPrefixes`, replace every `.` by `-` | `claude-opus-4.8` → `claude-opus-4-8` |
+
+4. No hit → **unknown**.
+
+The lists are data, so a synced table can extend them. The rules are scoped on purpose: elsewhere a date or suffix is
+a different model at a different price (`gpt-4o-2024-05-13` $5/$15 vs `gpt-4o` $2.5/$10, `mistral-large-2411` vs
+`-2512`, `qwen3-max`, `gpt-5.5-pro`), so none of those is stripped; `-fast` is tried only after the full id (so
+`grok-4-fast`, a model of its own, matches first) and never falls back to the standard price.
+`-latest` and display names (`Gemini 3.1 Pro (High)`) resolve only through aliases. The validator checks that every
+id and alias resolves to its own entry, so a rule can never shadow an alias. Examples: `spec/fixtures/price-cases.json`
+`resolve` and the table's `tests`.
+
+### 9.3 Response cost
+
+Billed token classes of a response (3.2):
+
+- `uncached = max(0, input − cachedInput − cacheWriteInput)`
+- `cacheRead = cachedInput`
+- `write1h = min(cacheWrite1hInput, cacheWriteInput)`, `write = cacheWriteInput − write1h`
+- `output` (reasoning included; every source counts reasoning inside `output`)
+
+Each class is clamped to 100 000 000 tokens (no real response comes near; it keeps the sum below 2^63 with prices up
+to 10 000 USD per million tokens).
+
+With the price set of 9.1 — fast prices for a fast response, else the period covering `endMs`, then its off-peak
+prices when `endMs` is off-peak, then the tier chosen by `input` — in 64-bit integers:
+
+```
+costPicoUsd  = uncached·p_input + cacheRead·p_cachedInput + write·p_cacheWrite + write1h·p_cacheWrite1h + output·p_output
+costMicroUsd = (costPicoUsd + 500 000) div 1 000 000          (half up)
+```
+
+`costMicroUsd` is *the* cost of the response everywhere — live rate, today, history, CSV — so every total is a sum of
+integers and any grouping (per file, day, source, model) gives the same number. Free → 0. Unknown → no cost (null),
+never 0: it is counted in `unpricedRequests` instead. The cost is computed when a response is emitted and again when
+an update replaces it (4.4), with the table of its date (9.7); periods and off-peak hours follow its `endMs`. Cases:
+`spec/fixtures/price-cases.json` `cost`.
+
+### 9.4 Subscriptions
+
+Settings can mark sources as used through a subscription (DESIGN 9). Costs of every source are always computed and
+stored; marks apply only when values are shown: with `includeSubscriptions` off (the default) every displayed cost
+(live, today, orb, history totals) sums only the *billable* sources, the ones not marked; with it on, all sources. A
+mark is a current setting, not data: changing it rewrites nothing.
+
+### 9.5 Live cost rate
+
+The money unit of the orb, menu bar and dashboard (DESIGN 9). Window, intervals and estimates are those of 6.3.
+
+- Measured: for every measured response with a known cost, `costMicroUsd * overlap(interval, [start', end]) /
+  (end - start')`.
+- Estimated: for every unmeasured response and every in-flight agent that 6.3 estimates, with the same `secs`
+  (`overlap / 1000`), add `costRate(a) * secs`. `costRate(a)` = Σ `costMicroUsd` / Σ widened duration (seconds) over
+  the responses of `a`'s *reference set* that have a known cost; the reference set is the set 6.2 used for
+  `estimatedSpeed(a)` (the agent's up to 3 most recent measured responses within 10 minutes, else the model's up to 10
+  within 30 minutes, else the source's). No cost estimate when none of them has a known cost.
+- `liveCost = (measured + estimated) / (W / 1000)` micro-USD per second.
+- `liveCostKnownShare` = the output tokens of 6.3 (measured and estimated) that carry a known cost ÷ all of them (1
+  when there are none): a measured response counts when its cost is known, an estimate when `costRate` exists.
+- Per source and per agent: the same formula restricted to them. Both values are additive over sources, so an orb or
+  the billable sum (9.4) adds per-source values: `knownShare = Σ known tokens / Σ tokens`.
+- The money value never drives heat, tiers, titles, peaks or `newPeak`; those follow the token metric.
+
+Engine cases with `liveCost` in `spec/fixtures/engine-cases.json` give responses their `costMicroUsd` directly.
+
+### 9.6 Today
+
+- `today.costMicroUsd`: Σ `costMicroUsd` of today's responses with a known cost, as recorded (unfinalized ones
+  included, so it is a lower bound like `output`).
+- `today.unpricedRequests`: today's responses without a known price.
+- Both per source, and per model for breakdowns. The dashboard's today cost equals the history's row for today.
+
+### 9.7 Day binding and history
+
+Each day reads like a bill: it keeps the prices that applied to it.
+
+- **Binding**: the history store keeps `date → table version` for every local date that has been priced. The first
+  time a response of a date is priced (by the engine or by the history analysis), the date is bound to the current
+  table version. A binding never changes afterwards — not when a newer table arrives, not when a changed file is
+  re-analysed, not on a full recomputation after a store version bump.
+- **Pricing a response of date `d`**: with the table bound to `d` (its periods and off-peak hours apply by `endMs`). If that table
+  cannot price it (`unknown`), the current table is used instead (*late pricing*): a new model added to the table later
+  fills in the days before, while a price that was known never changes. Still unknown → unpriced.
+- A price change in a new table therefore shows from the next day on (today stays bound); a change announced in
+  advance takes effect on time when the bound table already carries it as a period.
+- **Re-analysis**: per-day contributions of a re-analysed file are recomputed with these rules, so they are a pure
+  function of the file's responses, the bindings and the stored tables. When the current table version changes, every
+  file whose stored contribution has `unpricedRequests > 0` is re-analysed (as if it had changed), and the engine
+  re-prices today's unpriced responses; it keeps the normalized usage of today's unpriced responses (at most 10 000)
+  for that.
+- **Storage**: the store keeps a copy of every table version that a binding references (deleted when no binding
+  references it). A binding whose table is missing or invalid is replaced by the current version (logged). "Clear
+  history" deletes bindings and tables with everything else.
+- **Rows** (section 8): per date and source `costMicroUsd` (Σ known costs) and `unpricedRequests`; per model the same
+  two; `priceVersion` = the date's binding (repeated on each row of the date). Subscription marks are not stored.
+- Fixtures: `spec/fixtures/history-expected.json` `prices` (the fixture tables, the highest version current, and the
+  bindings to load before the analysis) and `spec/fixtures/price-cases.json` `days`.
+
+### 9.8 Display currency
+
+Costs are stored and summed in micro-USD. A shown amount is `costMicroUsd / 1 000 000 × rate(currency)`, with the
+latest accepted daily rate (NETWORK 4; USD = 1). History days are converted with that same latest rate, not the rate
+of their own day: a range total then always equals the sum of its days, switching currencies changes no stored data,
+and no historical rates are needed. The UI states the rate date (DESIGN 9). Rounding and formatting are DESIGN 9.
+
+### 9.9 Known approximations
+
+- List prices only: subscriptions, free tiers and credits, enterprise discounts, batch, flex and priority tiers,
+  regional or data-residency surcharges (for example Bedrock regional endpoints and Vertex regions, +10 % on newer
+  Claude models) and taxes are not modeled.
+- Charges that are not tokens of a recorded response are not counted: web search and fetch requests, code execution,
+  grounding, cache storage per hour, image and audio inputs priced differently from text.
+- Calls an agent does not record (titles, compaction summaries, classifiers; 4.x approximations) are missing, so costs
+  are lower bounds, like tokens. Unfinalized Claude Desktop responses count with their recorded usage (complete input,
+  partial output).
+- Only Claude Code separates 1-hour cache writes; every other source prices all cache writes at `cacheWrite`
+  (OpenAI's 12-hour writes, 2.5× input, are priced as its 30-minute writes, 1.25×).
+- Fast mode is known only for Claude Code (`usage.speed`) and for ids that name it (`-fast`); OpenAI's fast and
+  ultrafast tiers in Codex are priced at standard rates. US-only inference (`usage.inference_geo == "us"`, 1.1× on
+  newer Claude models) is not applied.
+- DeepSeek's off-peak rule needs the list of Chinese public holidays in `offPeakDates`; weekend make-up workdays are
+  treated as off-peak. Qwen's implicit-cache price (20 % of input) is used for every cache read, explicit caching
+  (10 %) is not distinguished.
+- A tier is chosen by the normalized `input`; for Gemini CLI that includes tool-use prompt tokens.
+- OpenCode and omp record their own cost; it is not used, so every source follows one rule (resellers such as
+  OpenCode Zen sometimes charge other prices than the original provider).
+- Models behind a user's own proxy or router are priced by the model name the agent logged; opaque names stay unknown.

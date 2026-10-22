@@ -171,9 +171,13 @@ class Session:
                 f.write("\n")
 
 
+PROVIDERS = {route[2]: route[1] for route in (OPUS, SONNET, HAIKU, SONNET_OLD, GPT, GPT_MINI, DUO)}
+
+
 def resp(key, start, end, inp, cached, cache_write, out, reasoning, model):
     return {"key": key, "startMs": start, "endMs": end, "input": inp, "cachedInput": cached,
-            "cacheWriteInput": cache_write, "output": out, "reasoning": reasoning, "model": model, "final": True}
+            "cacheWriteInput": cache_write, "cacheWrite1hInput": 0, "output": out, "reasoning": reasoning,
+            "model": model, "provider": PROVIDERS[model], "fast": False, "final": True}
 
 
 def key(entry_id, stamp):

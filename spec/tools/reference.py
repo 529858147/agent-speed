@@ -4,10 +4,11 @@
   python3 spec/tools/reference.py --check-fixtures
   python3 spec/tools/reference.py --dump-today [--codex PATH] [--claude PATH] [--dsh PATH] [--gemini PATH]
                                               [--omp PATH] [--antigravity PATH]
-  python3 spec/tools/reference.py --dump-history [--utc] [...]
+  python3 spec/tools/reference.py --dump-history [--utc] [--prices PATH] [...]
   python3 spec/tools/reference.py --write-history-fixture
 
 The dump format matches the `--dump-today` output of both platform probes. Conversation content is never printed.
+Costs (METRICS 9) use spec/assets/prices.json unless --prices names another table; prices.py does the pricing.
 """
 import argparse
 import math
@@ -24,11 +25,15 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import prices as pricing  # noqa: E402
+
 MAX_LINE = 32 * 1024 * 1024
 DEDUPE_LIMIT = 65_536
 WINDOW_MS = 3000
 TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$")
-TOKEN_FIELDS = ("input", "cachedInput", "cacheWriteInput", "output", "reasoning")
+TOKEN_FIELDS = ("input", "cachedInput", "cacheWriteInput", "cacheWrite1hInput", "output", "reasoning")
 GEMINI_LEGACY_MAX = 64 * 1024 * 1024
 GEMINI_SANITIZE = re.compile(r"[^A-Za-z0-9_-]")
 GEMINI_CANCELLED = "Request cancelled."
@@ -104,6 +109,7 @@ class FileState:
         self.responses = OrderedDict()
         # codex
         self.file_created = None
+        self.provider = None
         self.my_agent_path = "/root"
         self.thread_id = None
         self.parent_thread_id = None
@@ -133,8 +139,10 @@ class FileState:
             self.is_subagent = len([p for p in re.split(r"[\\/]", rel) if p]) >= 3
 
 
-def emit(state, key, start, end, tokens, model, final=True):
-    state.responses[key] = dict(key=key, startMs=start, endMs=end, model=model, final=final, **tokens)
+def emit(state, key, start, end, tokens, model, final=True, provider=None, fast=False):
+    tokens.setdefault("cacheWrite1hInput", 0)
+    state.responses[key] = dict(key=key, startMs=start, endMs=end, model=model, provider=provider, fast=fast,
+                                final=final, **tokens)
 
 
 def codex_tokens(usage):
@@ -157,6 +165,7 @@ def codex_line(state, obj, dedupe):
         state.last_line = ts if state.last_line is None else max(state.last_line, ts)
         state.project = basename(payload.get("cwd")) or state.project
         state.my_agent_path = payload.get("agent_path") or "/root"
+        state.provider = payload.get("model_provider") if isinstance(payload.get("model_provider"), str) else None
         source = payload.get("source")
         state.is_subagent = state.is_subagent or payload.get("thread_source") == "subagent" or (
             isinstance(source, dict) and "subagent" in source)
@@ -181,7 +190,8 @@ def codex_line(state, obj, dedupe):
         if dedupe.owner(key) is not None:
             return
         dedupe.claim(key, state.path)
-        emit(state, key, state.pending, ts, codex_tokens(payload.get("usage")), state.model)
+        emit(state, key, state.pending, ts, codex_tokens(payload.get("usage")), state.model,
+             provider=state.provider)
         after_usage(state, ts)
         return
     if kind == "event_msg":
@@ -244,7 +254,7 @@ def legacy(state, ts, payload, dedupe):
     if dedupe.owner(key) is not None:
         return
     dedupe.claim(key, state.path)
-    emit(state, key, state.pending, ts, codex_tokens(usage), state.model)
+    emit(state, key, state.pending, ts, codex_tokens(usage), state.model, provider=state.provider)
     after_usage(state, ts)
 
 
@@ -264,8 +274,10 @@ def claude_tokens(usage):
     inp, cc, cr = num(usage.get("input_tokens")), num(usage.get("cache_creation_input_tokens")), num(
         usage.get("cache_read_input_tokens"))
     details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
-    return dict(input=inp + cc + cr, cachedInput=cr, cacheWriteInput=cc, output=num(usage.get("output_tokens")),
-                reasoning=num(details.get("thinking_tokens")))
+    creation = usage.get("cache_creation") if isinstance(usage.get("cache_creation"), dict) else {}
+    return dict(input=inp + cc + cr, cachedInput=cr, cacheWriteInput=cc,
+                cacheWrite1hInput=min(cc, num(creation.get("ephemeral_1h_input_tokens"))),
+                output=num(usage.get("output_tokens")), reasoning=num(details.get("thinking_tokens")))
 
 
 def claude_line(state, obj, dedupe):
@@ -300,11 +312,13 @@ def claude_line(state, obj, dedupe):
         if owner is not None and owner != state.path:
             return
         tokens = claude_tokens(message.get("usage"))
+        usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
+        fast = usage.get("speed") == "fast"
         stop = message.get("stop_reason")
         resp = state.responses.get(key)
         if resp is None:
             dedupe.claim(key, state.path)
-            emit(state, key, state.pending, ts, tokens, message.get("model"), stop is not None)
+            emit(state, key, state.pending, ts, tokens, message.get("model"), stop is not None, fast=fast)
             state.pending, state.precise = None, False
             resp = state.responses[key]
         else:
@@ -312,6 +326,7 @@ def claude_line(state, obj, dedupe):
             for f in TOKEN_FIELDS:
                 resp[f] = max(resp[f], tokens[f])
             resp["model"] = message.get("model") or resp["model"]
+            resp["fast"] = resp["fast"] or fast
             resp["final"] = resp["final"] or stop is not None
         state.model = resp["model"] or state.model
         content = message.get("content") if isinstance(message.get("content"), list) else []
@@ -529,6 +544,8 @@ def dsh_event(state, obj, dedupe):
         config = (data.get("header") or {}).get("config") if isinstance(data.get("header"), dict) else None
         if isinstance(config, dict) and isinstance(config.get("model"), str) and config["model"]:
             state.model = config["model"]
+        if isinstance(config, dict) and isinstance(config.get("provider"), str) and config["provider"]:
+            state.provider = config["provider"]
     elif kind == "step/start":
         state.pending, state.phase, state.in_flight = ts, "generating", ts
     elif kind == "turn/end":
@@ -546,7 +563,9 @@ def dsh_event(state, obj, dedupe):
                           output=num(usage.get("outputTokens")), reasoning=0)
             source = message.get("source") if isinstance(message.get("source"), dict) else {}
             model = source.get("model") or state.model
-            emit(state, key, state.pending, ts, tokens, model)
+            provider = source.get("provider") if isinstance(source.get("provider"), str) and source["provider"] \
+                else state.provider
+            emit(state, key, state.pending, ts, tokens, model, provider=provider)
             state.model = model or state.model
         content = message.get("content") if isinstance(message.get("content"), list) else []
         tool = any(isinstance(b, dict) and b.get("type") == "tool-call" for b in content)
@@ -605,6 +624,8 @@ def opencode_states(db_path, dedupe):
                     continue
                 st.last_line = updated if st.last_line is None else max(st.last_line, updated)
                 model = (d.get("model") or {}).get("id") if isinstance(d.get("model"), dict) else None
+                provider = d["model"].get("providerID") if isinstance(d.get("model"), dict) else None
+                provider = provider if isinstance(provider, str) and provider else None
                 st.model = model or st.model
                 if "streamed" not in times:
                     st.phase, st.in_flight = "generating", created
@@ -612,7 +633,7 @@ def opencode_states(db_path, dedupe):
                 tokens = d.get("tokens")
                 if isinstance(tokens, dict) and dedupe.owner(rid) in (None, st.path):
                     dedupe.claim(rid, st.path)
-                    emit(st, rid, created, times["streamed"], opencode_tokens(tokens), model)
+                    emit(st, rid, created, times["streamed"], opencode_tokens(tokens), model, provider=provider)
                 st.phase = "tools" if d.get("finish") == "tool-calls" else "idle"
                 st.in_flight = None
             else:
@@ -621,8 +642,10 @@ def opencode_states(db_path, dedupe):
                     if dedupe.owner(rid) in (None, st.path):
                         dedupe.claim(rid, st.path)
                         model = (d.get("model") or {}).get("id") if isinstance(d.get("model"), dict) else None
+                        provider = d["model"].get("providerID") if isinstance(d.get("model"), dict) else None
                         emit(st, rid, times.get("created"), times.get("completed", updated),
-                             opencode_tokens(d["tokens"]), model)
+                             opencode_tokens(d["tokens"]), model,
+                             provider=provider if isinstance(provider, str) and provider else None)
                 elif kind == "idle":
                     st.phase, st.in_flight = "idle", None
         return list(states.values())
@@ -951,7 +974,7 @@ def omp_line(state, obj, dedupe):
         if dedupe.owner(key) not in (None, state.path) or not omp_has_usage(obj["usage"]):
             return
         dedupe.claim(key, state.path)
-        emit(state, key, None, ts, omp_tokens(obj["usage"]), obj["model"])
+        emit(state, key, None, ts, omp_tokens(obj["usage"]), obj["model"], provider=obj["provider"] or None)
     elif kind == "custom" and obj.get("customType") == "session_exit":
         state.phase, state.in_flight = "idle", None
         state.pending_calls.clear()
@@ -975,7 +998,7 @@ def omp_assistant(state, entry, msg, ts, dedupe):
     if omp_has_usage(msg["usage"]):
         dedupe.claim(key, state.path)
         emit(state, key, None if stop in ("error", "aborted") else started, end, omp_tokens(msg["usage"]),
-             msg["model"])
+             msg["model"], provider=msg["provider"] or None)
         state.model = msg["model"]
     content = msg.get("content") if isinstance(msg.get("content"), list) else []
     calls = {b["id"] for b in content if isinstance(b, dict) and b.get("type") == "toolCall"
@@ -1423,9 +1446,14 @@ def speed_of(responses):
 
 
 def recent(valid, now, predicate, limit, horizon):
+    picked = recent_set(valid, now, predicate, limit, horizon)
+    return speed_of(picked) if picked else None
+
+
+def recent_set(valid, now, predicate, limit, horizon):
     picked = [r for r in valid if predicate(r) and r["endMs"] >= now - horizon]
     picked.sort(key=lambda r: r["endMs"], reverse=True)
-    return speed_of(picked[:limit]) if picked else None
+    return picked[:limit]
 
 
 def is_final(resp):
@@ -1476,6 +1504,60 @@ def live_rate(responses, agents, now):
     tot = (measured[1] + estimated[1]) / (WINDOW_MS / 1000)
     denom = measured[0] + estimated[0]
     return out, tot, (estimated[0] / denom if denom > 0 else 0.0)
+
+
+def reference_set(valid, now, agent):
+    """The measured responses behind estimatedSpeed (6.2): the first non-empty level of the fallback chain."""
+    return (recent_set(valid, now, lambda r: r["agentId"] == agent["id"], 3, 600_000)
+            or recent_set(valid, now, lambda r: r.get("model") == agent.get("model") and agent.get("model"), 10,
+                          1_800_000)
+            or recent_set(valid, now, lambda r: r["source"] == agent["source"], 10, 1_800_000))
+
+
+def cost_rate(refs):
+    """micro-USD per second of the reference responses whose cost is known (9.5), or None."""
+    known = [r for r in refs if r.get("costMicroUsd") is not None]
+    secs = sum((interval(r)[1] - interval(r)[0]) / 1000 for r in known)
+    return sum(r["costMicroUsd"] for r in known) / secs if known and secs > 0 else None
+
+
+def live_cost(responses, agents, now):
+    """(live cost in micro-USD per second, share of live output tokens whose cost is known) - METRICS 9.5."""
+    w0 = now - WINDOW_MS
+    valid = [r for r in responses if interval(r) is not None and is_final(r)]
+    unmeasured = [r for r in responses if interval(r) is not None and not is_final(r)]
+    by_id = {a["id"]: a for a in agents}
+    cost = known_tokens = all_tokens = 0.0
+    for r in valid:
+        s, e = interval(r)
+        frac = overlap(w0, now, s, e) / (e - s)
+        all_tokens += r["output"] * frac
+        if r.get("costMicroUsd") is not None:
+            cost += r["costMicroUsd"] * frac
+            known_tokens += r["output"] * frac
+    estimates = []
+    for r in unmeasured:
+        agent = by_id.get(r["agentId"], {"id": r["agentId"], "model": r.get("model"), "source": r["source"]})
+        s, e = interval(r)
+        estimates.append((agent, overlap(w0, now, s, e) / 1000))
+    for a in agents:
+        if a["phase"] != "generating" or a.get("inFlightStartMs") is None or a.get("lastLineMs") is None:
+            continue
+        if now - a["lastLineMs"] > 300_000:
+            continue
+        start = max([a["inFlightStartMs"]] + [r["endMs"] for r in responses if r["agentId"] == a["id"]])
+        estimates.append((a, overlap(w0, now, start, now) / 1000))
+    for agent, secs in estimates:
+        refs = reference_set(valid, now, agent)
+        if not refs:
+            continue
+        tokens = speed_of(refs)[0] * secs
+        all_tokens += tokens
+        rate = cost_rate(refs)
+        if rate is not None:
+            cost += rate * secs
+            known_tokens += tokens
+    return cost / (WINDOW_MS / 1000), (known_tokens / all_tokens if all_tokens > 0 else 1.0)
 
 
 def agent_list(responses, agents, now):
@@ -1550,7 +1632,9 @@ def today_stats(responses, today_start, now):
         peak = max(peak, sum(b.get(k - i * 1000, 0.0) for i in range(3)) / 3)
     return dict(requests=len(today), output=sum(r["output"] for r in today),
                 unfinalized=sum(1 for r in today if not is_final(r)),
-                input=sum(r["input"] for r in today), average=sp[0] if sp else None, peak=peak, buckets=b)
+                input=sum(r["input"] for r in today), average=sp[0] if sp else None, peak=peak, buckets=b,
+                cost=sum(r["costMicroUsd"] for r in today if r.get("costMicroUsd") is not None),
+                unpriced=sum(1 for r in today if r.get("costMicroUsd") is None))
 
 
 # ----------------------------------------------------------------------------- commands
@@ -1616,8 +1700,9 @@ def check_fixtures():
         failures += check_antigravity(root, ag, dedupe)
     hist_path = os.path.join(root, "history-expected.json")
     if os.path.exists(hist_path):
-        got = fixture_history(root, expected)
-        want = json.load(open(hist_path, encoding="utf-8"))["days"]
+        hist = json.load(open(hist_path, encoding="utf-8"))
+        got = fixture_history(root, expected, hist["prices"])
+        want = hist["days"]
         if json.loads(json.dumps(got)) != want:
             failures.append("history: expected %s got %s" % (json.dumps(want)[:300], json.dumps(got)[:300]))
     cases = json.load(open(os.path.join(root, "engine-cases.json"), encoding="utf-8"))["cases"]
@@ -1631,13 +1716,27 @@ def check_fixtures():
                 order, parent_map = agent_list(case["responses"], case["agents"], q["nowMs"])
                 if order != q["agentsOrder"] or parent_map != q["agentParents"]:
                     failures.append("%s: agents %r %r" % (case["name"], order, parent_map))
+            if "liveCost" in q:
+                cost, share = live_cost(case["responses"], case["agents"], q["nowMs"])
+                for name, val in (("liveCost", cost), ("liveCostKnownShare", share)):
+                    if abs(val - q[name]) > 1e-6:
+                        failures.append("%s @%d: %s expected %r got %r" % (case["name"], q["nowMs"], name, q[name],
+                                                                           val))
+            if "todayCostMicroUsd" in q:
+                st = today_stats(case["responses"], case.get("todayStartMs", 0), q["nowMs"])
+                for name, val in (("todayCostMicroUsd", st["cost"]), ("todayUnpricedRequests", st["unpriced"])):
+                    if val != q[name]:
+                        failures.append("%s: %s expected %r got %r" % (case["name"], name, q[name], val))
             for sub in q.get("subsets", []):
                 chosen = set(sub["sources"])
                 resp = [r for r in case["responses"] if r["source"] in chosen]
                 ags = [a for a in case["agents"] if a["source"] in chosen]
                 got = (live_rate(resp, ags, q["nowMs"])[0],
-                       today_stats(resp, case.get("todayStartMs", 0), q["nowMs"])["peak"])
-                for name, val in zip(("liveOutput", "peakTodayOutput"), got):
+                       today_stats(resp, case.get("todayStartMs", 0), q["nowMs"])["peak"],
+                       live_cost(resp, ags, q["nowMs"])[0])
+                for name, val in zip(("liveOutput", "peakTodayOutput", "liveCost"), got):
+                    if name not in sub:
+                        continue
                     if abs(val - sub[name]) > 1e-6:
                         failures.append("%s %s: %s expected %r got %r" % (case["name"], sub["sources"], name,
                                                                          sub[name], val))
@@ -1653,11 +1752,12 @@ def check_fixtures():
                     if abs(st["buckets"].get(int(k), 0.0) - v) > 1e-6:
                         failures.append("%s: bucket %s expected %r got %r" % (case["name"], k, v,
                                                                               st["buckets"].get(int(k))))
+    failures += ["prices: " + e for e in pricing.check_cases()]
     if failures:
         print("\n".join(failures))
         sys.exit(1)
-    print("reference implementation matches all fixtures (%d files, %d Antigravity databases, %d engine cases)"
-          % (len(expected["order"]), len((ag or {}).get("order", [])), len(cases)))
+    print("reference implementation matches all fixtures (%d files, %d Antigravity databases, %d engine cases, "
+          "price cases)" % (len(expected["order"]), len((ag or {}).get("order", [])), len(cases)))
 
 
 def check_traces(root, expected, traces):
@@ -1789,7 +1889,15 @@ def fixture_state(root, rel):
     return FileState(path, source, omp_root if source == "omp" else None)
 
 
-def fixture_history(root, expected):
+HISTORY_PRICES = OrderedDict([("tables", ["prices/v1.json", "prices/v2.json"]), ("bindings", {"2026-10-20": 1})])
+
+
+def fixture_pricing(root, config):
+    """The fixture price tables of history-expected.json `prices`; the newest table is the current one."""
+    return pricing.DayPricing([pricing.load(os.path.join(root, rel)) for rel in config["tables"]], config["bindings"])
+
+
+def fixture_history(root, expected, config=HISTORY_PRICES):
     """Daily history over a copy of the fixtures whose modification times follow `mtimes` (git does not keep them)."""
     with tempfile.TemporaryDirectory() as tmp:
         copy = os.path.join(tmp, "fixtures")
@@ -1800,16 +1908,20 @@ def fixture_history(root, expected):
                                          os.path.join(copy, "dsh", "sessions"), os.path.join(copy, "opencode", "opencode.db"),
                                          [os.path.join(copy, "gemini", "tmp")], fixture_omp_roots(copy),
                                          antigravity_stores(gemini_dir=os.path.join(copy, "antigravity"))),
-                             tz=timezone.utc)
+                             tz=timezone.utc, day_pricing=fixture_pricing(root, config))
 
 
 def write_history_fixture():
     root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
     expected = json.load(open(os.path.join(root, "parser-expected.json"), encoding="utf-8"))
     with open(os.path.join(root, "history-expected.json"), "w", encoding="utf-8") as f:
-        json.dump({"_comment": "Daily history (METRICS 8) over all fixtures, grouped in UTC, after setting each file's "
-                               "modification time from parser-expected.json `mtimes`. Generated by "
-                               "spec/tools/reference.py --write-history-fixture; platforms must match exactly.",
+        json.dump({"_comment": "Daily history (METRICS 8, 9.7) over all fixtures, grouped in UTC, after setting each "
+                               "file's modification time from parser-expected.json `mtimes`. Costs use the fixture "
+                               "price tables in `prices.tables` (paths relative to spec/fixtures; the highest version "
+                               "is the current table) with the stored day bindings `prices.bindings`; unbound days "
+                               "bind to the current table. Generated by spec/tools/reference.py "
+                               "--write-history-fixture; platforms must match exactly.",
+                   "prices": HISTORY_PRICES,
                    "days": fixture_history(root, expected)}, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
@@ -1851,8 +1963,9 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
     return sorted(timed, key=lambda t: (t[0], t[1]))
 
 
-def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=()):
+def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), table=pricing.TABLE):
     started = time.time()
+    index = pricing.Index(pricing.load(table))
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
     files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores)
@@ -1882,8 +1995,11 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
                 rows.append(OrderedDict([("key", r["key"]), ("source", state.source), ("agentId", path),
                                          ("model", r["model"]), ("startMs", r["startMs"]), ("endMs", r["endMs"]),
                                          ("input", r["input"]), ("cachedInput", r["cachedInput"]),
-                                         ("cacheWriteInput", r["cacheWriteInput"]), ("output", r["output"]),
-                                         ("reasoning", r["reasoning"]), ("final", r["final"])]))
+                                         ("cacheWriteInput", r["cacheWriteInput"]),
+                                         ("cacheWrite1hInput", r["cacheWrite1hInput"]), ("output", r["output"]),
+                                         ("reasoning", r["reasoning"]), ("final", r["final"]),
+                                         ("provider", r["provider"]), ("fast", r["fast"]),
+                                         ("costMicroUsd", index.price(r))]))
     rows.sort(key=lambda r: (r["endMs"], r["key"]))
     for r in rows:
         print(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
@@ -1891,6 +2007,8 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
     for r in rows:
         counts[r["source"]] = counts.get(r["source"], 0) + 1
     print(json.dumps({"summary": {"counts": counts, "output": sum(r["output"] for r in rows),
+                                  "costMicroUsd": sum(r["costMicroUsd"] or 0 for r in rows),
+                                  "unpricedRequests": sum(1 for r in rows if r["costMicroUsd"] is None),
                                   "input": sum(r["input"] for r in rows), "filesRead": read_files,
                                   "bytesRead": read_bytes, "seedMs": int((time.time() - started) * 1000)}}))
 
@@ -1917,19 +2035,25 @@ def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), 
     return out
 
 
-def daily_history(responses, tz=None):
+HISTORY_TOKENS = ("input", "cachedInput", "cacheWriteInput", "output", "reasoning")
+
+
+def daily_history(responses, tz=None, day_pricing=None):
+    """Rows per (date, source), METRICS 8 and 9.7. `day_pricing` defaults to the bundled table for every day."""
+    day_pricing = day_pricing or pricing.DayPricing([pricing.load(pricing.TABLE)])
     days = {}
     for source, agent, r in responses:
         date = datetime.fromtimestamp(r["endMs"] / 1000, tz=tz or datetime.now().astimezone().tzinfo)
         key = (date.strftime("%Y-%m-%d") if tz else datetime.fromtimestamp(r["endMs"] / 1000).strftime("%Y-%m-%d"),
                source)
         d = days.setdefault(key, dict(requests=0, input=0, cachedInput=0, cacheWriteInput=0, output=0, reasoning=0,
-                                      measuredOutput=0, measuredMs=0, unfinalized=0, agents=set(), models={}))
+                                      measuredOutput=0, measuredMs=0, unfinalized=0, costMicroUsd=0,
+                                      unpricedRequests=0, agents=set(), models={}))
         d["requests"] += 1
-        for f in TOKEN_FIELDS:
+        for f in HISTORY_TOKENS:
             d[f] += r[f]
         iv = interval(r)
-        m = d["models"].setdefault(r.get("model") or "", [0, 0, 0, 0])
+        m = d["models"].setdefault(r.get("model") or "", [0, 0, 0, 0, 0, 0])
         m[0] += 1
         m[1] += r["output"]
         if iv is not None and is_final(r):
@@ -1939,15 +2063,23 @@ def daily_history(responses, tz=None):
             m[3] += iv[1] - iv[0]
         if not is_final(r):
             d["unfinalized"] += 1
+        cost = day_pricing.price(key[0], r)
+        if cost is None:
+            d["unpricedRequests"] += 1
+            m[5] += 1
+        else:
+            d["costMicroUsd"] += cost
+            m[4] += cost
         d["agents"].add(agent)
     rows = []
     for (date, source), d in sorted(days.items()):
         rows.append(OrderedDict([("date", date), ("source", source)] + [(k, d[k]) for k in (
             "requests", "input", "cachedInput", "cacheWriteInput", "output", "reasoning", "measuredOutput",
-            "measuredMs", "unfinalized")] + [("agents", len(d["agents"])),
-                                             ("models", {k: {"requests": v[0], "output": v[1], "measuredOutput": v[2],
-                                                             "measuredMs": v[3]}
-                                                         for k, v in sorted(d["models"].items())})]))
+            "measuredMs", "unfinalized", "costMicroUsd", "unpricedRequests")] + [
+            ("priceVersion", day_pricing.version_for(date)), ("agents", len(d["agents"])),
+            ("models", {k: {"requests": v[0], "output": v[1], "measuredOutput": v[2], "measuredMs": v[3],
+                            "costMicroUsd": v[4], "unpricedRequests": v[5]}
+                        for k, v in sorted(d["models"].items())})]))
     return rows
 
 
@@ -1966,6 +2098,7 @@ def main():
     parser.add_argument("--antigravity", action="append", default=None,
                         help="Antigravity store folder or its conversations folder (repeatable)")
     parser.add_argument("--write-history-fixture", action="store_true")
+    parser.add_argument("--prices", default=pricing.TABLE, help="price table for --dump-history (METRICS 9)")
     args = parser.parse_args()
     home = os.path.expanduser("~")
     codex_root = args.codex or (os.path.join(os.environ["CODEX_HOME"], "sessions") if os.environ.get("CODEX_HOME")
@@ -1985,14 +2118,15 @@ def main():
         return
     if args.dump_history:
         rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs, omp_dirs,
-                                         ag_stores), tz=timezone.utc if args.utc else None)
+                                         ag_stores), tz=timezone.utc if args.utc else None,
+                             day_pricing=pricing.DayPricing([pricing.load(args.prices)]))
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
         return
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores)
+        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, args.prices)
     else:
         parser.print_help()
 

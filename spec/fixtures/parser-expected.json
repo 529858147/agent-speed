@@ -47,9 +47,12 @@
           "input": 10000,
           "cachedInput": 8000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 200,
           "reasoning": 50,
           "model": "gpt-6.1-sol",
+          "provider": "openai",
+          "fast": false,
           "final": true
         },
         {
@@ -59,9 +62,12 @@
           "input": 10400,
           "cachedInput": 10000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 330,
           "reasoning": 0,
           "model": "gpt-6.1-sol",
+          "provider": "openai",
+          "fast": false,
           "final": true
         }
       ]
@@ -84,9 +90,12 @@
           "input": 5000,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 120,
           "reasoning": 40,
           "model": "gpt-6.1-sol",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -96,9 +105,12 @@
           "input": 5200,
           "cachedInput": 5000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 60,
           "reasoning": 10,
           "model": "gpt-6.1-sol",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -121,9 +133,12 @@
           "input": 19515,
           "cachedInput": 7040,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 698,
           "reasoning": 368,
           "model": "gpt-5.5",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -133,9 +148,12 @@
           "input": 20485,
           "cachedInput": 11960,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 302,
           "reasoning": 32,
           "model": "gpt-5.5",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -158,9 +176,12 @@
           "input": 6000,
           "cachedInput": 5000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 150,
           "reasoning": 40,
           "model": "gpt-6.1-sol-mini",
+          "provider": "custom",
+          "fast": false,
           "final": true
         },
         {
@@ -170,9 +191,12 @@
           "input": 6300,
           "cachedInput": 6000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 210,
           "reasoning": 0,
           "model": "gpt-6.1-sol-mini",
+          "provider": "custom",
+          "fast": false,
           "final": true
         }
       ]
@@ -195,9 +219,12 @@
           "input": 21002,
           "cachedInput": 20000,
           "cacheWriteInput": 1000,
+          "cacheWrite1hInput": 600,
           "output": 300,
           "reasoning": 60,
           "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -207,9 +234,12 @@
           "input": 21205,
           "cachedInput": 21000,
           "cacheWriteInput": 200,
+          "cacheWrite1hInput": 0,
           "output": 240,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -232,9 +262,12 @@
           "input": 504,
           "cachedInput": 0,
           "cacheWriteInput": 500,
+          "cacheWrite1hInput": 500,
           "output": 90,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -244,9 +277,12 @@
           "input": 602,
           "cachedInput": 600,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 8,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": false,
           "final": false
         }
       ]
@@ -269,9 +305,12 @@
           "input": 30003,
           "cachedInput": 30000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 500,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": null,
+          "fast": true,
           "final": true
         }
       ]
@@ -294,9 +333,12 @@
           "input": 9000,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 400,
           "reasoning": 0,
           "model": "deepseek-flash",
+          "provider": "deepseek-account",
+          "fast": false,
           "final": true
         },
         {
@@ -306,9 +348,12 @@
           "input": 9400,
           "cachedInput": 9216,
           "cacheWriteInput": 64,
+          "cacheWrite1hInput": 0,
           "output": 300,
           "reasoning": 0,
           "model": "deepseek-flash",
+          "provider": "deepseek-account",
+          "fast": false,
           "final": true
         }
       ]
@@ -331,9 +376,12 @@
           "input": 4500,
           "cachedInput": 4000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 240,
           "reasoning": 0,
           "model": "deepseek-pro",
+          "provider": "deepseek-account",
+          "fast": false,
           "final": true
         }
       ]
@@ -356,9 +404,12 @@
           "input": 8000,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 260,
           "reasoning": 200,
           "model": "gemini-2.5-pro",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -368,9 +419,12 @@
           "input": 8400,
           "cachedInput": 4096,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 220,
           "reasoning": 0,
           "model": "gemini-2.5-pro",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -393,9 +447,12 @@
           "input": 15000,
           "cachedInput": 12288,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 500,
           "reasoning": 410,
           "model": "gemini-3-pro-preview",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -405,9 +462,12 @@
           "input": 16296,
           "cachedInput": 15000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 800,
           "reasoning": 160,
           "model": "gemini-3-pro-preview",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -417,9 +477,12 @@
           "input": 17000,
           "cachedInput": 16384,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 420,
           "reasoning": 300,
           "model": "gemini-3-pro-preview",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -442,9 +505,12 @@
           "input": 6000,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 220,
           "reasoning": 150,
           "model": "gemini-3-flash-preview",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -467,9 +533,12 @@
           "input": 5000,
           "cachedInput": 4096,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 300,
           "reasoning": 0,
           "model": "gemini-3-flash-preview",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -492,9 +561,12 @@
           "input": 9000,
           "cachedInput": 8192,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 120,
           "reasoning": 40,
           "model": "gemini-2.5-flash",
+          "provider": null,
+          "fast": false,
           "final": true
         },
         {
@@ -504,9 +576,12 @@
           "input": 9300,
           "cachedInput": 9000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 150,
           "reasoning": 0,
           "model": "gemini-2.5-flash",
+          "provider": null,
+          "fast": false,
           "final": true
         }
       ]
@@ -529,9 +604,12 @@
           "input": 9812,
           "cachedInput": 0,
           "cacheWriteInput": 9800,
+          "cacheWrite1hInput": 0,
           "output": 180,
           "reasoning": 0,
           "model": "claude-sonnet-4-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -541,9 +619,12 @@
           "input": 9928,
           "cachedInput": 9800,
           "cacheWriteInput": 120,
+          "cacheWrite1hInput": 0,
           "output": 95,
           "reasoning": 0,
           "model": "claude-sonnet-4-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -566,9 +647,12 @@
           "input": 5200,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 4096,
           "reasoning": 3000,
           "model": "gpt-5.5",
+          "provider": "openai",
+          "fast": false,
           "final": true
         },
         {
@@ -578,9 +662,12 @@
           "input": 5400,
           "cachedInput": 5100,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 410,
           "reasoning": 120,
           "model": "gpt-5.5",
+          "provider": "openai",
+          "fast": false,
           "final": true
         }
       ]
@@ -603,9 +690,12 @@
           "input": 2503,
           "cachedInput": 0,
           "cacheWriteInput": 2500,
+          "cacheWrite1hInput": 0,
           "output": 45,
           "reasoning": 10,
           "model": "claude-haiku-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -615,9 +705,12 @@
           "input": 2502,
           "cachedInput": 2500,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 30,
           "reasoning": 0,
           "model": "claude-haiku-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -640,9 +733,12 @@
           "input": 7006,
           "cachedInput": 0,
           "cacheWriteInput": 7000,
+          "cacheWrite1hInput": 0,
           "output": 140,
           "reasoning": 0,
           "model": "claude-sonnet-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -652,9 +748,12 @@
           "input": 7304,
           "cachedInput": 7000,
           "cacheWriteInput": 300,
+          "cacheWrite1hInput": 0,
           "output": 60,
           "reasoning": 0,
           "model": "claude-sonnet-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -664,9 +763,12 @@
           "input": 7303,
           "cachedInput": 7300,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 85,
           "reasoning": 25,
           "model": "claude-sonnet-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -676,9 +778,12 @@
           "input": 7402,
           "cachedInput": 7400,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 48,
           "reasoning": 0,
           "model": "claude-sonnet-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -701,9 +806,12 @@
           "input": 18003,
           "cachedInput": 0,
           "cacheWriteInput": 18000,
+          "cacheWrite1hInput": 0,
           "output": 420,
           "reasoning": 150,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -713,9 +821,12 @@
           "input": 900,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 40,
           "reasoning": 0,
           "model": "claude-haiku-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -725,9 +836,12 @@
           "input": 18605,
           "cachedInput": 18000,
           "cacheWriteInput": 600,
+          "cacheWrite1hInput": 0,
           "output": 260,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -737,9 +851,12 @@
           "input": 18604,
           "cachedInput": 18600,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 90,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -749,9 +866,12 @@
           "input": 18702,
           "cachedInput": 18700,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 152,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -761,9 +881,12 @@
           "input": 18803,
           "cachedInput": 18800,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 12,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -773,9 +896,12 @@
           "input": 18804,
           "cachedInput": 18800,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 33,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -785,9 +911,12 @@
           "input": 19206,
           "cachedInput": 18900,
           "cacheWriteInput": 300,
+          "cacheWrite1hInput": 0,
           "output": 75,
           "reasoning": 20,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -797,9 +926,12 @@
           "input": 19403,
           "cachedInput": 0,
           "cacheWriteInput": 19400,
+          "cacheWrite1hInput": 0,
           "output": 110,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -809,9 +941,12 @@
           "input": 19902,
           "cachedInput": 19400,
           "cacheWriteInput": 500,
+          "cacheWrite1hInput": 0,
           "output": 340,
           "reasoning": 90,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -858,9 +993,12 @@
           "input": 19403,
           "cachedInput": 19000,
           "cacheWriteInput": 400,
+          "cacheWrite1hInput": 0,
           "output": 310,
           "reasoning": 80,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -883,9 +1021,12 @@
           "input": 9002,
           "cachedInput": 9000,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 120,
           "reasoning": 0,
           "model": "gpt-5.5",
+          "provider": "openai",
+          "fast": false,
           "final": true
         }
       ]
@@ -908,9 +1049,12 @@
           "input": 22004,
           "cachedInput": 0,
           "cacheWriteInput": 22000,
+          "cacheWrite1hInput": 0,
           "output": 380,
           "reasoning": 0,
           "model": "claude-opus-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         },
         {
@@ -920,9 +1064,12 @@
           "input": 1200,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 64,
           "reasoning": 32,
           "model": "gpt-5.5-mini",
+          "provider": "openai",
+          "fast": false,
           "final": true
         }
       ]
@@ -945,9 +1092,12 @@
           "input": 1200,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 90,
           "reasoning": 0,
           "model": "duo-chat-sonnet-5-5",
+          "provider": "gitlab-duo",
+          "fast": false,
           "final": true
         },
         {
@@ -957,9 +1107,12 @@
           "input": 1300,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 20,
           "reasoning": 0,
           "model": "duo-chat-sonnet-5-5",
+          "provider": "gitlab-duo",
+          "fast": false,
           "final": true
         },
         {
@@ -969,9 +1122,12 @@
           "input": 400,
           "cachedInput": 0,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 12,
           "reasoning": 8,
           "model": "gpt-5.5-mini",
+          "provider": "openai",
+          "fast": false,
           "final": true
         },
         {
@@ -981,9 +1137,12 @@
           "input": 2600,
           "cachedInput": 1200,
           "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
           "output": 210,
           "reasoning": 60,
           "model": "claude-sonnet-5-5",
+          "provider": "anthropic",
+          "fast": false,
           "final": true
         }
       ]
@@ -1060,9 +1219,12 @@
             "input": 1204,
             "cachedInput": 1000,
             "cacheWriteInput": 200,
+            "cacheWrite1hInput": 0,
             "output": 400,
             "reasoning": 100,
             "model": "claude-opus-5-5",
+            "provider": "anthropic",
+            "fast": false,
             "final": true
           },
           {
@@ -1072,9 +1234,12 @@
             "input": 1202,
             "cachedInput": 1200,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 150,
             "reasoning": 0,
             "model": "claude-opus-5-5",
+            "provider": "anthropic",
+            "fast": false,
             "final": true
           },
           {
@@ -1084,9 +1249,12 @@
             "input": 5000,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 800,
             "reasoning": 0,
             "model": "claude-haiku-5",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -1108,9 +1276,12 @@
             "input": 503,
             "cachedInput": 0,
             "cacheWriteInput": 500,
+            "cacheWrite1hInput": 0,
             "output": 120,
             "reasoning": 30,
             "model": "claude-sonnet-5-5",
+            "provider": "anthropic",
+            "fast": false,
             "final": true
           }
         ]
@@ -1830,9 +2001,12 @@
             "input": 12000,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 480,
             "reasoning": 300,
             "model": "gemini-3.1-pro-high",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1842,9 +2016,12 @@
             "input": 13900,
             "cachedInput": 12400,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 210,
             "reasoning": 90,
             "model": "gemini-3.1-pro-high-exp-b",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1854,9 +2031,12 @@
             "input": 16000,
             "cachedInput": 14000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 350,
             "reasoning": 200,
             "model": "Gemini 3.1 Pro (High)",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1866,9 +2046,12 @@
             "input": 16900,
             "cachedInput": 16000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 1200,
             "reasoning": 400,
             "model": "gemini-3.1-pro",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -1891,9 +2074,12 @@
             "input": 5000,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 150,
             "reasoning": 100,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -1919,9 +2105,12 @@
             "input": 4000,
             "cachedInput": 1000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 200,
             "reasoning": 64,
             "model": "gemini-3.1-flash-lite",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1931,9 +2120,12 @@
             "input": 4200,
             "cachedInput": 4000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 90,
             "reasoning": 0,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1943,9 +2135,12 @@
             "input": 4500,
             "cachedInput": 4200,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 12,
             "reasoning": 12,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1955,9 +2150,12 @@
             "input": 4500,
             "cachedInput": 4400,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 40,
             "reasoning": 0,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1967,9 +2165,12 @@
             "input": 4550,
             "cachedInput": 4500,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 20,
             "reasoning": 0,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           },
           {
@@ -1979,9 +2180,12 @@
             "input": 4680,
             "cachedInput": 4600,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 30,
             "reasoning": 10,
             "model": "gemini-3.1-flash-b",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -2004,9 +2208,12 @@
             "input": 2500,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 60,
             "reasoning": 0,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -2029,9 +2236,12 @@
             "input": 8600,
             "cachedInput": 8000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 300,
             "reasoning": 120,
             "model": "gemini-3.1-pro-low",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -2066,9 +2276,12 @@
             "input": 700,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 45,
             "reasoning": 30,
             "model": null,
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -2103,9 +2316,12 @@
             "input": 4000,
             "cachedInput": 1000,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 120,
             "reasoning": 40,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
@@ -2128,9 +2344,12 @@
             "input": 800,
             "cachedInput": 0,
             "cacheWriteInput": 0,
+            "cacheWrite1hInput": 0,
             "output": 50,
             "reasoning": 0,
             "model": "gemini-3.1-flash",
+            "provider": null,
+            "fast": false,
             "final": true
           }
         ]
