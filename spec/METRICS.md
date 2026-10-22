@@ -990,7 +990,7 @@ files and complete database reads, in startup order (5; an Antigravity database'
 Per local calendar day (date of `endMs`, `YYYY-MM-DD` in the computer's time zone at computation time) and source:
 `requests`, `input`, `cachedInput`, `cacheWriteInput`, `output`, `reasoning`, `measuredOutput` and `measuredMs`
 (sum of output and widened duration of measured responses, 3.3), `unfinalized` (count), `agents` (distinct agent ids
-with at least one response), and per model `requests` and `output`. The day's average speed is
+with at least one response), and per model `requests`, `output`, `measuredOutput` and `measuredMs` (so a model's average speed can be shown). The day's average speed is
 `measuredOutput / (measuredMs / 1000)`. `peak` is stored only for days observed live: it is the day's overall
 `peakToday` (all sources together), repeated on every source row of that day; a UI shows it only for all sources and
 combines rows with max, never sum.

@@ -17,7 +17,9 @@
       "models": {
         "claude-opus-5-5": {
           "requests": 4,
-          "output": 638
+          "output": 638,
+          "measuredOutput": 630,
+          "measuredMs": 12000
         }
       }
     },
@@ -37,7 +39,9 @@
       "models": {
         "claude-opus-5-5": {
           "requests": 1,
-          "output": 500
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 5000
         }
       }
     },
@@ -57,15 +61,21 @@
       "models": {
         "gpt-5.5": {
           "requests": 2,
-          "output": 1000
+          "output": 1000,
+          "measuredOutput": 1000,
+          "measuredMs": 6500
         },
         "gpt-6.1-sol": {
           "requests": 4,
-          "output": 710
+          "output": 710,
+          "measuredOutput": 710,
+          "measuredMs": 17000
         },
         "gpt-6.1-sol-mini": {
           "requests": 2,
-          "output": 360
+          "output": 360,
+          "measuredOutput": 360,
+          "measuredMs": 6000
         }
       }
     },
@@ -85,11 +95,15 @@
       "models": {
         "deepseek-flash": {
           "requests": 2,
-          "output": 700
+          "output": 700,
+          "measuredOutput": 700,
+          "measuredMs": 6000
         },
         "deepseek-pro": {
           "requests": 1,
-          "output": 240
+          "output": 240,
+          "measuredOutput": 240,
+          "measuredMs": 3000
         }
       }
     },
@@ -109,19 +123,27 @@
       "models": {
         "gemini-2.5-flash": {
           "requests": 2,
-          "output": 270
+          "output": 270,
+          "measuredOutput": 270,
+          "measuredMs": 6480
         },
         "gemini-2.5-pro": {
           "requests": 2,
-          "output": 480
+          "output": 480,
+          "measuredOutput": 220,
+          "measuredMs": 5002
         },
         "gemini-3-flash-preview": {
           "requests": 2,
-          "output": 520
+          "output": 520,
+          "measuredOutput": 520,
+          "measuredMs": 7550
         },
         "gemini-3-pro-preview": {
           "requests": 3,
-          "output": 1720
+          "output": 1720,
+          "measuredOutput": 1720,
+          "measuredMs": 20580
         }
       }
     },
@@ -141,31 +163,45 @@
       "models": {
         "claude-haiku-5": {
           "requests": 3,
-          "output": 115
+          "output": 115,
+          "measuredOutput": 75,
+          "measuredMs": 3200
         },
         "claude-opus-5-5": {
           "requests": 11,
-          "output": 2182
+          "output": 2182,
+          "measuredOutput": 2137,
+          "measuredMs": 37900
         },
         "claude-sonnet-4-5": {
           "requests": 2,
-          "output": 275
+          "output": 275,
+          "measuredOutput": 275,
+          "measuredMs": 7189
         },
         "claude-sonnet-5-5": {
           "requests": 4,
-          "output": 333
+          "output": 333,
+          "measuredOutput": 333,
+          "measuredMs": 10000
         },
         "duo-chat-sonnet-5-5": {
           "requests": 1,
-          "output": 90
+          "output": 90,
+          "measuredOutput": 90,
+          "measuredMs": 8246
         },
         "gpt-5.5": {
           "requests": 3,
-          "output": 4626
+          "output": 4626,
+          "measuredOutput": 4506,
+          "measuredMs": 9500
         },
         "gpt-5.5-mini": {
           "requests": 1,
-          "output": 64
+          "output": 64,
+          "measuredOutput": 0,
+          "measuredMs": 0
         }
       }
     },
@@ -185,15 +221,21 @@
       "models": {
         "claude-haiku-5": {
           "requests": 1,
-          "output": 800
+          "output": 800,
+          "measuredOutput": 800,
+          "measuredMs": 4000
         },
         "claude-opus-5-5": {
           "requests": 2,
-          "output": 550
+          "output": 550,
+          "measuredOutput": 550,
+          "measuredMs": 6000
         },
         "claude-sonnet-5-5": {
           "requests": 1,
-          "output": 120
+          "output": 120,
+          "measuredOutput": 120,
+          "measuredMs": 3000
         }
       }
     },
@@ -213,39 +255,57 @@
       "models": {
         "": {
           "requests": 1,
-          "output": 45
+          "output": 45,
+          "measuredOutput": 45,
+          "measuredMs": 1500
         },
         "Gemini 3.1 Pro (High)": {
           "requests": 1,
-          "output": 350
+          "output": 350,
+          "measuredOutput": 350,
+          "measuredMs": 3000
         },
         "gemini-3.1-flash": {
           "requests": 8,
-          "output": 542
+          "output": 542,
+          "measuredOutput": 470,
+          "measuredMs": 9000
         },
         "gemini-3.1-flash-b": {
           "requests": 1,
-          "output": 30
+          "output": 30,
+          "measuredOutput": 0,
+          "measuredMs": 0
         },
         "gemini-3.1-flash-lite": {
           "requests": 1,
-          "output": 200
+          "output": 200,
+          "measuredOutput": 200,
+          "measuredMs": 2000
         },
         "gemini-3.1-pro": {
           "requests": 1,
-          "output": 1200
+          "output": 1200,
+          "measuredOutput": 1200,
+          "measuredMs": 9000
         },
         "gemini-3.1-pro-high": {
           "requests": 1,
-          "output": 480
+          "output": 480,
+          "measuredOutput": 480,
+          "measuredMs": 3200
         },
         "gemini-3.1-pro-high-exp-b": {
           "requests": 1,
-          "output": 210
+          "output": 210,
+          "measuredOutput": 210,
+          "measuredMs": 2000
         },
         "gemini-3.1-pro-low": {
           "requests": 1,
-          "output": 300
+          "output": 300,
+          "measuredOutput": 300,
+          "measuredMs": 3000
         }
       }
     },
@@ -265,15 +325,21 @@
       "models": {
         "claude-sonnet-5-5": {
           "requests": 1,
-          "output": 210
+          "output": 210,
+          "measuredOutput": 210,
+          "measuredMs": 3800
         },
         "duo-chat-sonnet-5-5": {
           "requests": 1,
-          "output": 20
+          "output": 20,
+          "measuredOutput": 0,
+          "measuredMs": 0
         },
         "gpt-5.5-mini": {
           "requests": 1,
-          "output": 12
+          "output": 12,
+          "measuredOutput": 0,
+          "measuredMs": 0
         }
       }
     }

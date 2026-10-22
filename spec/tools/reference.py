@@ -1911,21 +1911,24 @@ def daily_history(responses, tz=None):
         for f in TOKEN_FIELDS:
             d[f] += r[f]
         iv = interval(r)
+        m = d["models"].setdefault(r.get("model") or "", [0, 0, 0, 0])
+        m[0] += 1
+        m[1] += r["output"]
         if iv is not None and is_final(r):
             d["measuredOutput"] += r["output"]
             d["measuredMs"] += iv[1] - iv[0]
+            m[2] += r["output"]
+            m[3] += iv[1] - iv[0]
         if not is_final(r):
             d["unfinalized"] += 1
         d["agents"].add(agent)
-        m = d["models"].setdefault(r.get("model") or "", [0, 0])
-        m[0] += 1
-        m[1] += r["output"]
     rows = []
     for (date, source), d in sorted(days.items()):
         rows.append(OrderedDict([("date", date), ("source", source)] + [(k, d[k]) for k in (
             "requests", "input", "cachedInput", "cacheWriteInput", "output", "reasoning", "measuredOutput",
             "measuredMs", "unfinalized")] + [("agents", len(d["agents"])),
-                                             ("models", {k: {"requests": v[0], "output": v[1]}
+                                             ("models", {k: {"requests": v[0], "output": v[1], "measuredOutput": v[2],
+                                                             "measuredMs": v[3]}
                                                          for k, v in sorted(d["models"].items())})]))
     return rows
 
