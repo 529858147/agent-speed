@@ -90,7 +90,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Slider Grid.Column="0" VerticalAlignment="Center" MaxWidth="520" HorizontalAlignment="Stretch"
-                        Minimum="100" Maximum="2000" SmallChange="50" LargeChange="200" TickFrequency="50" IsSnapToTickEnabled="True"
+                        Minimum="50" Maximum="2000" SmallChange="50" LargeChange="200" TickFrequency="50" IsSnapToTickEnabled="True"
                         Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
                         AutomationProperties.HelpText="{Binding RedlineText}"
                         Visibility="{Binding IsOutputMetric, Converter={StaticResource Visible}}" />

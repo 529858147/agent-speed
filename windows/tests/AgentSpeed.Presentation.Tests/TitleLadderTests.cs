@@ -37,8 +37,8 @@ public class TitleLadderTests
     public void OutputSliderRedlinesStepBy50()
     {
         var redlines = TitleLadderText.SliderRedlines(SpeedMetric.Output);
-        Assert.Equal(39, redlines.Count);
-        Assert.Equal(100, redlines[0]);
+        Assert.Equal(40, redlines.Count);
+        Assert.Equal(50, redlines[0]);
         Assert.Equal(2000, redlines[^1]);
         Assert.All(redlines.Zip(redlines.Skip(1)), pair => Assert.Equal(50, pair.Second - pair.First, 6));
     }
