@@ -3281,5 +3281,401 @@
     "zh-Hans": "乌克兰格里夫纳",
     "en": "Ukrainian Hryvnia",
     "ja": "ウクライナ・フリヴニャ"
+  },
+  "traffic.title": {
+    "zh-Hant": "網路流量",
+    "zh-Hans": "网络流量",
+    "en": "Network Traffic",
+    "ja": "通信量"
+  },
+  "traffic.machine": {
+    "zh-Hant": "這台電腦",
+    "zh-Hans": "这台电脑",
+    "en": "This Computer",
+    "ja": "このコンピューター"
+  },
+  "traffic.machine.hint": {
+    "zh-Hant": "這台電腦所有網路卡的即時速度，包含所有程式；不含本機回送，VPN 流量只計算一次。",
+    "zh-Hans": "这台电脑所有网卡的实时速度，包含所有程序；不含本机回环，VPN 流量只计算一次。",
+    "en": "Live speed of all of this computer's network adapters, for every program (loopback excluded, VPN traffic counted once).",
+    "ja": "このコンピューターのすべてのネットワークアダプターのリアルタイム速度（全プログラム。ループバックは除外し、VPN の通信は一度だけ数えます）。"
+  },
+  "traffic.pair": {
+    "zh-Hant": "↓ %@ · ↑ %@",
+    "zh-Hans": "↓ %@ · ↑ %@",
+    "en": "↓ %@ · ↑ %@",
+    "ja": "↓ %@ · ↑ %@"
+  },
+  "traffic.includesTools": {
+    "zh-Hant": "含 agent 執行的工具（例如 git、npm）",
+    "zh-Hans": "含 agent 运行的工具（例如 git、npm）",
+    "en": "Includes tools the agents run (such as git and npm)",
+    "ja": "agent が実行するツール（git や npm など）を含みます"
+  },
+  "traffic.excludesTools": {
+    "zh-Hant": "不含 agent 執行的工具",
+    "zh-Hans": "不含 agent 运行的工具",
+    "en": "Excludes tools the agents run",
+    "ja": "agent が実行するツールは含みません"
+  },
+  "traffic.expand": {
+    "zh-Hant": "+%d 個來源",
+    "zh-Hans": "+%d 个来源",
+    "en": "+%d more",
+    "ja": "ほか %d 個のソース"
+  },
+  "traffic.empty": {
+    "zh-Hant": "今天還沒有 agent 的網路流量",
+    "zh-Hans": "今天还没有 agent 的网络流量",
+    "en": "No agent traffic yet today",
+    "ja": "今日はまだ agent の通信がありません"
+  },
+  "traffic.agent.tooltip": {
+    "zh-Hant": "今天的網路流量：%@",
+    "zh-Hans": "今天的网络流量：%@",
+    "en": "Network traffic today: %@",
+    "ja": "今日の通信量：%@"
+  },
+  "traffic.unavailable.short": {
+    "zh-Hant": "無法取得",
+    "zh-Hans": "无法获取",
+    "en": "Unavailable",
+    "ja": "取得できません"
+  },
+  "traffic.unavailable.helperMissing": {
+    "zh-Hant": "要顯示各 agent 的流量，需要先安裝流量輔助服務。",
+    "zh-Hans": "要显示各 agent 的流量，需要先安装流量辅助服务。",
+    "en": "Install the traffic helper to see each agent's traffic.",
+    "ja": "agent ごとの通信量を表示するには、通信量ヘルパーをインストールしてください。"
+  },
+  "traffic.unavailable.helperStopped": {
+    "zh-Hant": "流量輔助服務無法啟動，稍後會自動重試。",
+    "zh-Hans": "流量辅助服务无法启动，稍后会自动重试。",
+    "en": "The traffic helper couldn't start; Agent Speed will try again.",
+    "ja": "通信量ヘルパーを起動できません。自動で再試行します。"
+  },
+  "traffic.unavailable.helperOutdated": {
+    "zh-Hant": "流量輔助服務需要更新才能使用。",
+    "zh-Hans": "流量辅助服务需要更新才能使用。",
+    "en": "The traffic helper needs an update.",
+    "ja": "通信量ヘルパーの更新が必要です。"
+  },
+  "traffic.unavailable.denied": {
+    "zh-Hant": "無法安全連線到流量輔助服務，已停止讀取。",
+    "zh-Hans": "无法安全连接到流量辅助服务，已停止读取。",
+    "en": "Couldn't connect securely to the traffic helper, so it isn't used.",
+    "ja": "通信量ヘルパーに安全に接続できないため、使用を停止しました。"
+  },
+  "traffic.unavailable.sampler": {
+    "zh-Hant": "暫時無法讀取各程式的流量，稍後會自動重試。",
+    "zh-Hans": "暂时无法读取各程序的流量，稍后会自动重试。",
+    "en": "Per-app traffic can't be read right now; Agent Speed will try again.",
+    "ja": "アプリごとの通信量を読み取れません。自動で再試行します。"
+  },
+  "traffic.status": {
+    "zh-Hant": "各 agent 的流量",
+    "zh-Hans": "各 agent 的流量",
+    "en": "Per-Agent Traffic",
+    "ja": "agent ごとの通信量"
+  },
+  "traffic.status.ok": {
+    "zh-Hant": "運作中",
+    "zh-Hans": "运行中",
+    "en": "Working",
+    "ja": "動作中"
+  },
+  "traffic.status.macos": {
+    "zh-Hant": "使用 macOS 內建的 nettop 讀取，不需要額外權限。",
+    "zh-Hans": "使用 macOS 内置的 nettop 读取，无需额外权限。",
+    "en": "Read with macOS's built-in nettop; no extra permission needed.",
+    "ja": "macOS 内蔵の nettop で読み取ります。追加の権限は不要です。"
+  },
+  "traffic.retry": {
+    "zh-Hant": "重試",
+    "zh-Hans": "重试",
+    "en": "Try Again",
+    "ja": "再試行"
+  },
+  "traffic.helper": {
+    "zh-Hant": "流量輔助服務",
+    "zh-Hans": "流量辅助服务",
+    "en": "Traffic Helper",
+    "ja": "通信量ヘルパー"
+  },
+  "traffic.helper.explain": {
+    "zh-Hant": "Windows 只允許系統服務讀取各程式的網路流量。這個小型服務以權限受限的「本機服務」帳戶執行，只統計每個程式收發的位元組數，不讀取內容或連線對象，而且只在 Agent Speed 需要時執行。安裝和移除各需要一次系統管理員確認。",
+    "zh-Hans": "Windows 只允许系统服务读取各程序的网络流量。这个小型服务以权限受限的“本地服务”账户运行，只统计每个程序收发的字节数，不读取内容或连接对象，并且只在 Agent Speed 需要时运行。安装和卸载各需要一次管理员确认。",
+    "en": "Windows lets only system services see how much each program sends and receives. This small helper runs under the restricted Local Service account, counts bytes per program — never content or destinations — and runs only while Agent Speed needs it. Installing and removing it each ask for administrator approval once.",
+    "ja": "Windows では、プログラムごとの送受信量を読み取れるのはシステムサービスだけです。この小さなヘルパーは権限の少ない「ローカル サービス」アカウントで動作し、プログラムごとのバイト数だけを数えます（内容や接続先は読みません）。Agent Speed が必要なときだけ動作します。インストールと削除のときに、それぞれ一度だけ管理者の承認が必要です。"
+  },
+  "traffic.helper.details": {
+    "zh-Hant": "它做了什麼？",
+    "zh-Hans": "它做了什么？",
+    "en": "What does it do?",
+    "ja": "詳しい仕組み"
+  },
+  "traffic.helper.notInstalled": {
+    "zh-Hant": "未安裝",
+    "zh-Hans": "未安装",
+    "en": "Not installed",
+    "ja": "未インストール"
+  },
+  "traffic.helper.idle": {
+    "zh-Hant": "已安裝 · 待命中",
+    "zh-Hans": "已安装 · 待命中",
+    "en": "Installed · on standby",
+    "ja": "インストール済み · 待機中"
+  },
+  "traffic.helper.running": {
+    "zh-Hant": "執行中 · 版本 %@",
+    "zh-Hans": "运行中 · 版本 %@",
+    "en": "Running · version %@",
+    "ja": "実行中 · バージョン %@"
+  },
+  "traffic.helper.outdated": {
+    "zh-Hant": "需要更新（已安裝 %@，可更新至 %@）",
+    "zh-Hans": "需要更新（已安装 %@，可更新至 %@）",
+    "en": "Update needed (installed %@, available %@)",
+    "ja": "更新が必要です（インストール済み %@、最新 %@）"
+  },
+  "traffic.helper.error": {
+    "zh-Hant": "發生錯誤：%@",
+    "zh-Hans": "发生错误：%@",
+    "en": "Error: %@",
+    "ja": "エラー：%@"
+  },
+  "traffic.helper.install": {
+    "zh-Hant": "安裝輔助服務…",
+    "zh-Hans": "安装辅助服务…",
+    "en": "Install Helper…",
+    "ja": "ヘルパーをインストール…"
+  },
+  "traffic.helper.update": {
+    "zh-Hant": "更新輔助服務…",
+    "zh-Hans": "更新辅助服务…",
+    "en": "Update Helper…",
+    "ja": "ヘルパーを更新…"
+  },
+  "traffic.helper.remove": {
+    "zh-Hant": "移除輔助服務…",
+    "zh-Hans": "卸载辅助服务…",
+    "en": "Remove Helper…",
+    "ja": "ヘルパーを削除…"
+  },
+  "traffic.helper.removeConfirm": {
+    "zh-Hant": "要移除流量輔助服務嗎？",
+    "zh-Hans": "要卸载流量辅助服务吗？",
+    "en": "Remove the traffic helper?",
+    "ja": "通信量ヘルパーを削除しますか？"
+  },
+  "traffic.helper.removeDetail": {
+    "zh-Hant": "之後只會記錄整台電腦的流量，已記錄的歷史會保留。移除需要一次系統管理員確認。",
+    "zh-Hans": "之后只会记录整台电脑的流量，已记录的历史会保留。卸载需要一次管理员确认。",
+    "en": "Afterwards only the whole computer's traffic is measured; recorded history is kept. Removing asks for administrator approval once.",
+    "ja": "以降はコンピューター全体の通信量だけを計測します。記録済みの履歴は残ります。削除には管理者の承認が一度必要です。"
+  },
+  "traffic.helper.uacNote": {
+    "zh-Hant": "接下來 Windows 會詢問是否允許「Agent Speed Traffic Helper」變更這台電腦。發行者會顯示為「未知」，因為目前的版本沒有數位簽章。",
+    "zh-Hans": "接下来 Windows 会询问是否允许“Agent Speed Traffic Helper”更改这台电脑。发布者会显示为“未知”，因为当前版本没有数字签名。",
+    "en": "Windows will now ask whether to let “Agent Speed Traffic Helper” make changes. The publisher shows as unknown because releases aren't code-signed yet.",
+    "ja": "続いて Windows が「Agent Speed Traffic Helper」による変更を許可するか確認します。現在のリリースにはコード署名がないため、発行元は「不明」と表示されます。"
+  },
+  "traffic.helper.installing": {
+    "zh-Hant": "等待系統管理員確認…",
+    "zh-Hans": "等待管理员确认…",
+    "en": "Waiting for administrator approval…",
+    "ja": "管理者の承認を待っています…"
+  },
+  "traffic.helper.installed": {
+    "zh-Hant": "已安裝，開始記錄各 agent 的流量。",
+    "zh-Hans": "已安装，开始记录各 agent 的流量。",
+    "en": "Installed. Per-agent traffic is now measured.",
+    "ja": "インストールしました。agent ごとの通信量の計測を始めます。"
+  },
+  "traffic.helper.removed": {
+    "zh-Hant": "已移除流量輔助服務。",
+    "zh-Hans": "已卸载流量辅助服务。",
+    "en": "The traffic helper was removed.",
+    "ja": "通信量ヘルパーを削除しました。"
+  },
+  "traffic.helper.cancelled": {
+    "zh-Hant": "已取消，沒有變更任何設定。",
+    "zh-Hans": "已取消，没有更改任何设置。",
+    "en": "Cancelled. Nothing was changed.",
+    "ja": "キャンセルしました。何も変更されていません。"
+  },
+  "traffic.a11y.chart": {
+    "zh-Hant": "過去一分鐘的網路速度：下載最高每秒 %@，上傳最高每秒 %@",
+    "zh-Hans": "过去一分钟的网络速度：下载最高每秒 %@，上传最高每秒 %@",
+    "en": "Network speed over the last minute: download peaked at %@ per second, upload at %@ per second",
+    "ja": "過去 1 分間のネットワーク速度：ダウンロード最大 毎秒 %@、アップロード最大 毎秒 %@"
+  },
+  "traffic.a11y.totals": {
+    "zh-Hant": "今天下載 %@，上傳 %@",
+    "zh-Hans": "今天下载 %@，上传 %@",
+    "en": "%@ downloaded and %@ uploaded today",
+    "ja": "今日のダウンロード %@、アップロード %@"
+  },
+  "a11y.orb.traffic": {
+    "zh-Hant": "下載每秒 %@，上傳每秒 %@",
+    "zh-Hans": "下载每秒 %@，上传每秒 %@",
+    "en": "downloading %@ per second, uploading %@ per second",
+    "ja": "ダウンロード 毎秒 %@、アップロード 毎秒 %@"
+  },
+  "orbs.traffic": {
+    "zh-Hant": "網路速度",
+    "zh-Hans": "网络速度",
+    "en": "Network Speed",
+    "ja": "ネットワーク速度"
+  },
+  "orbs.traffic.sources": {
+    "zh-Hant": "這個懸浮窗的 agent",
+    "zh-Hans": "此悬浮窗的 agent",
+    "en": "This Orb's Agents",
+    "ja": "このオーブの agent"
+  },
+  "orbs.traffic.machine": {
+    "zh-Hant": "整台電腦",
+    "zh-Hans": "整台电脑",
+    "en": "Whole Computer",
+    "ja": "コンピューター全体"
+  },
+  "orbs.traffic.off": {
+    "zh-Hant": "不顯示",
+    "zh-Hans": "不显示",
+    "en": "Off",
+    "ja": "表示しない"
+  },
+  "orbs.traffic.hint": {
+    "zh-Hant": "有流量時才在懸浮窗上顯示下載與上傳速度。",
+    "zh-Hans": "有流量时才在悬浮窗上显示下载与上传速度。",
+    "en": "Shows download and upload speed on the orb while there is traffic.",
+    "ja": "通信があるときだけ、オーブにダウンロードとアップロードの速度を表示します。"
+  },
+  "settings.traffic": {
+    "zh-Hant": "網路流量",
+    "zh-Hans": "网络流量",
+    "en": "Network Traffic",
+    "ja": "通信量"
+  },
+  "settings.traffic.enabled": {
+    "zh-Hant": "記錄網路流量",
+    "zh-Hans": "记录网络流量",
+    "en": "Measure network traffic",
+    "ja": "通信量を計測"
+  },
+  "settings.traffic.enabled.hint": {
+    "zh-Hant": "只計算位元組數，不檢查任何內容，也不記錄連線對象；資料只存在這台電腦。",
+    "zh-Hans": "只计算字节数，不检查任何内容，也不记录连接对象；数据只保存在这台电脑。",
+    "en": "Counts bytes only — never content or destinations — and keeps the numbers on this computer.",
+    "ja": "バイト数だけを数え、内容や接続先は一切記録しません。データはこのコンピューターにだけ保存されます。"
+  },
+  "settings.traffic.includeTools": {
+    "zh-Hant": "包含 agent 執行的工具",
+    "zh-Hans": "包含 agent 运行的工具",
+    "en": "Include tools the agents run",
+    "ja": "agent が実行するツールを含める"
+  },
+  "settings.traffic.includeTools.hint": {
+    "zh-Hant": "例如 agent 執行 npm install、git clone 或 curl 時的下載。只改變顯示方式，歷史兩種都會保存。",
+    "zh-Hans": "例如 agent 运行 npm install、git clone 或 curl 时的下载。只改变显示方式，历史两种都会保存。",
+    "en": "Such as downloads from npm install, git clone or curl run by an agent. This only changes what is shown; the history keeps both.",
+    "ja": "agent が実行した npm install、git clone、curl などのダウンロードです。表示だけが変わり、履歴には両方が保存されます。"
+  },
+  "settings.traffic.unit": {
+    "zh-Hant": "速度單位",
+    "zh-Hans": "速度单位",
+    "en": "Speed Unit",
+    "ja": "速度の単位"
+  },
+  "settings.traffic.unit.bytes": {
+    "zh-Hant": "位元組（MB/s）",
+    "zh-Hans": "字节（MB/s）",
+    "en": "Bytes (MB/s)",
+    "ja": "バイト（MB/s）"
+  },
+  "settings.traffic.unit.bits": {
+    "zh-Hant": "位元（Mb/s）",
+    "zh-Hans": "比特（Mb/s）",
+    "en": "Bits (Mb/s)",
+    "ja": "ビット（Mb/s）"
+  },
+  "settings.bar.traffic": {
+    "zh-Hant": "顯示網路速度",
+    "zh-Hans": "显示网络速度",
+    "en": "Show network speed",
+    "ja": "ネットワーク速度を表示"
+  },
+  "settings.bar.traffic.off": {
+    "zh-Hant": "不顯示",
+    "zh-Hans": "不显示",
+    "en": "Off",
+    "ja": "表示しない"
+  },
+  "settings.bar.traffic.machine": {
+    "zh-Hant": "整台電腦",
+    "zh-Hans": "整台电脑",
+    "en": "Whole computer",
+    "ja": "コンピューター全体"
+  },
+  "settings.bar.traffic.agents": {
+    "zh-Hant": "只看 agent",
+    "zh-Hans": "只看 agent",
+    "en": "Agents only",
+    "ja": "agent のみ"
+  },
+  "history.chart.traffic": {
+    "zh-Hant": "網路流量",
+    "zh-Hans": "网络流量",
+    "en": "Traffic",
+    "ja": "通信量"
+  },
+  "history.table.traffic": {
+    "zh-Hant": "網路",
+    "zh-Hans": "网络",
+    "en": "Network",
+    "ja": "通信量"
+  },
+  "history.traffic.notRecorded": {
+    "zh-Hant": "這天還沒有開始記錄網路流量。",
+    "zh-Hans": "这天还没有开始记录网络流量。",
+    "en": "Network traffic wasn't recorded yet on this day.",
+    "ja": "この日はまだ通信量を記録していませんでした。"
+  },
+  "history.traffic.since": {
+    "zh-Hant": "網路流量自 %@ 開始記錄",
+    "zh-Hans": "网络流量自 %@ 开始记录",
+    "en": "Network traffic recorded since %@",
+    "ja": "通信量は %@ から記録しています"
+  },
+  "history.traffic.partial": {
+    "zh-Hant": "只記錄了 %@（Agent Speed 執行期間）",
+    "zh-Hans": "只记录了 %@（Agent Speed 运行期间）",
+    "en": "Recorded for %@ only (while Agent Speed was running)",
+    "ja": "記録は %@ のみ（Agent Speed の実行中）"
+  },
+  "history.traffic.tools": {
+    "zh-Hant": "其中工具 %@",
+    "zh-Hans": "其中工具 %@",
+    "en": "Tools: %@",
+    "ja": "うちツール %@"
+  },
+  "history.traffic.machine": {
+    "zh-Hant": "這台電腦總計 %@",
+    "zh-Hans": "这台电脑总计 %@",
+    "en": "This computer: %@",
+    "ja": "このコンピューター合計 %@"
+  },
+  "history.clear.traffic": {
+    "zh-Hant": "網路流量的歷史也會一起清除，而且無法從日誌重建。",
+    "zh-Hans": "网络流量的历史也会一起清除，且无法从日志重建。",
+    "en": "Network traffic history is cleared too and can't be rebuilt from logs.",
+    "ja": "通信量の履歴も消去され、ログから再構築することはできません。"
+  },
+  "privacy.traffic": {
+    "zh-Hant": "網路流量：Agent Speed 只在本機計算各程式收發的位元組數，從不讀取內容、網址或連線對象，也不會傳送到任何地方。",
+    "zh-Hans": "网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象，也不会发送到任何地方。",
+    "en": "Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only. It never reads content, addresses or destinations, and sends nothing anywhere.",
+    "ja": "通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数えます。内容・アドレス・接続先は一切読まず、どこにも送信しません。"
   }
 }

@@ -437,6 +437,8 @@ OKLab L, stepped to ≥ 4.5:1 against the body); *hot* is `mix(heat(h), #FFF7D6,
     Off, Reduce Motion, `minimal` and S < 80 (the text simply updates).
   - Readout text is always drawn above every effect. Particles that pass behind it fade to 35 % inside the *readout
     zone* (an ellipse 0.30 S × 0.19 S around `c + (0, 0.07 S)`, Gaussian falloff) so it never competes with them.
+- **Traffic readout** (optional, per orb): download and upload speed in two small lines above the value (`needle`:
+  inside the hub, below it), section 10.
 - **Agent dots**: section 2, layer 6, at the style's position; only the orb's own agents (2b). None in `minimal`.
 - **Response pulse** (`responseCompleted` of the orb's sources, 2b): the shockwave of section 2, layer 7, for every
   style except `minimal`, plus the style's accent below. Pulses toggle: Settings → Effects → Response pulses.
@@ -820,7 +822,8 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
       "redlineOutput": null,
       "redlineTotal": null,
       "titleTheme": null,
-      "unit": "tokens"
+      "unit": "tokens",
+      "traffic": "sources"
     }
   ],
   "layouts": {
@@ -841,6 +844,7 @@ Persisted as one JSON value in the settings store (key `orbs`), written atomical
 | `visible` | Hides one orb without removing it. |
 | `redlineOutput`, `redlineTotal` | `null` = the General redline of that metric; otherwise this orb's redline (same ranges). Heat, tiers and titles of the orb use it. |
 | `unit` | `"tokens"` (tok/s, default) or `"cost"` (the money unit of section 9); unknown → `"tokens"`. Copied by Add, Duplicate and Split. Heat, tiers and titles always follow tokens. |
+| `traffic` | `"sources"` (default: the traffic of the orb's own sources), `"machine"` (the whole computer) or `"off"`; absent (orbs saved by older builds) → `"sources"`, unknown → `"off"`. Copied by Add, Duplicate and Split; Merge keeps the target's. Older builds ignore it. Section 10. |
 | `titleTheme` | `null` = the General title theme; otherwise a preset id or a custom set id (section 1, Title themes) naming this orb's titles, idle label and accessibility label. Deleting the custom set it names replaces it with that set's base preset (undo restores it); an unknown id counts as `null`. Added in this version without a format change: older builds ignore it. |
 | `layouts` | Positions per **display arrangement**: the key is the sorted list of connected display keys (macOS display UUID; Windows monitor device ID) joined with `+`. Each entry uses today's position record (edge-docked distance or fraction of the usable area, per axis) on the named display. At most 16 arrangements are kept (least recently used dropped). |
 
@@ -942,7 +946,8 @@ column as submenu chevrons, so checked and unchecked items never shift the text:
    tracked; unavailable ones show their status in secondary text and stay selectable. Unchecking the last tracked source
    is disabled (`orbs.sources.lastOne`). Checking `orbs.sources.all` replaces the set; checking a source on an
    all-sources orb makes the set that single source. It is followed by `orbs.unit` ▸ `orbs.unit.tokens` /
-   `orbs.unit.cost` (section 9).
+   `orbs.unit.cost` (section 9) and `orbs.traffic` ▸ `orbs.traffic.sources` / `orbs.traffic.machine` /
+   `orbs.traffic.off` (section 10).
 4. `menu.size` ▸ `menu.size.small` / `.medium` / `.large` (112 / 148 / 196; `minimal` sizes below 96 are set in
    Settings).
 5. `menu.effects` ▸ Off / Soft / Standard / Max (global).
@@ -1011,6 +1016,8 @@ Glanceable and calm; it must never jitter in width.
 - Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting). With `settings.liveUnit` set to money the value
   is the live cost rate and the unit `US$/s` (section 9).
 - Display modes (setting): glyph + value (default), value only, glyph only.
+- Network speed (optional, `settings.bar.traffic`, default off): a fixed-width two-line `↓` / `↑` block after the value
+  (section 10).
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.
 - The widget follows the system/taskbar light or dark theme for text; the glyph keeps heat colors.
 
@@ -1052,7 +1059,9 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
 5. **Today** — 2×2 metric grid: 輸出, 輸入 (含快取), 請求, 平均速度; plus 今日峰值 with time and 今日費用 (section 9). The
    hero's value follows `settings.liveUnit` (section 9). The section header
    carries a small "歷史" text button (clock glyph) that opens the Usage History window for all sources.
-6. **Footer** — floating orb toggle, metric info button (ⓘ explaining the measurement in one paragraph), settings,
+6. **Network** (`traffic.title`, while traffic measuring is on) — this computer's live speed, a 60 s sparkline and
+   today's traffic per source; agents' rows gain their traffic (section 10).
+7. **Footer** — floating orb toggle, metric info button (ⓘ explaining the measurement in one paragraph), settings,
    quit.
 
 Metric explanation text (localized):
@@ -1105,6 +1114,9 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
 the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
 spinner. All numbers and dates follow the selected language; weeks start per locale.
+
+Network traffic adds a third chart metric, a table column, tooltip lines and CSV columns, from the day measuring began
+(section 10).
 
 ## 4c. Hero vehicle
 
@@ -1499,6 +1511,8 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 - **特效 Effects** — Intensity (Off / Soft / Standard / Max), Celebrate new peaks, Response pulses,
   **Preview effects** button: runs the demo driver for 20 s sweeping through every tier.
 - **費用 Cost** — currency, live value unit, subscription marks, price table status (section 9).
+- **網路流量 Network Traffic** — measuring switch, tools, speed unit, menu bar / taskbar speed and the per-agent
+  measurement status; on Windows the optional helper service (section 10).
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
   Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
   - omp: one row. The path is the default sessions root (METRICS 2); the status counts the sessions of the default
@@ -1510,7 +1524,8 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
     read (METRICS 4.8) and shows `source.folderMissing`. Caption `settings.sources.antigravityHint`.
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
   conversation content is never stored or displayed. With the cost feature: `privacy.statement` and the Network group
-  with the master switch (section 9, `spec/NETWORK.md`).
+  with the master switch (section 9, `spec/NETWORK.md`). With traffic measuring: `privacy.traffic` follows
+  (section 10).
 
 All settings apply live without restart and persist immediately.
 
@@ -1641,6 +1656,7 @@ not.
 - Respect Reduce Motion, Reduce Transparency (solid body instead of blur), Increase Contrast (stronger strokes),
   and high-contrast themes on Windows.
 - Text contrast ≥ 4.5:1 for all secondary text.
+- Network rates and totals are read as words, never as arrows (`a11y.orb.traffic`, section 10).
 
 ## 8. Localization
 
@@ -1853,3 +1869,188 @@ price and rate controls are disabled and show `settings.network.offHint`.
 - Every amount reads with the currency's name (`12.34 美元`); `≥` reads as `a11y.orb.costAtLeast`, `–` as
   `cost.unknown`. Nothing relies on color.
 - The currency list is a standard list with a search field; each row reads `code, name`.
+
+## 10. Network traffic
+
+Agent Speed shows how fast this computer uses the network and how much of it the agents use: live download and upload
+speed, today's bytes per source and per agent, and a daily history from the day measuring began. Numbers come from
+METRICS 10; the optional Windows helper is `spec/WINDOWS-SERVICE.md`.
+
+### Principles
+
+- **A quieter second instrument.** Traffic never drives heat, the gauge, tiers, titles, sparks, peaks, new-peak
+  celebrations, pulses or the hero vehicle. It uses secondary typography and neutral colors; source colors appear only
+  where sources are listed.
+- **Bytes only, said plainly.** Settings and About say once that only byte counts are measured, on this computer.
+- **Unknown is never zero.** When agent traffic cannot be measured (Windows without the helper, a failed sampler, days
+  before measuring began) the value is `–` with the reason, never `0`.
+- **Two scopes, always named.** This computer (`traffic.machine`) is everything on the network hardware; agent values
+  are the agents' own processes plus, by default, the tools they run (`traffic.includesTools`).
+
+### Formatting
+
+- Numbers and units: METRICS 10.11 (`512 B/s`, `1.28 KB/s`, `12.4 MB/s`, `48.2 MB`, `3.10 GB`; bits: `10.0 Mb/s`).
+- Direction: `↓` download, `↑` upload, download always first. In running text a pair is `traffic.pair`
+  (`↓ 48.2 MB · ↑ 3.10 MB`); in native text the arrows are the characters U+2193 and U+2191 in the secondary color.
+- **Fixed cells** wherever a rate updates in place (orb, menu bar, dashboard trailing values): the number is
+  right-aligned in a cell the width of `8.88` with tabular digits, the unit left-aligned in a cell the width of `MB/s`
+  (bits: `Mb/s`), so a readout never changes width or position when values or units change.
+- `settings.traffic.unit`: bytes (default) or bits, for rates only; totals are always bytes.
+
+### Floating orb readout
+
+Each orb has a `traffic` setting (2b data model): `"sources"` — the traffic of the orb's own sources, like everything
+else an orb shows (2b), with tools per `includeTools` — `"machine"` — the whole computer, for a desktop network meter
+— or `"off"`. **Default `"sources"`** for new orbs and for orbs migrated from earlier versions: the readout appears
+only while those agents use the network, so an idle orb looks exactly as before. Prototyped (2026-10-22) for every
+style in both appearances at 112, 148 and 196 pt.
+
+**Form**: two lines, download over upload, each `arrow · number · unit` in fixed cells; the two lines share their left
+edge (a tiny table) and the block is centered on the orb. Rejected after prototyping: one line above the value (wider
+than every style's free area at the 7 pt floor; it ran into the LED arc), two fields flanking the agent dots in the
+bottom gap (no room beside six dots, crowds the disc edge, collides with the reactor rings), and two micro arcs at the
+bottom edge (pretty but unreadable without hovering).
+
+| Style | Placement | Baseline of the line nearest the value | Text size `t` | Drawn when a line fits in |
+| --- | --- | --- | --- | --- |
+| `led` | above the value, ↑ line nearest | c − 0.190 S | max(7 pt, 0.050 S) | 0.44 S |
+| `liquid` | as `led` | c − 0.190 S | max(7 pt, 0.050 S) | 0.44 S |
+| `reactor` | above the value inside the core window | c − 0.148 S | max(7 pt, 0.046 S) | 0.32 S |
+| `needle` | inside the hub below the value, ↓ line nearest | c + 0.108 S | max(7 pt, 0.046 S) | 0.285 S |
+| `minimal` | above the value | c − 0.185 S | max(7 pt, 0.054 S) | 0.50 S |
+
+- **Line**: arrow (vector glyph from the atlas, 0.50 t wide, 0.66 t tall, stroke `max(0.9 pt, 0.11 t)`, round caps) ·
+  gap 0.16 t · number (weight 600, tabular, right-aligned in the `8.88` cell) · gap 0.16 t · unit (weight 500, size
+  0.82 t, left-aligned in the `MB/s` cell). Line pitch 1.32 t. A line is ≈ 5.6 t wide (39 pt at 7 pt), so the readout
+  shows from S ≈ 96 in `led`, `liquid` and `minimal`, from S ≈ 122 in `reactor` and from S ≈ 137 in `needle`
+  (computed per size with the platform font, never truncated or shrunk below 7 pt); below that, and in thumbnails, it
+  is not drawn.
+- **`needle`**: while the readout is enabled and fits, the unit `tok/s` leaves the hub and is printed on the dial face
+  above it — baseline c − 0.262 S, max(7 pt, 0.046 S), weight 500, the secondary token at 75 %, tracking +0.4 —
+  drawn under the graduations and the needle like the legend of a real tachometer. It stays there while the readout is
+  quiet, so nothing moves when traffic comes and goes.
+- **Colors**: number = the value token at 80 % (dark white 78 %, light `#0B0D12` 76 %); arrow and unit = the unit /
+  secondary token (white 50 % / black 50 %). `liquid` below its surface uses the split rule of 2a.3 layer 10 (number
+  white 94 %, unit 72 %, black 55 % shadow σ 0.015 S in dark; ink 88 % / 62 % in light). Increase Contrast: number
+  92 %, unit 70 %. Windows high contrast: the theme's text and gray-text colors. No glow, lean, jitter or odometer.
+- **Quiet rule**: visible while the shown `↓ + ↑` rate is at least 1 KB/s; after 10 s below it fades out (0.6 s); it
+  fades in (0.25 s) when traffic returns. The space stays reserved, so the value never moves.
+- **Updates**: once per second with each sample (METRICS 10.7); characters are replaced in their cells, no animation.
+- **New-peak pill**: in `led`, `liquid`, `reactor` and `minimal` the pill appears where the readout is; the readout
+  fades out (0.15 s) for the pill's 1.8 s and back.
+- **Hover**: unchanged (the title crossfades to `today.summary`; the readout stays).
+- **Frame policy** (2a): a value change renders one frame of an otherwise static orb (at most one per second); fades
+  render at 30 fps for their duration; a quiet readout draws nothing. Budgets unchanged.
+- **Unavailable**: in `"sources"` mode without per-process data (Windows without the helper, a failed sampler) the
+  readout is not drawn and the context-menu item shows `traffic.unavailable.short`; Settings explains. With
+  `settings.traffic.enabled` off the readout is never drawn and the menu item is disabled.
+- **Controls**: context menu `orbs.traffic` ▸ `orbs.traffic.sources` / `orbs.traffic.machine` / `orbs.traffic.off`
+  (check on the current one), placed after `orbs.unit`; the same submenu in the quick menu's per-orb submenu; Settings
+  → 懸浮窗 → orb editor: `orbs.traffic` popup under the unit control with the caption `orbs.traffic.hint`. Add,
+  Duplicate and Split copy it; Merge keeps the target's.
+- **Accessibility**: while the readout is visible the orb's label adds `a11y.orb.traffic` (`下載每秒 12.4 MB，上傳每秒
+  186 KB`), within the label's 1-second update limit.
+
+### Menu bar and taskbar
+
+`settings.bar.traffic` (in 選單列 / 工作列 and in 網路流量): `settings.bar.traffic.off` (default),
+`settings.bar.traffic.machine`, `settings.bar.traffic.agents`. When on, a block follows the value after an 8 pt gap:
+two lines, `↓ 1.28 MB/s` over `↑ 64.0 KB/s`, 9 pt (menu bar) / 10 px (taskbar), weight 500, tabular, numbers in the
+label color at 85 %, arrows and units in the secondary color, fixed cells — so the item's width never changes with the
+values and section 3's width rule is untouched. It stays visible at `0 B/s` (a system meter is expected to stay).
+Display mode "glyph only" hides it. Accessibility and the Windows tooltip add `a11y.orb.traffic`.
+
+### Dashboard
+
+A section **Network** (`traffic.title`) between Today and the footer, while `settings.traffic.enabled` is on:
+
+1. **Header**: the title in the section-header style and, trailing, this computer's live rates
+   (`↓ 1.28 MB/s  ↑ 64.0 KB/s`, 13 pt, tabular, secondary, fixed cells); tooltip `traffic.machine.hint`.
+2. **Sparkline**: the last 60 s of this computer's traffic, full width, 28 pt tall, mirrored — download as an area
+   above a hairline midline (label color, fill 16 %, 1 pt line 55 %), upload below it (fill 10 %, line 40 %). One
+   linear scale for both, its top the largest value of the window rounded up to a 1-2-5 step (at least 10 KB/s);
+   a scale change eases over 0.3 s (Reduce Motion: jumps). Redrawn once per second; hover or drag shows a crosshair
+   with the time and both rates. Accessibility: an image labelled `traffic.a11y.chart`.
+3. **Source rows**: sources with traffic today or now, sorted by today's ↓ + ↑, up to 3 (`traffic.expand` shows the
+   rest in place): colored dot, name, secondary line today's `traffic.pair`, and trailing the live rates as two stacked
+   11 pt lines (`↓ 24.0 KB/s` / `↑ 1.20 KB/s`, fixed cells; a direction below 0.5 KB/s shows the tertiary `–`). A row
+   opens the Usage History window with the traffic metric and that source selected.
+4. **Caption** (11 pt, tertiary): `traffic.includesTools` or `traffic.excludesTools`. When agent traffic is
+   unavailable the rows are replaced by the reason (`traffic.unavailable.helperMissing`, `.helperStopped`,
+   `.helperOutdated`, `.denied`, `.sampler`) and, on Windows, a borderless button (`traffic.helper.install` or
+   `traffic.helper.update`) that opens Settings → 網路流量 — never the administrator prompt itself. No traffic today:
+   `traffic.empty`.
+
+**Agents** (section 4.4): when an agent has attributed traffic today (METRICS 10.6, tools per the setting), its
+secondary line ends with ` · ↓ 2.10 MB`; the row's tooltip is `traffic.agent.tooltip` with both directions. Agents whose
+traffic could only be assigned to their source show nothing.
+
+### Usage history
+
+- **Chart**: the metric control gains a third segment, `history.chart.traffic`. Daily bars are mirrored: download above
+  the axis, stacked by source in source colors (one source: its color), upload below the axis in the same colors at
+  55 %. With all sources, a hairline outline bar behind each day shows this computer's total, so the agents' share of
+  all traffic is visible. The speed line and right axis are hidden; the left axis uses METRICS 10.11. Days before
+  `trafficSince` show a faint hatched band labelled `history.traffic.notRecorded`; today is hatched as usual.
+- **Tooltip card**: a traffic line (`traffic.pair`), `history.traffic.tools` when tools are included,
+  `history.traffic.machine`, and `history.traffic.partial` with the recorded time when the day is partial.
+- **Table**: column `history.table.traffic` after the cost column: `traffic.pair`, sorted by ↓ + ↑; `–` with the
+  tooltip `history.traffic.notRecorded` before measuring began; the partial tooltip on partial days; copy row includes
+  it. Single-day breakdowns size the bars by ↓ + ↑ when the traffic metric is selected.
+- **Summary**: no new card; with the traffic metric the chart header shows the range total (`traffic.pair`).
+- **Footer**: when the range starts before `trafficSince`, the left side adds `history.traffic.since`.
+- **CSV**: every source row adds `traffic_rx_bytes`, `traffic_tx_bytes`, `traffic_rx_tools_bytes`,
+  `traffic_tx_tools_bytes` (empty before measuring began); each date adds a row with `source = machine` carrying only
+  `traffic_rx_bytes` and `traffic_tx_bytes`.
+- **Clear history**: the confirmation adds `history.clear.traffic` when traffic history exists.
+
+### Settings → 網路流量 (Network Traffic)
+
+A pane titled `settings.traffic` between 費用 and 資料來源, the platform's grouped form like the other panes:
+
+1. `settings.traffic.enabled` (default on), caption `settings.traffic.enabled.hint`.
+2. `settings.traffic.includeTools` (default on), caption `settings.traffic.includeTools.hint`.
+3. `settings.traffic.unit`: `settings.traffic.unit.bytes` | `settings.traffic.unit.bits`.
+4. `settings.bar.traffic` (the same control as in 選單列 / 工作列).
+5. **`traffic.status`** group:
+   - macOS: `traffic.status.ok` with the caption `traffic.status.macos`; after a failure the reason
+     (`traffic.unavailable.sampler`) and a `traffic.retry` button.
+   - Windows: header `traffic.helper`; a status line with a small dot (green running, gray standby or not installed,
+     amber outdated, red error — always with its text): `traffic.helper.notInstalled`, `traffic.helper.idle`,
+     `traffic.helper.running`, `traffic.helper.outdated`, `traffic.helper.error`. Below it `traffic.helper.explain`
+     (11 pt secondary, always visible) and the link `traffic.helper.details` (opens `spec/WINDOWS-SERVICE.md` on
+     GitHub). One primary button with the Windows shield icon: `traffic.helper.install` or `traffic.helper.update`; when
+     installed, a destructive text button `traffic.helper.remove` (asks `traffic.helper.removeConfirm` /
+     `traffic.helper.removeDetail`). Pressing install or update first shows `traffic.helper.uacNote` inline with
+     `traffic.helper.installing` and a small progress indicator, then the administrator prompt appears. Results replace
+     the note inline: `traffic.helper.installed`, `traffic.helper.removed`, `traffic.helper.cancelled` (secondary, not
+     red), or `traffic.helper.error`.
+
+Everything applies live; turning measuring off stops the sampler and the helper connection at once.
+
+### About and privacy
+
+- About shows `privacy.traffic` as a second paragraph under `privacy.statement`.
+- README privacy sections add, when the feature ships:
+  - English: "Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only. It
+    never reads content, addresses or destinations, and sends nothing anywhere. On Windows, per-agent traffic needs an
+    optional helper service that runs as the restricted Local Service account and only counts bytes per process; it is
+    installed and removed with one administrator prompt each."
+  - 繁體中文：「網路流量：Agent Speed 只在本機計算各程式收發的位元組數，從不讀取內容、網址或連線對象，也不會傳送到任何地方。在
+    Windows 上，要顯示各 agent 的流量需要安裝選用的輔助服務；它以權限受限的「本機服務」帳戶執行，只統計每個程式的位元組數，安裝和
+    移除各需要一次系統管理員確認。」
+  - 简体中文：「网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象，也不会发送到任何地方。在
+    Windows 上，要显示各 agent 的流量需要安装可选的辅助服务；它以权限受限的“本地服务”账户运行，只统计每个程序的字节数，安装和
+    卸载各需要一次管理员确认。」
+  - 日本語：「通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数えます。内容・アドレス・接続先
+    は一切読まず、どこにも送信しません。Windows で agent ごとの通信量を表示するには、任意のヘルパーサービスが必要です。権限の
+    少ない「ローカル サービス」アカウントで動作し、プロセスごとのバイト数だけを数えます。インストールと削除のときに、それぞれ一度
+    だけ管理者の承認が必要です。」
+
+### Accessibility
+
+- Rates and totals are read as words (`a11y.orb.traffic`, `traffic.a11y.totals`); arrows are never read; units are
+  read as written (KB, MB).
+- The sparkline is an image labelled `traffic.a11y.chart`; the history table is the text equivalent of the chart.
+- Status dots always have text; nothing relies on color.
+- Reduce Motion: the readout's fades become instant; scale changes jump.

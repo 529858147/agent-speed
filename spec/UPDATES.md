@@ -84,6 +84,8 @@ Windows:
   If anything fails after the rename, rename the old exe back.
 - The new process waits (≤ 10 s) for `--wait-pid` to exit before taking the single-instance mutex, deletes
   `AgentSpeed.exe.old` best-effort, and shows `update.done`.
+- The optional traffic helper service is not replaced by this flow; the new app offers its update with one
+  administrator prompt when its embedded helper is newer (`spec/WINDOWS-SERVICE.md` 5).
 
 All update activity is logged (version, outcome, error) without personal data.
 

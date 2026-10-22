@@ -96,7 +96,8 @@ Each parser is a per-file state machine fed complete lines in order. It produces
 - response upserts (`key`, `source`, `agentId`, `model`, `startMs`, `endMs`, normalized tokens)
 - phase updates (`phase`, `phaseSinceMs`, `inFlightStartMs`; `inFlightStartMs` is null whenever the phase is not
   `generating`)
-- metadata (`project` = last path component of `cwd`, `model`, `isSubagent`)
+- metadata (`project` = last path component of `cwd`, `cwdPath` = the full working directory, used only by 10.6,
+  `model`, `isSubagent`)
 - `lastLineMs` = the latest timestamp seen in the file
 
 Lines that are not valid JSON objects are skipped and counted as malformed. Lines longer than 32 MiB are skipped.
@@ -1056,6 +1057,9 @@ Cost (9.7): every row also has `costMicroUsd` and `unpricedRequests`, every mode
 older store whose logs no longer exist have no cost data (`costMicroUsd` null, `unpricedRequests` null): UIs show
 them as unavailable (DESIGN 9), never as 0.
 
+Network traffic (10.9) is stored in its own table of the same database. It is observed, not derived from logs:
+version bumps and recomputations never touch it, and "Clear history" deletes it too.
+
 ## 9. Cost
 
 Agent Speed estimates what the counted responses would cost at the providers' official API list prices — the
@@ -1261,3 +1265,288 @@ and no historical rates are needed. The UI states the rate date (DESIGN 9). Roun
 - OpenCode and omp record their own cost; it is not used, so every source follows one rule (resellers such as
   OpenCode Zen sometimes charge other prices than the original provider).
 - Models behind a user's own proxy or router are priced by the model name the agent logged; opaque names stay unknown.
+
+## 10. Network traffic
+
+Agent Speed also measures network traffic: the whole computer's live upload and download speed, and how many bytes
+each source (and, where it can be told apart, each agent) sends and receives. Only byte counts are read — never
+content, addresses, ports or host names — and nothing leaves the computer. Display rules are DESIGN 10; the Windows
+helper service is `spec/WINDOWS-SERVICE.md`. `spec/tools/traffic.py` implements 10.4–10.9 and 10.11 (10.5 and 10.6
+from recorded process tables and agent activity) and checks `spec/fixtures/traffic-cases.json`; both apps run the same
+cases through their own sampler-independent core.
+
+### 10.1 Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| `rx` / `tx` | Bytes received (download, ↓) / sent (upload, ↑). Unsigned 64-bit counters, deltas and totals in bytes. |
+| Machine traffic | Bytes on the computer's physical network interfaces (10.2), all programs together. Includes protocol headers and VPN encryption overhead. |
+| Process traffic | Bytes of one process's TCP and UDP sockets on non-loopback interfaces (10.3): transport payload, including TLS and QUIC framing, excluding IP/TCP headers. |
+| Agent process | A process that runs a source (10.5). Its *tool processes* are all its descendants that are not agent processes themselves. |
+| Self / tools | A source's traffic is split into `self` (its agent processes) and `tools` (their tool processes). |
+| Agent traffic | Traffic attributed to one agent tree (6.7) by 10.6; best effort. |
+
+### 10.2 Machine counters
+
+Read on every sampling tick (10.4), cumulative 64-bit counters per interface.
+
+- **macOS**: `sysctl {CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0}`, `RTM_IFINFO2` messages, `if_msghdr2.ifm_data`
+  (`struct if_data64`: `ifi_ibytes`, `ifi_obytes`). Not `getifaddrs`, whose `if_data` counters are 32-bit and wrap
+  every 4 GiB (34 s at 1 Gbit/s). One call costs ≈ 0.14 ms (measured, 40 interfaces). Since at least macOS 26 the
+  values an unprivileged process sees move in steps of 1 KiB (observed on macOS 27.0.1: every counter is a multiple of
+  1024), which is below display precision. Counted interfaces: the BSD names of `SCNetworkInterfaceCopyAll()` (the
+  hardware ports of System Settings → Network: Wi-Fi, Ethernet, Thunderbolt, USB and iPhone tethering, …) except
+  interfaces of type Bridge, Bond and VLAN (their member or parent interfaces already carry the bytes), and only while
+  `IFF_UP` and `IFF_RUNNING`. The list is refreshed on a SystemConfiguration network-change notification and every
+  60 s. Not counted: `lo0`, `utun*`/`ipsec*`/`ppp*` (VPN tunnels: the tunnelled bytes are counted once, encrypted, on
+  the physical interface), `awdl0`/`llw0` (AirDrop and other peer-to-peer links), `bridge*`, `vmenet*`/`feth*` (virtual
+  machines, whose internet traffic leaves through a physical interface), `anpi*`, `gif0`, `stf0`.
+- **Windows**: `GetIfTable2Ex(MibIfTableNormal)` rows with `InterfaceAndOperStatusFlags.HardwareInterface` set and
+  `FilterInterface` and `EndPointInterface` clear, `Type` not `IF_TYPE_SOFTWARE_LOOPBACK` or `IF_TYPE_TUNNEL`,
+  `TunnelType == TUNNEL_TYPE_NONE`, `OperStatus == IfOperStatusUp`; `InOctets` / `OutOctets`. This excludes NDIS
+  filter-module duplicates of the same adapter, Hyper-V/WSL/VMware virtual adapters, WAN miniports (VPN), Bluetooth
+  PAN and Teredo/6to4/IP-HTTPS tunnels (verified against `Get-NetAdapter -IncludeHidden` on the test machine).
+- An interface is identified by its BSD name (macOS) or `InterfaceLuid` (Windows).
+
+Machine counters need no permission and work whether or not process traffic is available.
+
+### 10.3 Process counters
+
+- **macOS**: one long-running child process
+  `/usr/bin/nettop -P -L 0 -s <interval> -x -n -t external -J bytes_in,bytes_out` (interval 10.10). `nettop` ships
+  with every macOS since 10.7 and carries Apple's private `com.apple.private.network.statistics` entitlement, which a
+  third-party app cannot obtain; it is the only supported way for an unprivileged app to read every process's
+  counters. Requirements, all verified on macOS 27.0.1 (M5 Pro):
+  - **stdin** must be an open pipe that is never written (or a terminal). With `/dev/null` nettop busy-loops at
+    ≈ 120 % of a core.
+  - **stdout and stderr** must be a pseudo-terminal (`openpty`). On a pipe, nettop buffers its output until it exits,
+    so no sample arrives while it runs.
+  - Environment `LC_ALL=C`; the child is in its own process group and is killed with the app.
+  - Output: each sample starts with a header line beginning with `,` (`,bytes_in,bytes_out,`); every following line
+    until the next header is `<name>.<pid>,<bytes_in>,<bytes_out>,`. The pid is the digits after the last `.` of the
+    first field (names are the 15-character kernel name and may contain `.` and spaces; they are never used). Columns
+    are located by header name; a line that does not parse is skipped. Values are plain integers (`-x`).
+  - Semantics: per-process totals since the process started, including connections that already closed (a process
+    that opened three connections one after another showed one growing total), TCP and UDP; `-t external` excludes
+    loopback (a 20 MB transfer over `127.0.0.1` appeared only without it). An exited process stays in the output for
+    2–3 samples with its final totals, so its last bytes are not lost at 1 Hz.
+  - `-d` (delta mode) is not used: its first sample is neither a delta nor a total, and deltas are computed by the app
+    anyway (10.4). One-shot runs (`-L 1` every second, as some monitors do) cost ≈ 50 ms of CPU each (5 % of a core at
+    1 Hz) versus ≈ 16 ms per sample when streaming.
+  - Health: no complete sample for 10 s, an exit, or 10 consecutive unparseable samples → restart after 1, 2, 4 … 60 s;
+    5 restarts within 10 minutes → `processTraffic = unavailable(sampler)` until the next app launch or a manual retry.
+    `/usr/bin/nettop` missing or not executable → `unavailable(sampler)`.
+  - The private `NetworkStatistics.framework` (what nettop and Activity Monitor use) is not used directly: private
+    API, private entitlement, unversioned kernel structures.
+- **Windows**: the traffic helper service (`spec/WINDOWS-SERVICE.md`): per (pid, create time) cumulative `rx`/`tx`
+  since the service first saw the process, for the processes of the user's session, plus the service `epoch`.
+  Unavailable states: `helperNotInstalled`, `helperStopped` (could not be started), `helperOutdated`, `helperDenied`,
+  `helperError`.
+- **Process identity** everywhere is (pid, start time): macOS `proc_pidinfo(PROC_PIDTBSDINFO)` `pbi_start_tvsec/usec`;
+  Windows `GetProcessTimes` creation time, which equals the helper's `createTime` (both are the kernel's process
+  create time). A counter row whose identity does not
+  match the app's process table entry for that pid is ignored for that sample.
+
+### 10.4 Sampling and deltas
+
+Sampling runs while `trafficEnabled` is on (DESIGN 10, default on). All times below are monotonic except where a local
+date is needed.
+
+1. **Tick**: every 1000 ms the app reads the machine counters (10.2), refreshes its process table (10.5) and applies
+   the newest process-counter sample (nettop's latest complete sample, or one helper snapshot). Sample time = the
+   tick's time.
+2. **Delta** of one counter key (interface, or process identity) between consecutive values `prev` → `cur`:
+   - `cur ≥ prev` → `d = cur − prev`;
+   - `cur < prev` (counter reset: interface re-created, helper restarted, nettop restarted) → `d = 0` and the new value
+     becomes the baseline;
+   - `d` greater than `12.5 GB/s × Δt` (100 Gbit/s) → treated as a reset (`d = 0`).
+3. **First sight** of a key. Interfaces: always a baseline (`d = 0`; an interface that comes up may carry older
+   counts). Processes: in the **first sample of a stream** every process is a baseline, so processes that were running
+   before sampling started never add a burst. A stream starts at launch, when sampling is turned on, when nettop is
+   started again after a failure, and on every new connection to the helper (WINDOWS-SERVICE 4); restarting nettop
+   for an interval change (10.10) continues the stream. A process that first appears later in a running stream has
+   `d = cur`: nettop lists a process only once it has used the network and the helper only after its first counted
+   event, so all of it is new (a short tool run is not lost).
+4. **Disappearance**: a key absent from three consecutive samples is forgotten (its last delta was already counted).
+5. **Gaps**: when `Δt > 15 s` (sleep, a stalled sampler) the deltas are still added to totals — the bytes are real —
+   but not to the live-rate series, and the rate window (10.7) restarts.
+6. **Day**: a delta belongs to the local date of its sample time; deltas after local midnight start the new day.
+7. **Continuing a stream** across a nettop restart keeps the process baselines: nettop reports totals since process
+   start, so the first sample of the new child continues the same counters.
+
+### 10.5 Attribution: processes → sources
+
+The app keeps a **process table** of the current user's processes, refreshed every tick: pid, parent pid, start time,
+executable path and, only for script hosts (`node`, `bun`, `deno`, with or without `.exe`), the argument list.
+macOS: `proc_listallpids`, `proc_pidinfo(PROC_PIDTBSDINFO)`, `proc_pidpath`, `sysctl(KERN_PROCARGS2)`. Windows:
+`CreateToolhelp32Snapshot`, `QueryFullProcessImageNameW`, `GetProcessTimes`,
+`NtQueryInformationProcess(ProcessCommandLineInformation)` (Windows 8.1+, `PROCESS_QUERY_LIMITED_INFORMATION`). Path
+and arguments are read once per process identity; an exited process stays in the table for 10 s, so the counter rows
+that still list it (10.3) can be matched. Paths compare with `/` and `\` equivalent, case-insensitively on Windows;
+`~` is the home folder. File **names** compare case-sensitively on both platforms, without the `.exe` extension: the
+command-line tools are lower-case (`claude`, `codex`, `opencode`), while the desktop apps' own executables are
+capitalized (`Claude.exe`, `Codex.exe`, `OpenCode.exe`) and are never agent processes (below).
+
+**Agent processes** (first matching row; `name` = executable file name without `.exe`):
+
+| Source | Agent process |
+| --- | --- |
+| `claudeDesktop` | `name == claude` and the executable lies under Claude Desktop's bundled Claude Code folder (macOS `~/Library/Application Support/Claude/claude-code/`; Windows `%LOCALAPPDATA%\Claude\claude-code\`, `%LOCALAPPDATA%\Claude-3p\claude-code\`, `%APPDATA%\Claude\claude-code\`), or `name == claude` with an ancestor that is the Claude Desktop app (`/Applications/Claude.app/Contents/MacOS/Claude`, bundle id `com.anthropic.claudefordesktop`; Windows `Claude.exe` of the `Claude_*` package or `%LOCALAPPDATA%\AnthropicClaude`). Observed: macOS `Claude → disclaimer → …/claude-code/2.1.308/<hash>/claude.app/Contents/MacOS/claude`, one per Code session; Windows `Claude.exe → %LOCALAPPDATA%\Claude-3p\claude-code\2.1.299\<hash>\claude.exe`. |
+| `claudeCode` | `name == claude` (native installer `~/.local/bin/claude` → `~/.local/share/claude/versions/<version>` — matched by that folder, since the file name is the version —, Homebrew, IDE extensions' `native-binary/claude`), or a script host whose first script argument contains `@anthropic-ai/claude-code/`. Not a process whose arguments contain `--chrome-native-host` (the Claude in Chrome bridge, a child of the browser). |
+| `codex` | `name == codex` or `name` starts with `codex-` followed by a target triple or `x86_64`/`aarch64` (npm-vendored binaries), or a script host running `@openai/codex/bin/codex.js`. Covers the CLI, `codex app-server` started by the Codex app (macOS `…/codex-cli/CodexCLI.app/Contents/MacOS/codex`, Windows `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`) and IDE extensions, and the app-server daemon (`~/.codex/packages/app-server-daemon/…/codex`). |
+| `deepseek` | `name == dsh`; the DeepSeek Harness desktop app's main process (macOS bundle id `com.deepseek.dsh`, `DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness`; Windows `DeepSeek Harness.exe`). Not verified with a running session: which process makes the model calls is unknown, so the whole app tree counts. |
+| `opencode` | `name` in `opencode`, `opencode-cli` (desktop sidecar `opencode-cli serve`), or starting with `opencode-` followed by an OS and architecture (npm-vendored); or a script host running `opencode-ai/bin/opencode`. |
+| `gemini` | A script host whose arguments contain `/@google/gemini-cli/` (npm, Homebrew `…/libexec/lib/node_modules/@google/gemini-cli/…`), or `name == gemini` for a native build. Gemini CLI relaunches itself as a child; the child is a descendant either way. |
+| `omp` | `name == omp`, or a script host whose arguments contain `/@oh-my-pi/` or `/oh-my-pi/`. |
+| `antigravity` | `name == agy`, or `name` starts with `language_server_` (the Antigravity language server, started by the CLI, the desktop app and the IDE with `--app_data_dir`). |
+
+The desktop apps' own processes are **not** agent processes, nor are their Electron or Tauri helpers: macOS
+`/Applications/{Claude,ChatGPT,Codex,OpenCode,Antigravity}.app/Contents/MacOS/<name>`; Windows executables in the
+`WindowsApps\Claude_*`, `WindowsApps\OpenAI.Codex_*` and `WindowsApps\OpenAI.ChatGPT*` package folders and in
+`%LOCALAPPDATA%\AnthropicClaude\`. Their own traffic (chat UI, updates, telemetry) is outside the sources' scope, like
+Claude Desktop chats are in section 2; only the agent processes they start count. DeepSeek Harness is the exception
+above.
+
+**Ancestry**: a process's parent is the table entry with its parent pid whose start time is not later than its own
+(otherwise the link is broken: the pid was reused). The **nearest** ancestor-or-self that is an agent process decides:
+
+- the process itself matches a row and has no agent ancestor of the same source → it is an agent process (a root);
+- it matches a row but its nearest agent ancestor is of the same source → it is part of that agent process (a
+  wrapper's native child, Gemini's relaunch): counted as `self` of the ancestor's root;
+- it matches a row of a different source → it is an agent process of its own source (an agent run as another agent's
+  tool counts for itself);
+- otherwise, if it has an agent ancestor → a tool process of the nearest one (`tools`);
+- otherwise → not attributed (it is still part of machine traffic).
+
+Attribution is decided when a process is first seen and kept for its lifetime: a tool whose parent exits (reparented
+to launchd or orphaned) stays with its agent. A process that detaches before the first tick that sees it cannot be
+linked (known approximation, 10.12).
+
+`includeTools` (DESIGN 10, default on) chooses whether displayed source and agent values include `tools`; totals and
+history always keep `self` and `tools` separately, so the setting changes no stored data.
+
+### 10.6 Attribution: agent processes → agents (best effort)
+
+Per-agent traffic attaches to **agent trees** (the roots of 6.7 with their sub-agents: sub-agents run inside their
+parent's process). Each tick, for every root agent process `P` of source `s` with a non-zero delta (self or tools):
+
+1. **Candidates**: the agent trees of source `s` that are *active* during the tick interval: some member is in phase
+   `generating` or `tools` (after the 6.7 staleness rule), or has `lastLineMs ≥ intervalStart − 2000`.
+2. **Open-file evidence** (macOS only: `proc_pidinfo(PROC_PIDLISTFDS)` and `PROC_PIDFDVNODEPATHINFO`, refreshed every
+   10 s for agent processes): if `P` or a process counted as part of it (10.5, `self`) has the transcript (or
+   database) of a member of one or more candidates open, keep only those. Codex app servers keep their rollout files
+   open (observed: two `rollout-….jsonl` held by one app server); Claude Code, Gemini CLI and omp do not.
+3. **Working-directory evidence**: if `P`'s working directory is known and some candidates' root `cwdPath` (below)
+   equals it, keep only those. macOS: `proc_pidinfo(PROC_PIDVNODEPATHINFO)` `pvi_cdir`, read once per process
+   (observed: Claude Code and Claude Desktop's Code-session CLIs run in the project folder; Codex app servers in `/`).
+   Windows: optional — `NtQueryInformationProcess(ProcessBasicInformation)` and `ReadProcessMemory` of
+   `RTL_USER_PROCESS_PARAMETERS.CurrentDirectory` (same-user processes only; an undocumented but long-stable layout);
+   when not implemented or not readable the directory is unknown and this step is skipped.
+4. Each step applies only if it leaves at least one candidate. If exactly **one** candidate remains, the interval's
+   deltas of `P` and its tools belong to that agent tree; otherwise they stay with the source only (counted in the
+   source's `unassigned` share).
+
+`cwdPath` is new parser metadata (section 4): the full working directory the transcript names — Claude: the latest
+`cwd`; Codex: `session_meta`/`turn_context` `cwd`; dsh: header `cwd`; OpenCode: `session_v2.directory`; Gemini CLI: the
+`.project_root` content; omp: header `cwd`; Antigravity: the decoded path of the first workspace URI. Null when absent.
+It is metadata only (no effect on tokens or history).
+
+Typical outcomes: one Claude Code session per terminal → exact; several Claude Desktop Code sessions (one CLI process
+each, own project folder) → exact; two sessions of one tool in the same folder working at the same time → source
+only; a Codex app server, OpenCode server or Antigravity language server serving several conversations → exact while
+one conversation is active, else source only.
+
+### 10.7 Live rates
+
+- For a series of deltas (machine; each source with self and tools; each agent tree), the live rate is
+  `Σ deltas of the samples in (t − 3000 ms, t] ÷ ((t − t₀) / 1000)`, where `t` is the latest sample time and `t₀` the
+  latest sample time ≤ `t − 3000` (or the first sample of the series when none). With 1 Hz sampling this is the mean of
+  the last three intervals — the same 3-second window as the token live rate (6.3). Before two samples exist the rate
+  is unknown (null). Separate for `rx` and `tx`.
+- Values update once per sample (1 Hz); UIs never interpolate between samples.
+- **History buffer**: one-second buckets for the last 300 s (as 6.5), per direction, for the machine and per source
+  (self + tools), for sparklines. A bucket holds the bytes of the sample whose interval ends in it ÷ interval seconds.
+
+### 10.8 Today
+
+`todayStartMs` as 6.6. Sums of deltas whose sample time is today:
+
+- `machine`: `rx`, `tx`, `sampledMs` (sum of intervals ≤ 15 s between consecutive machine samples).
+- per source: `rxSelf`, `txSelf`, `rxTools`, `txTools`, `unassignedRx`, `unassignedTx` (the part, self and tools,
+  not attributed to an agent tree), and `processSampledMs` (sum of intervals ≤ 15 s between consecutive process
+  samples of one stream; the first sample of a stream adds nothing).
+- per agent tree (memory only, not stored): `rxSelf`, `txSelf`, `rxTools`, `txTools` attributed today while running.
+- On day change everything restarts at zero; a relaunch restores machine and source values from the history store
+  (10.9), agent values start at zero.
+
+### 10.9 Daily history
+
+Traffic is observed, not read from logs: there is no history before sampling started, and it cannot be recomputed.
+
+- **Store**: a new table in the history database (section 8), created by an additive migration (the schema version
+  increases by one; the analysis version does not change, so nothing is re-analysed):
+  `day_traffic(day TEXT, key TEXT, rx INTEGER, tx INTEGER, rx_tools INTEGER, tx_tools INTEGER, sampled_ms INTEGER,
+  PRIMARY KEY (day, key)) WITHOUT ROWID`. `key` is a source (section 1), whose `rx`/`tx` are `self` and
+  `rx_tools`/`tx_tools` are `tools`, or `machine` (`rx_tools` and `tx_tools` are 0). `sampled_ms` is the machine
+  `sampledMs` on the `machine` row and `processSampledMs` on source rows. The meta key `trafficSince` holds the first
+  local date with a stored sample.
+- **Writes**: today's in-memory totals are written (upsert) every 60 s, at the day change, before sleep and at quit;
+  a crash loses at most 60 s. Readers merge the unsaved part, so today's dashboard values equal today's history row.
+- **Recomputation and clearing**: section 8's version bumps and full recomputations never touch `day_traffic` (like
+  `day_peaks`). "Clear history" deletes it with everything else (DESIGN 10 says so in the confirmation). Older builds
+  ignore the table.
+- **Rows shown**: a date before `trafficSince` has no traffic data (UIs show it as not recorded, never 0); a date with
+  `sampled_ms` below its elapsed time is partial (UIs say how long it was recorded).
+- CSV export columns: DESIGN 10.
+
+### 10.10 Sampling intervals and CPU budget
+
+- Machine counters: every tick (1 Hz) while traffic sampling is on. Cost: ≤ 0.02 % of one core.
+- Process counters (macOS nettop child), measured on the M5 Pro with ≈ 760 open sockets: ≈ 1.6 % of one core at
+  `-s 1` (≈ 15 ms per sample plus ≈ 0.25 % fixed), ≈ 0.5 % at `-s 5`, 1.0 % at `-s 2`; memory 5 MB. To stay near the
+  app's budget the interval adapts:
+  - no agent process in the process table → nettop is not running (0 %);
+  - agent processes exist, but no agent is active (10.6) for 60 s and no visible surface shows per-source or per-agent
+    traffic → `-s 5`;
+  - otherwise → `-s 1`.
+  An interval change restarts nettop (≈ 50 ms of CPU) and happens at most once per 30 s; bytes are never lost by it
+  (10.4.7), only the rate resolution changes.
+- Windows helper: ≈ 0.1 % of one core at normal desktop traffic, < 1 % at 1 Gbit/s (WINDOWS-SERVICE 3). The app polls
+  it at 1 Hz whenever per-source traffic is sampled (the service has no interval).
+- App side (process table, parsing, attribution): ≤ 0.2 % of one core at 1 Hz with 800 processes; path and argument
+  reads only for new processes.
+- Benchmark harness (both platforms): 10 minutes idle with agents running, 10 minutes with a 100 MB download in a tool
+  process; report average CPU of the app plus nettop or the helper.
+
+### 10.11 Byte formatting (both platforms)
+
+Decimal units (1 KB = 1000 B), as macOS and network speeds use. Rates: `B/s`, `KB/s`, `MB/s`, `GB/s`; totals: `B`,
+`KB`, `MB`, `GB`, `TB`. With the bits unit (DESIGN 10) rates are `× 8` with `b/s`, `Kb/s`, `Mb/s`, `Gb/s`.
+
+| Value `x` in the unit | Display |
+| --- | --- |
+| bytes `< 1000` | integer (`0 B/s`, `512 B`) |
+| `< 10` | two decimals (`1.28 KB/s`) |
+| `< 100` | one decimal (`12.8 MB`) |
+| `< 1000` | integer (`128 KB/s`) |
+
+A value that rounds to 1000 in its unit moves to the next unit (`999.6 KB/s` → `1.00 MB/s`; `999.5 B` → `1.00 KB`);
+the largest unit keeps larger integers (`5000 TB`).
+Rounding is half-up on the decimal value. Number and unit are separated by a no-break space; units are never
+translated. Cases: `spec/fixtures/traffic-cases.json` `format`.
+
+### 10.12 Known approximations
+
+- Machine traffic counts link-layer bytes (headers, retransmissions, VPN overhead, other programs, other users);
+  process traffic counts socket payload, so the same transfer adds slightly less to its source than to the machine.
+  The two are sampled at slightly different moments, so per-second values may briefly disagree.
+- Child processes that detach before the first 1 Hz process-table refresh, or that are started on the agent's behalf
+  by another process (a system service, Codex's Windows sandbox service `codex-windows-sandbox-service.exe`, an IDE's
+  integrated terminal for Antigravity IDE commands, a browser opened by URL), are not attributed to the agent.
+- Traffic of a remote machine an agent works on (SSH sessions are counted; the remote's own downloads are not).
+- Per-agent attribution falls back to the source whenever more than one candidate is active (10.6).
+- Windows counts start when the helper first sees a process; traffic of an agent process before the helper started is
+  not counted (it is a baseline, 10.4.3).
+- macOS unprivileged interface counters move in 1 KiB steps.
+- Loopback traffic (local model servers such as Ollama or LM Studio, MCP servers on localhost, OpenCode's own client and
+  server) is excluded everywhere.
