@@ -45,10 +45,14 @@ public enum ReportInvite {
         case username(ReportUsernameProblem)
     }
 
-    /// Nil when the invitation covered `document`: its API is on the service URL's host or a subdomain of it, it
-    /// needs no API key and `username` fits its rules.
-    public static func gap(_ document: ReportDiscovery, service: ReportServiceURL, username: String) -> Gap? {
-        if !covers(apiHost: document.api.host, serviceHost: service.host) { return .apiHost }
+    /// Nil when the invitation covered `document`: its API is on the service URL's host or a subdomain of it (or
+    /// under the domain the built-in preset covers), it needs no API key and `username` fits its rules.
+    public static func gap(_ document: ReportDiscovery, service: ReportServiceURL, username: String,
+                           presetDomain: String? = nil) -> Gap? {
+        let host = document.api.host
+        let covered = covers(apiHost: host, serviceHost: service.host)
+            || presetDomain.map { covers(apiHost: host, serviceHost: $0) && covers(apiHost: service.host, serviceHost: $0) } ?? false
+        if !covered { return .apiHost }
         if document.apiKeyMode == .required { return .apiKey }
         if let problem = ReportUsername.validate(username, rules: document.usernameRules) { return .username(problem) }
         return nil

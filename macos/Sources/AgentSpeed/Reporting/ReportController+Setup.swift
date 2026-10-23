@@ -75,7 +75,8 @@ extension ReportController {
             return
         }
         let name = nextUsername(rules: document.usernameRules)
-        if let gap = ReportInvite.gap(document, service: service, username: name) {
+        let presetDomain = preferences.preset == .codexRadar ? ReportPreset.codexRadarDomain : nil
+        if let gap = ReportInvite.gap(document, service: service, username: name, presetDomain: presetDomain) {
             inviteGap = gap
             return
         }

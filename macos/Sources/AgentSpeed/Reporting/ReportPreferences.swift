@@ -13,10 +13,25 @@ enum ReportPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     /// invitation's path can be tested end to end without contacting the real service.
     static var codexRadarURL: String {
         #if DEBUG
-        if let url = ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_PRESET_URL"], !url.isEmpty { return url }
+        if let url = presetOverride { return url }
         #endif
-        return "https://codexradar.com"
+        return "https://deng.codexradar.com"
     }
+
+    /// The domain the preset covers (REPORTING 3.3): its API may live on any host under it. The invitation names it.
+    static var codexRadarDomain: String? {
+        #if DEBUG
+        if presetOverride != nil { return nil }
+        #endif
+        return "codexradar.com"
+    }
+
+    #if DEBUG
+    private static var presetOverride: String? {
+        guard let url = ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_PRESET_URL"], !url.isEmpty else { return nil }
+        return url
+    }
+    #endif
 }
 
 /// One service this device registered with (DESIGN 11, Storage): what the user confirmed, the device id, the

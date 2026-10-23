@@ -107,6 +107,29 @@ struct ReportDiscoveryTests {
         #expect(discovery.sections == Set(ReportSection.allCases))
     }
 
+    /// Codex Radar's live document (2026-10-23): the API on a sibling host with a path prefix, a section this client
+    /// no longer sends, and no retention.
+    @Test func codexRadarDocument() throws {
+        let text = #"""
+        {"protocol":"agent-speed-report","versions":[1],
+         "service":{"name":"速蹬雷达","description":"社区贡献的实时速蹬天梯、全站吞吐与模型实测均速。",
+          "homepage":"https://deng.codexradar.com/","terms":"https://deng.codexradar.com/agent-speed/terms/",
+          "privacy":"https://deng.codexradar.com/agent-speed/privacy/","leaderboard":"https://deng.codexradar.com/",
+          "retentionDays":0},
+         "api":"https://speed-api.codexradar.com/api/agent-speed","apiKey":{"mode":"none"},
+         "username":{"minLength":2,"maxLength":32,"charset":"unicode","spaces":true},
+         "limits":{"intervalSeconds":5,"heartbeatSeconds":60,"maxAgeSeconds":30,"maxBodyBytes":16384,"maxModels":16},
+         "sections":["sources","models","cost","traffic","machineTraffic"]}
+        """#
+        let discovery = try ReportDiscovery.parse(Data(text.utf8), service: Self.service("https://deng.codexradar.com")).get()
+        #expect(discovery.name == "速蹬雷达")
+        #expect(discovery.api.string == "https://speed-api.codexradar.com/api/agent-speed")
+        #expect(discovery.api.host == "speed-api.codexradar.com")
+        #expect(discovery.apiKeyMode == ReportAPIKeyMode.none)
+        #expect(discovery.retentionDays == 0)
+        #expect(discovery.sections == Set(ReportSection.allCases))
+    }
+
     @Test func referenceServerDocumentOverLoopback() throws {
         let discovery = try Self.parsed(Self.reference(), service: "http://127.0.0.1:8787")
         #expect(discovery.name == "Agent Speed reference server")

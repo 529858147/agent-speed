@@ -46,7 +46,7 @@ struct ReportInvitationCard: View {
     private var offer: some View {
         let l10n = model.l10n
         let report = model.report
-        let host = report.selectedService?.authority ?? ""
+        let host = ReportPreset.codexRadarDomain ?? report.selectedService?.authority ?? ""
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Spacing.xs) {
                 badge

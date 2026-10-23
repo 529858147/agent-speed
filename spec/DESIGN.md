@@ -2313,7 +2313,7 @@ Top to bottom:
    off the switch is disabled and the caption becomes `settings.network.offHint`. Turning it on opens the consent
    sheet (below) unless this service is already confirmed and registered; then reporting resumes at once. Turning it
    off sends one `leaving` report (METRICS 11.5) and keeps the registration.
-2. **Service** (`report.service`) — a popup: the presets (`Codex Radar`, `https://codexradar.com`), a separator,
+2. **Service** (`report.service`) — a popup: the presets (`Codex Radar`, `https://deng.codexradar.com`, covering the domain `codexradar.com`), a separator,
    `report.service.custom`. Custom shows the `report.url` field (placeholder `report.url.placeholder`), validated as
    the user types (0.5 s debounce, REPORTING 2.1; local only): `report.url.invalid`, `report.url.https`; a loopback
    `http` URL shows the amber note `report.url.loopback`. **When discovery is fetched** (REPORTING 3.4): choosing a
@@ -2474,7 +2474,7 @@ find the setting.
   invitation waits for the next opening of the dashboard: one card at a time. It is answered — and never shown again —
   by `report.invite.accept`, `report.invite.decline`, its close button (the same as decline) or by turning reporting
   on in Settings. Showing it touches nothing: no request, no key, no stored name.
-- **Content.** Title `report.invite.title`; `report.invite.body` with the preset's name and host (as the app knows
+- **Content.** Title `report.invite.title`; `report.invite.body` with the preset's name and domain (`codexradar.com`, as the app knows
   them — nothing is fetched); `report.invite.username` with the username field's name (Default username, below; the
   name in the label color, medium weight, isolated with U+2068 … U+2069); then, on one row, the borderless link
   `report.invite.preview` leading and the buttons `report.invite.decline` and `report.invite.accept` (prominent)

@@ -193,7 +193,7 @@ METRICS 11; Settings, consent and storage of keys are DESIGN 11. Differences fro
 - It sends data about the user's live activity (REPORTING 1.3), with a username, a per-service device id and
   signature headers; and, when the user entered one, `Authorization: Bearer <api key>` — only to that service's API
   host.
-- Hosts are not a fixed list: the service URL the user entered or picked (preset: `https://codexradar.com`) and the
+- Hosts are not a fixed list: the service URL the user entered or picked (preset: `https://deng.codexradar.com`) and the
   `api` host of its discovery document, both shown in the consent sheet and pinned (REPORTING 3.3). HTTPS only, except
   `http` to `127.0.0.1`, `[::1]` and `localhost` for local testing.
 - Methods `GET` (discovery), `POST`, `PATCH`, `PUT`, `DELETE`. API requests never follow redirects; discovery

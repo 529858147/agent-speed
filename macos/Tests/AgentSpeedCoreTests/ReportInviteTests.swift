@@ -62,6 +62,22 @@ struct ReportInviteTests {
                                  username: "zoe") == .apiHost)
     }
 
+    @Test func thePresetDomainCoversItsSiblingAPIHost() throws {
+        let deng = try ReportServiceURL.parse("https://deng.codexradar.com").get()
+        let object: [String: Any] = [
+            "protocol": "agent-speed-report", "versions": [1],
+            "service": ["name": "速蹬雷达", "terms": "https://deng.codexradar.com/agent-speed/terms/",
+                        "privacy": "https://deng.codexradar.com/agent-speed/privacy/"] as [String: Any],
+            "api": "https://speed-api.codexradar.com/api/agent-speed", "apiKey": ["mode": "none"],
+        ]
+        let document = try ReportDiscovery.parse(try JSONSerialization.data(withJSONObject: object), service: deng).get()
+        #expect(ReportInvite.gap(document, service: deng, username: "zoe") == .apiHost, "a sibling host needs the preset")
+        #expect(ReportInvite.gap(document, service: deng, username: "zoe", presetDomain: "codexradar.com") == nil)
+        let other = try ReportServiceURL.parse("https://example.com").get()
+        #expect(ReportInvite.gap(document, service: other, username: "zoe", presetDomain: "codexradar.com") == .apiHost,
+                "the preset domain only covers a service URL inside it")
+    }
+
     @Test func subdomainsOfAnIPAddressDoNotExist() {
         #expect(ReportInvite.covers(apiHost: "127.0.0.1", serviceHost: "127.0.0.1"))
         #expect(!ReportInvite.covers(apiHost: "1.127.0.0.1", serviceHost: "127.0.0.1"))
