@@ -17,6 +17,8 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
     let language: AppLanguage
     /// Cost values read as amounts (`12.34 美元`).
     let money: HistoryMoney?
+    /// Traffic values read as bytes (↓ + ↑ per day).
+    var bytes = false
 
     @MainActor
     init(chart: HistoryChartModel, l10n: Localizer) {
@@ -24,15 +26,18 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
         title = l10n(chart.metric.titleKey)
         summary = HistoryText.rangeSubtitle(chart.range, l10n)
         dayTitle = l10n("history.table.date")
-        outputTitle = l10n(cost ? "history.table.cost" : "history.table.output")
+        let traffic = chart.metric == .traffic
+        bytes = traffic
+        outputTitle = l10n(traffic ? "history.table.traffic" : cost ? "history.table.cost" : "history.table.output")
         speedTitle = "\(l10n("history.chart.speed")) (\(l10n("unit.tokS")))"
         labels = chart.range.days.map { HistoryText.longDate($0, l10n) }
         outputs = chart.range.days.map { day in
+            if traffic { return Double(chart.traffic[day]?.shown.sum ?? 0) }
             guard let summary = chart.days[day] else { return 0 }
             return cost ? (chart.money?.value(summary.cost.microUsd) ?? 0) : Double(summary.output)
         }
         speeds = chart.speeds
-        outputMax = max(chart.outputTicks.max, cost ? 0.000001 : 1)
+        outputMax = max(chart.outputTicks.max + (chart.lowerTicks?.max ?? 0), cost ? 0.000001 : 1)
         language = l10n.language
         money = cost ? chart.money : nil
     }
@@ -40,7 +45,9 @@ struct HistoryChartDescriptor: AXChartDescriptorRepresentable {
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(title: dayTitle, categoryOrder: labels)
         let money = money
+        let bytes = bytes
         let yAxis = AXNumericDataAxisDescriptor(title: outputTitle, range: 0...outputMax, gridlinePositions: []) { value in
+            if bytes { return TrafficFormat.total(value) }
             if let money, let micro = money.microUsd(fromValue: value) { return money.spoken(micro) }
             return SpeedFormat.tokens(Int(value.rounded()))
         }

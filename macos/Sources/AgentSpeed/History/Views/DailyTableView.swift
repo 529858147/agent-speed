@@ -183,6 +183,13 @@ struct DailyTableRow: View {
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .help(help ?? text)
+        case .traffic:
+            Text(text)
+                .font(.system(size: 11.5).monospacedDigit())
+                .foregroundStyle(row.traffic == nil ? secondary : primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .help(help ?? text)
         case .models:
             Text(text)
                 .font(.system(size: 12))

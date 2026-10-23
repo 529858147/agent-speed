@@ -51,6 +51,10 @@ struct ChartBackdrop: View {
                         .offset(x: left, y: frame.maxY + 6)
                 }
             }
+            if chart.metric == .traffic {
+                TrafficBackdrop(chart: chart, proxy: proxy, frame: frame, geometry: geometry, l10n: l10n, dark: dark,
+                                increasedContrast: increasedContrast)
+            }
             HoverBand(chart: chart, interaction: interaction, proxy: proxy, frame: frame, geometry: geometry, dark: dark)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -66,6 +70,67 @@ extension ChartBackdrop {
         if labelLeft > centred + 0.5 { return .leading }
         if labelLeft < centred - 0.5 { return .trailing }
         return .center
+    }
+}
+
+/// Behind the traffic bars (DESIGN 10): with all sources a hairline outline per day shows this computer's total, so
+/// the agents' share of all traffic is visible; days before measuring began are a faint hatched band, labelled.
+private struct TrafficBackdrop: View {
+    let chart: HistoryChartModel
+    let proxy: ChartProxy
+    let frame: CGRect
+    let geometry: ChartDayGeometry
+    let l10n: Localizer
+    let dark: Bool
+    let increasedContrast: Bool
+
+    var body: some View {
+        let calendar = HistoryDates.calendar
+        let secondary = HistoryPalette.secondary(dark: dark, increasedContrast: increasedContrast)
+        let band = chart.notRecordedThrough.flatMap { last -> ClosedRange<CGFloat>? in
+            guard let start = proxy.position(forX: chart.range.start.date(in: calendar)),
+                  let end = proxy.position(forX: last.adding(days: 1).date(in: calendar)) else { return nil }
+            return (frame.minX + start)...(frame.minX + end)
+        }
+        ZStack(alignment: .topLeading) {
+            Canvas { context, _ in
+                if let band, band.upperBound - band.lowerBound > 0.5 {
+                    let rect = CGRect(x: band.lowerBound, y: frame.minY, width: band.upperBound - band.lowerBound, height: frame.height)
+                    context.fill(Path(rect), with: .color(secondary.opacity(0.05)))
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(rect))
+                        var stripes = Path()
+                        var offset = -rect.height
+                        while offset < rect.width {
+                            stripes.move(to: CGPoint(x: rect.minX + offset, y: rect.maxY))
+                            stripes.addLine(to: CGPoint(x: rect.minX + offset + rect.height, y: rect.minY))
+                            offset += 6
+                        }
+                        layer.stroke(stripes, with: .color(secondary.opacity(0.14)), lineWidth: 1)
+                    }
+                }
+                guard !chart.isSingleSource else { return }
+                let width = geometry.barWidth + min(4, max(2, geometry.barWidth * 0.25))
+                for (day, traffic) in chart.traffic {
+                    guard let machine = traffic.machine, !machine.isZero, let center = ChartPointerLayer.centerX(day, proxy: proxy),
+                          let top = proxy.position(forY: Double(machine.rx)), let bottom = proxy.position(forY: -Double(machine.tx)) else {
+                        continue
+                    }
+                    let rect = CGRect(x: frame.minX + center - width / 2, y: frame.minY + top, width: width, height: max(1, bottom - top))
+                    context.stroke(Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: min(4, width / 3), style: .continuous),
+                                   with: .color(secondary.opacity(increasedContrast ? 0.75 : 0.45)), lineWidth: 1)
+                }
+            }
+            if let band, band.upperBound - band.lowerBound >= 120 {
+                Text(l10n("history.traffic.notRecorded"))
+                    .font(HistoryFont.axis)
+                    .foregroundStyle(.historySecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+                    .frame(width: band.upperBound - band.lowerBound)
+                    .offset(x: band.lowerBound, y: frame.minY + 8)
+            }
+        }
     }
 }
 

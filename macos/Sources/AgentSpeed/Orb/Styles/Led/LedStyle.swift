@@ -8,6 +8,7 @@ import SwiftUI
 final class LedStyle: OrbStyleRenderer {
     let kind = OrbStyleKind.led
     let readoutLayout = OrbReadoutLayout.led
+    let trafficPlacement = OrbTrafficPlacement.led
 
     private(set) var particles = OrbParticleSystem()
     private(set) var cometPhase = 0.0

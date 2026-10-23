@@ -66,7 +66,8 @@ enum SnapshotBuilder {
                 recentSpeed: row.recentSpeed,
                 lastActivity: date(row.agent.lastLineMs ?? 0),
                 parentId: row.parentId,
-                liveCost: row.liveCost
+                liveCost: row.liveCost,
+                cwdPath: row.agent.cwdPath
             )
         }
         let sources = SourceKind.allCases.map { kind in

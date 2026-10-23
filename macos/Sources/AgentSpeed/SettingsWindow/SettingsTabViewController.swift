@@ -54,7 +54,8 @@ final class SettingsTabViewController: NSTabViewController {
         let l10n = model.l10n
         for (pane, item) in zip(SettingsPane.allCases, tabViewItems) {
             let title = l10n(pane.titleKey)
-            if item.label != title { item.label = title }
+            let label = l10n(pane.tabTitleKey)
+            if item.label != label { item.label = label }
             if item.viewController?.title != title { item.viewController?.title = title }
         }
         let title = l10n(selectedPane.titleKey)

@@ -14,6 +14,7 @@ final class OrbRuntime {
     private var tracker = SubsetPeakTracker()
     private var trackerArmed = false
     private var drawOnTimer: Timer?
+    private var trafficQuiet = OrbTrafficQuietRule()
 
     init(config: OrbConfig) {
         id = config.id
@@ -55,6 +56,24 @@ final class OrbRuntime {
         feed.set(generating: reading.generatingSources, todayTokens: today, agentCount: reading.agents.count)
         updateBezel(unavailable: isPreviewing ? [] : reading.unavailable)
         trackPeak(snapshot: snapshot, set: set, isPreviewing: isPreviewing)
+    }
+
+    /// The traffic readout (DESIGN 10): its sources' rates with tools per the setting (`sources`), this computer
+    /// (`machine`) or nothing; not drawn while measuring is off or, for sources, while per-process traffic is unavailable.
+    /// Called once per traffic sample; the quiet rule keeps a quiet orb free of frames.
+    func ingestTraffic(_ snapshot: TrafficSnapshot, settings: AppSettings, now: TimeInterval) {
+        let mode = config.traffic
+        let enabled = settings.trafficEnabled && snapshot.enabled && mode != .off
+            && (mode == .machine || snapshot.processState.unavailableReason == nil)
+        if feed.trafficEnabled != enabled { feed.trafficEnabled = enabled }
+        let rate: TrafficRate? = switch mode {
+        case _ where !enabled: nil
+        case .machine: snapshot.machineLive ?? .zero
+        case .sources, .off: snapshot.live(of: sourceSet, includeTools: settings.trafficIncludeTools) ?? .zero
+        }
+        if trafficQuiet.apply(rate, bits: settings.trafficUnit == .bits, at: now), feed.traffic != trafficQuiet.reading {
+            feed.traffic = trafficQuiet.reading
+        }
     }
 
     /// The money readout of a cost orb (METRICS 6.8 Cost, DESIGN 9 Orb): its billable sources' live cost rate.

@@ -5,7 +5,7 @@ import SwiftUI
 
 /// `--screenshots DIR` (debug builds): shows the real surfaces with sample data on screen and captures each window
 /// with `screencapture`, so system materials (Liquid Glass on macOS 26+) look exactly as in use. Light and dark;
-/// `AGENT_SPEED_SCREENS` picks groups (dashboard, settings, history, update; `orbpane` measures the floating orb pane's
+/// `AGENT_SPEED_LANGUAGE` (`en`, `ja`, …) the language, `AGENT_SPEED_SCREENS` picks groups (dashboard, settings, history, update; `orbpane` measures the floating orb pane's
 /// CPU and captures it, see `OrbPaneHarness`; `titles` the title editor's, see `TitlesPaneHarness`), `AGENT_SPEED_HISTORY_CASES` history
 /// cases. Quits when done.
 @MainActor
@@ -19,6 +19,9 @@ enum ScreenshotHarness {
             settings: AppSettings(defaults: defaults),
             updates: UpdateController(configuration: .current(environment: [:]), store: UpdateStore(defaults: defaults))
         )
+        if let language = ProcessInfo.processInfo.environment["AGENT_SPEED_LANGUAGE"].flatMap(LanguagePreference.init(rawValue:)) {
+            model.settings.language = language
+        }
         model.activate(live: false)
         let groups = ProcessInfo.processInfo.environment["AGENT_SPEED_SCREENS"]?.split(separator: ",").map(String.init)
             ?? (onlyHistory ? ["history"] : ["dashboard", "settings", "history", "update"])
@@ -108,6 +111,7 @@ enum ScreenshotHarness {
 
     private static func captureSettings(model: AppModel, into directory: URL) async {
         PreviewRenderer.publish(model, speed: model.settings.redline * 0.3)
+        TrafficPreviewData.publish(into: model.traffic)
         let settings = SettingsWindowController(model: model)
         for dark in [false, true] {
             NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

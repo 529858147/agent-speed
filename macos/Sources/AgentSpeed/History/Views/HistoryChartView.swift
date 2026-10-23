@@ -14,7 +14,9 @@ struct HistoryChartCard: View {
         let l10n = model.l10n
         VStack(alignment: .leading, spacing: Spacing.s) {
             ChartLegend(chart: chart, l10n: l10n, dark: colorScheme == .dark, increasedContrast: contrast == .increased,
-                        metric: Binding(get: { model.chartMetric }, set: { model.select(metric: $0) }))
+                        metric: Binding(get: { model.chartMetric }, set: { model.select(metric: $0) }),
+                        metrics: model.offersTraffic ? HistoryChartMetric.allCases : [.output, .cost],
+                        trafficTotal: model.content.trafficTotal.map { TrafficText(l10n: l10n, bits: false).pair($0) })
             HistoryChartView(
                 chart: chart,
                 interaction: model.interaction,
@@ -39,6 +41,9 @@ private struct ChartLegend: View {
     let dark: Bool
     let increasedContrast: Bool
     @Binding var metric: HistoryChartMetric
+    var metrics: [HistoryChartMetric] = HistoryChartMetric.allCases
+    /// The range's traffic total (`traffic.pair`) on the right of the traffic chart's header.
+    var trafficTotal: String?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -69,7 +74,7 @@ private struct ChartLegend: View {
 
     private var title: some View {
         Picker(l10n(chart.metric.titleKey), selection: $metric) {
-            ForEach(HistoryChartMetric.allCases) { metric in
+            ForEach(metrics) { metric in
                 Text(l10n(metric.titleKey)).tag(metric)
             }
         }
@@ -108,6 +113,12 @@ private struct ChartLegend: View {
     private var speedKey: some View {
         if chart.metric == .output {
             speedLineKey
+        } else if chart.metric == .traffic, let trafficTotal {
+            Text(trafficTotal)
+                .font(HistoryFont.legend.monospacedDigit())
+                .foregroundStyle(.historySecondary)
+                .lineLimit(1)
+                .fixedSize()
         }
     }
 
@@ -258,14 +269,17 @@ struct HistoryChartView: View {
         let speeds = chart.speeds
         let marks = geometry.marks(weekStart: calendar.firstWeekday)
         let bars = chart.segments.map { segment in
-            ChartBar(
-                id: segment.id,
+            // Every segment is rounded; an inner one reaches just under the next one out so its rounded corners never
+            // leave a notch in the stack. Upload (traffic) stacks downward in the same colors at 55 %.
+            let overlap = geometry.overlap(below: segment.above)
+            return ChartBar(
+                id: segment.id + (segment.upload ? "/up" : ""),
                 date: segment.day.date(in: calendar),
-                lower: segment.lower,
-                // Every segment is rounded; a lower one reaches just under the one above so its rounded corners
-                // never leave a notch in the stack.
-                upper: segment.upper + geometry.overlap(below: segment.above),
-                style: AnyShapeStyle(barStyle(segment.source, dark: dark).opacity(segment.day == chart.today ? 0.5 : 1))
+                lower: segment.upload ? segment.lower : segment.lower,
+                upper: segment.upload ? segment.upper : segment.upper + overlap,
+                extendDown: segment.upload ? overlap : 0,
+                style: AnyShapeStyle(barStyle(segment.source, dark: dark)
+                    .opacity((segment.day == chart.today ? 0.5 : 1) * (segment.upload ? 0.55 : 1)))
             )
         }
         var line: [ChartPoint] = []
@@ -288,7 +302,7 @@ struct HistoryChartView: View {
             ChartDotsContent(points: dots, color: ink)
         }
         .chartXScale(domain: domainStart...domainEnd)
-        .chartYScale(domain: 0...chart.outputTicks.max)
+        .chartYScale(domain: chart.yDomain)
         .chartLegend(.hidden)
         .chartXAxis {
             // The day labels are drawn by the backdrop, centred under their bars (label anchors behave differently
@@ -298,7 +312,7 @@ struct HistoryChartView: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: chart.outputTicks.values) { value in
+            AxisMarks(position: .leading, values: chart.axisValues) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
                     .foregroundStyle(grid)
                 AxisValueLabel {
@@ -342,6 +356,14 @@ struct HistoryChartView: View {
     }
 
     private func axisLabel(_ value: Double) -> String {
+        if chart.metric == .traffic {
+            // The outermost labels name their side: download above the axis, upload below.
+            guard value != 0 else { return "0" }
+            let text = HistoryText.axisBytes(value)
+            if value == chart.outputTicks.max { return "↓ " + text }
+            if value == -(chart.lowerTicks?.max ?? 0) { return "↑ " + text }
+            return text
+        }
         guard chart.metric == .cost, let money = chart.money else { return HistoryText.axisNumber(value) }
         return money.axisLabel(value, step: chart.outputTicks.step)
     }
@@ -414,6 +436,8 @@ private struct ChartBar: Identifiable {
     let date: Date
     let lower: Double
     let upper: Double
+    /// An upload segment reaches this far past its lower end, under the next one out.
+    var extendDown: Double = 0
     let style: AnyShapeStyle
 }
 
@@ -434,7 +458,7 @@ private struct ChartBarsContent: ChartContent {
         ForEach(bars) { bar in
             BarMark(
                 x: .value("Day", bar.date, unit: .day),
-                yStart: .value("Output", bar.lower),
+                yStart: .value("Output", bar.lower - bar.extendDown),
                 yEnd: .value("Output", bar.upper),
                 width: .fixed(width)
             )

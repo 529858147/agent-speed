@@ -19,6 +19,7 @@ enum HistoryColumnLayout {
         case .output: ColumnSpec(natural: 72, minimum: 46)
         case .input: ColumnSpec(natural: 112, minimum: 56)
         case .cost: ColumnSpec(natural: 84, minimum: 60)
+        case .traffic: ColumnSpec(natural: 150, minimum: 136)
         case .cacheHit: ColumnSpec(natural: 72, minimum: 44)
         case .speed: ColumnSpec(natural: 96, minimum: 62)
         case .peak: ColumnSpec(natural: 84, minimum: 56)

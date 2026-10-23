@@ -23,6 +23,8 @@ enum OrbMenus {
         menu.addItem(styleItem(model: model, orb: orb))
         menu.addItem(sourcesItem(model: model, orb: orb))
         menu.addItem(unitItem(model: model, orb: orb))
+        menu.addItem(trafficItem(model: model, orb: orb))
+        menu.addItem(showNameItem(model: model, orb: orb))
         menu.addItem(sizeItem(model: model, orb: orb))
         menu.addItem(MenuFactory.effectsItem(model: model))
 
@@ -106,12 +108,7 @@ enum OrbMenus {
             entry.image = dotsImage([(source, true)])
             if let status = statuses[source], OrbSubset.isUnavailable(status) {
                 let reason = l10n(status.enabled ? "source.notFound" : "source.disabled")
-                let title = NSMutableAttributedString(string: l10n(source.titleKey), attributes: [.font: NSFont.menuFont(ofSize: 0)])
-                title.append(NSAttributedString(string: "  " + reason, attributes: [
-                    .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]))
-                entry.attributedTitle = title
+                entry.attributedTitle = statusTitle(l10n(source.titleKey), status: reason)
             }
             if tracked, orb.sources.toggling(source) == nil {
                 entry.isEnabled = false
@@ -137,6 +134,58 @@ enum OrbMenus {
         }
         item.submenu = submenu
         return item
+    }
+
+    /// `orbs.traffic` ▸ this orb's agents / the whole computer / off, check on the current one (DESIGN 10). Disabled
+    /// while traffic is not measured; without per-process data the `sources` choice, and the item while the orb uses
+    /// it, show `traffic.unavailable.short`.
+    static func trafficItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
+        let l10n = model.l10n
+        let unavailable = processTrafficUnavailable(model) ? l10n("traffic.unavailable.short") : nil
+        let item = NSMenuItem(title: l10n("orbs.traffic"), action: nil, keyEquivalent: "")
+        item.isEnabled = model.settings.trafficEnabled
+        if let unavailable, orb.traffic == .sources {
+            item.attributedTitle = statusTitle(l10n("orbs.traffic"), status: unavailable)
+        }
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for traffic in OrbTraffic.allCases {
+            let entry = ActionMenuItem(l10n(traffic.titleKey), state: orb.traffic == traffic ? .on : .off) { [weak model] in
+                model?.orbs.setTraffic(traffic, of: orb.id)
+            }
+            if let unavailable, traffic == .sources {
+                entry.attributedTitle = statusTitle(l10n(traffic.titleKey), status: unavailable)
+            }
+            submenu.addItem(entry)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    /// Measuring is on but per-process data is not (`off` while enabled only means no state is known yet).
+    private static func processTrafficUnavailable(_ model: AppModel) -> Bool {
+        let state = model.traffic.snapshot.processState
+        return model.settings.trafficEnabled && !state.isAvailable && state != .off
+    }
+
+    /// `orbs.showName`, checked when the orb's name plate is on; choosing it stores the opposite for this orb
+    /// (automatic is restored in Settings).
+    static func showNameItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
+        let orbs = model.orbs
+        let isOn = NameplateVisibility.isOn(orb, mode: model.settings.orbNames, shownOrbs: orbs.shownOrbs.count)
+        return ActionMenuItem(model.l10n("orbs.showName"), state: isOn ? .on : .off) { [weak orbs] in
+            orbs?.setShowName(!isOn, of: orb.id)
+        }
+    }
+
+    /// A menu title followed by a status in small secondary text.
+    private static func statusTitle(_ title: String, status: String) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: title, attributes: [.font: NSFont.menuFont(ofSize: 0)])
+        text.append(NSAttributedString(string: "  " + status, attributes: [
+            .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]))
+        return text
     }
 
     private static func sizeItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
@@ -170,14 +219,17 @@ enum OrbMenus {
 
     // MARK: Quick menu
 
-    /// With one orb, today's size / always-on-top / click-through items act on it; with several, a `settings.orb`
-    /// submenu lists each orb with Show, Click-through and its settings — the way back to a click-through orb.
+    /// With one orb, its unit / traffic / name / size / always-on-top / click-through items act on it; with several, a
+    /// `settings.orb` submenu lists each orb with Show, Click-through, unit, traffic, name and its settings — the way
+    /// back to a click-through orb.
     static func addQuickItems(to menu: NSMenu, model: AppModel) {
         let l10n = model.l10n
         let orbs = model.orbs
         guard orbs.orbs.count > 1 else {
             guard let orb = orbs.orbs.first else { return }
             menu.addItem(unitItem(model: model, orb: orb))
+            menu.addItem(trafficItem(model: model, orb: orb))
+            menu.addItem(showNameItem(model: model, orb: orb))
             menu.addItem(sizeItem(model: model, orb: orb))
             menu.addItem(ActionMenuItem(l10n("menu.alwaysOnTop"), state: orb.alwaysOnTop ? .on : .off) { [weak orbs] in
                 orbs?.setAlwaysOnTop(!orb.alwaysOnTop, of: orb.id)
@@ -204,6 +256,8 @@ enum OrbMenus {
                 orbs?.setClickThrough(!orb.clickThrough, of: orb.id)
             })
             actions.addItem(unitItem(model: model, orb: orb))
+            actions.addItem(trafficItem(model: model, orb: orb))
+            actions.addItem(showNameItem(model: model, orb: orb))
             actions.addItem(.separator())
             actions.addItem(ActionMenuItem(l10n("menu.orb.settings")) { [weak model] in model?.commands?.showOrbSettings(orb.id) })
             entry.submenu = actions

@@ -29,7 +29,9 @@ struct GeminiParser: Sendable {
         let nested = components.count >= 3 && components[components.count - 3] == "chats"
         parentFolder = nested ? String(components[components.count - 2]) : nil
         var state = AgentState(source: .gemini, isSubagent: nested)
-        state.project = GeminiProjects.shared.project(forSessionAt: agentId)
+        let project = GeminiProjects.shared.project(forSessionAt: agentId)
+        state.project = project?.name
+        state.cwdPath = project?.root
         state.thread = SessionThread(id: nil, parentId: parentFolder, createdMs: 0)
         self.state = state
         initialState = state
@@ -201,17 +203,23 @@ struct GeminiParser: Sendable {
 
 /// Project names of Gemini CLI project folders (METRICS 4.6), read once per folder.
 final class GeminiProjects: Sendable {
+    struct Project: Equatable, Sendable {
+        var name: String?
+        /// The `.project_root` content (METRICS 10.6); nil when the name came from the registry.
+        var root: String?
+    }
+
     static let shared = GeminiProjects()
     private static let maxFileBytes = 1 << 20
 
-    private let cache = OSAllocatedUnfairLock(initialState: [String: String?]())
+    private let cache = OSAllocatedUnfairLock(initialState: [String: Project]())
 
-    /// `<projectDir>/.project_root`, else the `projects.json` registry next to the root; nil when neither names it.
-    func project(forSessionAt path: String) -> String? {
+    /// `<projectDir>/.project_root`, else the `projects.json` registry next to the root; nil outside a project folder.
+    func project(forSessionAt path: String) -> Project? {
         guard let directory = Self.projectDirectory(ofSessionAt: path) else { return nil }
         if let cached = cache.withLock({ $0[directory] }) { return cached }
         let project = Self.lookUp(directory)
-        cache.withLock { $0[directory] = .some(project) }
+        cache.withLock { $0[directory] = project }
         return project
     }
 
@@ -225,18 +233,19 @@ final class GeminiProjects: Sendable {
         return nil
     }
 
-    private static func lookUp(_ directory: String) -> String? {
+    private static func lookUp(_ directory: String) -> Project {
         if let data = read((directory as NSString).appendingPathComponent(".project_root")) {
             let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            return basename(text)
+            return Project(name: basename(text), root: text.isEmpty ? nil : text)
         }
         let registry = (((directory as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent as NSString)
             .appendingPathComponent("projects.json")
-        guard let data = read(registry) else { return nil }
+        guard let data = read(registry) else { return Project() }
         let slug = (directory as NSString).lastPathComponent
-        return data.withUnsafeBytes { bytes in
+        let name = data.withUnsafeBytes { bytes in
             Self.registryRoot(bytes, slug: slug).flatMap(basename)
         }
+        return Project(name: name)
     }
 
     /// The first `projects` key whose value is `slug`, in document order.

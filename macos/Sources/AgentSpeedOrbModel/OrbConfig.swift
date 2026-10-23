@@ -27,6 +27,10 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
     public var titleTheme: String?
     /// tok/s or the money unit (DESIGN 2b, 9).
     public var unit: OrbUnit
+    /// The traffic readout (DESIGN 2b, 10).
+    public var traffic: OrbTraffic
+    /// nil follows the global `orbNames`; true / false shows or hides this orb's name plate (DESIGN 2b, Name plate).
+    public var showName: Bool?
 
     public init(
         id: String,
@@ -43,7 +47,9 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
         redlineOutput: Double? = nil,
         redlineTotal: Double? = nil,
         titleTheme: String? = nil,
-        unit: OrbUnit = .tokens
+        unit: OrbUnit = .tokens,
+        traffic: OrbTraffic = .sources,
+        showName: Bool? = nil
     ) {
         self.id = id
         self.name = Self.cleanName(name)
@@ -60,6 +66,8 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
         self.redlineTotal = Self.cleanRedline(redlineTotal)
         self.titleTheme = Self.cleanThemeID(titleTheme)
         self.unit = unit
+        self.traffic = traffic
+        self.showName = showName
     }
 
     /// The orb of a fresh install: all sources, `led`, 148 pt, at the default position.
@@ -100,7 +108,7 @@ public struct OrbConfig: Equatable, Hashable, Identifiable, Sendable {
 extension OrbConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case id, name, sources, style, size, opacity, alwaysOnTop, clickThrough, fadeWhenIdle, allSpaces, visible
-        case redlineOutput, redlineTotal, titleTheme, unit
+        case redlineOutput, redlineTotal, titleTheme, unit, traffic, showName
     }
 
     public init(from decoder: Decoder) throws {
@@ -127,8 +135,16 @@ extension OrbConfig: Codable {
             redlineOutput: value(Double.self, .redlineOutput),
             redlineTotal: value(Double.self, .redlineTotal),
             titleTheme: value(String.self, .titleTheme),
-            unit: value(OrbUnit.self, .unit) ?? .tokens
+            unit: value(OrbUnit.self, .unit) ?? .tokens,
+            traffic: Self.decodeTraffic(container),
+            showName: value(Bool.self, .showName)
         )
+    }
+
+    /// Absent or null (orbs saved by older builds) → `sources`; unknown → `off` (DESIGN 2b).
+    private static func decodeTraffic(_ container: KeyedDecodingContainer<CodingKeys>) -> OrbTraffic {
+        guard container.contains(.traffic), (try? container.decodeNil(forKey: .traffic)) == false else { return .sources }
+        return (try? container.decode(OrbTraffic.self, forKey: .traffic)) ?? .off
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -148,5 +164,7 @@ extension OrbConfig: Codable {
         try container.encode(redlineTotal, forKey: .redlineTotal)
         try container.encode(titleTheme, forKey: .titleTheme)
         try container.encode(unit, forKey: .unit)
+        try container.encode(traffic, forKey: .traffic)
+        try container.encode(showName, forKey: .showName)
     }
 }

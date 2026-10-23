@@ -121,6 +121,11 @@ private struct DashboardDetails: View {
             AgentsSection(model: model)
             SectionDivider()
             TodaySection(model: model)
+            if model.settings.trafficEnabled {
+                SectionDivider()
+                TrafficSection(model: model)
+                    .transition(.opacity)
+            }
             if !warnings.isEmpty {
                 WarningsFootnote(model: model, warnings: warnings)
                     .padding(.top, DashboardLayout.sectionSpacing)
@@ -128,5 +133,6 @@ private struct DashboardDetails: View {
             }
         }
         .animation(model.dashboardMotion, value: warnings.isEmpty)
+        .animation(model.dashboardMotion, value: model.settings.trafficEnabled)
     }
 }

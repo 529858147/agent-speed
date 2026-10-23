@@ -18,6 +18,10 @@ struct AgentRow: View {
         let project = agent.project.isEmpty ? sourceName : agent.project
         // Model first: when space runs out the source name truncates, and the badge color still carries it.
         let detail = [agent.model, sourceName].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+        // Attributed traffic today (DESIGN 10, Agents): the line ends with `· ↓ 2.10 MB`, kept whole while the model and
+        // source names give way; both directions in the tooltip.
+        let traffic = agentTraffic
+        let trafficSuffix = traffic.flatMap { $0.rx > 0 ? " · ↓ " + TrafficFormat.total($0.rx) : nil }
         let speed = model.value(of: agent.live)
         let status = status(l10n)
 
@@ -35,11 +39,18 @@ struct AgentRow: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                     .accessibilityLabel(agent.isSubagent ? "\(project), \(l10n("agents.subagent"))" : project)
-                Text(detail)
-                    .font(DashboardFont.detail)
-                    .foregroundStyle(.dashboardSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 0) {
+                    Text(detail)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let trafficSuffix {
+                        Text(trafficSuffix)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .font(DashboardFont.detail)
+                .foregroundStyle(.dashboardSecondary)
             }
 
             Spacer(minLength: Spacing.xs)
@@ -54,9 +65,18 @@ struct AgentRow: View {
         .frame(height: DashboardLayout.rowHeight)
         .padding(.leading, CGFloat(depth) * DashboardLayout.subagentIndent)
         .contentShape(Rectangle())
-        .help("\(project) · \(status)")
+        .help(traffic.map { "\(project) · \(status)\n" + l10n("traffic.agent.tooltip", TrafficText(model: model).pair($0)) }
+            ?? "\(project) · \(status)")
         .accessibilityElement(children: .combine)
         .accessibilityValue(status)
+    }
+
+    /// Today's traffic attributed to this agent's tree (roots only; sub-agents run inside their parent's process).
+    private var agentTraffic: TrafficBytes? {
+        guard model.settings.trafficEnabled, agent.parentId == nil,
+              let traffic = model.traffic.snapshot.agents[agent.id] else { return nil }
+        let bytes = traffic.today.total(includeTools: model.settings.trafficIncludeTools)
+        return bytes.isZero ? nil : bytes
     }
 
     private func status(_ l10n: Localizer) -> String {

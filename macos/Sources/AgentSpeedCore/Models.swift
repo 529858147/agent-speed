@@ -100,6 +100,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     public var parentId: String?
     /// The agent's live cost rate (METRICS 9.5).
     public var liveCost: LiveCost
+    /// The full working directory the transcript names (METRICS 10.6); nil when it names none.
+    public var cwdPath: String?
 
     public init(
         id: String,
@@ -112,7 +114,8 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         recentSpeed: Double?,
         lastActivity: Date,
         parentId: String? = nil,
-        liveCost: LiveCost = .zero
+        liveCost: LiveCost = .zero,
+        cwdPath: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -125,6 +128,7 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         self.lastActivity = lastActivity
         self.parentId = parentId
         self.liveCost = liveCost
+        self.cwdPath = cwdPath
     }
 }
 

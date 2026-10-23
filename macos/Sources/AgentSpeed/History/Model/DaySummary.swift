@@ -46,6 +46,8 @@ struct DaySummary: Identifiable, Equatable, Sendable {
     var priceVersion: Int?
     /// Per model over the counted sources.
     var modelCosts: [String: ModelCost] = [:]
+    /// The day's network traffic (METRICS 10.9); nil before measuring began.
+    var traffic: DayTraffic?
 
     /// Output tok/s over the day's measured responses.
     var averageSpeed: Double? {
@@ -68,7 +70,11 @@ struct DaySummary: Identifiable, Equatable, Sendable {
 
     /// The day's value of a chart metric: output tokens, or known micro-USD.
     func value(_ metric: HistoryChartMetric) -> Double {
-        metric == .output ? Double(output) : Double(cost.microUsd)
+        switch metric {
+        case .output: Double(output)
+        case .cost: Double(cost.microUsd)
+        case .traffic: Double(traffic?.shown.sum ?? 0)
+        }
     }
 }
 

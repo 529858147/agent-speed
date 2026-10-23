@@ -28,6 +28,9 @@ struct OrbContent {
     var money: OrbMoneyText?
     /// Thumbnails and previews (Settings) cap effects and draw at small sizes.
     var isThumbnail = false
+    /// The traffic readout is on for this orb (DESIGN 10), and what it shows (nil while it never was loud).
+    var trafficEnabled = false
+    var traffic: OrbTrafficReading?
 
     /// Below 64 pt only the value is drawn (DESIGN 2a, Shared foundation).
     var valueOnly: Bool { diameter < 64 }
@@ -177,6 +180,8 @@ struct OrbReadoutLayout {
 protocol OrbStyleRenderer: AnyObject {
     var kind: OrbStyleKind { get }
     var readoutLayout: OrbReadoutLayout { get }
+    /// Where the traffic readout goes (DESIGN 10).
+    var trafficPlacement: OrbTrafficPlacement { get }
     /// Layers of the shared foundation this style draws.
     var hasAura: Bool { get }
     var hasWave: Bool { get }
@@ -188,6 +193,8 @@ protocol OrbStyleRenderer: AnyObject {
     func build(into scene: inout OrbScene, _ frame: OrbFrame)
     /// Adds the readout; styles that split or recolor it override this.
     func buildReadout(into scene: inout OrbScene, _ frame: OrbFrame, readout: OrbReadoutBuilder)
+    /// Adds the traffic readout; `liquid` splits it at its surface.
+    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout)
     /// The frame class the instrument needs at rest in this state (transitions are handled by the animator).
     func ambientFrameClass(_ frame: OrbFrame) -> OrbFrameClass
     /// Whether anything of the style still moves (springs settling, particles alive).
@@ -208,6 +215,11 @@ extension OrbStyleRenderer {
 
     func buildReadout(into scene: inout OrbScene, _ frame: OrbFrame, readout: OrbReadoutBuilder) {
         readout.add(into: &scene, frame, layout: readoutLayout)
+    }
+
+    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout) {
+        traffic.add(into: &scene, frame, placement: trafficPlacement,
+                    palette: .standard(dark: frame.dark, increaseContrast: frame.content.increaseContrast))
     }
 
     func pulse(at time: TimeInterval, strength: Double, heat: Double) {}

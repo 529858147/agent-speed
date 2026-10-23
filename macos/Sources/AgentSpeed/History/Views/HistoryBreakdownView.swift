@@ -188,6 +188,7 @@ private struct BreakdownRowContent: View {
             BreakdownBar(scale: item.scale, tint: tint, inProgress: inProgress, increasedContrast: increasedContrast)
                 .frame(height: 12)
                 .frame(maxWidth: .infinity)
+                .help(item.traffic.map { TrafficText(l10n: l10n, bits: false).pair($0) } ?? "")
             Text(SpeedFormat.tokens(item.output))
                 .font(HistoryFont.cell)
                 .frame(width: BreakdownColumns.output, alignment: .trailing)

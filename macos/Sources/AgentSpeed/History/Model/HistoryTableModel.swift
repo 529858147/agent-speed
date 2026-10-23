@@ -2,7 +2,7 @@ import AgentSpeedCore
 import Foundation
 
 enum HistoryColumn: String, CaseIterable, Identifiable, Sendable {
-    case date, requests, output, input, cost, cacheHit, speed, peak, agents, models
+    case date, requests, output, input, cost, traffic, cacheHit, speed, peak, agents, models
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum HistoryColumn: String, CaseIterable, Identifiable, Sendable {
         case .output: "history.table.output"
         case .input: "history.table.input"
         case .cost: "history.table.cost"
+        case .traffic: "history.table.traffic"
         case .cacheHit: "history.table.cacheHit"
         case .speed: "history.table.speed"
         case .peak: "history.table.peak"
@@ -27,9 +28,9 @@ enum HistoryColumn: String, CaseIterable, Identifiable, Sendable {
     /// The first click on a header sorts largest (or newest) first; model names sort A→Z.
     var defaultDescending: Bool { self != .models }
 
-    /// Columns of the table; the peak only exists for all sources (METRICS 8).
-    static func visible(allSources: Bool) -> [HistoryColumn] {
-        allSources ? allCases : allCases.filter { $0 != .peak }
+    /// Columns of the table; the peak only exists for all sources (METRICS 8); traffic while it is measured or stored.
+    static func visible(allSources: Bool, traffic: Bool = false) -> [HistoryColumn] {
+        allCases.filter { (allSources || $0 != .peak) && (traffic || $0 != .traffic) }
     }
 }
 
@@ -76,6 +77,7 @@ enum HistoryTable {
         case .output: SpeedFormat.tokens(row.output)
         case .input: SpeedFormat.tokens(row.input)
         case .cost: money.display(row.cost, subscriptionTag: l10n("cost.subscription.tag"))
+        case .traffic: row.traffic.map { TrafficText(l10n: l10n, bits: false).pair($0.shown) } ?? "–"
         case .cacheHit: HistoryText.percent(row.cacheHitRatio)
         case .speed: row.averageSpeed.map(SpeedFormat.speed) ?? l10n("history.noSpeed")
         case .peak: row.peak.map(SpeedFormat.speed) ?? "–"
@@ -91,11 +93,22 @@ enum HistoryTable {
         case .output: HistoryText.fullNumber(row.output, l10n)
         case .input: HistoryText.fullNumber(row.input, l10n)
         case .cost: costTooltip(row.cost, money: money, l10n)
+        case .traffic: trafficTooltip(row.traffic, l10n)
         case .speed: row.averageSpeed.map { HistoryText.fullSpeed($0, l10n) }
         case .peak: row.peak.map { HistoryText.fullSpeed($0, l10n) }
         case .models: row.models.isEmpty ? nil : row.models.map { HistoryText.modelWithSpeed($0, l10n) }.joined(separator: "\n")
         case .requests, .cacheHit, .agents: nil
         }
+    }
+
+    /// The traffic cell's tooltip: not recorded before measuring began, the recorded time on partial days, the tools' part.
+    static func trafficTooltip(_ traffic: DayTraffic?, _ l10n: Localizer) -> String? {
+        guard let traffic else { return l10n("history.traffic.notRecorded") }
+        let text = TrafficText(l10n: l10n, bits: false)
+        var lines = [text.spokenTotals(traffic.shown)]
+        if traffic.includeTools, !traffic.tools.isZero { lines.append(l10n("history.traffic.tools", text.pair(traffic.tools))) }
+        if traffic.partial { lines.append(l10n("history.traffic.partial", HistoryText.duration(ms: traffic.recordedMs, l10n))) }
+        return lines.joined(separator: "\n")
     }
 
     /// The cost cell's tooltip: the amount with US dollars beside another currency, and why a value is partial or
@@ -130,6 +143,7 @@ enum HistoryTable {
         case .output: Double(row.output)
         case .input: Double(row.input)
         case .cost: row.cost.sortValue
+        case .traffic: row.traffic.map { Double($0.shown.sum) }
         case .cacheHit: row.cacheHitRatio
         case .speed: row.averageSpeed
         case .peak: row.peak

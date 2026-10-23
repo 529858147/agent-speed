@@ -10,11 +10,20 @@ struct HistoryFooter: View {
     var unpriced: [UnpricedModel] = []
     /// `以 2026/10/22 的匯率換算` for a non-USD currency.
     var rateNote: String?
+    /// `網路流量自 10/22 開始記錄` when the range starts before traffic was recorded (DESIGN 10).
+    var trafficSince: String?
     let onRefresh: () -> Void
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
             state
+            if let trafficSince {
+                Text(verbatim: "·")
+                    .accessibilityHidden(true)
+                Text(trafficSince)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
             if !unpriced.isEmpty {
                 UnpricedNotice(models: unpriced, l10n: l10n)
                     .padding(.leading, Spacing.xs)

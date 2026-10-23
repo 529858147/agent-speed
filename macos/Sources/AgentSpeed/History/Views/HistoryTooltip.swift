@@ -27,7 +27,9 @@ struct HistoryTooltip: View {
                 }
             }
             .padding(.bottom, 8)
-            if let summary {
+            if chart.metric == .traffic {
+                traffic
+            } else if let summary {
                 rows(summary)
                 if !summary.models.isEmpty {
                     Divider().padding(.vertical, 8)
@@ -63,6 +65,36 @@ struct HistoryTooltip: View {
             }
             if !costFirst { costRow(summary, emphasized: false) }
         }
+    }
+
+    /// The day's traffic (DESIGN 10, Usage history tooltip): the pair, the tools' part, this computer and how long the
+    /// day was recorded when that is not the whole day.
+    @ViewBuilder
+    private var traffic: some View {
+        let text = TrafficText(l10n: l10n, bits: false)
+        if let traffic = chart.traffic[day] {
+            VStack(alignment: .leading, spacing: 4) {
+                row(l10n("history.table.traffic"), text.pair(traffic.shown), emphasized: true)
+                if traffic.includeTools, !traffic.tools.isZero {
+                    note(l10n("history.traffic.tools", text.pair(traffic.tools)))
+                }
+                if let machine = traffic.machine {
+                    note(l10n("history.traffic.machine", text.pair(machine)))
+                }
+                if traffic.partial {
+                    note(l10n("history.traffic.partial", HistoryText.duration(ms: traffic.recordedMs, l10n)))
+                }
+            }
+        } else {
+            note(l10n("history.traffic.notRecorded"))
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5).monospacedDigit())
+            .foregroundStyle(.historySecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

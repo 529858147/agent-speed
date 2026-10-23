@@ -16,6 +16,8 @@ final class HistoryViewModel {
     let accessibility: AccessibilityState
     /// Currency, rates and subscription marks (DESIGN 9).
     let cost: CostDisplay
+    /// Stored traffic days (METRICS 10.9).
+    let traffic: TrafficStore
     /// Pointer, keyboard and selection state, kept apart so hovering never rebuilds the content.
     let interaction = HistoryInteraction()
 
@@ -31,11 +33,12 @@ final class HistoryViewModel {
     @ObservationIgnored private var dataLoop: ObservationLoop?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
-    init(store: HistoryStore, l10n: Localizer, accessibility: AccessibilityState, cost: CostDisplay) {
+    init(store: HistoryStore, l10n: Localizer, accessibility: AccessibilityState, cost: CostDisplay, traffic: TrafficStore) {
         self.store = store
         self.l10n = l10n
         self.accessibility = accessibility
         self.cost = cost
+        self.traffic = traffic
         let stored = cost.settings.storage.object(forKey: Self.includeSubscriptionsKey) as? Bool
         let include = stored ?? cost.settings.includeSubscriptions
         includeSubscriptions = include
@@ -43,7 +46,8 @@ final class HistoryViewModel {
         content = HistoryContent.build(
             usage: store.days, source: nil, rangeKind: .days30, customRange: nil, sort: HistorySort(), today: today, l10n: l10n,
             money: HistoryMoney(cost), costOptions: HistoryCostOptions(marked: cost.settings.subscriptionSources,
-                                                                        includeSubscriptions: include)
+                                                                        includeSubscriptions: include),
+            traffic: Self.historyTraffic(traffic, settings: cost.settings)
         )
         dataLoop = ObservationLoop { [weak self] in
             guard let self else { return }
@@ -51,6 +55,7 @@ final class HistoryViewModel {
             _ = self.l10n.language
             _ = HistoryMoney(self.cost)
             _ = self.cost.settings.subscriptionSources
+            _ = (self.traffic.days, self.traffic.since, self.cost.settings.trafficIncludeTools, self.cost.settings.trafficUnit)
             self.rebuild()
         }
         let center = NotificationCenter.default
@@ -131,10 +136,19 @@ final class HistoryViewModel {
         )
         let next = HistoryContent.build(
             usage: store.days, source: source, rangeKind: rangeKind, customRange: customRange, sort: sort,
-            today: today, l10n: l10n, money: HistoryMoney(cost), costOptions: options
+            today: today, l10n: l10n, money: HistoryMoney(cost), costOptions: options,
+            traffic: Self.historyTraffic(traffic, settings: cost.settings)
         )
         if next != content { content = next }
     }
+
+    private static func historyTraffic(_ store: TrafficStore, settings: AppSettings) -> HistoryTraffic {
+        HistoryTraffic(days: store.days, since: store.since, includeTools: settings.trafficIncludeTools,
+                       bits: settings.trafficUnit == .bits)
+    }
+
+    /// The metric control offers traffic while measuring is on or traffic history exists (DESIGN 10).
+    var offersTraffic: Bool { cost.settings.trafficEnabled || !traffic.days.isEmpty }
 }
 
 /// Hover, keyboard focus day, row selection and the reveal flash.

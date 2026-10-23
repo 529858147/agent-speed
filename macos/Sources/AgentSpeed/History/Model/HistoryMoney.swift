@@ -4,10 +4,16 @@ import Foundation
 /// What the daily chart and the single-day breakdown measure (DESIGN 9, Usage history: `history.chart.output` |
 /// `history.chart.cost`).
 enum HistoryChartMetric: String, CaseIterable, Identifiable, Sendable {
-    case output, cost
+    case output, cost, traffic
 
     var id: String { rawValue }
-    var titleKey: String { self == .output ? "history.chart.output" : "history.chart.cost" }
+    var titleKey: String {
+        switch self {
+        case .output: "history.chart.output"
+        case .cost: "history.chart.cost"
+        case .traffic: "history.chart.traffic"
+        }
+    }
 }
 
 /// How costs count in the window (METRICS 9.4, DESIGN 9): the sources left out as subscriptions and the chart metric.

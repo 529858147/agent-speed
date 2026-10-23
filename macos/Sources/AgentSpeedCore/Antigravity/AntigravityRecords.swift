@@ -77,6 +77,8 @@ struct AntigravityTrajectory: Equatable, Sendable {
     var createdMs: Int64?
     /// Basename of the first `workspace_uris` entry, else of the first workspace's folder URI.
     var project: String?
+    /// The local path of the URI `project` comes from, when it is a `file:` URI (METRICS 10.6).
+    var cwdPath: String?
     /// `parent_conversation_id` (5); empty is nil.
     var parentConversationId: String?
     /// A parent id, `nesting_depth > 0` or a `subagent_spec`.

@@ -47,6 +47,22 @@ enum BarDisplayMode: String, CaseIterable, Identifiable, Sendable {
     var showsValue: Bool { self != .glyph }
 }
 
+/// The unit of traffic rates (DESIGN 10): bytes (default) or bits; totals are always bytes.
+enum TrafficUnit: String, CaseIterable, Identifiable, Sendable {
+    case bytes, bits
+
+    var id: String { rawValue }
+    var titleKey: String { "settings.traffic.unit.\(rawValue)" }
+}
+
+/// The menu bar block of traffic rates (DESIGN 10, Menu bar and taskbar).
+enum BarTraffic: String, CaseIterable, Identifiable, Sendable {
+    case off, machine, agents
+
+    var id: String { rawValue }
+    var titleKey: String { "settings.bar.traffic.\(rawValue)" }
+}
+
 /// The live value's unit (DESIGN 9): token speed or the API-equivalent cost per second.
 enum LiveUnit: String, CaseIterable, Identifiable, Sendable {
     case tokens, cost

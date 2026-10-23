@@ -40,6 +40,8 @@ struct ChartPlot: View, Animatable {
     var domain: Double
     var peak: Double
     var peakLabel: String
+    /// A small unit caption under the top axis value, while the hero shows money instead of token speed.
+    var axisUnit: String?
     var style: ChartStyle
 
     nonisolated var animatableData: Double {
@@ -178,6 +180,12 @@ struct ChartPlot: View, Animatable {
                 .font(DashboardFont.chartLabel)
                 .foregroundStyle(secondary)
             context.draw(label, at: CGPoint(x: geometry.size.width, y: y), anchor: .trailing)
+        }
+        if let axisUnit {
+            let caption = Text(axisUnit)
+                .font(DashboardFont.chartUnit)
+                .foregroundStyle(secondary.opacity(0.75))
+            context.draw(caption, at: CGPoint(x: geometry.size.width, y: geometry.y(domain) + 11), anchor: .trailing)
         }
     }
 

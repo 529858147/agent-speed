@@ -16,6 +16,10 @@ case .dumpHistory:
     )
 case .watch(let seconds):
     WatchMode.run(configuration: arguments.configuration, seconds: seconds)
+case .traffic(let seconds):
+    TrafficMode.run(
+        configuration: arguments.configuration, seconds: seconds, interval: arguments.trafficInterval,
+        storePath: arguments.historyStore, live: !arguments.noLive)
 case .syncPrices(let directory):
     print(await NetworkSync.prices(directory: URL(fileURLWithPath: directory, isDirectory: true)))
 case .syncRates(let directory, let currency):

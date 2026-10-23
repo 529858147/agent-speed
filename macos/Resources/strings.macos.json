@@ -461,5 +461,17 @@
     "zh-Hans": "面板",
     "en": "Dashboard",
     "ja": "ダッシュボード"
+  },
+  "mac.settings.tab.orb": {
+    "zh-Hant": "懸浮窗",
+    "zh-Hans": "悬浮窗",
+    "en": "Orbs",
+    "ja": "オーブ"
+  },
+  "mac.settings.tab.traffic": {
+    "zh-Hant": "網路流量",
+    "zh-Hans": "网络流量",
+    "en": "Traffic",
+    "ja": "通信量"
   }
 }

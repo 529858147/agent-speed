@@ -12,6 +12,8 @@ struct ChartSegment: Identifiable, Equatable, Sendable {
     let upper: Double
     /// Value of the segment stacked on this one (0 for the top).
     let above: Double
+    /// Traffic: an upload segment, stacked downward below the axis (its values are negative).
+    var upload = false
 
     var isTop: Bool { above == 0 }
 }
@@ -34,6 +36,19 @@ struct HistoryChartModel: Equatable, Sendable {
     let days: [DayKey: DaySummary]
     /// Formats the cost metric's axis and tooltips.
     var money: HistoryMoney?
+    /// Traffic (DESIGN 10): the axis below zero (upload), each day's traffic, this computer's totals for the outline
+    /// bars (all sources only), and the last day before measuring began.
+    var lowerTicks: AxisTicks?
+    var traffic: [DayKey: DayTraffic] = [:]
+    var notRecordedThrough: DayKey?
+
+    /// The y domain: 0…max, or −upload…download for traffic.
+    var yDomain: ClosedRange<Double> { -(lowerTicks?.max ?? 0)...outputTicks.max }
+
+    /// Axis values on both sides of zero.
+    var axisValues: [Double] {
+        (lowerTicks.map { ticks in ticks.values.dropFirst().reversed().map { -$0 } } ?? []) + outputTicks.values
+    }
 
     var speedRuns: [Range<Int>] { HistoryChartMath.runs(speeds) }
 
@@ -73,11 +88,19 @@ struct HistoryContent: Equatable, Sendable {
     var costOptions: HistoryCostOptions
     /// Models with unknown prices in the range (`history.unpricedNotice`).
     var unpricedModels: [UnpricedModel] = []
+    /// The first day traffic was recorded, when the range starts before it (`history.traffic.since`).
+    var trafficSince: DayKey?
 
     var isEmpty: Bool { days.isEmpty }
 
     /// Requests of the range whose model has no known price.
     var unpricedRequests: Int { unpricedModels.reduce(0) { $0 + $1.requests } }
+
+    /// The range's displayed traffic (DESIGN 10: the traffic chart's header); nil when nothing of it was recorded.
+    var trafficTotal: TrafficBytes? {
+        guard chart.metric == .traffic, !chart.traffic.isEmpty else { return nil }
+        return chart.traffic.values.reduce(TrafficBytes.zero) { $0 + $1.shown }
+    }
 
     /// At least one source is marked as a subscription: the toolbar offers `history.includeSubscriptions`.
     var offersSubscriptionToggle: Bool { !costOptions.marked.isEmpty }
@@ -97,7 +120,9 @@ struct HistoryContent: Equatable, Sendable {
         today: DayKey,
         l10n: Localizer,
         money: HistoryMoney = .usd,
-        costOptions: HistoryCostOptions = HistoryCostOptions()
+        costOptions: HistoryCostOptions = HistoryCostOptions(),
+        traffic: HistoryTraffic = .none,
+        now: Date = Date()
     ) -> HistoryContent {
         let bounds = HistoryAggregator.bounds(usage, source: source)
         let range = HistoryRanges.resolve(rangeKind, today: today, firstDataDay: bounds?.start, custom: customRange)
@@ -106,7 +131,12 @@ struct HistoryContent: Equatable, Sendable {
         let window = DayRange(min(previousRange.start, sparkRange.start), range.end)
         let excluded = costOptions.excluded(for: source)
         let loaded = HistoryAggregator.daily(usage, source: source, range: window, excluded: excluded)
-        let days = loaded.filter { range.contains($0.day) }
+        let calendar = HistoryDates.calendar
+        let days = loaded.filter { range.contains($0.day) }.map { summary -> DaySummary in
+            var summary = summary
+            summary.traffic = traffic.day(summary.day, source: source, today: today, now: now, calendar: calendar)
+            return summary
+        }
         let previous = loaded.filter { previousRange.contains($0.day) }
         let sparkDays = loaded.filter { sparkRange.contains($0.day) }
 
@@ -114,7 +144,7 @@ struct HistoryContent: Equatable, Sendable {
         if let source, !pickerSources.contains(source) {
             pickerSources = SourceKind.allCases.filter { pickerSources.contains($0) || $0 == source }
         }
-        let columns = HistoryColumn.visible(allSources: source == nil)
+        let columns = HistoryColumn.visible(allSources: source == nil, traffic: traffic.hasData || traffic.since != nil)
         let effectiveSort = columns.contains(sort.column) ? sort : HistorySort()
         let costTitleKey = source.map { costOptions.marked.contains($0) } == true ? "history.summary.costApi" : "history.summary.cost"
         return HistoryContent(
@@ -127,16 +157,20 @@ struct HistoryContent: Equatable, Sendable {
             days: days,
             cards: HistorySummary.build(days: days, previous: previous, sparkDays: sparkDays, range: range, today: today,
                                         money: money, costTitleKey: costTitleKey, l10n),
-            chart: chartModel(days: days, range: range, today: today, source: source, metric: costOptions.metric, money: money),
+            chart: costOptions.metric == .traffic
+                ? trafficChart(range: range, today: today, source: source, traffic: traffic, now: now, days: days)
+                : chartModel(days: days, range: range, today: today, source: source, metric: costOptions.metric, money: money),
             breakdown: range.isSingleDay
-                ? HistoryBreakdown.build(usage, day: range.start, source: source, metric: costOptions.metric, excluded: excluded)
+                ? HistoryBreakdown.build(usage, day: range.start, source: source, metric: costOptions.metric, excluded: excluded,
+                                         traffic: traffic.day(range.start, source: source, today: today, now: now, calendar: calendar))
                 : nil,
             columns: columns,
             sort: effectiveSort,
             rows: HistoryTable.sort(days, by: effectiveSort),
             money: money,
             costOptions: costOptions,
-            unpricedModels: HistoryAggregator.unpricedModels(usage, source: source, range: range, excluded: excluded)
+            unpricedModels: HistoryAggregator.unpricedModels(usage, source: source, range: range, excluded: excluded),
+            trafficSince: traffic.since.flatMap { $0 > range.start && $0 <= range.end ? $0 : nil }
         )
     }
 
@@ -147,7 +181,8 @@ struct HistoryContent: Equatable, Sendable {
         return HistoryContent(
             today: today, source: source, rangeKind: rangeKind, range: range, dataBounds: dataBounds,
             pickerSources: pickerSources, days: days, cards: cards, chart: chart, breakdown: breakdown, columns: columns, sort: sort,
-            rows: HistoryTable.sort(days, by: sort), money: money, costOptions: costOptions, unpricedModels: unpricedModels
+            rows: HistoryTable.sort(days, by: sort), money: money, costOptions: costOptions, unpricedModels: unpricedModels,
+            trafficSince: trafficSince
         )
     }
 
@@ -162,6 +197,7 @@ struct HistoryContent: Equatable, Sendable {
             switch metric {
             case .output: Double(source == nil ? day.output(of: kind) : day.output)
             case .cost: money.value(source == nil ? day.costMicroUsd(of: kind) : day.cost.microUsd)
+            case .traffic: 0
             }
         }
         for day in days {
@@ -196,6 +232,78 @@ struct HistoryContent: Equatable, Sendable {
             speedTicks: HistoryChartMath.alignedTicks(maxSpeed * 1.04, intervals: outputTicks.intervals),
             days: Dictionary(uniqueKeysWithValues: days.map { ($0.day, $0) }),
             money: money
+        )
+    }
+}
+
+extension HistoryContent {
+    /// Mirrored daily traffic (DESIGN 10, Usage history): download above the axis stacked by source, upload below it in
+    /// the same colors; one scale for both sides; no speed line. Days before measuring began are marked, never 0.
+    @MainActor
+    fileprivate static func trafficChart(
+        range: DayRange, today: DayKey, source: SourceKind?, traffic: HistoryTraffic, now: Date, days: [DaySummary]
+    ) -> HistoryChartModel {
+        let calendar = HistoryDates.calendar
+        var perDay: [DayKey: DayTraffic] = [:]
+        var totals: [SourceKind: Int64] = [:]
+        for day in range.days {
+            guard let value = traffic.day(day, source: source, today: today, now: now, calendar: calendar) else { continue }
+            perDay[day] = value
+            for (kind, bytes) in value.bySource { totals[kind, default: 0] += bytes.sum }
+        }
+        let stack = source.map { [$0] } ?? totals.filter { $0.value > 0 }.sorted { lhs, rhs in
+            lhs.value != rhs.value ? lhs.value > rhs.value
+                : (SourceKind.allCases.firstIndex(of: lhs.key) ?? 0) < (SourceKind.allCases.firstIndex(of: rhs.key) ?? 0)
+        }.map(\.key)
+        var segments: [ChartSegment] = []
+        var down = 0.0
+        var up = 0.0
+        for day in range.days {
+            guard let value = perDay[day] else { continue }
+            let parts = stack.compactMap { kind -> (SourceKind, TrafficBytes)? in value.bySource[kind].map { (kind, $0) } }
+            var lower = 0.0
+            let downs = parts.filter { $0.1.rx > 0 }
+            for (index, part) in downs.enumerated() {
+                let amount = Double(part.1.rx)
+                segments.append(ChartSegment(day: day, source: part.0, value: amount, lower: lower, upper: lower + amount,
+                                             above: index + 1 < downs.count ? Double(downs[index + 1].1.rx) : 0))
+                lower += amount
+            }
+            var depth = 0.0
+            let ups = parts.filter { $0.1.tx > 0 }
+            for (index, part) in ups.enumerated() {
+                let amount = Double(part.1.tx)
+                segments.append(ChartSegment(day: day, source: part.0, value: amount, lower: -(depth + amount), upper: -depth,
+                                             above: index + 1 < ups.count ? Double(ups[index + 1].1.tx) : 0, upload: true))
+                depth += amount
+            }
+            let machine = value.machine ?? .zero
+            down = max(down, lower, Double(machine.rx))
+            up = max(up, depth, Double(machine.tx))
+        }
+        let step = HistoryChartMath.niceStep(max(down + up, 1) * 1.04 / 4)
+        let upper = AxisTicks(step: step, intervals: max(1, Int(ceil(down * 1.04 / step - 1e-9))))
+        // Upload is usually far smaller than download: below one step the lower side takes the smallest fraction of a
+        // step that holds it, so the chart does not give a quarter of its height to an empty band.
+        let lowerIntervals = Int(ceil(up * 1.04 / step - 1e-9))
+        let lowerStep = lowerIntervals <= 1 ? ([0.2, 0.25, 0.5, 1].map { $0 * step }.first { $0 >= up * 1.04 } ?? step) : step
+        let firstRecorded = traffic.since
+        let notRecorded = firstRecorded.map { $0.adding(days: -1) } ?? range.end
+        return HistoryChartModel(
+            range: range,
+            today: today,
+            metric: .traffic,
+            stack: stack,
+            isSingleSource: source != nil,
+            segments: segments,
+            speeds: Array(repeating: nil, count: max(range.count, 0)),
+            outputTicks: upper,
+            speedTicks: upper,
+            days: Dictionary(uniqueKeysWithValues: days.map { ($0.day, $0) }),
+            money: nil,
+            lowerTicks: lowerIntervals > 0 ? AxisTicks(step: lowerStep, intervals: lowerIntervals) : nil,
+            traffic: perDay,
+            notRecordedThrough: notRecorded >= range.start ? min(notRecorded, range.end) : nil
         )
     }
 }

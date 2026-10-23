@@ -28,6 +28,7 @@ struct SettingsPaneView: View {
         case .orb: OrbPane(model: model)
         case .effects: EffectsPane(model: model)
         case .cost: CostPane(model: model)
+        case .traffic: TrafficPane(model: model)
         case .sources: SourcesPane(model: model)
         case .about: AboutPane(model: model)
         }

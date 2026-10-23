@@ -8,11 +8,31 @@ import SwiftUI
 @MainActor
 final class NeedleStyle: OrbStyleRenderer {
     let kind = OrbStyleKind.needle
-    let readoutLayout = OrbReadoutLayout(
+    private static let hubLayout = OrbReadoutLayout(
         valueSize: 0.205, valueBaseline: 0.035, valueMaxWidth: 0.40, unitSize: 0.062, unitGap: 0.08,
         title: .fixed(0.338), titleSize: 0.062, titleMaxWidth: 0.46, infoScale: 0.85, infoMaxWidth: 0.42,
         dots: 0.405, pillCenter: -0.175
     )
+    /// While the traffic readout is on and fits, the unit leaves the hub for the dial face (DESIGN 10): the hub draws
+    /// no unit, and the layout names the dial position so the unit's click target follows it.
+    private static let dialUnitBaseline: CGFloat = -0.262
+    private static let dialUnitSize: CGFloat = 0.046
+    private static let hubWithoutUnit: OrbReadoutLayout = {
+        var layout = hubLayout
+        layout.unitSize = nil
+        return layout
+    }()
+    private static let dialUnitLayout: OrbReadoutLayout = {
+        var layout = hubLayout
+        layout.unitSize = dialUnitSize
+        layout.unitGap = dialUnitBaseline - hubLayout.valueBaseline
+        return layout
+    }()
+
+    var readoutLayout: OrbReadoutLayout { unitOnDial ? Self.dialUnitLayout : Self.hubLayout }
+    let trafficPlacement = OrbTrafficPlacement.needle
+    /// The unit is printed on the dial face (traffic readout on and fitting at this size).
+    private(set) var unitOnDial = false
 
     private static let redDark = RGBColor(hex: 0xF43F5E)
     private static let redLight = RGBColor(hex: 0xE11D48)
@@ -39,6 +59,8 @@ final class NeedleStyle: OrbStyleRenderer {
     // MARK: Simulation
 
     func step(_ frame: OrbFrame) {
+        unitOnDial = frame.content.trafficEnabled && frame.content.showsReadout && !frame.content.valueOnly
+            && !frame.content.isThumbnail && OrbTrafficMetrics.fits(trafficPlacement, diameter: frame.s, bits: frame.content.traffic?.bits ?? false)
         let dt = frame.dt
         let level = frame.effects.level
         let active = !frame.isIdle && !frame.unavailable
@@ -121,6 +143,7 @@ final class NeedleStyle: OrbStyleRenderer {
         let active = !frame.isIdle && !frame.unavailable
         addDial(&scene, frame)
         addRedZone(&scene, frame, active: active, thumbnail: thumbnail)
+        if unitOnDial { addDialUnit(&scene, frame) }
         addGraduations(&scene, frame, needle: n, active: active, thumbnail: thumbnail)
         if !thumbnail {
             if active { addTrace(&scene, frame, needle: n) }
@@ -415,5 +438,30 @@ final class NeedleStyle: OrbStyleRenderer {
         quarter(315, middle, last)
         quarter(45, last, middle)
         quarter(135, middle, first)
+    }
+
+    // MARK: Readout
+
+    func buildReadout(into scene: inout OrbScene, _ frame: OrbFrame, readout: OrbReadoutBuilder) {
+        readout.add(into: &scene, frame, layout: unitOnDial ? Self.hubWithoutUnit : Self.hubLayout)
+    }
+
+    /// The readout sits in the hub below the value, away from the new-peak pill, so it stays during a celebration.
+    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout) {
+        traffic.add(into: &scene, frame, placement: trafficPlacement,
+                    palette: .standard(dark: frame.dark, increaseContrast: frame.content.increaseContrast), yieldsToPill: false)
+    }
+
+    /// The unit as the legend of a real tachometer (DESIGN 10): on the dial face above the hub, under the graduations
+    /// and the needle, in the secondary token at 75 %; it stays while the traffic readout is quiet.
+    private func addDialUnit(_ scene: inout OrbScene, _ frame: OrbFrame) {
+        let s = frame.s
+        let tracking = 0.4 * frame.unit
+        let style = OrbTextStyle(size: max(OrbReadoutBuilder.textFloor, Self.dialUnitSize * s), weight: .medium, tracking: tracking)
+        guard let texture = OrbTextCache.shared.texture(frame.content.unit, style: style, language: frame.content.language,
+                                                        scale: scene.backingScale) else { return }
+        let secondary = frame.content.increaseContrast ? frame.tokens.secondaryText.opacity(1.35) : frame.tokens.secondaryText
+        scene.add(OrbTextDraw(texture, centerX: frame.center.x + tracking / 2, baseline: frame.center.y + Self.dialUnitBaseline * s,
+                              color: secondary.opacity(0.75)))
     }
 }

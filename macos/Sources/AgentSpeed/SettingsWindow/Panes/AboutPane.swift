@@ -41,7 +41,7 @@ struct AboutPane: View {
             UpdateSettingsCard(model: model)
                 .padding(.top, Spacing.s)
 
-            privacyCard(l10n("privacy.statement"))
+            privacyCard(l10n("privacy.statement"), l10n("privacy.traffic"))
                 .padding(.top, Spacing.s)
 
             VStack(spacing: Spacing.xxs) {
@@ -64,7 +64,7 @@ struct AboutPane: View {
         }
     }
 
-    private func privacyCard(_ text: String) -> some View {
+    private func privacyCard(_ text: String, _ second: String) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return HStack(alignment: .top, spacing: Spacing.s) {
             Image(systemName: "hand.raised.fill")
@@ -73,11 +73,14 @@ struct AboutPane: View {
                 .frame(width: 26, height: 26)
                 .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .accessibilityHidden(true)
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(text)
+                Text(second)
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(Spacing.m)
         .background(Color.primary.opacity(0.04), in: shape)

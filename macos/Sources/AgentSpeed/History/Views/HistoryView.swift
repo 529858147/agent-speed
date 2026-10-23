@@ -24,6 +24,9 @@ struct HistoryView: View {
             }
             .animation(HistoryMotion.fade, value: content.isEmpty)
             HistoryFooter(store: model.store, l10n: model.l10n, unpriced: content.unpricedModels, rateNote: model.rateNote,
+                          trafficSince: content.trafficSince.map {
+                              model.l10n("history.traffic.since", HistoryText.shortDate($0, today: content.today, model.l10n))
+                          },
                           onRefresh: model.refresh)
         }
         .frame(minWidth: 720, minHeight: 480)

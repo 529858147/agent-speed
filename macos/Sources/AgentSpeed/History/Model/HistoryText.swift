@@ -77,6 +77,27 @@ enum HistoryText {
         return digits + compact[suffixStart...]
     }
 
+    /// A recorded duration: `3 小時 12 分` / `3 hr, 12 min`.
+    static func duration(ms: Int64, _ l10n: Localizer) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = ms >= 3_600_000 ? [.hour, .minute] : [.minute]
+        formatter.unitsStyle = .short
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = l10n.locale
+        formatter.calendar = calendar
+        return formatter.string(from: TimeInterval(max(ms, 60_000)) / 1000) ?? ""
+    }
+
+    /// A byte axis value without trailing zeros: `500 MB`, `1 GB`, `2.5 GB` (METRICS 10.11 units).
+    nonisolated static func axisBytes(_ value: Double) -> String {
+        let parts = TrafficFormat.totalParts(abs(value))
+        guard parts.number.contains(".") else { return parts.text }
+        var digits = parts.number
+        while digits.hasSuffix("0") { digits.removeLast() }
+        if digits.hasSuffix(".") { digits.removeLast() }
+        return digits + "\u{00A0}" + parts.unit
+    }
+
     /// Exact count with grouping separators, for tooltips: `1,234,567`.
     static func fullNumber(_ value: Int, _ l10n: Localizer) -> String {
         value.formatted(.number.locale(l10n.locale))

@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import Foundation
 import Observation
 
@@ -33,6 +34,17 @@ final class AppSettings {
     /// The floating orbs' master switch (DESIGN 2b). The single-orb keys of earlier versions (`orbVisible`, `orbSize`,
     /// …) are only read once to migrate and never written again, so a downgrade restores the single orb.
     var orbsVisible: Bool { didSet { store(orbsVisible, .orbsVisible) } }
+    /// Name plates under the orbs (DESIGN 2b, Name plate): auto, always or never; each orb may override it.
+    var orbNames: OrbNamesMode { didSet { store(orbNames.rawValue, .orbNames) } }
+
+    /// Network traffic measuring (DESIGN 10, METRICS 10.4): off stops the sampler at once.
+    var trafficEnabled: Bool { didSet { store(trafficEnabled, .trafficEnabled) } }
+    /// Displayed source and agent traffic includes the tools the agents run (METRICS 10.5); stored data is unchanged.
+    var trafficIncludeTools: Bool { didSet { store(trafficIncludeTools, .trafficIncludeTools) } }
+    /// Rates in bytes or bits per second (DESIGN 10).
+    var trafficUnit: TrafficUnit { didSet { store(trafficUnit.rawValue, .trafficUnit) } }
+    /// The menu bar traffic block (DESIGN 10): off (default), this computer or the agents.
+    var barTraffic: BarTraffic { didSet { store(barTraffic.rawValue, .barTraffic) } }
 
     /// Dashboard agents list: every agent instead of the first rows (DESIGN section 4.4).
     var agentsExpanded: Bool { didSet { store(agentsExpanded, .agentsExpanded) } }
@@ -109,6 +121,11 @@ final class AppSettings {
         barShowsUnit = defaults.object(forKey: Key.barShowsUnit.rawValue) as? Bool ?? true
         orbsVisible = defaults.object(forKey: Key.orbsVisible.rawValue) as? Bool
             ?? defaults.object(forKey: Key.orbVisible.rawValue) as? Bool ?? true
+        orbNames = OrbNamesMode(rawValue: defaults.string(forKey: Key.orbNames.rawValue) ?? "") ?? .auto
+        trafficEnabled = defaults.object(forKey: Key.trafficEnabled.rawValue) as? Bool ?? true
+        trafficIncludeTools = defaults.object(forKey: Key.trafficIncludeTools.rawValue) as? Bool ?? true
+        trafficUnit = TrafficUnit(rawValue: defaults.string(forKey: Key.trafficUnit.rawValue) ?? "") ?? .bytes
+        barTraffic = BarTraffic(rawValue: defaults.string(forKey: Key.barTraffic.rawValue) ?? "") ?? .off
         agentsExpanded = defaults.object(forKey: Key.agentsExpanded.rawValue) as? Bool ?? false
         effects = EffectsLevel(rawValue: defaults.string(forKey: Key.effects.rawValue) ?? "") ?? .standard
         celebratePeaks = defaults.object(forKey: Key.celebratePeaks.rawValue) as? Bool ?? true
@@ -213,7 +230,8 @@ final class AppSettings {
     private enum Key: String {
         case appearance, language, metric, redline, redlineTotal, redlineDefaultsMigrated
         case barMode, barColoredGlyph, barShowsUnit
-        case orbVisible, orbsVisible
+        case orbVisible, orbsVisible, orbNames
+        case trafficEnabled, trafficIncludeTools, trafficUnit, barTraffic
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources

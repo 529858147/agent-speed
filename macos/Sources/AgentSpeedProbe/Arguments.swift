@@ -6,6 +6,8 @@ struct ProbeArguments {
         case dumpToday
         case dumpHistory
         case watch(seconds: Int)
+        /// Live network traffic for real (METRICS 10).
+        case traffic(seconds: Int)
         /// One real price-table sync round into a scratch folder (NETWORK 3).
         case syncPrices(directory: String)
         /// One real exchange-rate round into a scratch folder (NETWORK 4).
@@ -20,9 +22,14 @@ struct ProbeArguments {
     var historyStore: String?
     /// `--prices PATH`: price with this table instead of the bundled one (METRICS 9), as `reference.py --prices`.
     var prices: String?
+    /// `--traffic-interval N`: a fixed nettop interval (0 forces standby) instead of the adaptive cadence.
+    var trafficInterval: Int?
+    /// `--no-live`: traffic without the live transcript monitor (no per-agent attribution), to measure its own cost.
+    var noLive = false
 
     static let usage = """
-        usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS)
+        usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS
+                                | --traffic SECONDS [--traffic-interval 0|1|5] [--no-live] [--history-store PATH])
                                [--prices PATH] [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH]
                                [--gemini PATH] [--omp PATH] [--antigravity PATH]
                AgentSpeedProbe --sync-prices DIR | --sync-rates DIR CURRENCY
@@ -34,6 +41,8 @@ struct ProbeArguments {
         var utc = false
         var historyStore: String?
         var prices: String?
+        var trafficInterval: Int?
+        var noLive = false
         var iterator = arguments.makeIterator()
         while let argument = iterator.next() {
             switch argument {
@@ -58,6 +67,14 @@ struct ProbeArguments {
             case "--watch":
                 guard let value = iterator.next(), let seconds = Int(value), seconds > 0, seconds <= 86_400 else { return nil }
                 mode = .watch(seconds: seconds)
+            case "--traffic":
+                guard let value = iterator.next(), let seconds = Int(value), seconds > 0, seconds <= 86_400 else { return nil }
+                mode = .traffic(seconds: seconds)
+            case "--traffic-interval":
+                guard let value = iterator.next(), let seconds = Int(value), [0, 1, 2, 5].contains(seconds) else { return nil }
+                trafficInterval = seconds
+            case "--no-live":
+                noLive = true
             case "--codex":
                 guard let path = iterator.next() else { return nil }
                 configuration.codexRoot = URL(fileURLWithPath: path, isDirectory: true)
@@ -88,7 +105,8 @@ struct ProbeArguments {
             }
         }
         guard let mode else { return nil }
-        return ProbeArguments(mode: mode, configuration: configuration, utc: utc, historyStore: historyStore, prices: prices)
+        return ProbeArguments(mode: mode, configuration: configuration, utc: utc, historyStore: historyStore, prices: prices,
+                              trafficInterval: trafficInterval, noLive: noLive)
     }
 }
 

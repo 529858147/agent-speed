@@ -2,9 +2,10 @@ import AgentSpeedCore
 import AgentSpeedOrbModel
 import SwiftUI
 
-/// Settings → 懸浮窗 (DESIGN 5, Floating orb pane): the master switch, the orb list with live thumbnails, and the
-/// editor of the selected orb — sources, style cards, size and opacity, window behaviour and Advanced. Every change
-/// applies live and persists immediately. Thumbnails and style cards draw only while the pane is visible.
+/// Settings → 懸浮窗 (DESIGN 5, Floating orb pane): the master switch and name labels, the orb list with live
+/// thumbnails, and the editor of the selected orb — sources, style cards, unit and traffic, size, opacity and name,
+/// window behaviour and Advanced. Every change applies live and persists immediately. Thumbnails and style cards draw
+/// only while the pane is visible.
 struct OrbPane: View {
     let model: AppModel
 
@@ -37,6 +38,15 @@ struct OrbPane: View {
                     subtitle: l10n("orbs.allNote", l10n("settings.bar")),
                     isOn: Binding(get: { orbs.masterVisible }, set: { orbs.masterVisible = $0 })
                 )
+                PopupRow(
+                    title: l10n("orbs.names"),
+                    caption: l10n("orbs.names.hint"),
+                    selection: Binding(get: { model.settings.orbNames }, set: { model.settings.orbNames = $0 })
+                ) {
+                    ForEach(OrbNamesMode.allCases) { mode in
+                        Text(l10n(mode.titleKey)).tag(mode)
+                    }
+                }
             }
 
             if let orb = selected {

@@ -21,6 +21,7 @@ enum PreviewRenderer {
         model.activate(live: false)
         let redline = model.settings.redline
         GaugeChecks.run(into: directory)
+        if wants("nameplates") { NameplatePreviews.render(model: model, into: directory) }
 
         if wants("orb") {
             SurfacePreviews.renderOrbs(model: model, into: directory)
@@ -30,6 +31,13 @@ enum PreviewRenderer {
         }
         if wants("themes") {
             TitleThemePreviews.render(model: model, into: directory)
+        }
+        if wants("traffic") {
+            TrafficOrbPreviews.render(model: model, into: directory)
+            TrafficSurfacePreviews.render(model: model, into: directory)
+        }
+        if wants("cards") {
+            TitleCardPreviews.render(model: model, into: directory)
         }
         if only?.contains("upgrade") == true {
             OrbsPreviews.renderUpgrade(model: model, into: directory)

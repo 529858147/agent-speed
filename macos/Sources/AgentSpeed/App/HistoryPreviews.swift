@@ -73,6 +73,14 @@ enum HistoryPreviews {
         Case(name: "cost-table-min", size: HistoryWindowController.minimumSize, language: .en, sort: .cost, tall: true,
              currency: "JPY", marked: [.codex]),
         Case(name: "cost-old-days", source: .claudeDesktop, range: .all, language: .en, sort: .date, tall: true, metric: .cost),
+        // Traffic (DESIGN 10): mirrored bars, this computer's outline, days before measuring began.
+        Case(name: "traffic", metric: .traffic),
+        Case(name: "traffic-hover-en", language: .en, hoverDaysAgo: 3, metric: .traffic),
+        Case(name: "traffic-not-recorded", range: .days90, metric: .traffic),
+        Case(name: "traffic-source", source: .claudeCode, language: .en, hoverDaysAgo: 0, metric: .traffic),
+        Case(name: "traffic-min-ja", size: HistoryWindowController.minimumSize, language: .ja, metric: .traffic),
+        Case(name: "traffic-breakdown", range: .yesterday, metric: .traffic),
+        Case(name: "traffic-table", sort: .traffic, tall: true, metric: .traffic),
     ]
 
     /// Deterministic rates for previews (the shape of an open.er-api.com response).
@@ -151,11 +159,13 @@ enum HistoryPreviews {
         case .notLoaded: .notLoaded
         }
         model.history.publish(state: state, days: days)
+        TrafficPreviewData.publish(into: model.traffic, now: now)
         model.settings.currency = item.currency
         model.rates.preview(rates: previewRates, currency: item.currency)
         model.settings.subscriptionSources = item.marked
         model.settings.storage.set(item.includeSubscriptions, forKey: HistoryViewModel.includeSubscriptionsKey)
-        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost)
+        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost,
+                                         traffic: model.traffic)
         viewModel.select(metric: item.metric)
         viewModel.select(source: item.source)
         if item.range == .custom, let (start, end) = item.custom {

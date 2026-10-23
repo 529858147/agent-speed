@@ -11,6 +11,8 @@ protocol AppCommands: AnyObject {
     func showSettings(_ pane: SettingsPane?)
     /// Opens the Usage History window filtered to `source` (all sources when nil).
     func showHistory(source: SourceKind?)
+    /// Opens the Usage History window on `metric` (the dashboard's traffic rows open the traffic chart).
+    func showHistory(source: SourceKind?, metric: HistoryChartMetric)
     /// The floating orbs' master switch (DESIGN 2b).
     func setOrbsVisible(_ visible: Bool)
     func resetOrbPosition(_ id: String)
@@ -48,13 +50,19 @@ final class AppModel {
     let prices: PriceSyncController
     let rates: ExchangeRateController
     let cost: CostDisplay
+    /// Network traffic (METRICS 10, DESIGN 10): the live snapshot and the stored days.
+    let traffic: TrafficStore
 
     /// True while the 20 s effects preview (or the `--demo` loop) drives the store.
     private(set) var isPreviewing = false
+    /// The dashboard popover is open (traffic samples every second while it shows per-source traffic).
+    var isDashboardShown = false
 
     @ObservationIgnored weak var commands: AppCommands?
     @ObservationIgnored private(set) var monitor: LiveMonitor?
     @ObservationIgnored private(set) var historyService: HistoryService?
+    /// Network traffic measuring (METRICS 10); live runs only.
+    @ObservationIgnored private var trafficController: TrafficController?
     @ObservationIgnored private var historyStartTimer: Timer?
     @ObservationIgnored private var demo: DemoDriver?
     @ObservationIgnored private var demoLoops = false
@@ -84,6 +92,7 @@ final class AppModel {
         prices = PriceSyncController(book: priceBook, userAgent: userAgent)
         rates = ExchangeRateController(userAgent: userAgent)
         cost = CostDisplay(settings: settings, l10n: l10n, rates: rates, prices: prices)
+        traffic = TrafficStore()
         gauge.redline = settings.redline
     }
 
@@ -144,6 +153,10 @@ final class AppModel {
         // Stored day bindings first, so the engine never re-binds a day that was priced before (METRICS 9.7).
         HistoryService.restorePricing(into: priceBook)
         activateNetwork()
+        let traffic = TrafficController(model: self)
+        trafficController = traffic
+        trafficRetryHandler = { [weak traffic] in traffic?.retry() }
+        traffic.start()
         let monitor = LiveMonitor(store: store, configuration: settings.monitorConfiguration, pricing: priceBook)
         self.monitor = monitor
         appliedConfiguration = settings.monitorConfiguration
@@ -204,9 +217,18 @@ final class AppModel {
         service.start()
     }
 
+    /// Settings → 網路流量 `traffic.retry`: starts the per-process sampler again after it gave up (METRICS 10.3).
+    func retryTraffic() {
+        trafficRetryHandler?()
+    }
+
+    @ObservationIgnored var trafficRetryHandler: (() -> Void)?
+
     /// Deletes the stored daily statistics and analyses the current logs again (Settings → Data Sources).
     func clearHistory() {
         startHistory()
+        // Traffic history cannot be rebuilt from logs: today's totals start over with the deleted store (METRICS 10.9).
+        trafficController?.clearHistory()
         history.clear()
     }
 
@@ -218,6 +240,8 @@ final class AppModel {
     }
 
     func shutdown() {
+        trafficController?.stop()
+        trafficController = nil
         orbs.shutdown()
         demo?.stop()
         historyStartTimer?.invalidate()
@@ -274,7 +298,7 @@ enum DemoDriverRatio {
 
 /// Settings window panes (DESIGN section 5).
 enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
-    case general, menuBar, orb, effects, cost, sources, about
+    case general, menuBar, orb, effects, cost, traffic, sources, about
 
     var id: String { rawValue }
 
@@ -285,8 +309,19 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .orb: "settings.orb"
         case .effects: "settings.effects"
         case .cost: "settings.cost"
+        case .traffic: "settings.traffic"
         case .sources: "settings.sources"
         case .about: "settings.about"
+        }
+    }
+
+    /// The toolbar tab's label: shorter where the full title would push tabs into the overflow menu at the window's
+    /// width (English and Japanese); the window title keeps the full name.
+    var tabTitleKey: String {
+        switch self {
+        case .orb: "mac.settings.tab.orb"
+        case .traffic: "mac.settings.tab.traffic"
+        default: titleKey
         }
     }
 
@@ -297,6 +332,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .orb: "circle.circle"
         case .effects: "sparkles"
         case .cost: "banknote"
+        case .traffic: "arrow.up.arrow.down"
         case .sources: "folder"
         case .about: "info.circle"
         }

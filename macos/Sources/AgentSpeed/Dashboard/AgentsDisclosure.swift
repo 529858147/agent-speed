@@ -9,10 +9,12 @@ struct AgentsDisclosure: View {
     let total: Int
     let l10n: Localizer
     let reduceMotion: Bool
+    /// Replaces the collapsed title (the traffic list says `+2 more` sources, not agents).
+    var title: String?
     let action: () -> Void
 
     var body: some View {
-        let title = expanded ? l10n("agents.collapse") : l10n("agents.expand", hidden)
+        let title = expanded ? l10n("agents.collapse") : self.title ?? l10n("agents.expand", hidden)
         let label = expanded ? title : l10n("agents.expand.a11y", total)
         Button(action: action) {
             HStack(spacing: Spacing.s) {

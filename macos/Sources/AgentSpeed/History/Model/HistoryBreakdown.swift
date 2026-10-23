@@ -22,6 +22,8 @@ struct BreakdownItem: Identifiable, Equatable, Sendable {
     let averageSpeed: Double?
     /// The item's cost as counted (an excluded subscription source adds nothing, METRICS 9.4).
     var cost = HistoryCost.none
+    /// The source's traffic of the day as displayed (DESIGN 10); nil for models and before measuring began.
+    var traffic: TrafficBytes?
 }
 
 /// A single day split by source (all sources) or by model (one source), most output first (DESIGN 4b, item 1).
@@ -48,13 +50,16 @@ struct DayBreakdown: Equatable, Sendable {
 enum HistoryBreakdown {
     /// `day` split by source when `source` is nil, else by the models of `source`, sorted and sized by `metric`.
     static func build(
-        _ usage: [DailyUsage], day: DayKey, source: SourceKind?, metric: HistoryChartMetric = .output, excluded: Set<SourceKind> = []
+        _ usage: [DailyUsage], day: DayKey, source: SourceKind?, metric: HistoryChartMetric = .output, excluded: Set<SourceKind> = [],
+        traffic: DayTraffic? = nil
     ) -> DayBreakdown {
         let records = usage.filter { record in
             (source == nil || record.source == source) && HistoryAggregator.hasUsage(record) && DayKey(record.day) == day
         }
         if source == nil {
-            return DayBreakdown(day: day, kind: .bySource, items: bySource(records, excluded: excluded, metric: metric), metric: metric)
+            return DayBreakdown(day: day, kind: .bySource,
+                                items: bySource(records, excluded: excluded, metric: metric, traffic: traffic?.bySource ?? [:]),
+                                metric: metric)
         }
         return DayBreakdown(day: day, kind: .byModel, items: byModel(records, metric: metric), metric: metric)
     }
@@ -65,6 +70,7 @@ enum HistoryBreakdown {
         var measuredOutput = 0
         var measuredMs: Int64 = 0
         var cost = HistoryCost.none
+        var traffic: TrafficBytes?
 
         mutating func add(_ other: Tally) {
             output += other.output
@@ -75,8 +81,10 @@ enum HistoryBreakdown {
         }
     }
 
-    private static func bySource(_ records: [DailyUsage], excluded: Set<SourceKind>, metric: HistoryChartMetric) -> [BreakdownItem] {
+    private static func bySource(_ records: [DailyUsage], excluded: Set<SourceKind>, metric: HistoryChartMetric,
+                                 traffic: [SourceKind: TrafficBytes]) -> [BreakdownItem] {
         var tallies: [BreakdownItem.Subject: Tally] = [:]
+        for (kind, bytes) in traffic { tallies[.source(kind), default: Tally()].traffic = bytes }
         for record in records {
             var tally = tallies[.source(record.source)] ?? Tally()
             tally.output += max(0, record.totals.output)
@@ -126,8 +134,14 @@ enum HistoryBreakdown {
     }
 
     private static func items(_ tallies: [BreakdownItem.Subject: Tally], metric: HistoryChartMetric) -> [BreakdownItem] {
+        // Models have no traffic of their own: a by-model breakdown keeps sizing by output.
+        let byTraffic = metric == .traffic && tallies.keys.contains { if case .source = $0 { true } else { false } }
         func value(_ tally: Tally) -> Double {
-            metric == .output ? Double(tally.output) : Double(tally.cost.microUsd)
+            switch metric {
+            case .output: Double(tally.output)
+            case .cost: Double(tally.cost.microUsd)
+            case .traffic: byTraffic ? Double(tally.traffic?.sum ?? 0) : Double(tally.output)
+            }
         }
         let total = tallies.values.reduce(0) { $0 + value($1) }
         let largest = tallies.values.map(value).max() ?? 0
@@ -141,7 +155,8 @@ enum HistoryBreakdown {
                     share: total > 0 ? value(tally) / total : 0,
                     scale: largest > 0 ? value(tally) / largest : 0,
                     averageSpeed: speed,
-                    cost: tally.cost
+                    cost: tally.cost,
+                    traffic: tally.traffic
                 )
             }
             .sorted { precedes($0, $1, metric: metric) }
@@ -152,6 +167,8 @@ enum HistoryBreakdown {
     private static func precedes(_ lhs: BreakdownItem, _ rhs: BreakdownItem, metric: HistoryChartMetric) -> Bool {
         if (lhs.subject == .otherModels) != (rhs.subject == .otherModels) { return rhs.subject == .otherModels }
         if metric == .cost, lhs.cost.microUsd != rhs.cost.microUsd { return lhs.cost.microUsd > rhs.cost.microUsd }
+        if metric == .traffic, let a = lhs.traffic?.sum, let b = rhs.traffic?.sum, a != b { return a > b }
+        if metric == .traffic, (lhs.traffic == nil) != (rhs.traffic == nil) { return lhs.traffic != nil }
         if lhs.output != rhs.output { return lhs.output > rhs.output }
         if lhs.requests != rhs.requests { return lhs.requests > rhs.requests }
         switch (lhs.subject, rhs.subject) {

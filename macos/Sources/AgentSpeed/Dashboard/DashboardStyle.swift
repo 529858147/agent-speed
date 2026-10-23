@@ -42,6 +42,7 @@ enum DashboardFont {
     static let metricValue = Font.system(size: 17, weight: .semibold).monospacedDigit()
     static let metricUnit = Font.system(size: 11, weight: .medium)
     static let chartLabel = Font.system(size: 10, weight: .semibold).monospacedDigit()
+    static let chartUnit = Font.system(size: 8.5, weight: .medium)
     static let note = Font.system(size: 11)
 }
 

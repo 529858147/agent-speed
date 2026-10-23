@@ -52,6 +52,32 @@ enum TitlesPaneHarness {
         canvases.forEach { $0.resetStats() }
         report += await measure("general pane, focus walking rows 1–12", seconds: 10, hero: hero, canvases: canvases)
         walker.invalidate()
+
+        // Quick keyboard walk: ↓ / ↑ every 0.2 s through the rows' own key handling, bouncing at the ends.
+        if fields.count > 1 { window?.makeFirstResponder(fields[1]) }
+        var position = 1
+        var step = 1
+        let quick = Timer(timeInterval: 0.2, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                guard let window else { return }
+                if position + step < 1 || position + step >= fields.count { step = -step }
+                position += step
+                let down = step > 0
+                let characters = String(UnicodeScalar(down ? NSDownArrowFunctionKey : NSUpArrowFunctionKey)!)
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
+                    if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [.numericPad, .function],
+                                                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                                    context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                                    isARepeat: false, keyCode: down ? 125 : 126) {
+                        window.sendEvent(event)
+                    }
+                }
+            }
+        }
+        RunLoop.main.add(quick, forMode: .common)
+        canvases.forEach { $0.resetStats() }
+        report += await measure("general pane, ↓/↑ every 0.2 s", seconds: 10, hero: hero, canvases: canvases)
+        quick.invalidate()
         window?.makeFirstResponder(nil)
 
         settings.show(pane: .menuBar)

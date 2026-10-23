@@ -35,8 +35,15 @@ public final class HistoryService {
         self.pricing = pricing
     }
 
-    /// `~/Library/Application Support/AgentSpeed/history.sqlite`.
+    /// `~/Library/Application Support/AgentSpeed/history.sqlite`. Debug builds use `history.sqlite` in the folder
+    /// named by `AGENT_SPEED_SUPPORT_DIR` instead when it is set and not empty; release builds ignore it.
     public nonisolated static var defaultStoreURL: URL {
+        #if DEBUG
+        if let folder = ProcessInfo.processInfo.environment["AGENT_SPEED_SUPPORT_DIR"], !folder.isEmpty {
+            return URL(fileURLWithPath: (folder as NSString).expandingTildeInPath, isDirectory: true)
+                .appendingPathComponent("history.sqlite")
+        }
+        #endif
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("AgentSpeed", isDirectory: true).appendingPathComponent("history.sqlite")

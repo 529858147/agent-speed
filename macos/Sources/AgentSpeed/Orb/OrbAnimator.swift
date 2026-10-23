@@ -78,6 +78,7 @@ final class OrbAnimator {
     @ObservationIgnored private(set) var valueGlow = OrbEnvelope()
     @ObservationIgnored private(set) var skew = OrbEnvelope()
     @ObservationIgnored let readout = OrbReadoutBuilder()
+    @ObservationIgnored let traffic = OrbTrafficReadout()
     /// The hero vehicle of the embedded (dashboard) orb, DESIGN 4c.
     @ObservationIgnored let hero: HeroVehicleDriver?
     /// The hero title badge that replaces the vehicle for every title theme except Vehicles (DESIGN 4c).
@@ -397,15 +398,28 @@ final class OrbAnimator {
         if inTransition(gauge: gauge, at: now) { return (transitionClass, now + 0.1) }
 
         let springs = !gauge.isSettled(at: now) || !envelopesSettled || inMotion(at: now)
+        let traffic = trafficDemand(feed: feed, reduceMotion: effects.reduceMotion, at: now)
         if effects.level == .off || effects.reduceMotion {
-            return springs || renderer.isBusy(frameFor(now)) ? (.fps30, now + 0.1) : (.none, nextSignOfLife(after: now, gauge: gauge, effects: effects, unavailable: unavailable))
+            guard !springs, !renderer.isBusy(frameFor(now)), !traffic.frames else { return (.fps30, now + 0.1) }
+            return (.none, min(traffic.wake, nextSignOfLife(after: now, gauge: gauge, effects: effects, unavailable: unavailable)))
         }
         let frame = frameFor(now)
         var frameClass = unavailable ? .none : renderer.ambientFrameClass(frame)
-        if springs || renderer.isBusy(frame) { frameClass = max(frameClass, .fps30) }
+        if springs || renderer.isBusy(frame) || traffic.frames { frameClass = max(frameClass, .fps30) }
         if signOfLife(at: now, gauge: gauge, effects: effects, unavailable: unavailable) != nil { frameClass = max(frameClass, .fps30) }
         guard frameClass == .none else { return (frameClass, now + 0.25) }
-        return (.none, nextSignOfLife(after: now, gauge: gauge, effects: effects, unavailable: unavailable))
+        return (.none, min(traffic.wake, nextSignOfLife(after: now, gauge: gauge, effects: effects, unavailable: unavailable)))
+    }
+
+    /// The traffic readout's fades draw at 30 fps (a Reduce Motion change still gets its frame); a static orb wakes when
+    /// the quiet fade is due (DESIGN 10, Frame policy). New numbers render one frame through the content refresh.
+    private func trafficDemand(feed: OrbFeed, reduceMotion: Bool, at now: TimeInterval) -> (frames: Bool, wake: TimeInterval) {
+        guard let reading = feed.traffic, feed.trafficEnabled else { return (false, .infinity) }
+        let fadeIn = reduceMotion ? 0.05 : OrbTrafficReading.fadeIn
+        let fadeOut = reduceMotion ? 0.05 : OrbTrafficReading.fadeOut
+        let frames = (now >= reading.shownAt && now < reading.shownAt + fadeIn)
+            || (now >= reading.quietAt && now < reading.quietAt + fadeOut)
+        return (frames, now < reading.quietAt ? reading.quietAt : .infinity)
     }
 
     /// Transitions that run at 60 fps for their duration (DESIGN 2a, Frame policy): new peak, tier flash, title, hover

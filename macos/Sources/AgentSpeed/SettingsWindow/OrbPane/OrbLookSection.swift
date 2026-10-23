@@ -2,7 +2,7 @@ import AgentSpeedOrbModel
 import SwiftUI
 
 /// Size and opacity of the selected orb (DESIGN 5, editor): S / M / L presets left of a slider (96–240 pt, `minimal`
-/// 64–240, step 4) with the value, and opacity 40–100 %.
+/// 64–240, step 4) with the value, opacity 40–100 %, and whether its name plate shows (automatic, on or off).
 struct OrbLookSection: View {
     let model: AppModel
     let orb: OrbConfig
@@ -74,6 +74,21 @@ struct OrbLookSection: View {
                 }
             } label: {
                 RowTitle(l10n("settings.orb.opacity"))
+            }
+
+            let automatic = NameplateVisibility.automatic(
+                mode: model.settings.orbNames,
+                shownOrbs: orbs.shownOrbs.count,
+                tracksAll: NameplateVisibility.tracksAll(orb)
+            )
+            PopupRow(
+                title: l10n("orbs.showName"),
+                selection: Binding(get: { orb.showName }, set: { orbs.setShowName($0, of: id) })
+            ) {
+                Text(l10n("orbs.showName.auto", l10n(automatic ? "orbs.showName.on" : "orbs.showName.off"))).tag(Bool?.none)
+                Divider()
+                Text(l10n("orbs.showName.on")).tag(Bool?.some(true))
+                Text(l10n("orbs.showName.off")).tag(Bool?.some(false))
             }
         }
     }

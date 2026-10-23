@@ -32,16 +32,29 @@ final class HistoryDatabase {
     private let connection: SQLiteConnection
 
     /// Opens (creating when needed) the store at `path`; `:memory:` keeps it in memory.
-    init(path: String) throws {
+    convenience init(path: String) throws {
+        try self.init(path: path, migrating: true)
+    }
+
+    /// Without `migrating`, a store of an older schema keeps its version and only gets `meta` and `day_traffic`;
+    /// a new store always gets the full schema. A newer store throws before anything is changed.
+    private init(path: String, migrating: Bool) throws {
         self.path = path
         if path != ":memory:" {
             try FileManager.default.createDirectory(
                 atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         }
         connection = try SQLiteConnection(path: path, mode: .readWriteCreate)
+        let version = try scalar("PRAGMA user_version") ?? 0
+        guard version <= Self.schemaVersion else { throw Failure.newerSchema }
         if path != ":memory:" { try connection.execute("PRAGMA journal_mode = WAL") }
         try connection.execute("PRAGMA synchronous = NORMAL")
-        try migrate()
+        if migrating || version == 0 {
+            try migrate()
+        } else {
+            try connection.execute(Self.metaTableSQL)
+        }
+        try connection.execute(Self.trafficTableSQL)
     }
 
     static func inMemory() throws -> HistoryDatabase {
@@ -82,7 +95,7 @@ final class HistoryDatabase {
         }
         try connection.transaction {
             try connection.execute("""
-                CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+                \(Self.metaTableSQL)
                 CREATE TABLE IF NOT EXISTS files (
                     id INTEGER PRIMARY KEY,
                     path TEXT NOT NULL UNIQUE,
@@ -130,10 +143,29 @@ final class HistoryDatabase {
         }
     }
 
+    private static let metaTableSQL = """
+        CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+        """
+
     /// Day → price table version, and a copy of every version a binding references (METRICS 9.7).
     private static let priceTablesSQL = """
         CREATE TABLE IF NOT EXISTS price_bindings (day TEXT PRIMARY KEY, version INTEGER NOT NULL) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS price_tables (version INTEGER PRIMARY KEY, body BLOB NOT NULL);
+        """
+
+    /// Observed traffic per day and key (METRICS 10.9). Created on every open rather than by a schema version step:
+    /// older builds refuse a newer `user_version`, and they must keep using the store and ignore this table.
+    private static let trafficTableSQL = """
+        CREATE TABLE IF NOT EXISTS day_traffic (
+            day TEXT NOT NULL,
+            key TEXT NOT NULL,
+            rx INTEGER NOT NULL,
+            tx INTEGER NOT NULL,
+            rx_tools INTEGER NOT NULL,
+            tx_tools INTEGER NOT NULL,
+            sampled_ms INTEGER NOT NULL,
+            PRIMARY KEY (day, key)
+        ) WITHOUT ROWID;
         """
 
     private func scalar(_ sql: String) throws -> Int64? {
@@ -404,6 +436,72 @@ final class HistoryDatabase {
         statement.bind(1, day)
         statement.bind(2, peak)
         try statement.run()
+    }
+
+    // MARK: - Traffic (METRICS 10.9)
+
+    static let trafficSinceKey = "trafficSince"
+
+    /// Every `day_traffic` row (sorted by day, then key) and `trafficSince` of the store at `path`, read without
+    /// creating, migrating or changing anything; empty/nil when the store or the table does not exist or cannot be read.
+    static func storedTraffic(at path: String) -> (days: [TrafficDay], since: String?) {
+        guard FileManager.default.fileExists(atPath: path),
+              let connection = try? SQLiteConnection(path: path, mode: .readOnly) else { return ([], nil) }
+        defer { connection.close() }
+        var days: [TrafficDay] = []
+        var since: String?
+        do {
+            try connection.prepare("""
+                SELECT day, key, rx, tx, rx_tools, tx_tools, sampled_ms FROM day_traffic ORDER BY day, key
+                """).forEachRow { row in
+                guard let day = row.string(0), let key = row.string(1) else { return }
+                days.append(TrafficDay(day: day, key: key, rx: row.int64(2), tx: row.int64(3), rxTools: row.int64(4),
+                                       txTools: row.int64(5), sampledMs: row.int64(6)))
+            }
+            let statement = try connection.prepare("SELECT value FROM meta WHERE key = ?1")
+            statement.bind(1, trafficSinceKey)
+            try statement.forEachRow { since = $0.string(0) }
+        } catch {
+            return ([], nil)
+        }
+        return (days, since)
+    }
+
+    /// Upserts `rows` (by day and key) in one transaction and sets `trafficSince` to the smallest row day when it is
+    /// absent or later. A missing store is created with the full current schema (as `init(path:)` does). An existing
+    /// store of an older or the current schema only gets `day_traffic` (and `meta` if somehow missing) created when
+    /// needed — it is never migrated here (the history worker migrates; two connections migrating at once would
+    /// collide). A store with a newer `user_version` throws `Failure.newerSchema` and is left untouched. Empty `rows`
+    /// is a no-op. Opens and closes its own connection, so it may run beside the history worker's.
+    static func saveTraffic(_ rows: [TrafficDay], at path: String) throws {
+        guard let first = rows.map(\.day).min() else { return }
+        let database = try HistoryDatabase(path: path, migrating: false)
+        defer { database.connection.close() }
+        try database.connection.transaction {
+            let upsert = try database.connection.prepare("""
+                INSERT INTO day_traffic (day, key, rx, tx, rx_tools, tx_tools, sampled_ms)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT(day, key) DO UPDATE SET rx = excluded.rx, tx = excluded.tx, rx_tools = excluded.rx_tools,
+                    tx_tools = excluded.tx_tools, sampled_ms = excluded.sampled_ms
+                """)
+            for row in rows {
+                upsert.bind(1, row.day)
+                upsert.bind(2, row.key)
+                upsert.bind(3, row.rx)
+                upsert.bind(4, row.tx)
+                upsert.bind(5, row.rxTools)
+                upsert.bind(6, row.txTools)
+                upsert.bind(7, row.sampledMs)
+                try upsert.run()
+            }
+            let since = try database.connection.prepare("""
+                INSERT INTO meta (key, value) VALUES (?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE excluded.value < meta.value
+                """)
+            since.bind(1, trafficSinceKey)
+            since.bind(2, first)
+            try since.run()
+        }
     }
 
     // MARK: - Key packing

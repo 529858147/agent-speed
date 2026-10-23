@@ -22,6 +22,8 @@ struct StatusItemLayout: Equatable {
     let valueWidth: CGFloat
     let unitWidth: CGFloat
     let height: CGFloat
+    /// The traffic block's width (gap included); 0 without it.
+    var trafficWidth: CGFloat = 0
 
     init(mode: BarDisplayMode, showsUnit: Bool, unit: String, valueWidth: CGFloat, height: CGFloat) {
         showsGlyph = mode.showsGlyph
@@ -62,8 +64,11 @@ struct StatusItemLayout: Equatable {
         if showsGlyph && showsValue { width += Self.glyphGap }
         if showsValue { width += valueWidth }
         if unit != nil { width += Self.unitGap + unitWidth }
-        return width
+        return width + trafficWidth
     }
+
+    /// Left edge of the traffic block (its gap starts here).
+    var trafficX: CGFloat { length - Self.padding - trafficWidth }
 
     /// Ring center, optically centered on the digits (their cap height) next to it, or on the bar alone.
     var glyphCenter: CGPoint {

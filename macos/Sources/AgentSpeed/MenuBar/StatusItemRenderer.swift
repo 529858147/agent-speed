@@ -32,6 +32,10 @@ final class StatusItemRenderer {
                 _ = (self.model.snapshot.sources, self.model.cost.currency, self.model.cost.rate, settings.billableSources)
             }
             _ = settings.liveUnit
+            _ = (settings.trafficEnabled, settings.barTraffic, settings.trafficUnit)
+            if settings.trafficEnabled, settings.barTraffic != .off {
+                _ = (self.model.traffic.snapshot.machineLive, self.model.traffic.snapshot.sources, settings.trafficIncludeTools)
+            }
             self.render()
         }
     }

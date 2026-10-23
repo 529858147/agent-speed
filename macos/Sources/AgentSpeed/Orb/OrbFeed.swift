@@ -30,6 +30,10 @@ final class OrbFeed {
     var unit: OrbUnit = .tokens
     /// The money readout while `unit` is `.cost`.
     var money: LiveMoney?
+    /// The orb shows a traffic readout (DESIGN 10): its setting is not off, measuring is on and, for its sources, per-process
+    /// traffic is not unavailable. The readout's numbers and fades, nil before the first loud sample.
+    var trafficEnabled = false
+    var traffic: OrbTrafficReading?
 
     @ObservationIgnored private var listeners: [UUID: @MainActor (OrbFeedEvent) -> Void] = [:]
 

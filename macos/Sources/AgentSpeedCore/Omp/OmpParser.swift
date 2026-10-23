@@ -48,6 +48,7 @@ struct OmpParser: Sendable {
             headerSeen = true
             headerMs = header.timestampMs
             state.project = header.cwd.flatMap(Self.basename)
+            state.cwdPath = header.cwd.flatMap { $0.isEmpty ? nil : $0 }
             state.thread?.id = header.id
             state.thread?.createdMs = header.timestampMs ?? 0
             if let timestamp = header.timestampMs { state.noteLine(at: timestamp) }

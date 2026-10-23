@@ -25,6 +25,8 @@ struct LaunchOptions: Sendable {
     var heroCPUDirectory: URL?
     /// `--orbs-demo DIR`: shows three orbs, drags, splits and merges them and captures the region, see `OrbsDemoHarness`.
     var orbsDemoDirectory: URL?
+    /// `--nameplates-demo DIR`: four orbs with name plates on the desktop, see `NameplatesDemoHarness`.
+    var nameplatesDemoDirectory: URL?
     #endif
 
     static func parse(_ arguments: [String] = CommandLine.arguments) -> LaunchOptions {
@@ -62,6 +64,10 @@ struct LaunchOptions: Sendable {
             case "--orbs-demo":
                 if let path = iterator.next() {
                     options.orbsDemoDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--nameplates-demo":
+                if let path = iterator.next() {
+                    options.nameplatesDemoDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
             case "--hero-frames":
                 if let path = iterator.next() {

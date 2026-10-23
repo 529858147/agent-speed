@@ -5,6 +5,8 @@ struct EngineAgent: Equatable, Sendable {
     var id: String
     var source: SourceKind
     var project: String
+    /// The transcript's full working directory (METRICS 10.6); nil when it names none.
+    var cwdPath: String?
     var model: String?
     var isSubagent: Bool
     var phase: AgentPhase
@@ -22,11 +24,13 @@ struct EngineAgent: Equatable, Sendable {
         phase: AgentPhase = .idle,
         inFlightStartMs: Int64? = nil,
         lastLineMs: Int64? = nil,
-        parentId: String? = nil
+        parentId: String? = nil,
+        cwdPath: String? = nil
     ) {
         self.id = id
         self.source = source
         self.project = project
+        self.cwdPath = cwdPath
         self.model = model
         self.isSubagent = isSubagent
         self.phase = phase
@@ -45,7 +49,8 @@ struct EngineAgent: Equatable, Sendable {
             phase: state.phase,
             inFlightStartMs: state.inFlightStartMs,
             lastLineMs: state.lastLineMs,
-            parentId: parentId
+            parentId: parentId,
+            cwdPath: state.cwdPath
         )
     }
 

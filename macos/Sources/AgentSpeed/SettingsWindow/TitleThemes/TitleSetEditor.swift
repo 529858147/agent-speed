@@ -17,8 +17,7 @@ struct TitleSetEditor: View {
     @State private var feeds = TitleEditorPreviewFeeds()
     @State private var name = ""
     @State private var nameSet: String?
-    @State private var focusedLevel: Int?
-    @State private var requestedLevel: Int?
+    @State private var rowFocus = TitleRowFocus()
     @State private var message: String?
     @State private var messageToken = 0
     @FocusState private var nameFocused: Bool
@@ -56,7 +55,7 @@ struct TitleSetEditor: View {
         }
         .onChange(of: set.id) {
             syncName()
-            focusedLevel = nil
+            rowFocus.focus(nil)
             feeds.show(.rocket, redline: model.settings.redline, animated: false)
         }
         .onChange(of: focusRequest) {
@@ -65,7 +64,7 @@ struct TitleSetEditor: View {
             focusRequest = nil
         }
         .onChange(of: model.settings.redline) {
-            feeds.show(focusedLevel.flatMap(SpeedTitle.init(rawValue:)) ?? .rocket, redline: model.settings.redline, animated: false)
+            feeds.show(rowFocus.current.flatMap(SpeedTitle.init(rawValue:)) ?? .rocket, redline: model.settings.redline, animated: false)
         }
     }
 
@@ -167,14 +166,13 @@ struct TitleSetEditor: View {
                 ? l10n("titles.custom.idle.a11y", base)
                 : l10n("titles.custom.row.a11y", level, "\(threshold) \(l10n("unit.tokS"))", base),
             resetLabel: l10n("titles.custom.reset", base),
-            focused: focusedLevel == level,
-            wantsFocus: requestedLevel == level,
+            flags: rowFocus.rows[level],
             onFocus: { focus(level) },
             onDraft: { titles.setDraft(level: level, of: set.id, text: $0) },
             onCommit: { commit(level, $0) },
             onMove: { delta in
                 let next = level + delta
-                if (0...TitlePreset.levelCount).contains(next) { requestedLevel = next }
+                if (0...TitlePreset.levelCount).contains(next) { rowFocus.request(next) }
             },
             onBlur: { blur(level) }
         )
@@ -183,18 +181,22 @@ struct TitleSetEditor: View {
 
     // MARK: Behaviour
 
+    /// Focus moves never touch the editor's own state: only the two rows involved and the previews update.
     private func focus(_ level: Int) {
-        requestedLevel = nil
-        guard focusedLevel != level else { return }
-        focusedLevel = level
+        guard rowFocus.current != level else {
+            rowFocus.clearRequests()
+            return
+        }
+        rowFocus.focus(level)
         feeds.show(SpeedTitle(rawValue: level) ?? .idle, redline: model.settings.redline, animated: true)
     }
 
     private func blur(_ level: Int) {
         titles.clearDraft()
+        let rowFocus = rowFocus
         DispatchQueue.main.async {
-            guard focusedLevel == level else { return }
-            focusedLevel = nil
+            guard rowFocus.current == level else { return }
+            rowFocus.focus(nil)
             feeds.show(.rocket, redline: model.settings.redline, animated: true)
         }
     }
@@ -250,8 +252,41 @@ struct TitleSetEditor: View {
     }
 }
 
-/// One row of the title table. Equatable on what it shows (its actions only reach stable state), so moving the focus
-/// redraws just the two rows involved.
+/// Which row of the title table has the focus or is asked to take it. Kept out of the editor's state and observed per
+/// row, so a focus move re-renders only the two rows involved, never the editor (DESIGN 5: the editor stays within
+/// the pane's 3 % budget while the focus walks the table).
+@MainActor
+final class TitleRowFocus {
+    @MainActor
+    @Observable
+    final class Row {
+        var focused = false
+        var wantsFocus = false
+    }
+
+    let rows: [Row] = (0...TitlePreset.levelCount).map { _ in Row() }
+    private(set) var current: Int?
+
+    func focus(_ level: Int?) {
+        clearRequests()
+        guard level != current else { return }
+        if let current, rows.indices.contains(current) { rows[current].focused = false }
+        current = level
+        if let level, rows.indices.contains(level) { rows[level].focused = true }
+    }
+
+    func request(_ level: Int) {
+        guard rows.indices.contains(level), !rows[level].wantsFocus else { return }
+        rows[level].wantsFocus = true
+    }
+
+    func clearRequests() {
+        for row in rows where row.wantsFocus { row.wantsFocus = false }
+    }
+}
+
+/// One row of the title table. Equatable on what it shows (its actions only reach stable state); its focus flags are
+/// observed by the row alone.
 private struct TitleSetRow: View, Equatable {
     let level: Int
     let text: String
@@ -260,8 +295,7 @@ private struct TitleSetRow: View, Equatable {
     let threshold: String
     let accessibilityLabel: String
     let resetLabel: String
-    let focused: Bool
-    let wantsFocus: Bool
+    let flags: TitleRowFocus.Row
     var onFocus: () -> Void
     var onDraft: (String) -> Void
     var onCommit: (String) -> String
@@ -275,8 +309,7 @@ private struct TitleSetRow: View, Equatable {
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.level == b.level && a.text == b.text && a.placeholder == b.placeholder && a.threshold == b.threshold
-            && a.accessibilityLabel == b.accessibilityLabel && a.resetLabel == b.resetLabel && a.focused == b.focused
-            && a.wantsFocus == b.wantsFocus
+            && a.accessibilityLabel == b.accessibilityLabel && a.resetLabel == b.resetLabel && a.flags === b.flags
     }
 
     var body: some View {
@@ -307,7 +340,7 @@ private struct TitleSetRow: View, Equatable {
                 text: text,
                 placeholder: placeholder,
                 accessibilityLabel: accessibilityLabel,
-                wantsFocus: wantsFocus,
+                wantsFocus: flags.wantsFocus,
                 onFocus: onFocus,
                 onDraft: onDraft,
                 onCommit: onCommit,
@@ -335,7 +368,7 @@ private struct TitleSetRow: View, Equatable {
         .frame(height: Self.height)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.accentColor.opacity(focused ? 0.09 : 0))
+                .fill(Color.accentColor.opacity(flags.focused ? 0.09 : 0))
         )
     }
 }

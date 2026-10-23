@@ -47,6 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             OrbsDemoHarness.start(into: directory)
             return
         }
+        if let directory = options.nameplatesDemoDirectory {
+            NameplatesDemoHarness.start(into: directory)
+            return
+        }
         if let directory = options.motionHarnessDirectory {
             MotionHarness.start(into: directory)
             return
@@ -56,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             return
         }
         #endif
-        let model = AppModel()
+        let model = Self.makeModel()
         model.commands = self
         self.model = model
         model.activate(live: true)
@@ -69,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         self.statusItem = statusItem
         dashboard.onVisibilityChange = { [weak statusItem, weak model] shown in
             statusItem?.setHighlighted(shown)
+            if model?.isDashboardShown != shown { model?.isDashboardShown = shown }
             if !shown { model?.updates.clearUpdatedNotice() }
         }
         orbs = OrbWindowManager(model: model)
@@ -76,6 +81,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         MainMenu.install(model: model)
         if options.demo { model.startDemoLoop() }
         startUpdates(model: model)
+        #if DEBUG
+        scheduleDevelopmentActions()
+        #endif
+    }
+
+    #if DEBUG
+    /// Development runs: `AGENT_SPEED_OPEN_DASHBOARD=SECONDS` opens the dashboard after a delay, `AGENT_SPEED_QUIT_AFTER=SECONDS`
+    /// quits through the normal path (so shutdown runs as on ⌘Q).
+    private func scheduleDevelopmentActions() {
+        let environment = ProcessInfo.processInfo.environment
+        if let delay = environment["AGENT_SPEED_OPEN_DASHBOARD"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.showDashboard() }
+        }
+        if let delay = environment["AGENT_SPEED_QUIT_AFTER"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { NSApp.terminate(nil) }
+        }
+    }
+    #endif
+
+    /// The app's model on the standard defaults. Debug builds can run against another suite
+    /// (`AGENT_SPEED_DEFAULTS_SUITE`), so a development run never touches the settings of the app in use.
+    private static func makeModel() -> AppModel {
+        #if DEBUG
+        if let suite = ProcessInfo.processInfo.environment["AGENT_SPEED_DEFAULTS_SUITE"], let defaults = UserDefaults(suiteName: suite) {
+            return AppModel(settings: AppSettings(defaults: defaults),
+                            updates: UpdateController(configuration: .current(environment: [:]), store: UpdateStore(defaults: defaults)))
+        }
+        #endif
+        return AppModel()
     }
 
     /// Notifications, the schedule, the relaunch hand-off, the developer flags and the one-time `update.done`.
@@ -161,6 +195,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         dashboard?.close()
         model?.startHistory()
         historyWindow?.show(source: source)
+    }
+
+    func showHistory(source: SourceKind?, metric: HistoryChartMetric) {
+        dashboard?.close()
+        model?.startHistory()
+        historyWindow?.show(source: source, metric: metric)
     }
 
     func setOrbsVisible(_ visible: Bool) {

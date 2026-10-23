@@ -40,7 +40,9 @@ public enum OrbEditing {
             allSpaces: template.allSpaces,
             visible: true,
             titleTheme: template.titleTheme,
-            unit: template.unit
+            unit: template.unit,
+            traffic: template.traffic,
+            showName: template.showName
         )
         return inserting(orb, after: template.id, in: doc)
     }
@@ -171,6 +173,16 @@ public enum OrbEditing {
     /// tok/s or the money unit (DESIGN 9).
     public static func setUnit(_ unit: OrbUnit, of id: String, in doc: OrbsDocument) -> OrbsDocument {
         update(id, in: doc) { $0.unit = unit }
+    }
+
+    /// The traffic readout (DESIGN 2b, 10).
+    public static func setTraffic(_ traffic: OrbTraffic, of id: String, in doc: OrbsDocument) -> OrbsDocument {
+        update(id, in: doc) { $0.traffic = traffic }
+    }
+
+    /// nil follows the global name plate setting (DESIGN 2b, Name plate).
+    public static func setShowName(_ showName: Bool?, of id: String, in doc: OrbsDocument) -> OrbsDocument {
+        update(id, in: doc) { $0.showName = showName }
     }
 
     /// Trimmed and limited; empty means automatic.

@@ -11,6 +11,17 @@ final class OrbWindowFader {
     /// An orb whose sources are all unavailable dims to 55 % (DESIGN 2b, Unavailable sources).
     private(set) var factor: CGFloat = 1
     private var generation = 0
+    /// A window that fades with the panel at `followerFactor` of its alpha (the name plate, which also takes the orb's
+    /// opacity).
+    weak var follower: NSWindow? {
+        didSet { follower?.alphaValue = targetAlpha * followerFactor }
+    }
+    var followerFactor: CGFloat = 1 {
+        didSet {
+            guard followerFactor != oldValue else { return }
+            follower?.alphaValue = targetAlpha * followerFactor
+        }
+    }
 
     init(panel: NSWindow) {
         self.panel = panel
@@ -81,6 +92,7 @@ final class OrbWindowFader {
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: timing)
             panel.animator().alphaValue = alpha
+            follower?.animator().alphaValue = alpha * followerFactor
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.generation == current else { return }

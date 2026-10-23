@@ -263,25 +263,28 @@ struct AntigravityBlobTests {
         let created = AG.ms("09:00:00.000")
         let main = AG.trajectory(created: created, uris: ["file:///Users/dev/projects/star%20map", "file:///other"],
                                  workspace: "file:///Users/dev/projects/old-name", root: "3f6c2a10")
-        #expect(Self.trajectory(main) == .line(AntigravityTrajectory(createdMs: created, project: "star map")))
+        #expect(Self.trajectory(main) == .line(AntigravityTrajectory(
+            createdMs: created, project: "star map", cwdPath: "/Users/dev/projects/star map")))
         let browser = AG.trajectory(created: created, workspace: "file:///Users/dev/projects/orbit-web", parent: "PARENT")
         #expect(Self.trajectory(browser) == .line(AntigravityTrajectory(
-            createdMs: created, project: "orbit-web", parentConversationId: "PARENT", isSubagent: true)))
+            createdMs: created, project: "orbit-web", cwdPath: "/Users/dev/projects/orbit-web", parentConversationId: "PARENT",
+            isSubagent: true)))
         let windows = AG.trajectory(created: created, uris: ["file:///c%3A/Users/dev/projects/orbit"])
-        #expect(Self.trajectory(windows) == .line(AntigravityTrajectory(createdMs: created, project: "orbit")))
+        #expect(Self.trajectory(windows) == .line(AntigravityTrajectory(
+            createdMs: created, project: "orbit", cwdPath: "/c:/Users/dev/projects/orbit")))
     }
 
     @Test func trajectoryProjectFallsBackToFirstWorkspace() {
         let workspaces = PB.message(1, PB.string(1, "file:///a/first")) + PB.message(1, PB.string(1, "file:///a/second"))
-        #expect(Self.trajectory(workspaces) == .line(AntigravityTrajectory(project: "first")))
-        #expect(Self.trajectory(PB.bytes(7, []) + PB.string(7, "file:///a/b") + workspaces)
-            == .line(AntigravityTrajectory(project: "first")))
-        #expect(Self.trajectory(PB.string(7, "file:///") + workspaces) == .line(AntigravityTrajectory(project: "first")))
+        let first = AntigravityTrajectory(project: "first", cwdPath: "/a/first")
+        #expect(Self.trajectory(workspaces) == .line(first))
+        #expect(Self.trajectory(PB.bytes(7, []) + PB.string(7, "file:///a/b") + workspaces) == .line(first))
+        #expect(Self.trajectory(PB.string(7, "file:///") + workspaces) == .line(first))
         #expect(Self.trajectory(PB.string(7, "file://host")) == .line(AntigravityTrajectory()))
         #expect(Self.trajectory(PB.message(1, PB.string(1, "x/one"), PB.string(1, "y/two")))
             == .line(AntigravityTrajectory(project: "two")))
         #expect(Self.trajectory(PB.message(1, PB.string(2, "file:///a/b"))) == .line(AntigravityTrajectory()))
-        #expect(Self.trajectory(PB.uint(7, 5) + workspaces) == .line(AntigravityTrajectory(project: "first")))
+        #expect(Self.trajectory(PB.uint(7, 5) + workspaces) == .line(first))
     }
 
     @Test func trajectorySubagentMarkers() {
@@ -289,7 +292,8 @@ struct AntigravityBlobTests {
         let sub = AG.trajectory(created: created, uris: ["file:///Users/dev/projects/star%20map"], parent: "MAIN",
                                 nesting: 1, subagent: ("research", "Map the call sites"), root: "MAIN")
         #expect(Self.trajectory(sub) == .line(AntigravityTrajectory(
-            createdMs: created, project: "star map", parentConversationId: "MAIN", isSubagent: true)))
+            createdMs: created, project: "star map", cwdPath: "/Users/dev/projects/star map", parentConversationId: "MAIN",
+            isSubagent: true)))
         let cases: [([UInt8], Bool)] = [
             (AG.trajectory(created: created, nesting: 2), true),
             (AG.trajectory(created: created, nesting: -1), false),
@@ -316,18 +320,19 @@ struct AntigravityBlobTests {
         #expect(Self.trajectory(PB.bytes(1, [0x0F]) + uris) == .malformed)
         #expect(Self.trajectory(PB.bytes(1, PB.bytes(1, [0x80])) + uris) != .malformed)
         #expect(Self.trajectory(uris + PB.message(1, PB.string(1, "file:///a/b")) + PB.bytes(1, [0x0F]))
-            == .line(AntigravityTrajectory(project: "nova")))
+            == .line(AntigravityTrajectory(project: "nova", cwdPath: "/a/nova")))
         #expect(Self.trajectory(PB.bytes(2, [0x0F]) + uris) == .malformed)
         #expect(Self.trajectory(PB.bytes(2, [0x0F]) + AG.stamp(2, 5000) + uris)
-            == .line(AntigravityTrajectory(createdMs: 5000, project: "nova")))
+            == .line(AntigravityTrajectory(createdMs: 5000, project: "nova", cwdPath: "/a/nova")))
         #expect(Self.trajectory(uris + PB.key(9, 6)) == .malformed)
     }
 
     @Test func invalidUTF8BecomesReplacementCharacters() {
         let blob = PB.bytes(5, [0x61, 0xFF, 0x62]) + PB.bytes(7, Array("file:///x/".utf8) + [0xC3])
         #expect(Self.trajectory(blob) == .line(AntigravityTrajectory(
-            project: "\u{FFFD}", parentConversationId: "a\u{FFFD}b", isSubagent: true)))
-        #expect(Self.trajectory(PB.bytes(7, Array("file:///x/%C3".utf8))) == .line(AntigravityTrajectory(project: "\u{FFFD}")))
+            project: "\u{FFFD}", cwdPath: "/x/\u{FFFD}", parentConversationId: "a\u{FFFD}b", isSubagent: true)))
+        #expect(Self.trajectory(PB.bytes(7, Array("file:///x/%C3".utf8)))
+            == .line(AntigravityTrajectory(project: "\u{FFFD}", cwdPath: "/x/\u{FFFD}")))
         #expect(Self.generation(PB.message(1, PB.bytes(21, [0xE2, 0x82, 0x41])))
             == .line(AntigravityGeneration(model: "\u{FFFD}A")))
         #expect(Self.executor(PB.message(10, PB.message(1, PB.bytes(28, [0xF0, 0x80, 0x80, 0x80]))))
@@ -440,7 +445,8 @@ struct AntigravityBlobTests {
 
     @Test func mainConversationDecodesAsWritten() throws {
         let decoded = try Self.decode("antigravity/antigravity-cli/conversations/3f6c2a10-8b4d-4e5f-9a1b-2c3d4e5f6a7b.db")
-        #expect(decoded.trajectory == [.line(AntigravityTrajectory(createdMs: AG.ms("09:00:00.000"), project: "star map"))])
+        #expect(decoded.trajectory == [.line(AntigravityTrajectory(
+            createdMs: AG.ms("09:00:00.000"), project: "star map", cwdPath: "/Users/dev/projects/star map"))])
         #expect(decoded.generations == [
             .line(AntigravityGeneration(stepIndices: [1], model: "gemini-3.1-pro-high")),
             .line(AntigravityGeneration(stepIndices: [3], model: "gemini-3.1-pro-high-exp-b")),
@@ -461,7 +467,8 @@ struct AntigravityBlobTests {
 
     @Test func inFlightConversationDecodesAsWritten() throws {
         let decoded = try Self.decode("antigravity/antigravity/conversations/5e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b.db")
-        #expect(decoded.trajectory == [.line(AntigravityTrajectory(createdMs: AG.ms("09:10:00.000"), project: "orbit"))])
+        #expect(decoded.trajectory == [.line(AntigravityTrajectory(
+            createdMs: AG.ms("09:10:00.000"), project: "orbit", cwdPath: "/c:/Users/dev/projects/orbit"))])
         #expect(decoded.steps.count == 14)
         #expect(decoded.steps[1] == .line(AntigravityStepMetadata(
             createdMs: AG.ms("09:10:01.050"), completedMs: AG.ms("09:10:03.200"),

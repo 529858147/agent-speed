@@ -113,6 +113,9 @@ enum OrbSceneBuilder {
         if frame.content.showsReadout {
             OrbSharedLayers.addAgentDots(&scene, frame, layout: renderer.readoutLayout)
             renderer.buildReadout(into: &scene, frame, readout: animator.readout)
+            if frame.content.traffic != nil, !frame.content.isThumbnail, !thumbnail {
+                renderer.buildTraffic(into: &scene, frame, traffic: animator.traffic)
+            }
         } else {
             OrbSharedLayers.addAgentDots(&scene, frame, layout: renderer.readoutLayout)
         }

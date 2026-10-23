@@ -261,6 +261,49 @@ enum HistoryLogicChecks {
         check("cost: a breakdown by cost sorts and sizes by cost", costBreakdown.items.map(\.subject) == [.source(.codex), .source(.claudeCode)]
               && costBreakdown.items.first?.scale == 1 && costBreakdown.items.last?.cost.kind == .subscription([.claudeCode]))
 
+        // Traffic (METRICS 10.9, DESIGN 10): not recorded before measuring began (never 0), partial days, tools per the
+        // setting, mirrored chart, table cell, CSV columns and machine rows.
+        let trafficRows = [
+            TrafficDay(day: "2026-10-20", key: TrafficDay.machineKey, rx: 9_000_000, tx: 1_000_000, sampledMs: 86_400_000),
+            TrafficDay(day: "2026-10-20", key: "claudeCode", rx: 1_000_000, tx: 100_000, rxTools: 4_000_000, txTools: 50_000,
+                       sampledMs: 86_400_000),
+            TrafficDay(day: "2026-10-21", key: TrafficDay.machineKey, rx: 2_000_000, tx: 200_000, sampledMs: 3_600_000),
+            TrafficDay(day: "2026-10-21", key: "codex", rx: 300_000, tx: 30_000, sampledMs: 3_600_000),
+        ]
+        let traffic = HistoryTraffic(days: trafficRows, since: "2026-10-20", includeTools: true, bits: false)
+        let noon = HistoryDates.calendar.date(byAdding: .hour, value: 12, to: today.date(in: HistoryDates.calendar))!
+        let tuesday = traffic.day(DayKey("2026-10-20")!, source: nil, today: today, now: noon, calendar: HistoryDates.calendar)
+        let wednesday = traffic.day(today, source: nil, today: today, now: noon, calendar: HistoryDates.calendar)
+        check("traffic: not recorded before measuring began",
+              traffic.day(DayKey("2026-10-19")!, source: nil, today: today, now: noon, calendar: HistoryDates.calendar) == nil)
+        check("traffic: tools included and this computer's total", tuesday?.shown == TrafficBytes(rx: 5_000_000, tx: 150_000)
+              && tuesday?.machine == TrafficBytes(rx: 9_000_000, tx: 1_000_000) && tuesday?.partial == false)
+        check("traffic: a day recorded for 1 h of 12 is partial", wednesday?.partial == true && wednesday?.recordedMs == 3_600_000)
+        let noTools = HistoryTraffic(days: trafficRows, since: "2026-10-20", includeTools: false, bits: false)
+        check("traffic: without tools only the agents' own bytes",
+              noTools.day(DayKey("2026-10-20")!, source: .claudeCode, today: today, now: noon, calendar: HistoryDates.calendar)?.shown
+              == TrafficBytes(rx: 1_000_000, tx: 100_000))
+        let trafficContent = HistoryContent.build(
+            usage: PreviewHistory.days(endingAt: today.date(in: HistoryDates.calendar), count: 10), source: nil, rangeKind: .days7,
+            customRange: nil, sort: HistorySort(), today: today, l10n: l10n,
+            costOptions: HistoryCostOptions(metric: .traffic), traffic: traffic, now: noon
+        )
+        let chart = trafficContent.chart
+        check("traffic: mirrored bars, download above and upload below",
+              chart.segments.contains { !$0.upload && $0.upper > 0 } && chart.segments.contains { $0.upload && $0.lower < 0 }
+              && chart.yDomain.lowerBound < 0 && chart.speeds.allSatisfy { $0 == nil })
+        check("traffic: days before measuring are marked", chart.notRecordedThrough == DayKey("2026-10-19"))
+        check("traffic: the table column and its not-recorded cell", trafficContent.columns.contains(.traffic)
+              && trafficContent.rows.contains { $0.day == DayKey("2026-10-17") && HistoryTable.cell($0, .traffic, today: today, money: .usd, l10n) == "–" })
+        let trafficCSV = HistoryCSV.build(trafficContent.rows, source: nil, traffic: true).components(separatedBy: "\r\n")
+        check("traffic: CSV columns, own and tool bytes, a machine row per date",
+              trafficCSV.first?.hasSuffix(HistoryCSV.trafficColumns.joined(separator: ",")) == true
+              && trafficCSV.contains { $0.hasPrefix("2026-10-20,all,") && $0.hasSuffix(",1000000,100000,4000000,50000") }
+              && trafficCSV.contains { $0.hasPrefix("2026-10-20,machine,") && $0.hasSuffix(",9000000,1000000,,") }
+              && trafficCSV.contains { $0.hasPrefix("2026-10-17,all,") && $0.hasSuffix(",,,,") })
+        check("traffic: byte axis labels", HistoryText.axisBytes(2_500_000_000) == "2.5\u{00A0}GB"
+              && HistoryText.axisBytes(-500_000_000) == "500\u{00A0}MB" && HistoryText.axisBytes(1_000_000_000) == "1\u{00A0}GB")
+
         // Column layout never goes below the minimums and fills the width.
         let specs = HistoryColumn.allCases.map(HistoryColumnLayout.spec)
         let wide = HistoryColumnLayout.widths(specs, width: 1200)

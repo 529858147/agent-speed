@@ -7,6 +7,31 @@ import SwiftUI
 enum TitleThemeText {
     /// Levels shown in a card's preview strip.
     static let stripLevels: [SpeedTitle] = [.walk, .car, .maglev, .rocket]
+    /// Subsets of `stripLevels` from most to fewest titles, keeping the first and last while they fit: the strip shows
+    /// the first that fits whole, so it never ends on a truncated title.
+    static let stripChoices: [[Int]] = [[0, 1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 3], [3], [0]]
+
+    /// The first choice whose titles fit `width` whole in the strip's 11 pt font (the last one when none does). Measured
+    /// once per titles and width: cards are laid out again whenever the pane is.
+    static func stripChoice(_ titles: [String], width: CGFloat) -> [Int] {
+        let key = StripKey(titles: titles, width: Int(width.rounded(.down)))
+        if let cached = stripCache[key] { return cached }
+        let font = NSFont.systemFont(ofSize: 11)
+        let choice = stripChoices.first { levels in
+            let text = levels.map { titles[$0] }.joined(separator: " · ")
+            return ceil(NSAttributedString(string: text, attributes: [.font: font]).size().width) <= width
+        } ?? stripChoices[stripChoices.count - 1]
+        if stripCache.count > 256 { stripCache.removeAll() }
+        stripCache[key] = choice
+        return choice
+    }
+
+    private struct StripKey: Hashable {
+        var titles: [String]
+        var width: Int
+    }
+
+    private static var stripCache: [StripKey: [Int]] = [:]
 
     /// The heat of a level's threshold, `(T_k / R)^0.6`.
     static func heat(_ title: SpeedTitle) -> Double {
@@ -108,6 +133,7 @@ struct TitleThemeCards: View {
         return TitleThemeCard(
             model: model,
             theme: theme,
+            stripWidth: (width - Self.spacing * CGFloat(columns - 1)) / CGFloat(columns) - 2 * TitleThemeCard.padding,
             selected: selected,
             hovered: hovered == id,
             keyboardFocused: focused && cursor == id,
@@ -247,9 +273,12 @@ struct TitleThemeCard: View {
 
     static let height: CGFloat = 64
     static let radius: CGFloat = 10
+    static let padding: CGFloat = 12
 
     let model: AppModel
     let theme: TitleTheme
+    /// Room for the preview strip inside the card.
+    let stripWidth: CGFloat
     let selected: Bool
     let hovered: Bool
     let keyboardFocused: Bool
@@ -269,12 +298,12 @@ struct TitleThemeCard: View {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .padding(.trailing, selected || showsMore ? 44 : 0)
-            strip(titles)
+            strip(TitleThemeText.stripChoice(titles, width: stripWidth), titles: titles)
                 .font(.system(size: 11))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Self.padding)
         .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height, alignment: .leading)
         .background(shape.fill(fill))
         .overlay {
@@ -302,11 +331,13 @@ struct TitleThemeCard: View {
         return Color.primary.opacity(hovered ? (colorScheme == .dark ? 0.09 : 0.07) : (colorScheme == .dark ? 0.055 : 0.04))
     }
 
-    private func strip(_ titles: [String]) -> Text {
+    /// The strip with the titles at `levels` (indexes into `stripLevels`).
+    private func strip(_ levels: [Int], titles: [String]) -> Text {
         let dark = colorScheme == .dark
         var text = Text("")
-        for (index, title) in TitleThemeText.stripLevels.enumerated() {
-            if index > 0 { text = text + Text(" · ").foregroundStyle(.tertiary) }
+        for (position, index) in levels.enumerated() {
+            if position > 0 { text = text + Text(" · ").foregroundStyle(.tertiary) }
+            let title = TitleThemeText.stripLevels[index]
             let color = HeatText.color(TitleThemeText.heat(title), dark: dark, increasedContrast: contrast == .increased)
             text = text + Text(titles[index]).foregroundStyle(color)
         }

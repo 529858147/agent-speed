@@ -68,6 +68,8 @@ struct SessionThread: Equatable, Sendable {
 struct AgentState: Equatable, Sendable {
     var source: SourceKind
     var project: String?
+    /// The full working directory the transcript names (METRICS 4, 10.6); metadata only.
+    var cwdPath: String?
     var model: String?
     var isSubagent: Bool
     /// Codex and DeepSeek only; set once by the first `session_meta` or header.
@@ -98,5 +100,6 @@ struct AgentState: Equatable, Sendable {
     mutating func setProject(fromWorkingDirectory cwd: String) {
         let name = (cwd as NSString).lastPathComponent
         if !name.isEmpty { project = name }
+        if !cwd.isEmpty { cwdPath = cwd }
     }
 }

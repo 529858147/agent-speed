@@ -188,7 +188,9 @@ enum OrbContentBuilder {
                 // `minimal` has no unit line, so its value carries the symbol (DESIGN 9).
                 OrbMoneyText(number: style == .minimal ? $0.inline : $0.number, value: $0.value, atLeast: $0.atLeast,
                              unknown: $0.unknown)
-            }
+            },
+            trafficEnabled: showsReadout && feed.trafficEnabled,
+            traffic: showsReadout && feed.trafficEnabled ? feed.traffic : nil
         )
     }
 }

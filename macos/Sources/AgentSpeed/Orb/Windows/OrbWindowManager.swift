@@ -13,6 +13,16 @@ final class OrbWindowManager {
     private var leaving: [OrbWindowController] = []
     private let guides = OrbGuidesWindow()
     private let undoChip = OrbChipPanel(interactive: true)
+    /// The undo chip in a plate's metrics and material, stacked beyond its orb's name plate.
+    private let plateUndoChip = OrbNameplateUndoChip()
+    private lazy var nameplates: OrbNameplateCoordinator = {
+        let coordinator = OrbNameplateCoordinator { [weak self] in
+            guard let self else { return [] }
+            return self.model.orbs.orbs.compactMap { self.windows[$0.id] }
+        }
+        coordinator.onResolved = { [weak self] in self?.updateUndoChip() }
+        return coordinator
+    }()
     private var loops: [ObservationLoop] = []
     private var arrangement: String
     nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
@@ -47,6 +57,7 @@ final class OrbWindowManager {
         windows.values.forEach { $0.close() }
         windows.removeAll()
         undoChip.close()
+        plateUndoChip.close()
         guides.hide()
     }
 
@@ -82,6 +93,7 @@ final class OrbWindowManager {
             }
         }
         applyVisibility()
+        nameplates.setNeedsLayout()
     }
 
     private func applyVisibility() {
@@ -273,6 +285,7 @@ final class OrbWindowManager {
             placed.append(OrbDisc(center: center, radius: window.radius))
             window.move(to: center, persist: false)
         }
+        nameplates.setNeedsLayout()
     }
 }
 
@@ -297,6 +310,7 @@ extension OrbWindowManager: OrbWindowManaging {
         window.orderFront()
         OrbFrameClock.shared.focused = ObjectIdentifier(window.host.canvas)
         if undoChip.isShown { undoChip.panel.orderFrontRegardless() }
+        if plateUndoChip.isShown { plateUndoChip.panel.orderFrontRegardless() }
     }
 
     func orbHoverChanged(_ id: String, hovered: Bool) {
@@ -309,22 +323,38 @@ extension OrbWindowManager: OrbWindowManaging {
     }
 
     func orbMoved(_ id: String) {
-        guard undoChip.isShown, model.orbs.undoBanner?.anchorOrb == id else { return }
-        undoChip.reposition { [weak self] size in self?.undoChipFrame(size) ?? .zero }
+        guard model.orbs.undoBanner?.anchorOrb == id else { return }
+        if undoChip.isShown { undoChip.reposition { [weak self] size in self?.undoChipFrame(size) ?? .zero } }
+        if plateUndoChip.isShown { plateUndoChip.reposition { [weak self] size in self?.plateUndoChipFrame(size) ?? .zero } }
+    }
+
+    func nameplatesNeedLayout() {
+        nameplates.setNeedsLayout()
     }
 
     // MARK: Undo chip
 
-    /// The desktop undo chip under the first resulting orb of a split, merge or remove, for 8 s (DESIGN 2b).
+    /// The desktop undo chip under the first resulting orb of a split, merge or remove, for 8 s (DESIGN 2b); beyond
+    /// that orb's name plate, in the plate's metrics and material, while it shows one.
     private func updateUndoChip() {
         let orbs = model.orbs
         guard let banner = orbs.undoBanner, let anchor = banner.anchorOrb.flatMap({ windows[$0] }) ?? windows.values.first,
               anchor.isShown else {
             undoChip.hide()
+            plateUndoChip.hide()
             return
         }
         let l10n = model.l10n
         let message = orbs.undoMessage(l10n)
+        if anchor.nameplate.restFrame != nil, let metrics = anchor.nameplate.content?.metrics {
+            undoChip.hide()
+            plateUndoChip.show(message: message, action: l10n("orbs.undo"), metrics: metrics, tokens: anchor.nameplate.tokens,
+                               level: anchor.level, onAction: { [weak orbs] in orbs?.undo() }) { [weak self] size in
+                self?.plateUndoChipFrame(size) ?? .zero
+            }
+            return
+        }
+        plateUndoChip.hide()
         let view = OrbChipView(items: [OrbChipItem(id: "undo", color: nil, text: message, secondary: false)],
                                trailing: (l10n("orbs.undo"), { [weak orbs] in orbs?.undo() }))
         undoChip.show(view, level: anchor.level, appearance: anchor.host.effectiveAppearance) { [weak self] size in
@@ -337,5 +367,16 @@ extension OrbWindowManager: OrbWindowManaging {
               let screen = anchor.screen else { return CGRect(origin: .zero, size: size) }
         let others = otherDiscs(excluding: anchor.id, on: screen)
         return OrbChipPlacement.frame(size: size, disc: anchor.disc, visible: screen.visibleFrame, others: others, stack: 22)
+    }
+
+    /// 4 pt beyond the anchor's plate: above it when the plate is above, else under it; inside the usable area.
+    private func plateUndoChipFrame(_ size: CGSize) -> CGRect {
+        guard let anchorId = model.orbs.undoBanner?.anchorOrb, let anchor = windows[anchorId] ?? windows.values.first,
+              let plate = anchor.nameplate.restFrame, let screen = anchor.screen else { return CGRect(origin: .zero, size: size) }
+        let gap = OrbNameplateUndoChip.stackGap
+        let y = anchor.nameplate.restSide == .above ? plate.maxY + gap : plate.minY - gap - size.height
+        let area = screen.visibleFrame.insetBy(dx: NameplateMetrics.areaInset, dy: NameplateMetrics.areaInset)
+        let x = min(max(plate.midX - size.width / 2, area.minX), max(area.minX, area.maxX - size.width))
+        return CGRect(x: x, y: min(max(y, area.minY), max(area.minY, area.maxY - size.height)), width: size.width, height: size.height)
     }
 }

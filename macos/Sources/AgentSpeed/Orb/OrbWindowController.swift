@@ -15,6 +15,8 @@ protocol OrbWindowManaging: AnyObject {
     func orbHoverChanged(_ id: String, hovered: Bool)
     func showGuides(_ guides: [OrbGuide], on screen: NSScreen?)
     func orbMoved(_ id: String)
+    /// An orb came to rest, or its plate's content changed: resolve the name plates' placement.
+    func nameplatesNeedLayout()
 }
 
 /// One floating orb window (DESIGN 2, 2b): placement, drag with edge snapping and orb-to-orb magnetism, click-through
@@ -43,6 +45,8 @@ final class OrbWindowController {
     private var reporter: OrbAccessibilityReporter?
     private var loops: [ObservationLoop] = []
     private let chipPanel = OrbChipPanel(interactive: false)
+    /// The name plate (DESIGN 2b, Name plate); while it shows, the source chip folds into it.
+    private(set) lazy var nameplate = OrbNameplateController(parent: panel, delegate: self)
     private var chipTimer: Timer?
     private var chipUntil: TimeInterval = -.infinity
     private var hoverChipTimer: Timer?
@@ -59,6 +63,8 @@ final class OrbWindowController {
     private var appliedDiameter: CGFloat
     private var wantsShown = false
     private var isClosing = false
+    /// Waiting for a staggered entrance to start (the disc still sits at its origin).
+    private var isEntering = false
 
     init(model: AppModel, runtime: OrbRuntime, manager: OrbWindowManaging) {
         self.model = model
@@ -91,9 +97,16 @@ final class OrbWindowController {
         host.onAppearanceChange = { [weak self] dark in
             self?.presenter.dark = dark
             self?.refreshBody()
+            self?.refreshNameplate()
         }
         animator.attach(to: host)
         animator.onChange = { [weak self] state in self?.apply(state) }
+        animator.onCenterSettled = { [weak self] in self?.manager?.nameplatesNeedLayout() }
+        fader.follower = nameplate.window
+        nameplate.chipItems = { [weak self] in
+            guard let self else { return [] }
+            return OrbNameplateContentBuilder.items(model: self.model, config: self.config)
+        }
         pointer.onMove = { [weak self] location, isPlainMove in
             guard let self else { return }
             if isPlainMove, self.drag != nil { self.finishPendingDrag() }
@@ -131,6 +144,7 @@ final class OrbWindowController {
             _ = (self.model.l10n.language, self.runtime.feed.bezel, self.model.orbs.orbs.count)
             if self.chipPanel.isShown { self.showChip(refreshOnly: true) }
         })
+        loops.append(ObservationLoop { [weak self] in self?.refreshNameplate() })
         dimmer = OrbWindowIdleDimmer(gauge: runtime.feed.gauge, enabled: { [weak self] in self?.config.fadeWhenIdle ?? false },
                                      interaction: interaction) { [weak self] dimmed in
             self?.fader.setDimmed(dimmed)
@@ -154,6 +168,7 @@ final class OrbWindowController {
         chipTimer?.invalidate()
         hoverChipTimer?.invalidate()
         chipPanel.close()
+        nameplate.close()
         panel.orderOut(nil)
         panel.close()
     }
@@ -181,17 +196,37 @@ final class OrbWindowController {
         let previous = self.config
         self.config = config
         applyConfiguration()
-        if previous.sources != config.sources { showChipBriefly() }
+        if previous.sources != config.sources { showSourcesBriefly() }
     }
 
     private func applyConfiguration() {
         presenter.setStyle(config.style)
         panel.apply(alwaysOnTop: config.alwaysOnTop, allSpaces: config.allSpaces)
         chipPanel.panel.level = panel.level
+        nameplate.setLevel(panel.level, behavior: panel.collectionBehavior)
+        fader.followerFactor = CGFloat(config.opacity)
         fader.reorderIfShown()
         resize(to: CGFloat(config.size))
         updateTracking()
         refreshBody()
+        refreshNameplate()
+    }
+
+    /// The plate's content (nil when this orb shows none), material and motion settings.
+    private func refreshNameplate() {
+        let settings = model.settings
+        _ = (model.l10n.language, runtime.feed.bezel)
+        let wanted = NameplateVisibility.isDrawn(config, mode: settings.orbNames, shownOrbs: model.orbs.shownOrbs.count, isShown: true)
+        let content = wanted ? OrbNameplateContentBuilder.content(model: model, config: config) : nil
+        let changed = content != nameplate.content
+        let accessibility = model.accessibility
+        nameplate.setTokens(NameplateTokens(dark: presenter.dark, reduceTransparency: accessibility.reduceTransparency,
+                                            increaseContrast: accessibility.increaseContrast),
+                            reduceMotion: accessibility.reduceMotion)
+        nameplate.setAppearance(host.effectiveAppearance)
+        nameplate.setContent(content)
+        nameplate.refreshExpansion()
+        if changed { manager?.nameplatesNeedLayout() }
     }
 
     private func refreshBody() {
@@ -254,10 +289,14 @@ final class OrbWindowController {
     /// A created or split orb springs in from 0.6 × (or 0.85 ×) scale and 0 opacity, optionally from `origin`.
     func animateEntrance(from origin: CGPoint?, to target: CGPoint, scale: CGFloat = 0.6, delay: TimeInterval = 0) {
         let reduceMotion = self.reduceMotion
+        nameplate.delayNextAppearance(reduceMotion ? 0 : 0.28)
+        isEntering = true
         if let origin, !reduceMotion { animator.jump(center: origin, diameter: appliedDiameter) } else { animator.jump(center: target, diameter: appliedDiameter) }
         if !reduceMotion { animator.setPresence(scale) }
         let start = { @MainActor [weak self] in
             guard let self, !self.isClosing else { return }
+            self.isEntering = false
+            self.manager?.nameplatesNeedLayout()
             self.setShown(self.wantsShown)
             if !reduceMotion {
                 self.animator.animate(center: target, motion: .entrance)
@@ -310,6 +349,8 @@ final class OrbWindowController {
         presenter.hoverScale = state.scale
         if drag == nil { refreshPointer() }
         if chipPanel.isShown { repositionChip() }
+        let area = Self.screen(containing: state.center)?.visibleFrame ?? .zero
+        nameplate.follow(disc: OrbDisc(center: state.center, radius: state.diameter * state.scale / 2), area: area)
         manager?.orbMoved(id)
     }
 
@@ -327,6 +368,8 @@ final class OrbWindowController {
             chipPanel.hide()
             host.setHighlighted(false)
         }
+        nameplate.setOrbShown(shown)
+        manager?.nameplatesNeedLayout()
         updateTracking()
         updateVisibleOnScreen()
     }
@@ -358,15 +401,20 @@ final class OrbWindowController {
         updatePointer(at: NSEvent.mouseLocation)
     }
 
-    /// Lets the panel take the mouse only while the pointer is over the disc; everything else clicks through.
+    /// Lets the panel take the mouse only while the pointer is over the disc, and the plate only over its capsule;
+    /// everything else clicks through.
     private func updatePointer(at location: NSPoint) {
         guard drag == nil else { return }
         let interactive = fader.isShown && !config.clickThrough && !pointer.isForeignDragActive && !isClosing
         let inside = interactive && host.discContains(screenPoint: location)
+        let onPlate = interactive && !inside && nameplate.contains(screenPoint: location)
+        let nearPlate = onPlate || (interactive && interaction.isHovered
+            && nameplate.contains(screenPoint: location, slack: nameplate.hoverSlack))
         if panel.ignoresMouseEvents == inside {
             panel.ignoresMouseEvents = !inside
         }
-        setHovered(inside)
+        nameplate.setAcceptsMouse(onPlate)
+        setHovered(inside || nearPlate)
         setUnitHovered(inside && isOnUnit(screenPoint: location))
     }
 
@@ -434,6 +482,7 @@ final class OrbWindowController {
         guard interaction.isHovered != hovered else { return }
         interaction.isHovered = hovered
         host.cursor = hovered ? .openHand : nil
+        nameplate.cursor = host.cursor
         if hovered {
             NSCursor.openHand.set()
         } else {
@@ -461,6 +510,7 @@ final class OrbWindowController {
     private func beginDragging() {
         interaction.isDragging = true
         host.cursor = .closedHand
+        nameplate.cursor = .closedHand
         NSCursor.closedHand.push()
         cursorPushed = true
         showChip()
@@ -477,8 +527,10 @@ final class OrbWindowController {
         manager?.showGuides([], on: nil)
         refreshPointer()
         host.cursor = interaction.isHovered ? .openHand : nil
+        nameplate.cursor = host.cursor
         (interaction.isHovered ? NSCursor.openHand : NSCursor.arrow).set()
         updateChipVisibility()
+        manager?.nameplatesNeedLayout()
     }
 
     /// Ends a tracked press that will not see its mouse-up (a plain move arrived, or a menu took over).
@@ -511,8 +563,15 @@ final class OrbWindowController {
 
     private var chipVisibleByTimer: Bool { Clock.now < chipUntil }
 
-    /// Shows the chip for 2 s (after create, split, merge or a sources change).
+    /// Shows the chip for 2 s after create, split or merge; an orb with a name plate shows its plate instead, which
+    /// fades in after landing and stays (DESIGN 2b, Name plate, Chip and undo).
     func showChipBriefly(after delay: TimeInterval = 0) {
+        guard !nameplate.wantsPlate else { return }
+        showSourcesBriefly(after: delay)
+    }
+
+    /// Shows the chip, or widens the plate to it, for 2 s (also after a sources change).
+    private func showSourcesBriefly(after delay: TimeInterval = 0) {
         let show = { @MainActor [weak self] in
             guard let self, self.fader.isShown || self.wantsShown else { return }
             self.chipUntil = Clock.now + 2
@@ -532,11 +591,20 @@ final class OrbWindowController {
     }
 
     private func updateChipVisibility() {
-        let wanted = fader.isShown && (interaction.isDragging || chipVisibleByTimer || (interaction.isHovered && chipPanel.isShown))
-        if !wanted { chipPanel.hide() }
+        let showing = chipPanel.isShown || nameplate.isExpanded
+        let wanted = fader.isShown && (interaction.isDragging || chipVisibleByTimer || (interaction.isHovered && showing))
+        if !wanted {
+            chipPanel.hide()
+            nameplate.setExpanded(false)
+        }
     }
 
     private func showChip(refreshOnly: Bool = false) {
+        if nameplate.foldsChip {
+            chipPanel.hide()
+            if !refreshOnly { nameplate.setExpanded(true) }
+            return
+        }
         guard fader.isShown || wantsShown, let items = chipItems() else {
             chipPanel.hide()
             return
@@ -640,6 +708,12 @@ final class OrbWindowController {
     #endif
 }
 
+// MARK: - Name plate placement
+
+extension OrbWindowController: OrbNameplateHost {
+    var isMovingForNameplate: Bool { drag != nil || interaction.isDragging || isEntering || animator.isMovingCenter }
+}
+
 // MARK: - Host input
 
 extension OrbWindowController: OrbHostViewDelegate {
@@ -653,7 +727,7 @@ extension OrbWindowController: OrbHostViewDelegate {
             hostShowMenu(event)
             return
         }
-        unitToggle.mouseDown(event, onUnit: isOnUnit(local: host.convert(event.locationInWindow, from: nil)))
+        unitToggle.mouseDown(event, onUnit: event.window === panel && isOnUnit(local: host.convert(event.locationInWindow, from: nil)))
         if event.clickCount >= 2 {
             endDragging()
             model.commands?.showDashboard()
@@ -704,8 +778,12 @@ extension OrbWindowController: OrbHostViewDelegate {
         finishPendingDrag()
         manager?.orbInteracted(id)
         let menu = MenuFactory.orbContextMenu(model: model, orbId: id)
-        if let event {
+        if let event, event.window === panel {
             NSMenu.popUpContextMenu(menu, with: event, for: host)
+        } else if let event, let window = event.window {
+            // A right-click on the name plate: open at the pointer, over the orb.
+            let point = panel.convertPoint(fromScreen: window.convertPoint(toScreen: event.locationInWindow))
+            menu.popUp(positioning: nil, at: host.convert(point, from: nil), in: host)
         } else {
             menu.popUp(positioning: nil, at: NSPoint(x: host.bounds.midX, y: host.bounds.midY), in: host)
         }

@@ -13,6 +13,8 @@ struct StatusItemState: Equatable {
     var value: String
     var idle: Bool
     var increasedContrast: Bool
+    /// The traffic block (DESIGN 10), when shown.
+    var traffic: StatusItemTraffic?
 
     /// Half-pixel steps along the ring at 2x, so sub-pixel spring motion produces no redraws.
     static let fractionSteps = 132.0
@@ -34,6 +36,8 @@ struct StatusItemState: Equatable {
         value = text
         idle = gauge.tier == .idle
         increasedContrast = model.accessibility.increaseContrast
+        traffic = StatusItemTraffic(model: model)
+        layout.trafficWidth = traffic?.width ?? 0
     }
 
     /// Whether the redline flicker may run (DESIGN section 3; off with Reduce Motion or effects off).

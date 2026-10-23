@@ -41,6 +41,25 @@ enum AntigravityBlobs {
         return lastComponent(bytes)
     }
 
+    /// The percent-decoded path of a `file:` URI with an empty or `localhost` authority, without trailing slashes.
+    /// Nil for any other value.
+    static func filePath(ofURI value: String) -> String? {
+        let bytes = Array(value.utf8)
+        guard let colon = schemeEnd(bytes), bytes[..<colon].map({ $0 | 0x20 }).elementsEqual("file".utf8) else { return nil }
+        var rest = bytes[(colon + 1)...]
+        if rest.starts(with: [slash, slash]) {
+            rest = rest.dropFirst(2)
+            let end = rest.firstIndex(of: slash) ?? rest.endIndex
+            let host = rest[..<end].map { $0 | 0x20 }
+            guard host.isEmpty || host.elementsEqual("localhost".utf8) else { return nil }
+            rest = rest[end...]
+        }
+        var path = percentDecoded(rest)
+        while path.count > 1, path.last == slash { path.removeLast() }
+        guard path.first == slash else { return nil }
+        return String(decoding: path, as: UTF8.self)
+    }
+
     // MARK: - Messages
 
     private static func extraction<Value>(_ value: Value?) -> LineExtraction<Value> {
@@ -95,11 +114,15 @@ enum AntigravityBlobs {
         let workspace = try message.message(1, first: true)
         var trajectory = AntigravityTrajectory()
         trajectory.createdMs = try message.timestampMs(2)
-        if let uri = message.first(7, wire: .lengthDelimited) {
-            trajectory.project = uriBasename(String(decoding: uri.payload, as: UTF8.self))
+        if let field = message.first(7, wire: .lengthDelimited) {
+            let uri = String(decoding: field.payload, as: UTF8.self)
+            trajectory.project = uriBasename(uri)
+            if trajectory.project != nil { trajectory.cwdPath = filePath(ofURI: uri) }
         }
         if trajectory.project == nil, let workspace {
-            trajectory.project = uriBasename(workspace.string(1))
+            let uri = workspace.string(1)
+            trajectory.project = uriBasename(uri)
+            if trajectory.project != nil { trajectory.cwdPath = filePath(ofURI: uri) }
         }
         trajectory.parentConversationId = nonEmpty(message.string(5))
         trajectory.isSubagent = trajectory.parentConversationId != nil || message.int(17) > 0

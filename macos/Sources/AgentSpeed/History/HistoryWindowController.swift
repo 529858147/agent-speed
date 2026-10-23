@@ -27,9 +27,10 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     var isVisible: Bool { window?.isVisible ?? false }
 
     /// Shows the window filtered to `source` (all sources when nil).
-    func show(source: SourceKind?) {
+    func show(source: SourceKind?, metric: HistoryChartMetric? = nil) {
         let (window, viewModel) = ensureWindow()
         viewModel.select(source: source)
+        if let metric { viewModel.select(metric: metric) }
         if viewModel.showsLiveDay { viewModel.refreshToday() }
         startLiveDayTimer()
         if !window.isVisible, !window.setFrameUsingName(Self.autosaveName) {
@@ -67,7 +68,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
 
     private func ensureWindow() -> (NSWindow, HistoryViewModel) {
         if let window, let viewModel { return (window, viewModel) }
-        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost)
+        let viewModel = HistoryViewModel(store: model.history, l10n: model.l10n, accessibility: model.accessibility, cost: model.cost,
+                                         traffic: model.traffic)
         let root = HistoryView(model: viewModel).appEnvironment(model)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = []
@@ -119,7 +121,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
         let content = viewModel.content
         guard !content.rows.isEmpty else { return }
         let l10n = model.l10n
-        let data = HistoryCSV.encode(HistoryCSV.build(content.rows, source: content.source, money: content.money))
+        let data = HistoryCSV.encode(HistoryCSV.build(content.rows, source: content.source, money: content.money,
+                                                      traffic: content.columns.contains(.traffic)))
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = HistoryCSV.fileName(content.range, source: content.source)

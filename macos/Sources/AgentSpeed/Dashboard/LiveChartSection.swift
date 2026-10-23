@@ -24,6 +24,9 @@ struct LiveChartSection: View {
             increasedContrast: contrast == .increased
         )
         let speedLabel: (String) -> String = { l10n("mac.settings.speedValue", $0) }
+        // Next to a money hero the chart's token speed must name its unit, or 2.16k reads as money.
+        let showsMoney = model.settings.liveUnit == .cost
+        let peakText = showsMoney ? speedLabel(SpeedFormat.speed(peak)) : SpeedFormat.speed(peak)
         let summary = l10n(
             "mac.dashboard.chart.summary",
             SpeedFormat.speed(series.maxTotal),
@@ -37,7 +40,8 @@ struct LiveChartSection: View {
                     series: series,
                     domain: shown,
                     peak: peak,
-                    peakLabel: l10n("mac.dashboard.peakLine", SpeedFormat.speed(peak)),
+                    peakLabel: l10n("mac.dashboard.peakLine", peakText),
+                    axisUnit: showsMoney ? l10n("unit.tokS") : nil,
                     style: style
                 )
                 ChartCrosshair(

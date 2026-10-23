@@ -113,6 +113,7 @@ struct AntigravityParser: Sendable {
         }
         createdMs = trajectory.createdMs
         state.project = trajectory.project
+        state.cwdPath = trajectory.cwdPath
         state.isSubagent = trajectory.isSubagent
         state.thread = SessionThread(id: conversationId, parentId: trajectory.parentConversationId, createdMs: createdMs ?? 0)
         if let createdMs { state.noteLine(at: createdMs) }

@@ -45,7 +45,8 @@ struct SourcesPane: View {
             }
             Button(l10n("history.cancel"), role: .cancel) {}
         } message: {
-            Text(l10n("history.clear.confirm"))
+            Text(model.traffic.days.isEmpty ? l10n("history.clear.confirm")
+                 : l10n("history.clear.confirm") + "\n\n" + l10n("history.clear.traffic"))
         }
     }
 }

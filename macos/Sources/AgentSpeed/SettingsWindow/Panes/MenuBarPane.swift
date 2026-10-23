@@ -24,6 +24,9 @@ struct MenuBarPane: View {
 
                 SettingToggle(title: l10n("settings.bar.unit"), isOn: $settings.barShowsUnit)
                     .disabled(!settings.barMode.showsValue)
+
+                BarTrafficPicker(model: model)
+                    .disabled(!settings.trafficEnabled || settings.barMode == .glyph)
             }
 
             Section {

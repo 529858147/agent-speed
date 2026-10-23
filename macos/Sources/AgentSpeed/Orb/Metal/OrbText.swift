@@ -77,6 +77,75 @@ final class OrbTextCache {
 
     private var capHeights: [OrbTextStyle: CGFloat] = [:]
 
+    /// The traffic readout's arrow (DESIGN 10): a vector glyph 0.50 t wide and 0.66 t tall on the baseline, stroke
+    /// `max(0.9 pt, 0.11 t)` with round caps, pointing down (download) or up (upload).
+    func arrowTexture(down: Bool, size t: CGFloat, scale: CGFloat) -> OrbTextTexture? {
+        let key = ArrowKey(down: down, size: t, scale: scale)
+        if let cached = arrows[key] { return cached }
+        guard let gpu = OrbGPU.shared, let texture = Self.rasterizeArrow(down: down, size: t, scale: scale, device: gpu.device) else {
+            return nil
+        }
+        if arrows.count >= 64 { arrows.removeAll(keepingCapacity: true) }
+        arrows[key] = texture
+        return texture
+    }
+
+    private struct ArrowKey: Hashable {
+        let down: Bool
+        let size: CGFloat
+        let scale: CGFloat
+    }
+
+    private var arrows: [ArrowKey: OrbTextTexture] = [:]
+
+    private static func rasterizeArrow(down: Bool, size t: CGFloat, scale: CGFloat, device: MTLDevice) -> OrbTextTexture? {
+        let width = 0.50 * t
+        let height = 0.66 * t
+        let stroke = max(0.9, 0.11 * t)
+        let pad = ceil(stroke)
+        let size = CGSize(width: ceil(width + pad * 2), height: ceil(height + pad * 2))
+        let pixelsWide = max(1, Int(ceil(size.width * scale)))
+        let pixelsHigh = max(1, Int(ceil(size.height * scale)))
+        guard let context = CGContext(
+            data: nil, width: pixelsWide, height: pixelsHigh, bitsPerComponent: 8, bytesPerRow: pixelsWide * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        // Core Graphics is y-up: the glyph box spans pad...pad + height.
+        let inset = stroke / 2
+        let midX = pad + width / 2
+        let bottom = pad + inset
+        let top = pad + height - inset
+        let head = min(width / 2 - inset, 0.26 * t)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: midX, y: bottom))
+        path.addLine(to: CGPoint(x: midX, y: top))
+        let tip = down ? bottom : top
+        let back = down ? tip + head : tip - head
+        path.move(to: CGPoint(x: midX - head, y: back))
+        path.addLine(to: CGPoint(x: midX, y: tip))
+        path.addLine(to: CGPoint(x: midX + head, y: back))
+        context.addPath(path)
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(stroke)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.strokePath()
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: pixelsWide, height: pixelsHigh, mipmapped: false)
+        descriptor.usage = [.shaderRead]
+        guard let texture = device.makeTexture(descriptor: descriptor), let data = context.data else { return nil }
+        texture.replace(region: MTLRegionMake2D(0, 0, pixelsWide, pixelsHigh), mipmapLevel: 0, withBytes: data, bytesPerRow: pixelsWide * 4)
+        return OrbTextTexture(
+            texture: texture,
+            size: CGSize(width: CGFloat(pixelsWide) / scale, height: CGFloat(pixelsHigh) / scale),
+            baseline: CGFloat(pixelsHigh) / scale - pad,
+            advance: width,
+            padding: pad
+        )
+    }
+
     /// The `+n` label of the agent dots.
     func overflowTexture(_ count: Int, style: OrbTextStyle, language: AppLanguage, scale: CGFloat) -> OrbTextTexture? {
         texture(overflowLabels[min(max(count, 0), 99)], style: style, language: language, scale: scale)

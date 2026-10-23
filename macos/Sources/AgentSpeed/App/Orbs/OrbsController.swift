@@ -106,6 +106,14 @@ final class OrbsController {
             guard let self, let model = self.model else { return }
             model.setOrbSubsets(Set(self.document.orbs.compactMap(\.sources.sourceSet)))
         })
+        loops.append(ObservationLoop { [weak self] in
+            guard let self, let model = self.model else { return }
+            let snapshot = model.traffic.snapshot
+            let settings = model.settings
+            _ = (settings.trafficEnabled, settings.trafficIncludeTools, settings.trafficUnit, self.document.orbs)
+            let now = Clock.now
+            for runtime in self.runtimes.values { runtime.ingestTraffic(snapshot, settings: settings, now: now) }
+        })
         listener = model.store.addEventListener { [weak self] event in
             guard let self, let model = self.model else { return }
             for runtime in self.runtimes.values { runtime.handle(event, isPreviewing: model.store.isPreviewing) }
@@ -313,6 +321,14 @@ final class OrbsController {
     /// tok/s or the money unit (DESIGN 9); persisted at once.
     func setUnit(_ unit: OrbUnit, of id: String) {
         setDocument(OrbEditing.setUnit(unit, of: id, in: document))
+    }
+
+    func setTraffic(_ traffic: OrbTraffic, of id: String) {
+        setDocument(OrbEditing.setTraffic(traffic, of: id, in: document))
+    }
+
+    func setShowName(_ showName: Bool?, of id: String) {
+        setDocument(OrbEditing.setShowName(showName, of: id, in: document))
     }
 
     func toggleUnit(of id: String) {
