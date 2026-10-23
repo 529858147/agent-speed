@@ -412,7 +412,7 @@ enum StringTable {
         "report.invite.decline": Entry("不用了", "不用了", "No Thanks", "今はしない"),
         "report.invite.done": Entry("已開啟即時上報，隨時可以在設定中關閉", "已开启实时上报，随时可以在设置中关闭", "Live reporting is on — turn it off anytime in Settings", "ライブ送信をオンにしました。設定からいつでもオフにできます"),
         "report.invite.preview": Entry("預覽", "预览", "Preview", "プレビュー"),
-        "report.invite.title": Entry("要開啟即時上報嗎？", "要开启实时上报吗？", "Turn on live reporting?", "ライブ送信をオンにしますか？"),
+        "report.invite.title": Entry("要參與速蹬天梯嗎？", "要参与速蹬天梯吗？", "Join the Codex Radar speed ladder?", "Codex Radar のスピードランキングに参加しますか？"),
         "report.invite.username": Entry("公開顯示為「%@」，可在設定中修改", "公开显示为“%@”，可在设置中修改", "Public name “%@” · change it in Settings", "公開名「%@」・設定で変更できます"),
         "report.menu.on": Entry("即時上報：%@", "实时上报：%@", "Live Reporting: %@", "ライブ送信：%@"),
         "report.menu.paused": Entry("即時上報已暫停", "实时上报已暂停", "Live Reporting Paused", "ライブ送信は一時停止中"),

@@ -4537,10 +4537,10 @@
     "ja": "この名前はあなたのアカウントの別のデバイスが使っています。移すとそのデバイスは削除され、この名前では送信できなくなります。"
   },
   "report.invite.title": {
-    "zh-Hant": "要開啟即時上報嗎？",
-    "zh-Hans": "要开启实时上报吗？",
-    "en": "Turn on live reporting?",
-    "ja": "ライブ送信をオンにしますか？"
+    "zh-Hant": "要參與速蹬天梯嗎？",
+    "zh-Hans": "要参与速蹬天梯吗？",
+    "en": "Join the Codex Radar speed ladder?",
+    "ja": "Codex Radar のスピードランキングに参加しますか？"
   },
   "report.invite.body": {
     "zh-Hant": "agent 工作時，每隔幾秒把即時速度和 token 用量傳送到 %@（%@）。不會傳送對話內容或檔案名稱。",
