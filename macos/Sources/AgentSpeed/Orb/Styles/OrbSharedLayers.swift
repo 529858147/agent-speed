@@ -144,12 +144,13 @@ struct OrbAgentDotsLayout {
     let startX: CGFloat
     /// Room reserved for the `+n` label.
     static func overflowWidth(_ diameter: CGFloat) -> CGFloat { 0.075 * diameter }
+    static func dotDiameter(_ diameter: CGFloat) -> CGFloat { 4 * diameter / 148 }
 
     init(count: Int, diameter: CGFloat, center: CGPoint, offset: CGFloat = 0.3785) {
         overflow = count > 6 ? count - 5 : 0
         dotCount = overflow > 0 ? 5 : count
         let unit = diameter / 148
-        dotDiameter = 4 * unit
+        dotDiameter = Self.dotDiameter(diameter)
         spacing = 3.2 * unit
         y = center.y + offset * diameter
         let total = CGFloat(dotCount) * dotDiameter + CGFloat(max(0, dotCount - 1)) * spacing

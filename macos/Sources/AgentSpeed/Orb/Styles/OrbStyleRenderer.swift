@@ -170,6 +170,15 @@ struct OrbReadoutLayout {
     /// Forward lean from overdrive and redline jitter of the value (`minimal`, which barely moves, has neither).
     var valueMotion = true
 
+    /// The title's baseline below the center, × S.
+    var titleOffset: CGFloat {
+        switch title {
+        case .belowUnit(let gap): valueBaseline + (unitSize == nil ? 0 : unitGap) + gap
+        case .belowValue(let gap): valueBaseline + gap
+        case .fixed(let offset): offset
+        }
+    }
+
     static let led = OrbReadoutLayout(
         valueSize: 0.24, valueBaseline: 0.012, valueMaxWidth: 0.62, unitSize: 0.072, unitGap: 0.104,
         title: .belowUnit(0.09), titleSize: 0.062, titleMaxWidth: 0.58, infoMaxWidth: 0.62, dots: 0.3785, pillCenter: -0.232

@@ -15,11 +15,11 @@ struct OrbTrafficPlacement: Equatable {
     /// `reactor` and `needle` keep their readout in a fixed window or hub.
     var recenters = false
 
-    static let led = OrbTrafficPlacement(nearestBaseline: -0.222, below: false, size: 0.050, fit: 0.44, recenters: true)
+    static let led = OrbTrafficPlacement(nearestBaseline: -0.245, below: false, size: 0.050, fit: 0.44, recenters: true)
     static let liquid = led
-    static let reactor = OrbTrafficPlacement(nearestBaseline: -0.165, below: false, size: 0.046, fit: 0.32)
+    static let reactor = OrbTrafficPlacement(nearestBaseline: -0.175, below: false, size: 0.046, fit: 0.32)
     static let needle = OrbTrafficPlacement(nearestBaseline: 0.108, below: true, size: 0.046, fit: 0.285)
-    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.205, below: false, size: 0.054, fit: 0.50, recenters: true)
+    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.228, below: false, size: 0.054, fit: 0.50, recenters: true)
 
     static func of(_ style: OrbStyleKind) -> OrbTrafficPlacement {
         switch style {
@@ -47,14 +47,25 @@ struct OrbTrafficPlacement: Equatable {
     /// Cap height of the orb fonts, × size.
     static let capHeight: CGFloat = 0.70
 
+    /// Descent of a title line below its baseline, × its size.
+    static let titleDescent: CGFloat = 0.22
+    /// Clearance kept between the title and the agent dots, × S.
+    static let dotsClearance: CGFloat = 0.05
+
     /// How far the readout stack (value, unit, title, pill and this block) moves down while the block shows above the
-    /// value, so the whole stack stays centered (DESIGN 10): half the block's height over the value's cap top.
+    /// value, so the whole stack stays centered (DESIGN 10): half the block's height over the value's cap top, but never
+    /// so far that the title comes closer to the agent dots than the clearance.
     func stackShift(layout: OrbReadoutLayout, diameter s: CGFloat) -> CGFloat {
         guard recenters, !below else { return 0 }
         let t = textSize(diameter: s)
         let blockTop = nearestBaseline * s - Self.pitch * t - Self.capHeight * t
         let valueTop = (layout.valueBaseline - Self.capHeight * layout.valueSize) * s
-        return max(0, (valueTop - blockTop) / 2)
+        let centered = max(0, (valueTop - blockTop) / 2)
+        guard let dots = layout.dots else { return centered }
+        let titleSize = max(7, layout.titleSize * s)
+        let titleBottom = layout.titleOffset * s + Self.titleDescent * titleSize
+        let dotsTop = dots * s - OrbAgentDotsLayout.dotDiameter(s) / 2
+        return min(centered, max(0, dotsTop - Self.dotsClearance * s - titleBottom))
     }
 
     /// Baselines of the download (first) and upload lines.

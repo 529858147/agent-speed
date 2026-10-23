@@ -2069,15 +2069,15 @@ bottom edge (pretty but unreadable without hovering).
 
 | Style | Placement | Baseline of the line nearest the value | Text size `t` | Drawn when a line fits in |
 | --- | --- | --- | --- | --- |
-| `led` | above the value, ↑ line nearest | c − 0.222 S | max(7 pt, 0.050 S) | 0.44 S |
-| `liquid` | as `led` | c − 0.222 S | max(7 pt, 0.050 S) | 0.44 S |
-| `reactor` | above the value inside the core window | c − 0.165 S | max(7 pt, 0.046 S) | 0.32 S |
+| `led` | above the value, ↑ line nearest | c − 0.245 S | max(7 pt, 0.050 S) | 0.44 S |
+| `liquid` | as `led` | c − 0.245 S | max(7 pt, 0.050 S) | 0.44 S |
+| `reactor` | above the value inside the core window | c − 0.175 S | max(7 pt, 0.046 S) | 0.32 S |
 | `needle` | inside the hub below the value, ↓ line nearest | c + 0.108 S | max(7 pt, 0.046 S) | 0.285 S |
-| `minimal` | above the value | c − 0.205 S | max(7 pt, 0.054 S) | 0.50 S |
+| `minimal` | above the value | c − 0.228 S | max(7 pt, 0.054 S) | 0.50 S |
 
-- **Gap to the value**: the ↑ line's baseline sits ≈ 0.065 S above the value's cap top in `led`, `liquid` and `minimal`
-  (≈ 0.05 S in `reactor`), about twice the gap between the two lines, so the block reads as its own group and never
-  touches the digits.
+- **Gap to the value**: the ↑ line's baseline sits ≈ 0.089 S above the value's cap top in `led`, `liquid` and `minimal`
+  (≈ 0.062 S in `reactor`), well over twice the gap between the two lines, so the block reads as its own group and
+  never crowds the digits.
 - **Line**: arrow (vector glyph from the atlas, 0.50 t wide, 0.66 t tall, stroke `max(0.9 pt, 0.11 t)`, round caps) ·
   gap 0.16 t · number (weight 600, tabular, right-aligned in the `8.88` cell) · gap 0.16 t · unit (weight 500, size
   0.82 t, left-aligned in the `MB/s` cell). Line pitch 1.32 t. A line is ≈ 5.6 t wide (39 pt at 7 pt), so the readout
@@ -2097,7 +2097,9 @@ bottom edge (pretty but unreadable without hovering).
 - **Centering**: in `led`, `liquid` and `minimal` the readout stack — this block, the value, the unit, the title and
   the new-peak pill — stays centered as one stack: while the block shows, everything moves down by half the block's
   height over the value's cap top, `max(0, ((valueBaseline − 0.70 × valueSize) × S − (nearest − 1.32 t − 0.70 t)) / 2)`
-  (0.70 = cap height; ≈ 0.084 S in `led`). The move follows the quiet-rule fade with smoothstep easing (the value glides
+  (0.70 = cap height; ≈ 0.095 S in `led`), but never so far that the title's bottom (its baseline + 0.22 × its
+  size) comes within 0.05 S of the agent dots' top (dots line − half a dot); small orbs, whose 7 pt text floor makes
+  the block relatively taller, hit that limit first. The move follows the quiet-rule fade with smoothstep easing (the value glides
   down as the block fades in and back up once it has faded out; Reduce Motion: instant) and ignores the pill's fade.
   The agent dots never move. `reactor` and `needle` keep their readout in the core window and the hub, so nothing
   moves there.
