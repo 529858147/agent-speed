@@ -36,7 +36,12 @@ jobs:
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
       - name: Test core
         working-directory: macos
-        run: swift test
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/test.log" || {
+            grep -E '✘ Test [^ ]+ (recorded|failed)|error:' "$RUNNER_TEMP/test.log" | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
       - name: Build app bundle
         run: macos/scripts/build-app.sh
       - uses: actions/upload-artifact@v7
@@ -54,9 +59,21 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Test core
-        run: dotnet test windows/tests/AgentSpeed.Core.Tests -c Release
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test windows/tests/AgentSpeed.Core.Tests -c Release 2>&1 | tee "$RUNNER_TEMP/core.log" || {
+            grep -E -A3 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/core.log" | paste -sd' ' - | sed 's/ -- /\n/g' | head -10 | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+            exit 1
+          }
       - name: Test presentation
-        run: dotnet test windows/tests/AgentSpeed.Presentation.Tests -c Release
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test windows/tests/AgentSpeed.Presentation.Tests -c Release 2>&1 | tee "$RUNNER_TEMP/presentation.log" || {
+            grep -E -A3 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/presentation.log" | paste -sd' ' - | sed 's/ -- /\n/g' | head -10 | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+            exit 1
+          }
       - name: Publish
         shell: pwsh
         run: ./windows/scripts/publish.ps1
