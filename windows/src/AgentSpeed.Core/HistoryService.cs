@@ -80,9 +80,15 @@ public sealed class HistoryService : IDisposable
         return book.Restore(bindings, tables);
     }
 
-    /// <summary><c>%LOCALAPPDATA%\AgentSpeed\history.sqlite</c>.</summary>
-    public static string DefaultStorePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentSpeed", "history.sqlite");
+    /// <summary>
+    /// <c>%LOCALAPPDATA%\AgentSpeed\history.sqlite</c>; the developer variable <c>AGENT_SPEED_HISTORY_FILE</c> (a fully
+    /// qualified local path) points a test session at its own store so it never writes into the user's history.
+    /// </summary>
+    public static string DefaultStorePath =>
+        Environment.GetEnvironmentVariable("AGENT_SPEED_HISTORY_FILE") is { Length: > 0 } custom && Path.IsPathFullyQualified(custom)
+            && !custom.StartsWith(@"\\", StringComparison.Ordinal)
+            ? custom
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentSpeed", "history.sqlite");
 
     public string StorePath => _storePath;
 
@@ -298,7 +304,11 @@ public sealed class HistoryService : IDisposable
                         store = null;
                         analyzer = null;
                         Pricing.ClearBindings();
-                        HistoryStore.Delete(_storePath);
+                        lock (HistoryStore.FileGate)
+                        {
+                            HistoryStore.Delete(_storePath);
+                        }
+
                         lock (_livePeaks)
                         {
                             _livePeaks.Clear();

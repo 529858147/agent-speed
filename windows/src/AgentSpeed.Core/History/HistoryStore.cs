@@ -88,6 +88,31 @@ internal sealed class HistoryStore : IDisposable
         CREATE TABLE IF NOT EXISTS day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
         """;
 
+    /// <summary>
+    /// Observed network traffic per day and key (METRICS 10.9), created whenever the store is opened; the schema version
+    /// does not change for it, so older builds still open the file.
+    /// </summary>
+    private const string TrafficSchema = """
+        CREATE TABLE IF NOT EXISTS day_traffic (
+            day TEXT NOT NULL,
+            key TEXT NOT NULL,
+            rx INTEGER NOT NULL,
+            tx INTEGER NOT NULL,
+            rx_tools INTEGER NOT NULL,
+            tx_tools INTEGER NOT NULL,
+            sampled_ms INTEGER NOT NULL,
+            PRIMARY KEY (day, key)) WITHOUT ROWID;
+        """;
+
+    /// <summary>The meta key holding the first local date with a stored traffic sample.</summary>
+    public const string TrafficSinceKey = "trafficSince";
+
+    /// <summary>
+    /// Held while a short-lived connection (the traffic writer) has the file open and while "Clear history" deletes it,
+    /// so the delete never meets an open file.
+    /// </summary>
+    public static readonly object FileGate = new();
+
     private readonly SqliteConnection _connection;
 
     private HistoryStore(SqliteConnection connection)
@@ -455,6 +480,99 @@ internal sealed class HistoryStore : IDisposable
         });
     }
 
+    /// <summary>Upserts whole days of traffic rows and moves <c>trafficSince</c> back when needed (METRICS 10.9).</summary>
+    public void SaveTraffic(IReadOnlyList<Traffic.TrafficDay> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        using var upsert = _connection.Prepare(
+            "INSERT INTO day_traffic (day, key, rx, tx, rx_tools, tx_tools, sampled_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
+            "ON CONFLICT(day, key) DO UPDATE SET rx = excluded.rx, tx = excluded.tx, rx_tools = excluded.rx_tools, " +
+            "tx_tools = excluded.tx_tools, sampled_ms = excluded.sampled_ms");
+        var first = rows.Select(r => r.Day).Min(StringComparer.Ordinal)!;
+        _connection.Transaction(() =>
+        {
+            foreach (var row in rows)
+            {
+                upsert.Bind(1, row.Day).Bind(2, row.Key).Bind(3, row.Rx).Bind(4, row.Tx).Bind(5, row.RxTools).Bind(6, row.TxTools)
+                    .Bind(7, row.SampledMs).Run();
+            }
+
+            if (Meta(TrafficSinceKey) is not { } since || string.CompareOrdinal(first, since) < 0)
+            {
+                SetMeta(TrafficSinceKey, first);
+            }
+        });
+    }
+
+    /// <summary>Every stored traffic row and <c>trafficSince</c>.</summary>
+    public (List<Traffic.TrafficDay> Days, string? Since) LoadTraffic() => ReadTraffic(_connection);
+
+    /// <summary>The traffic rows of the store at <paramref name="path"/>, read without changing it; empty when there is none.</summary>
+    public static (List<Traffic.TrafficDay> Days, string? Since) StoredTraffic(string path)
+    {
+        try
+        {
+            lock (FileGate)
+            {
+                if (!File.Exists(path))
+                {
+                    return ([], null);
+                }
+
+                using var connection = SqliteConnection.Open(path, SqliteOpenMode.ReadOnly);
+                return ReadTraffic(connection);
+            }
+        }
+        catch (Exception e) when (e is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            return ([], null);
+        }
+    }
+
+    private static (List<Traffic.TrafficDay> Days, string? Since) ReadTraffic(SqliteConnection connection)
+    {
+        var days = new List<Traffic.TrafficDay>();
+        if (connection.ScalarInt64("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'day_traffic'") is not > 0)
+        {
+            return (days, null);
+        }
+
+        using (var statement = connection.Prepare(
+            "SELECT day, key, rx, tx, rx_tools, tx_tools, sampled_ms FROM day_traffic ORDER BY day, key"))
+        {
+            while (statement.Step())
+            {
+                if (statement.GetString(0) is { Length: 10 } day && statement.GetString(1) is { } key
+                    && (key == Traffic.TrafficDay.MachineKey || SourceNames.Parse(key) is not null))
+                {
+                    days.Add(new Traffic.TrafficDay(day, key, Math.Max(0, statement.GetInt64(2)), Math.Max(0, statement.GetInt64(3)),
+                        Math.Max(0, statement.GetInt64(4)), Math.Max(0, statement.GetInt64(5)), Math.Max(0, statement.GetInt64(6))));
+                }
+            }
+        }
+
+        string? since = null;
+        using (var meta = connection.Prepare("SELECT value FROM meta WHERE key = ?1"))
+        {
+            meta.Bind(1, TrafficSinceKey);
+            if (meta.Step())
+            {
+                since = meta.GetString(0);
+            }
+        }
+
+        if (since is null && days.Count > 0)
+        {
+            since = days[0].Day;
+        }
+
+        return (days, since);
+    }
+
     public void Dispose() => _connection.Dispose();
 
     private static HistoryStore OpenOnce(string path)
@@ -486,6 +604,7 @@ internal sealed class HistoryStore : IDisposable
                 });
             }
 
+            connection.Execute(TrafficSchema);
             return new HistoryStore(connection);
         }
         catch
