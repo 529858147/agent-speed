@@ -32,6 +32,18 @@ def ms(clock, day=DAY):
     return int(dt.timestamp() * 1000)
 
 
+def exact(clock, day=DAY):
+    """'11:20:01.500' -> Unix ms (UTC), in integer arithmetic."""
+    whole, millis = clock.split(".")
+    dt = datetime.strptime("%s %s" % (day, whole), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    return int(dt.timestamp()) * 1000 + int(millis)
+
+
+def escaped(text):
+    """A JSON string literal with every character written as a \\u escape."""
+    return '"' + "".join("\\u%04x" % ord(c) for c in text) + '"'
+
+
 def uid(seed):
     """A deterministic UUID-shaped id."""
     h = hashlib.sha256(seed.encode()).hexdigest()
@@ -94,6 +106,7 @@ class Session:
         return self.line()
 
     def item(self, kind, when, role=None, custom=False, cwd=True, **fields):
+        """`cwd`: True writes the session's folder, False none, a string that string."""
         self.count += 1
         item_id = uid("%s-%d" % (self.seed, self.count))
         row = {"id": item_id, "parentId": self.last_id, "timestamp": when, "type": kind}
@@ -103,10 +116,20 @@ class Session:
         if self.session_id and not custom:
             row["sessionId"] = self.session_id
         if cwd:
-            row["cwd"] = self.cwd
+            row["cwd"] = self.cwd if cwd is True else cwd
         self.last_id = item_id
         self.lines.append(row)
         return self.line()
+
+    def patch(self, line, **tokens):
+        """Writes physical line `line` with JSON text no encoder produces: each string value `"@name"` becomes the raw
+        text `tokens[name]` (such as `1e999`, `NaN` or a string with escaped characters)."""
+        text = json.dumps(self.lines[line - 1], separators=(",", ":"), ensure_ascii=False)
+        for name, raw_text in tokens.items():
+            assert '"@%s"' % name in text, name
+            text = text.replace('"@%s"' % name, raw_text)
+        self.lines[line - 1] = text
+        return line
 
     def copy(self, rows):
         """A fork: the source lines with new ids and remapped parents; timestamp, providerData and cwd are kept and
@@ -135,7 +158,7 @@ class Session:
     # ---- line kinds
 
     def user(self, when, text, agent="main", **extra):
-        pd = {"conversationRequestId": uid("ureq-%s-%d" % (self.seed, when)), "agent": agent}
+        pd = {"conversationRequestId": uid("ureq-%s-%s" % (self.seed, when)), "agent": agent}
         pd.update(extra)
         return self.item("message", when, "user", content=[{"type": "input_text", "text": text}], providerData=pd)
 
@@ -193,7 +216,8 @@ def attach(pd, fields, use, raw_use):
     derived = {"input_tokens": use["inputTokens"], "output_tokens": use["outputTokens"],
                "total_tokens": use["totalTokens"]}
     if raw_use:
-        hit = raw_use.get("prompt_cache_hit_tokens", (raw_use.get("prompt_tokens_details") or {}).get("cached_tokens"))
+        details = raw_use.get("prompt_tokens_details") if isinstance(raw_use.get("prompt_tokens_details"), dict) else {}
+        hit = raw_use.get("prompt_cache_hit_tokens", details.get("cached_tokens"))
         write = raw_use.get("cache_creation_input_tokens", raw_use.get("prompt_cache_miss_tokens"))
         if hit:
             derived["cache_read_input_tokens"] = hit
@@ -465,6 +489,144 @@ def write_fixtures(out_dir):
         resp("hy4-preview", e1.message_id, ms("11:01:02.000"), ms("11:01:06.000"), 7000, 6000, 0, 260, 100),
     ])
     mtimes[e_rel] = ms("11:05:01.000")
+
+    # ---- Timestamps (METRICS 3.1, 3.6): user lines whose timestamp is valid move the in-flight start; the others are
+    # ignored entirely. Every value is computed here by hand, in integer arithmetic.
+    year1 = int(datetime(1, 1, 1, tzinfo=timezone.utc).timestamp()) * 1000
+    year0 = year1 - 366 * 86_400_000  # 0000 is a leap year in the proleptic Gregorian calendar
+    last_second = int(datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).timestamp()) * 1000
+    off = (23 * 3600 + 59 * 60) * 1000
+    int64_max = 2 ** 63 - 1
+    t_id = uid("orbit-timestamps")
+    t_rel = "%s/projects/%s/%s.jsonl" % (INTL, ORBIT_SLUG, t_id)
+    t = Session("orbit-timestamps", ORBIT, t_id)
+    current = None
+    for stamp, value in (
+            (exact("11:20:00.000"), exact("11:20:00.000")),
+            ("2026-10-21t11:20:01.5z", exact("11:20:01.500")),                        # lower-case separator, zone
+            ("2026-10-21 19:20:02+08:00", exact("11:20:02.000")),                     # space, offset
+            ("2026-10-21T06:20:03.123456789-0500", exact("11:20:03.123")),            # offset without colon
+            ("2026-10-21T11:20:04." + "0" * 43 + "Z", exact("11:20:04.000")),         # 64 characters
+            ("@esc:2026-10-21T11:20:05." + "0" * 43 + "Z", exact("11:20:05.000")),    # 64, every character escaped
+            ("2026-10-21T11:20:06", None),                                            # no zone
+            (" 2026-10-21T11:20:07Z", None),
+            ("2026-10-21T11:20:08Z ", None),
+            ("2026-10-21T11:20:60Z", None),                                           # leap second
+            ("2026-10-21T11:20:09+08", None),                                         # offset without minutes
+            ("2026-10-21T11:20:10+24:00", None),
+            ("2026-10-21T11:20:11+05:60", None),
+            ("2026-10-21T24:00:00Z", None),
+            ("2026-02-29T11:20:12Z", None),                                           # 2026 is no leap year
+            ("２０２６-10-21T11:20:13Z", None),                       # full-width digits
+            ("2026-10-21T11:20:14." + "0" * 44 + "Z", None),                          # 65 characters
+            ("2026-10-21T11:20:15.Z", None),
+            ("2026-10-21T11:20:16,5Z", None),
+            ("@esc:2026-10-21T11:20:17." + "0" * 44 + "Z", None),                     # 65, escaped
+            ("@raw:1e999", None),                                                     # not finite
+            ("@raw:1" + "0" * 400, None),                                             # beyond the double range
+            (-5, None), (0, None), (True, None),
+            ("0000-01-01T00:00:00Z", year0),
+            ("0000-02-29T23:59:59.999+23:59", year0 + 59 * 86_400_000 + 86_399_999 - off),
+            ("0001-01-01T00:00:00+23:59", year1 - off),
+            (0.5, 0),                                                                 # finite, > 0, truncates to 0
+            ("9999-12-31T23:59:59.999-23:59", last_second + 999 + off),
+            ("@raw:1e19", int64_max),                                                 # saturates
+            (exact("11:20:30.000"), exact("11:20:30.000"))):
+        kind, _, text = stamp.partition(":") if isinstance(stamp, str) and stamp[:5] in ("@esc:", "@raw:") \
+            else (None, None, None)
+        line = t.user("@ts" if kind else stamp, "(prompt)", startsNewUserRequest=True)
+        if kind == "@esc":
+            t.patch(line, ts=escaped(text))
+        elif kind == "@raw":
+            t.patch(line, ts=text)
+        current = value if value is not None else current
+        trace(t_rel, line, "generating", current)
+    t.write(p(t_rel))
+    expect(t_rel, "workbuddyAi", "orbit", None, "generating", exact("11:20:30.000"), int64_max, [])
+    mtimes[t_rel] = ms("11:20:31.000")
+
+    # ---- Edge values (METRICS 3.2, 3.6, 4.9): huge and odd numbers, blank and prefixed models, lines without a key,
+    # a callId that is not a string, NaN and Infinity, blank working directories, and calls outside the calendar range.
+    cap = 10 ** 12
+    x_id = uid("orbit-edge")
+    x_rel = "%s/projects/%s/%s.jsonl" % (INTL, ORBIT_SLUG, x_id)
+    x = Session("orbit-edge", ORBIT, x_id)
+    x.user(exact("11:30:00.000"), "(prompt)", startsNewUserRequest=True)                               # 1
+    x1 = Call("x1", " \t ", request="glm-5.3", name="GLM-5.3")                                         # blank model
+    x.patch(x.say(exact("11:30:02.000"), x1, "(answer)",
+                  {"requests": 1, "inputTokens": "@inf", "outputTokens": 300.9, "totalTokens": 1,
+                   "inputTokensDetails": {"cached_tokens": 200}, "outputTokensDetails": {"reasoning_tokens": 40.7}},
+                  {"prompt_tokens": -5, "completion_tokens": "999", "cache_read_input_tokens": 0.5,
+                   "prompt_tokens_details": {"cached_tokens": 900}, "prompt_cache_hit_tokens": 800,
+                   "cache_creation_input_tokens": "@inf", "prompt_cache_write_tokens": 70.2}), inf="1e999")  # 2
+    trace(x_rel, x.line(), "idle")
+    x.user(exact("11:31:00.000"), "(prompt)", startsNewUserRequest=True)                               # 3
+    x2 = Call("x2", "CUSTOM-LOCAL:  ", request="kimi-k3", name="Kimi-K3")                              # empty name
+    x.patch(x.tool_call(exact("11:31:03.000"), x2, "call_x1", "Read", {"file_path": "(path)"},
+                        {"requests": 1, "inputTokens": "@big", "outputTokens": 1e20, "totalTokens": 0,
+                         "inputTokensDetails": [{"cached_tokens": 300}, "(text)", 5, {"cached_tokens": 400}],
+                         "outputTokensDetails": [{"reasoning_tokens": 600_000_000_000},
+                                                 {"reasoning_tokens": 600_000_000_000}]},
+                        {"prompt_tokens": 5, "completion_tokens": 6, "cache_read_input_tokens": "@big",
+                         "prompt_tokens_details": "(text)", "prompt_cache_hit_tokens": 12.7,
+                         "cache_creation_input_tokens": True, "prompt_cache_write_tokens": 0}),
+            big="1" + "0" * 400)                                                                         # 4
+    trace(x_rel, x.line(), "tools")
+    x.tool_result(exact("11:31:05.000"), x2, {"id": "call_x1"}, "Read", "(content)")                  # 5 object
+    trace(x_rel, x.line(), "tools")
+    x.tool_result(exact("11:31:05.500"), x2, ["call_x1"], "Read", "(content)")                        # 6 array
+    trace(x_rel, x.line(), "tools")
+    x.tool_result(exact("11:31:06.000"), x2, "call_x1", "Read", "(content)")                          # 7
+    trace(x_rel, x.line(), "generating", exact("11:31:06.000"))
+    x.item("function_call", exact("11:31:06.500"), callId="call_x9", name="Bash", arguments="{}",
+           status="completed", providerData={"messageId": "", "model": "glm-5.3", "usage": usage(10, 5)})
+    x.lines[-1]["id"] = ""                                                                              # 8 no key
+    trace(x_rel, x.line(), "generating", exact("11:31:06.000"))
+    x.item("model-usage", exact("11:31:07.000"), custom=True,
+           providerData={"model": "glm-5.3", "usage": usage(10, 5), "rawUsage": raw(10, 5)})
+    x.lines[-1]["id"] = 5                                                                               # 9 no key
+    trace(x_rel, x.line(), "generating", exact("11:31:06.000"))
+    x3 = Call("x3", "Custom:Kimi-K3 ", name="Kimi-K3")
+    x.say(exact("11:31:09.000"), x3, "(answer)", dict(usage(1000, 50), outputTokensDetails=7), raw(1000, 50))  # 10
+    trace(x_rel, x.line(), "idle")
+    x.patch(x.model_usage(exact("11:31:10.000"), x3, dict(usage(1000, 50), outputTokens="@nan"), raw(1000, 50)),
+            nan="NaN")                                                                                   # 11 malformed
+    x.patch(x.user("@ts", "(prompt)"), ts="Infinity")                                                  # 12 malformed
+    trace(x_rel, x.line(), "idle")
+    x.user(exact("11:32:00.000"), "(prompt)", startsNewUserRequest=True)                               # 13
+    x.lines[-1]["cwd"] = "\u001f"                                                                       # blank
+    trace(x_rel, x.line(), "generating", exact("11:32:00.000"))
+    x4 = Call("x4", "\u001f", request="hy4-preview", name="Hy4 preview")                               # blank model
+    x.say(exact("11:32:04.000"), x4, "(answer)", usage(2000, 80, 1500, 10), raw(2000, 80, 1500, 10))  # 14
+    x.lines[-1]["cwd"] = "　\u001c"
+    trace(x_rel, x.line(), "idle")
+    x.user("0000-01-01T00:00:00Z", "(prompt)", startsNewUserRequest=True)                              # 15
+    trace(x_rel, x.line(), "generating", year0)
+    x5 = Call("x5", "glm-5.3", name="GLM-5.3")
+    x.say("0000-01-01T00:00:01Z", x5, "(answer)", usage(100, 10), raw(100, 10))                       # 16
+    trace(x_rel, x.line(), "idle")
+    x.user("9999-12-31T23:59:58-23:59", "(prompt)", startsNewUserRequest=True)                         # 17
+    trace(x_rel, x.line(), "generating", last_second - 1000 + off)
+    x6 = Call("x6", "glm-5.3", name="GLM-5.3")
+    x.say("9999-12-31T23:59:59.999-23:59", x6, "(answer)", usage(100, 10), raw(100, 10))              # 18
+    trace(x_rel, x.line(), "idle")
+    x.user(exact("11:33:00.000"), "(prompt)", startsNewUserRequest=True)                               # 19
+    x.lines[-1]["cwd"] = "\u001d "
+    trace(x_rel, x.line(), "generating", exact("11:33:00.000"))
+    for line in range(15, 19):
+        x.lines[line - 1].pop("cwd")
+    x.write(p(x_rel))
+    expect(x_rel, "workbuddyAi", "orbit", "glm-5.3", "generating", exact("11:33:00.000"), last_second + 999 + off, [
+        resp("glm-5.3", x1.message_id, exact("11:30:00.000"), exact("11:30:02.000"), cap, 200, 70, 300, 40),
+        resp(None, x2.message_id, exact("11:31:00.000"), exact("11:31:03.000"), cap, 700, 0, cap, cap,
+             provider="custom"),
+        resp("Kimi-K3", x3.message_id, exact("11:31:06.000"), exact("11:31:09.000"), 1000, 0, 0, 50, 0,
+             provider="custom"),
+        resp("hy4-preview", x4.message_id, exact("11:32:00.000"), exact("11:32:04.000"), 2000, 1500, 0, 80, 10),
+        resp("glm-5.3", x5.message_id, year0, year0 + 1000, 100, 0, 0, 10, 0),
+        resp("glm-5.3", x6.message_id, last_second - 1000 + off, last_second + 999 + off, 100, 0, 0, 10, 0),
+    ], malformed=2)
+    mtimes[x_rel] = ms("11:33:01.000")
 
     # ==== Discovery decoys: none of these is a session transcript --------------------------------------------------
     usage_line = json.dumps(a.lines[3], separators=(",", ":")) + "\n"

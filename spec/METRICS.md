@@ -44,6 +44,17 @@ The app never writes inside these folders.
 RFC 3339 / ISO 8601 with optional fractional seconds and `Z` or offset. Convert to Unix milliseconds (Int64).
 Lines without a parseable timestamp are ignored except where stated.
 
+A timestamp string is exactly `YYYY-MM-DD`, then `T`, `t` or a space, then `hh:mm:ss`, then optionally `.` and one or
+more digits, then `Z`, `z`, `±hh:mm` or `±hhmm`, with ASCII digits only, nothing before or after it (no whitespace) and
+at most 64 characters (after JSON unescaping). Year 0000–9999 of the proleptic Gregorian calendar (0000 is a leap
+year), month 01–12, a day that exists in that month, hour 00–23, minute and second 00–59 (no leap second), offset hours
+00–23 and offset minutes 00–59. Anything else is not a timestamp (`2026-10-20T10:00:00` without a zone, `+08` without
+minutes, `24:00:00`). Digits after the third fraction digit are dropped. The value is computed arithmetically —
+`(days since 1970-01-01 × 86 400 + seconds of the day − offset) × 1000 + milliseconds` — so every valid string has a
+value, also before 1970 (negative) and past 9999-12-31 UTC (`9999-12-31T23:59:59-23:59`). Fixture cases: the
+WorkBuddy session `orbit-timestamps` (`spec/tools/workbuddy_fixtures.py`; WorkBuddy accepts string timestamps, and
+every source shares this parser).
+
 ### 3.2 Normalized token usage
 Every response carries:
 
@@ -60,6 +71,15 @@ Missing numeric fields are 0. Negative values are clamped to 0. `total = input +
 `cacheWrite1hInput = 0` (their logs do not separate cache lifetimes; Claude Code writes about a third of its cache
 with the 1-hour lifetime, which costs 2× input instead of 1.25×). On a repeated Claude line the field merges with
 `max` like the others (4.1).
+
+Token values and the cap: every token value read from a log is its number truncated toward zero and clamped to
+0 … 10^12 (numbers: 3.6). So `12.9` counts 12; `-7`, `-1e999` and `0.5` count 0; `1e20`, `1e999` and an integer
+literal too long for 64 bits count 10^12; any other value (string, boolean, null, object, array) counts 0. A
+normalized field that adds values (the `input` of Claude, DeepSeek Harness, OpenCode, Gemini CLI and omp; the `output`
+of OpenCode and Gemini CLI; the sums of WorkBuddy, 4.9) saturates at 10^12 too, so no field ever exceeds it. No real
+response comes near; the cap keeps every total far from 64-bit overflow, and cost classes are clamped further (9.3).
+Antigravity has its own, lower limit (4.8). Fixture cases: the WorkBuddy session `orbit-edge`
+(`spec/tools/workbuddy_fixtures.py`).
 
 Every response also carries `provider` (string or null): the API provider the agent says it used, only for pricing
 (9.2). Codex: `payload.model_provider` of the file's first `session_meta` (`openai`, or the user's own key such as
@@ -94,6 +114,18 @@ lines of the same key in the same file are merged (4.1, 4.4). Codex: every repea
 For Codex, once `session_meta` has been read, any later line whose timestamp is earlier than `fileCreatedMs - 2000`
 is copied history (forks and sub-agents copy their parent's records): ignore it completely (no totals, no speed, no
 state change). For Claude, copied history is removed by deduplication (3.4).
+
+### 3.6 Numbers
+JSON numbers mean what Python's `json` reads: an integer literal is exact (any length), every other literal is the
+nearest double (`1e999` is infinite). `NaN`, `Infinity` and `-Infinity` are not JSON: a line that contains them anywhere
+is malformed (section 4).
+
+- *Finite*: a number whose nearest double is finite. `1e999`, `-1e999` and integer literals beyond the double range
+  (about 1.8 × 10^308) are not. A rule that asks for a finite number (the numeric timestamps and durations of 4.7 and
+  4.9, the first-value rule of 4.9 Tokens) treats any other number like a missing value.
+- *Truncated* (to an integer): toward zero, then saturated to the signed 64-bit range, so a millisecond value of
+  `1e19` gives 2^63 − 1. A sum of milliseconds (omp `startMs + duration`) saturates too.
+- Token values are truncated and capped as in 3.2.
 
 ## 4. Parsers
 
@@ -862,9 +894,16 @@ tolerant: unknown line types and fields are ignored, and a timestamp may be a nu
 
 Every line is one JSON object: `id`, `parentId`, `timestamp` (Unix ms, a number), `type`, `role`, then the item's own
 fields, `providerData`, the session's working directory `cwd` (on every line except `summary`, `topic` and
-`session-meta`) and `sessionId`. `timestamp` is valid when it is a finite number > 0 (truncated to an integer) or a
-string of 3.1; lines without a valid timestamp are ignored entirely. Only `id`, `type`, `role`, `status`, `timestamp`,
-`cwd`, `callId` and the `providerData` fields named below are read; content, arguments and tool output never are.
+`session-meta`) and `sessionId`. `timestamp` is valid when it is a finite number > 0, truncated (3.6: `0.5` gives 0,
+`1e19` gives 2^63 − 1), or a timestamp string (3.1); lines without a valid timestamp are ignored entirely. Only `id`,
+`type`, `role`, `status`, `timestamp`, `cwd`, `callId` and the `providerData` fields named below are read; content,
+arguments and tool output never are.
+
+Values of the wrong type count as absent: `id` and `providerData.messageId` only as non-empty strings, `callId` only
+as a string (a `callId` that is an object or an array opens and closes no call), `providerData` only as an object, flags
+only as `true`. A repeated member takes its last value, as with `json.loads`. *Blank* means empty or whitespace only,
+with Python's `str.isspace()` as whitespace (U+0009–U+000D, U+001C–U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A,
+U+2028, U+2029, U+202F, U+205F, U+3000); *trimmed* removes that whitespace at both ends.
 
 | Line | Meaning |
 | --- | --- |
@@ -891,7 +930,7 @@ State: `pendingStartMs`, `openCalls` (tool call id → response key), `phase`.
 
 | Line | Action |
 | --- | --- |
-| any line | `lastLineMs`; a non-empty string `cwd` sets `project` and `cwdPath` (the latest wins) |
+| any line | `lastLineMs`; a string `cwd` that is not blank sets `project` and `cwdPath` (the latest wins) |
 | user `message`, not `skipRun` | `pendingStartMs = ts`, `openCalls` cleared, phase `generating` (`inFlightStartMs = ts`) |
 | user `message` with `skipRun` | nothing else |
 | `function_call_result` | remove its `callId` from `openCalls`. Not `skipRun`: `pendingStartMs = ts`, and when `openCalls` is empty phase `generating` (`inFlightStartMs = ts`). With `skipRun` (a rejected or cancelled tool; no request follows): when `openCalls` is empty, phase `idle`, `pendingStartMs = null`. A tool that failed (`status == "incomplete"` without `skipRun`) continues the turn. |
@@ -901,8 +940,9 @@ State: `pendingStartMs`, `openCalls` (tool call id → response key), `phase`.
 
 Output items and `model-usage`:
 1. `key = providerData.messageId` (a non-empty string; one per model call, on every item of the call — the call's tool
-   results repeat it, but they are not output items), else `"workbuddy:" + id`. If the key was first seen in another
-   file, ignore the line entirely (no response, no phase change).
+   results repeat it, but they are not output items), else `"workbuddy:" + id` (a non-empty string). A line with
+   neither has no key and is ignored entirely, like a line whose key was first seen in another file: no response, no
+   phase change, `openCalls` and `pendingStartMs` unchanged (only the any-line row applies).
 2. Usage: when `providerData.usage` or `providerData.rawUsage` is an object and the normalized `input` or `output` is
    > 0 — a new key emits a response with `startMs = pendingStartMs`, `endMs = ts`, `final = true`, `model` and
    `provider` below, then `pendingStartMs = null`; a known key (same file) is an update (4.4): `endMs = max`, every
@@ -924,12 +964,20 @@ final assistant message.
 
 `providerData.usage` is agents-core's `Usage` (`inputTokens`, `outputTokens`, `inputTokensDetails[]`,
 `outputTokensDetails[]`); `providerData.rawUsage` is the service's OpenAI-style usage of the same call and is sometimes
-missing. Missing or non-numeric values are 0, negatives clamp to 0.
+missing. Values follow 3.2: missing or non-numeric values are 0, numbers are truncated and clamped to 0 … 10^12.
+
+- *The first value > 0 of* a list of candidates: the first candidate, in the order listed, that is a finite number
+  > 0 (3.6), truncated. Later candidates are not consulted, even when the chosen value truncates to 0 (`0.5`); 0 when
+  no candidate qualifies (a `1e999` or a non-number is skipped like a missing one). A candidate inside an object that is
+  missing or not an object is missing.
+- `inputTokensDetails` and `outputTokensDetails` are arrays of objects; a single object counts as an array of that one
+  object. Entries that are not objects, and any other value, count 0.
+- Σ and `cachedInput + cacheWriteInput` saturate at 10^12 (3.2).
 
 | Field | Value |
 | --- | --- |
-| `cachedInput` | max of Σ `usage.inputTokensDetails[].cached_tokens` and the first value > 0 of `rawUsage.cache_read_input_tokens`, `rawUsage.prompt_tokens_details.cached_tokens`, `rawUsage.prompt_cache_hit_tokens` |
-| `cacheWriteInput` | the first value > 0 of `rawUsage.cache_creation_input_tokens`, `rawUsage.prompt_cache_write_tokens` (else 0) |
+| `cachedInput` | max of Σ `usage.inputTokensDetails[].cached_tokens` and the first value > 0 of `rawUsage.cache_read_input_tokens`, `rawUsage.prompt_tokens_details.cached_tokens`, `rawUsage.prompt_cache_hit_tokens` (in this order) |
+| `cacheWriteInput` | the first value > 0 of `rawUsage.cache_creation_input_tokens`, `rawUsage.prompt_cache_write_tokens` (in this order; else 0) |
 | `input` | max of `usage.inputTokens`, `rawUsage.prompt_tokens` and `cachedInput + cacheWriteInput` |
 | `output` | max of `usage.outputTokens` and `rawUsage.completion_tokens` |
 | `reasoning` | max of Σ `usage.outputTokensDetails[].reasoning_tokens` and `rawUsage.completion_tokens_details.reasoning_tokens` |
@@ -943,9 +991,13 @@ hits are often only in `rawUsage`). `totalTokens`, `requests`, `credit` and the 
 #### Models and cost
 
 - `model` = `providerData.model` (the model the stream reported; the CLI falls back to the requested id), else
-  `providerData.requestModelId`; trimmed, empty → null. `requestModelName` (a display name) is not used.
+  `providerData.requestModelId`: the first of the two that is a string and not blank, trimmed; neither → null. A
+  `model` that is only whitespace therefore falls back to `requestModelId`. `requestModelName` (a display name) is not
+  used.
 - A `custom:` or `custom-local:` prefix (a model of the user's own provider, from `models.json`; the prefix is never
-  sent to the provider) is removed and the response's `provider` is `custom` (9.2 then prices the remaining id).
+  sent to the provider), matched without regard to ASCII case (`Custom:`, `CUSTOM-LOCAL:`), is removed and the
+  response's `provider` is `custom` (9.2 then prices the remaining id). The rest is trimmed; when it is empty
+  (`custom:`), `model` is null — `requestModelId` is not consulted — and `provider` is still `custom`.
 - Built-in ids are mostly the provider's own (`glm-5.3`, `kimi-k3`, `deepseek-v4-pro`, `gpt-5.5`, `hy3`) and resolve
   with 9.2. Hosting suffixes of DeepSeek ids (`-sg`, `-volc`, `-lkeap`, `-taiji`: the same model served from another
   region or cloud) are `modifierSuffixes` of `deepseek-` in the price table and price as DeepSeek's own model, the
@@ -1233,6 +1285,10 @@ with at least one response), and per model `requests`, `output`, `measuredOutput
 `peakToday` (all sources together), repeated on every source row of that day; a UI shows it only for all sources and
 combines rows with max, never sum.
 
+A response whose `endMs` is before `0001-01-03T00:00:00Z` or after `9999-12-29T23:59:59.999Z` (only broken timestamps
+get there, 3.1, 3.6) has no date, since in some time zone it would fall outside the years 0001–9999: it is left out of
+daily history and has no cost (it counts as unpriced, 9.3, 9.6), while it still counts in the live totals.
+
 Incremental cache: for each file keep its identity (path, size, modification time; for an Antigravity database also
 the size and modification time of its `-wal`), the 64-bit FNV-1a hashes of the
 response keys it owns, and its per-day contributions. On launch and periodically (every 10 minutes and at midnight),
@@ -1362,9 +1418,9 @@ costMicroUsd = (costPicoUsd + 500 000) div 1 000 000          (half up)
 
 `costMicroUsd` is *the* cost of the response everywhere — live rate, today, history, CSV — so every total is a sum of
 integers and any grouping (per file, day, source, model) gives the same number. Free → 0. Unknown → no cost (null),
-never 0: it is counted in `unpricedRequests` instead. The cost is computed when a response is emitted and again when
-an update replaces it (4.4), with the table of its date (9.7); periods and off-peak hours follow its `endMs`. Cases:
-`spec/fixtures/price-cases.json` `cost`.
+never 0: it is counted in `unpricedRequests` instead. A response without a date (8) has no cost either. The cost is
+computed when a response is emitted and again when an update replaces it (4.4), with the table of its date (9.7);
+periods and off-peak hours follow its `endMs`. Cases: `spec/fixtures/price-cases.json` `cost`.
 
 ### 9.4 Subscriptions
 

@@ -23,17 +23,26 @@ import sys
 import tempfile
 import time
 from collections import OrderedDict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from urllib.parse import unquote
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import prices as pricing  # noqa: E402
 
+if hasattr(sys, "set_int_max_str_digits"):
+    sys.set_int_max_str_digits(0)  # integer literals of any length are numbers (METRICS 3.6), not malformed lines
+
 MAX_LINE = 32 * 1024 * 1024
 DEDUPE_LIMIT = 65_536
 WINDOW_MS = 3000
-TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$")
+TS_MAX_CHARS = 64
+TS_RE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?"
+                   r"(?:[Zz]|([+-])([0-9]{2}):?([0-9]{2}))")
+INT64_MIN, INT64_MAX = -2 ** 63, 2 ** 63 - 1
+TOKEN_CAP = 10 ** 12
+DAY_FIRST_MS = -62_135_596_800_000 + 2 * 86_400_000  # 0001-01-03T00:00:00Z
+DAY_LAST_MS = 253_402_300_799_999 - 2 * 86_400_000  # 9999-12-29T23:59:59.999Z
 TOKEN_FIELDS = ("input", "cachedInput", "cacheWriteInput", "cacheWrite1hInput", "output", "reasoning")
 GEMINI_LEGACY_MAX = 64 * 1024 * 1024
 GEMINI_SANITIZE = re.compile(r"[^A-Za-z0-9_-]")
@@ -46,31 +55,85 @@ AG_FAILED = {6, 7, 12}
 AG_NAME = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.db$")
 
 
+def days_from_civil(y, m, d):
+    """Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's algorithm), for any year."""
+    y = y - 1 if m <= 2 else y
+    era = y // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    return era * 146_097 + yoe * 365 + yoe // 4 - yoe // 100 + doy - 719_468
+
+
+def days_in_month(y, m):
+    if m == 2:
+        return 29 if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0) else 28
+    return 30 if m in (4, 6, 9, 11) else 31
+
+
 def parse_ts(value):
-    if not isinstance(value, str):
+    """A timestamp string of METRICS 3.1 -> Unix ms; None when the string does not follow it exactly."""
+    if not isinstance(value, str) or len(value) > TS_MAX_CHARS:
         return None
-    m = TS_RE.match(value.strip())
+    m = TS_RE.fullmatch(value)
     if not m:
         return None
-    y, mo, d, h, mi, s, frac, tz = m.groups()
-    try:
-        dt = datetime(int(y), int(mo), int(d), int(h), int(mi), int(s), tzinfo=timezone.utc)
-    except ValueError:
+    y, mo, d, h, mi, s = (int(g) for g in m.groups()[:6])
+    frac, sign, oh, om = m.groups()[6:]
+    if not (1 <= mo <= 12 and 1 <= d <= days_in_month(y, mo) and h <= 23 and mi <= 59 and s <= 59):
         return None
-    ms = int((frac or "0")[:3].ljust(3, "0"))
-    if tz and tz != "Z":
-        sign = 1 if tz[0] == "+" else -1
-        digits = tz[1:].replace(":", "")
-        dt -= sign * timedelta(hours=int(digits[:2]), minutes=int(digits[2:]))
-    return int(dt.timestamp()) * 1000 + ms
+    offset = 0
+    if sign:
+        if int(oh) > 23 or int(om) > 59:
+            return None
+        offset = (int(oh) * 3600 + int(om) * 60) * (1 if sign == "+" else -1)
+    seconds = days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + s - offset
+    return seconds * 1000 + int((frac or "0")[:3].ljust(3, "0"))
+
+
+def finite(value):
+    """A JSON number whose nearest double is finite (METRICS 3.6): 1e999 and integers past ~1.8e308 are not."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if isinstance(value, int):
+        try:
+            float(value)
+        except OverflowError:
+            return False
+        return True
+    return math.isfinite(value)
+
+
+def trunc64(value):
+    """A finite number truncated toward zero and saturated to the signed 64-bit range (METRICS 3.6)."""
+    return min(max(int(value), INT64_MIN), INT64_MAX)
 
 
 def num(value):
-    if isinstance(value, bool):
+    """A token value (METRICS 3.2): a number truncated toward zero and clamped to 0…10^12; anything else is 0."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0
-    if isinstance(value, (int, float)):
-        return max(0, int(value))
-    return 0
+    if isinstance(value, float) and not math.isfinite(value):
+        return TOKEN_CAP if value > 0 else 0
+    return min(max(0, int(value)), TOKEN_CAP)
+
+
+def cap(value):
+    """A normalized token field that is a sum saturates at 10^12 (METRICS 3.2)."""
+    return min(value, TOKEN_CAP)
+
+
+def has_day(ms):
+    """Whether an instant has a calendar date in every time zone (METRICS 8)."""
+    return DAY_FIRST_MS <= ms <= DAY_LAST_MS
+
+
+def not_json(constant):
+    raise ValueError("%s is not JSON" % constant)
+
+
+def loads(raw):
+    """json.loads without NaN / Infinity / -Infinity, which are not JSON: such a line is malformed (METRICS 3.6)."""
+    return json.loads(raw, parse_constant=not_json)
 
 
 def basename(path):
@@ -283,7 +346,7 @@ def claude_tokens(usage):
         usage.get("cache_read_input_tokens"))
     details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
     creation = usage.get("cache_creation") if isinstance(usage.get("cache_creation"), dict) else {}
-    return dict(input=inp + cc + cr, cachedInput=cr, cacheWriteInput=cc,
+    return dict(input=cap(inp + cc + cr), cachedInput=cr, cacheWriteInput=cc,
                 cacheWrite1hInput=min(cc, num(creation.get("ephemeral_1h_input_tokens"))),
                 output=num(usage.get("output_tokens")), reasoning=num(details.get("thinking_tokens")))
 
@@ -471,8 +534,8 @@ def process_file(state, dedupe, start_offset=0, max_lines=None):
             state.malformed += raw[1]
             continue
         try:
-            obj = json.loads(raw)
-        except (ValueError, UnicodeDecodeError):
+            obj = loads(raw)
+        except (ValueError, UnicodeDecodeError, RecursionError):
             state.malformed += 1
             continue
         if not isinstance(obj, dict):
@@ -541,9 +604,9 @@ def dsh_event(state, obj, dedupe):
         dsh_header(state, obj)
         return
     ts = obj.get("time")
-    if isinstance(ts, bool) or not isinstance(ts, (int, float)):
+    if not finite(ts):
         return
-    ts = int(ts)
+    ts = trunc64(ts)
     if state.file_created is not None and ts < state.file_created - 2000:
         return
     state.last_line = ts if state.last_line is None else max(state.last_line, ts)
@@ -567,7 +630,7 @@ def dsh_event(state, obj, dedupe):
         usage = data.get("usage")
         if isinstance(usage, dict):
             cr, cw = num(usage.get("cacheReadTokens")), num(usage.get("cacheWriteTokens"))
-            tokens = dict(input=num(usage.get("inputTokens")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
+            tokens = dict(input=cap(num(usage.get("inputTokens")) + cr + cw), cachedInput=cr, cacheWriteInput=cw,
                           output=num(usage.get("outputTokens")), reasoning=0)
             source = message.get("source") if isinstance(message.get("source"), dict) else {}
             model = source.get("model") or state.model
@@ -584,7 +647,7 @@ def dsh_header(state, header):
     if state.file_created is not None:
         return
     created = header.get("createdAt")
-    state.file_created = int(created) if isinstance(created, (int, float)) and not isinstance(created, bool) else 0
+    state.file_created = trunc64(created) if finite(created) else 0
     state.thread_id = header.get("id") or state.thread_id
     state.project = basename(header.get("cwd")) or state.project
     parent = header.get("parentSession")
@@ -618,8 +681,8 @@ def opencode_states(db_path, dedupe):
             if st is None:
                 continue
             try:
-                d = json.loads(data)
-            except ValueError:
+                d = loads(data)
+            except (ValueError, RecursionError):
                 st.malformed += 1
                 continue
             if not isinstance(d, dict):
@@ -664,13 +727,14 @@ def opencode_states(db_path, dedupe):
 def opencode_tokens(t):
     cache = t.get("cache") if isinstance(t.get("cache"), dict) else {}
     cr, cw, r = num(cache.get("read")), num(cache.get("write")), num(t.get("reasoning"))
-    return dict(input=num(t.get("input")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
-                output=num(t.get("output")) + r, reasoning=r)
+    return dict(input=cap(num(t.get("input")) + cr + cw), cachedInput=cr, cacheWriteInput=cw,
+                output=cap(num(t.get("output")) + r), reasoning=r)
 
 
 def gemini_tokens(t):
-    return dict(input=num(t.get("input")) + num(t.get("tool")), cachedInput=num(t.get("cached")), cacheWriteInput=0,
-                output=num(t.get("output")) + num(t.get("thoughts")), reasoning=num(t.get("thoughts")))
+    return dict(input=cap(num(t.get("input")) + num(t.get("tool"))), cachedInput=num(t.get("cached")),
+                cacheWriteInput=0, output=cap(num(t.get("output")) + num(t.get("thoughts"))),
+                reasoning=num(t.get("thoughts")))
 
 
 def gemini_content(content):
@@ -841,8 +905,8 @@ def gemini_legacy(state, dedupe):
         return
     try:
         with open(state.path, "rb") as f:
-            obj = json.loads(f.read())
-    except (ValueError, UnicodeDecodeError):
+            obj = loads(f.read())
+    except (ValueError, UnicodeDecodeError, RecursionError):
         state.malformed += 1
         return
     if isinstance(obj, dict) and isinstance(obj.get("sessionId"), str):
@@ -917,17 +981,13 @@ def discover_gemini(root, limit=20_000):
 
 # ----------------------------------------------------------------------------- omp (METRICS 4.7)
 
-def finite(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
 def omp_touch(state, ts):
     state.last_line = ts if state.last_line is None else max(state.last_line, ts)
 
 
 def omp_tokens(usage):
     cr, cw = num(usage.get("cacheRead")), num(usage.get("cacheWrite"))
-    return dict(input=num(usage.get("input")) + cr + cw, cachedInput=cr, cacheWriteInput=cw,
+    return dict(input=cap(num(usage.get("input")) + cr + cw), cachedInput=cr, cacheWriteInput=cw,
                 output=num(usage.get("output")), reasoning=num(usage.get("reasoningTokens")))
 
 
@@ -991,16 +1051,16 @@ def omp_line(state, obj, dedupe):
 def omp_assistant(state, entry, msg, ts, dedupe):
     if not omp_guard(msg):
         return
-    started = int(msg["timestamp"]) if finite(msg.get("timestamp")) and msg["timestamp"] > 0 else None
+    started = trunc64(msg["timestamp"]) if finite(msg.get("timestamp")) and msg["timestamp"] > 0 else None
     key = "omp:%s:%d" % (entry["id"], started if started is not None else ts)
     if dedupe.owner(key) not in (None, state.path):
         return
     stop = msg.get("stopReason") if isinstance(msg.get("stopReason"), str) else "aborted"
     duration, completed = msg.get("duration"), msg.get("completedAt")
     if started is not None and finite(duration) and duration >= 0:
-        end = started + int(duration)
+        end = min(started + trunc64(duration), INT64_MAX)
     elif finite(completed) and completed > 0:
-        end = int(completed)
+        end = trunc64(completed)
     else:
         end = ts
     if omp_has_usage(msg["usage"]):
@@ -1029,8 +1089,8 @@ def omp_read_header(state, dedupe):
         for _ in range(2):
             raw = f.readline(MAX_LINE)
             try:
-                obj = json.loads(raw)
-            except (ValueError, UnicodeDecodeError):
+                obj = loads(raw)
+            except (ValueError, UnicodeDecodeError, RecursionError):
                 continue
             if isinstance(obj, dict) and obj.get("type") == "session":
                 omp_line(state, obj, dedupe)
@@ -1098,19 +1158,20 @@ WB_USER_PREFIXES = ("custom:", "custom-local:")
 
 def wb_ts(value):
     if finite(value):
-        return int(value) if value > 0 else None
+        return trunc64(value) if value > 0 else None
     return parse_ts(value)
 
 
 def wb_first(*values):
-    """The first value that is a number > 0 (0 when none), like the CLI's firstPositiveTokenCount."""
+    """The first value that is a finite number > 0, truncated (0.5 gives 0 and ends the search); 0 when none. Like the
+    CLI's firstPositiveTokenCount."""
     return next((num(v) for v in values if finite(v) and v > 0), 0)
 
 
 def wb_sum(details, field):
     """Σ field over agents-core's per-request detail entries (a list of objects; one object is accepted too)."""
     entries = details if isinstance(details, list) else [details]
-    return sum(num(e.get(field)) for e in entries if isinstance(e, dict))
+    return cap(sum(num(e.get(field)) for e in entries if isinstance(e, dict)))
 
 
 def wb_tokens(pd):
@@ -1126,7 +1187,7 @@ def wb_tokens(pd):
     output = max(num(usage.get("outputTokens")), num(raw.get("completion_tokens")))
     reasoning = max(wb_sum(usage.get("outputTokensDetails"), "reasoning_tokens"),
                     num(completion.get("reasoning_tokens")))
-    inp = max(num(usage.get("inputTokens")), num(raw.get("prompt_tokens")), cached + write)
+    inp = max(num(usage.get("inputTokens")), num(raw.get("prompt_tokens")), cap(cached + write))
     return dict(input=inp, cachedInput=cached, cacheWriteInput=write, output=output, reasoning=reasoning)
 
 
@@ -1184,8 +1245,9 @@ def workbuddy_line(state, obj, dedupe):
             state.open_calls.clear()
             state.phase, state.pending, state.in_flight = "generating", ts, ts
         return
+    call_id = obj.get("callId") if isinstance(obj.get("callId"), str) else None
     if kind == "function_call_result":
-        state.open_calls.pop(obj.get("callId"), None)
+        state.open_calls.pop(call_id, None)
         if skip:
             if not state.open_calls:
                 wb_idle(state)
@@ -1215,8 +1277,8 @@ def workbuddy_line(state, obj, dedupe):
     for call_id in [c for c, k in state.open_calls.items() if k != key]:
         del state.open_calls[call_id]
     if kind == "function_call":
-        if isinstance(obj.get("callId"), str):
-            state.open_calls[obj["callId"]] = key
+        if call_id is not None:
+            state.open_calls[call_id] = key
         state.phase, state.in_flight = "tools", None
     elif assistant and not state.open_calls:
         if pd.get("agent") == "compact":
@@ -2212,7 +2274,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
                                          ("cacheWrite1hInput", r["cacheWrite1hInput"]), ("output", r["output"]),
                                          ("reasoning", r["reasoning"]), ("final", r["final"]),
                                          ("provider", r["provider"]), ("fast", r["fast"]),
-                                         ("costMicroUsd", index.price(r))]))
+                                         ("costMicroUsd", index.price(r) if has_day(r["endMs"]) else None)]))
     rows.sort(key=lambda r: (r["endMs"], r["key"]))
     for r in rows:
         print(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
@@ -2256,6 +2318,8 @@ def daily_history(responses, tz=None, day_pricing=None):
     day_pricing = day_pricing or pricing.DayPricing([pricing.load(pricing.TABLE)])
     days = {}
     for source, agent, r in responses:
+        if not has_day(r["endMs"]):
+            continue
         date = datetime.fromtimestamp(r["endMs"] / 1000, tz=tz or datetime.now().astimezone().tzinfo)
         key = (date.strftime("%Y-%m-%d") if tz else datetime.fromtimestamp(r["endMs"] / 1000).strftime("%Y-%m-%d"),
                source)

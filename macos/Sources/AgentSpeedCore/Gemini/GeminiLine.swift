@@ -320,7 +320,8 @@ enum GeminiLineExtractor {
                 try scanner.skipValue()
             }
         }
-        return TokenUsage(input: input + tool, cachedInput: cached, cacheWriteInput: 0, output: output + thoughts, reasoning: thoughts)
+        return TokenUsage(input: TokenCount.sum(input, tool), cachedInput: cached, cacheWriteInput: 0,
+                          output: TokenCount.sum(output, thoughts), reasoning: thoughts)
     }
 
     /// Visible text is a string that is not blank, or a non-thought `text` part; `functionCall` parts are calls.

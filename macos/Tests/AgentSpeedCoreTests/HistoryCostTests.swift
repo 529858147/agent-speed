@@ -190,6 +190,22 @@ struct HistoryCostTests {
         #expect(book.takeNewBindings().values.allSatisfy { $0 == 2 })
     }
 
+    @Test func aResponseWithoutADateHasNoCost() throws {
+        let (v1, v2) = try Self.tables()
+        var engine = SpeedEngine(pricing: PriceBook(tables: [v1, v2]))
+        let usage = TokenUsage(input: 1000, output: 100)
+        // Year 0000 and past 9999-12-29 UTC: outside the calendar range of METRICS 8.
+        for (key, end) in [("year0", Int64(-62_167_219_200_000)), ("far", Int64(253_402_387_139_999)), ("dated", Int64(1_792_490_405_000))] {
+            engine.upsert(ResponseRecord(key: key, source: .claudeCode, agentId: "x", model: "claude-opus-5-5", startMs: end - 2000,
+                                         endMs: end, usage: usage),
+                          project: "p", isCompletion: true, emitsEvents: false)
+        }
+        let costs = Dictionary(uniqueKeysWithValues: engine.storedResponses.map { ($0.key, $0.costMicroUsd) })
+        #expect(costs["year0"] == .some(nil))
+        #expect(costs["far"] == .some(nil))
+        #expect(costs["dated"] != .some(nil))
+    }
+
     @Test func costReadingsHonourSubscriptionsAndPartialPrices() {
         func status(_ kind: SourceKind, live: Double, cost: Double, known: Double, today: CostTally, requests: Int) -> SourceStatus {
             SourceStatus(

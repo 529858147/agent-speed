@@ -3,10 +3,13 @@ namespace AgentSpeed.Core.Parsing;
 /// <summary>Allocation-free RFC 3339 / ISO 8601 timestamp parsing to Unix milliseconds (METRICS 3.1).</summary>
 internal static class Rfc3339
 {
+    /// <summary>The longest timestamp (METRICS 3.1).</summary>
+    public const int MaxLength = 64;
+
     public static bool TryParseUnixMs(ReadOnlySpan<byte> text, out long unixMs)
     {
         unixMs = 0;
-        if (text.Length < 20
+        if (text.Length < 20 || text.Length > MaxLength
             || !TryDigits(text, 0, 4, out var year) || text[4] != '-'
             || !TryDigits(text, 5, 2, out var month) || text[7] != '-'
             || !TryDigits(text, 8, 2, out var day)
@@ -67,21 +70,17 @@ internal static class Rfc3339
             }
 
             i += 2;
-            var offsetMins = 0;
-            if (i < text.Length)
+            if (i < text.Length && text[i] == ':')
             {
-                if (text[i] == ':')
-                {
-                    i++;
-                }
-
-                if (!TryDigits(text, i, 2, out offsetMins))
-                {
-                    return false;
-                }
-
-                i += 2;
+                i++;
             }
+
+            if (!TryDigits(text, i, 2, out var offsetMins))
+            {
+                return false;
+            }
+
+            i += 2;
 
             if (offsetHours > 23 || offsetMins > 59)
             {
@@ -98,7 +97,7 @@ internal static class Rfc3339
         if (i != text.Length
             || month is < 1 or > 12
             || day < 1 || day > DaysInMonth(year, month)
-            || hour > 23 || minute > 59 || second > 60)
+            || hour > 23 || minute > 59 || second > 59)
         {
             return false;
         }

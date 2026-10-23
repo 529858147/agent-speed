@@ -149,7 +149,7 @@ enum ClaudeLineExtractor {
             }
         }
         let usage = TokenUsage(
-            input: input + cacheCreation + cacheRead,
+            input: TokenCount.sum(input, cacheCreation, cacheRead),
             cachedInput: cacheRead,
             cacheWriteInput: cacheCreation,
             cacheWrite1hInput: min(cacheCreation1h, cacheCreation),

@@ -154,6 +154,18 @@ struct ParserBehaviorTests {
         #expect(usage?.reasoning == Int(TokenCount.ceiling))
     }
 
+    @Test func summedTokenFieldsSaturateAtTheCap() {
+        var deduper = Deduper()
+        let (_, upserts) = Self.run(.claude, [
+            #"{"type":"assistant","entrypoint":"cli","cwd":"/w/p","message":{"id":"big","model":"m","stop_reason":"end_turn","usage":{"input_tokens":900000000000,"cache_creation_input_tokens":900000000000,"cache_read_input_tokens":1e999,"output_tokens":5}},"timestamp":"2026-10-20T10:00:10Z"}"#,
+        ], deduper: &deduper)
+        let usage = upserts.first?.record.usage
+        #expect(usage?.input == Int(TokenCount.ceiling), "input + cache writes + cache reads saturates (METRICS 3.2)")
+        #expect(usage?.cachedInput == Int(TokenCount.ceiling))
+        #expect(usage?.cacheWriteInput == 900_000_000_000)
+        #expect(TokenCount.sum(Int(TokenCount.ceiling), Int(TokenCount.ceiling), 7) == Int(TokenCount.ceiling))
+    }
+
     @Test func dedupeEvictsOldestKeysFirst() {
         var deduper = Deduper(capacity: 3)
         #expect(deduper.claim("a", for: 1) == .new)

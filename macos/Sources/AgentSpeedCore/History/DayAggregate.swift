@@ -101,7 +101,7 @@ struct DayAggregate: Equatable, Sendable {
         pricing: PriceBook
     ) -> [UsageKey: DayAggregate] where Records.Element == ResponseRecord {
         var days: [UsageKey: DayAggregate] = [:]
-        for record in records {
+        for record in records where DayLabeler.hasDay(record.endMs) {
             let day = labeler.label(forMs: record.endMs)
             days[UsageKey(day: day, source: source), default: DayAggregate()].add(record, cost: pricing.cost(of: record, day: day))
         }
@@ -134,6 +134,13 @@ struct DayAggregate: Equatable, Sendable {
 /// `YYYY-MM-DD` of Unix-millisecond instants in one time zone, cached per day (responses of a file are mostly
 /// close together in time).
 struct DayLabeler: Sendable {
+    /// `0001-01-03T00:00:00Z` … `9999-12-29T23:59:59.999Z`: instants with a date in every time zone (METRICS 8).
+    static let firstDayMs: Int64 = -62_135_596_800_000 + 2 * 86_400_000
+    static let lastDayMs: Int64 = 253_402_300_799_999 - 2 * 86_400_000
+
+    /// A response outside the range has no date: no history row and no cost.
+    static func hasDay(_ ms: Int64) -> Bool { (firstDayMs...lastDayMs).contains(ms) }
+
     let calendar: Calendar
     private var startMs: Int64 = 1
     private var endMs: Int64 = 0

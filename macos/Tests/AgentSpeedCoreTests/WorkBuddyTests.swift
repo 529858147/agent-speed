@@ -22,7 +22,7 @@ struct WorkBuddyTests {
         let (expected, results) = try ParserFixtureTests.runFixtures()
         let files = try #require(expected["files"] as? [String: [String: Any]])
         let workbuddy = files.filter { $0.key.hasPrefix("workbuddy/") }
-        #expect(workbuddy.count == 6)
+        #expect(workbuddy.count == 8)
         for (relative, spec) in workbuddy {
             let summary = OmpTests.summary(try #require(results[relative]))
             for (field, wanted) in spec where field != "parentFile" {

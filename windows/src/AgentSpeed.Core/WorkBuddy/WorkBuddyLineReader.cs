@@ -70,7 +70,7 @@ internal static class WorkBuddyLineReader
         {
             if (model.Length >= prefix.Length && Ascii.EqualsIgnoreCase(model.AsSpan(0, prefix.Length), prefix))
             {
-                var rest = model[(model.IndexOf(':') + 1)..].Trim();
+                var rest = TrimWhiteSpace(model[(model.IndexOf(':') + 1)..]);
                 return (rest.Length > 0 ? rest : null, "custom");
             }
         }
@@ -78,7 +78,28 @@ internal static class WorkBuddyLineReader
         return (model, null);
     }
 
-    private static string? FirstNonBlank(string? value) => value?.Trim() is { Length: > 0 } trimmed ? trimmed : null;
+    private static string? FirstNonBlank(string? value) =>
+        value is not null && TrimWhiteSpace(value) is { Length: > 0 } trimmed ? trimmed : null;
+
+    // Whitespace is Python's str.isspace() (METRICS 4.9): .NET's white space plus the separators U+001C–U+001F.
+    private static bool IsWhiteSpace(char c) => char.IsWhiteSpace(c) || c is >= '\u001c' and <= '\u001f';
+
+    private static string TrimWhiteSpace(string value)
+    {
+        var start = 0;
+        var end = value.Length;
+        while (start < end && IsWhiteSpace(value[start]))
+        {
+            start++;
+        }
+
+        while (end > start && IsWhiteSpace(value[end - 1]))
+        {
+            end--;
+        }
+
+        return value[start..end];
+    }
 
     private static WorkBuddyLine Malformed() => new() { Status = LineStatus.Malformed };
 
@@ -100,7 +121,7 @@ internal static class WorkBuddyLineReader
                 _ => WorkBuddyItem.Other,
             },
             TimestampMs = top.TimestampMs,
-            Cwd = string.IsNullOrWhiteSpace(top.Cwd) ? null : top.Cwd,
+            Cwd = top.Cwd is null || TrimWhiteSpace(top.Cwd).Length == 0 ? null : top.Cwd,
             Id = top.Id,
             CallId = top.CallId,
             Incomplete = top.Incomplete,

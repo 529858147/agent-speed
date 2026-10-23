@@ -1258,6 +1258,29 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
    switches to `history.privacy.short`, then to its lock icon alone (the full text in the tooltip and for
    accessibility), never cut mid-sentence.
 
+CSV export (`匯出 CSV…`): the rows the daily table shows, in locale-independent form — English snake_case headers,
+ISO dates, plain integers, a dot as the decimal separator (`cache_hit_percent`, `avg_speed_tok_s` and `peak_tok_s`
+with one decimal, empty when there is no value), RFC 4180 quoting, CRLF line ends, UTF-8 with a byte order mark, and a
+`'` before a field that starts with `=`, `+`, `-`, `@`, a tab or a carriage return (so a spreadsheet never reads it as
+a formula). Columns: `date`, `source`, `requests`, `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`,
+`output_tokens`, `reasoning_tokens`, `cache_hit_percent`, `measured_output_tokens`, `measured_ms`, `avg_speed_tok_s`,
+`peak_tok_s`, `agents`, `unfinalized`, `models` (the model names joined with `; `), then the cost columns (section 9)
+and the traffic columns (section 10). `source` is the code of the selected source, `all` for `history.allSources` (traffic adds `machine`
+rows, section 10); the file name is `agent-speed-history-<code>-<first date>-<last date>.csv`. Source codes:
+
+| Source (METRICS 1) | Code |
+| --- | --- |
+| `codex` | `codex` |
+| `claudeCode` | `claude-code` |
+| `claudeDesktop` | `claude-desktop` |
+| `deepseek` | `deepseek` |
+| `opencode` | `opencode` |
+| `gemini` | `gemini` |
+| `omp` | `omp` |
+| `antigravity` | `antigravity` |
+| `workbuddy` | `workbuddy` |
+| `workbuddyAi` | `workbuddy-ai` |
+
 Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
 the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
 spinner. All numbers and dates follow the selected language; weeks start per locale.

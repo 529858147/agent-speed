@@ -281,7 +281,8 @@ struct JSONScanner {
         if !escaped {
             return Timestamp.parse(UnsafeBufferPointer(start: base + start, count: count))
         }
-        guard count <= 256, let bytes = decodeString(start: start, count: count) else { return nil }
+        // A timestamp has at most 64 characters, each at most a 6-byte `\uXXXX` escape (METRICS 3.1).
+        guard count <= 384, let bytes = decodeString(start: start, count: count) else { return nil }
         return bytes.withUnsafeBufferPointer { Timestamp.parse($0) }
     }
 
@@ -312,7 +313,11 @@ struct JSONScanner {
         let start = position
         if try skipNumber() {
             let value = Self.integerValue(base: base, start: start, end: position, isInteger: true)
-            return JSONNumber(truncated: value, isFinite: true, isPositive: value > 0, isNonNegative: value >= 0)
+            // An integer literal beyond the double range is not finite (METRICS 3.6); only 309+ characters can be.
+            let isFinite = position - start <= 308
+                || Double(String(decoding: UnsafeBufferPointer(start: base + start, count: position - start), as: UTF8.self))?
+                    .isFinite == true
+            return JSONNumber(truncated: value, isFinite: isFinite, isPositive: value > 0, isNonNegative: value >= 0)
         }
         let text = String(decoding: UnsafeBufferPointer(start: base + start, count: position - start), as: UTF8.self)
         guard let value = Double(text) else { return nil }

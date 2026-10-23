@@ -149,10 +149,10 @@ enum OpencodeDataExtractor {
             }
         }
         return TokenUsage(
-            input: input + cacheRead + cacheWrite,
+            input: TokenCount.sum(input, cacheRead, cacheWrite),
             cachedInput: cacheRead,
             cacheWriteInput: cacheWrite,
-            output: output + reasoning,
+            output: TokenCount.sum(output, reasoning),
             reasoning: reasoning
         )
     }

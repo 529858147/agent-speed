@@ -40,7 +40,10 @@ internal static class JsonScan
         return null;
     }
 
-    /// <summary>Reads a token counter: missing or non-numeric is 0, negative is clamped to 0.</summary>
+    /// <summary>
+    /// Reads a token counter (METRICS 3.2): missing or non-numeric is 0, a number is truncated and clamped to 0 … the
+    /// cap, also one beyond the double range (<c>1e999</c> counts the cap, <c>-1e999</c> counts 0).
+    /// </summary>
     public static long ReadCount(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.Number)
@@ -59,7 +62,8 @@ internal static class JsonScan
             return real <= 0 ? 0 : real >= TokenCounts.MaxValue ? TokenCounts.MaxValue : (long)real;
         }
 
-        return 0;
+        // A JSON number the double range cannot hold: its sign decides.
+        return reader.ValueSpan[0] == (byte)'-' ? 0 : TokenCounts.MaxValue;
     }
 
     public static bool TryReadTimestamp(ref Utf8JsonReader reader, out long unixMs)
@@ -76,12 +80,13 @@ internal static class JsonScan
             return Rfc3339.TryParseUnixMs(reader.ValueSpan, out unixMs);
         }
 
-        if (reader.ValueSpan.Length > 128)
+        // A timestamp has at most 64 characters, each at most a 6-byte \uXXXX escape (METRICS 3.1).
+        if (reader.ValueSpan.Length > 384)
         {
             return false;
         }
 
-        Span<byte> buffer = stackalloc byte[128];
+        Span<byte> buffer = stackalloc byte[384];
         var written = reader.CopyString(buffer);
         return Rfc3339.TryParseUnixMs(buffer[..written], out unixMs);
     }

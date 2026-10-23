@@ -134,13 +134,13 @@ public sealed class WorkBuddyMonitorTests : IDisposable
 
         using (var core = new MonitorCore(new MonitorConfiguration(enabled), locations, 0))
         {
-            Assert.Equal(6, core.Seed(_now, 0, CancellationToken.None).FilesRead);
+            Assert.Equal(8, core.Seed(_now, 0, CancellationToken.None).FilesRead);
         }
 
         using (var store = HistoryStore.Open(_temp.Combine("store", "history.sqlite")))
         {
             var report = new HistoryAnalyzer(store).Run(locations, enabled, TimeZoneInfo.Utc, CancellationToken.None);
-            Assert.Equal((6, 0), (report.FilesAnalyzed, report.FilesUnreadable));
+            Assert.Equal((8, 0), (report.FilesAnalyzed, report.FilesUnreadable));
         }
 
         Assert.Equal(before, Listing(home));

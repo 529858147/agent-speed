@@ -24,7 +24,7 @@ public sealed class WorkBuddyFixtureTests
     }
 
     [Fact]
-    public void EveryTraceIsListed() => Assert.Equal(48, Traces().Count);
+    public void EveryTraceIsListed() => Assert.Equal(96, Traces().Count);
 
     [Theory]
     [MemberData(nameof(Traces))]

@@ -113,7 +113,7 @@ enum OmpLineExtractor {
         func call() -> OmpCall? {
             guard let model, hasProvider, hasApi, let usage else { return nil }
             let tokens = TokenUsage(
-                input: usage.input + usage.cacheRead + usage.cacheWrite,
+                input: TokenCount.sum(usage.input, usage.cacheRead, usage.cacheWrite),
                 cachedInput: usage.cacheRead,
                 cacheWriteInput: usage.cacheWrite,
                 output: usage.output,

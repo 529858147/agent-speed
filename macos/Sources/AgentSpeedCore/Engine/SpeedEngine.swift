@@ -72,7 +72,8 @@ struct SpeedEngine: Sendable {
     ) -> SpeedEvent? {
         var record = record
         if let pricing {
-            record.costMicroUsd = pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs))
+            record.costMicroUsd = DayLabeler.hasDay(record.endMs)
+                ? pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs)) : nil
         }
         let old = responses.updateValue(record, forKey: record.key)
         projects[record.key] = project
@@ -213,7 +214,8 @@ struct SpeedEngine: Sendable {
         guard let pricing, pricing.currentVersion != pricedVersion else { return }
         pricedVersion = pricing.currentVersion
         for (key, record) in responses where record.costMicroUsd == nil {
-            guard let cost = pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs)) else { continue }
+            guard DayLabeler.hasDay(record.endMs),
+                  let cost = pricing.cost(of: record, day: dayLabeler.label(forMs: record.endMs)) else { continue }
             var priced = record
             priced.costMicroUsd = cost
             responses[key] = priced

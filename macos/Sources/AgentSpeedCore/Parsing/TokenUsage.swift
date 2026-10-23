@@ -52,6 +52,11 @@ enum TokenCount {
         guard let value else { return 0 }
         return Int(min(max(value, 0), ceiling))
     }
+
+    /// A normalized field that adds clamped counts saturates at `ceiling` too (METRICS 3.2).
+    static func sum(_ values: Int...) -> Int {
+        Int(min(ceiling, values.reduce(Int64(0)) { $0 + Int64($1) }))
+    }
 }
 
 extension TokenTotals {

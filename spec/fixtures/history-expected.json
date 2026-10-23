@@ -515,20 +515,36 @@
     {
       "date": "2026-10-21",
       "source": "workbuddyAi",
-      "requests": 6,
-      "input": 58200,
-      "cachedInput": 39400,
-      "cacheWriteInput": 4000,
-      "output": 1570,
-      "reasoning": 140,
-      "measuredOutput": 1570,
-      "measuredMs": 23000,
+      "requests": 10,
+      "input": 2000000061200,
+      "cachedInput": 41800,
+      "cacheWriteInput": 4070,
+      "output": 1000000002000,
+      "reasoning": 1000000000190,
+      "measuredOutput": 1000000002000,
+      "measuredMs": 35000,
       "unfinalized": 0,
       "costMicroUsd": 45850,
-      "unpricedRequests": 3,
+      "unpricedRequests": 7,
       "priceVersion": 2,
-      "agents": 2,
+      "agents": 3,
       "models": {
+        "": {
+          "requests": 1,
+          "output": 1000000000000,
+          "measuredOutput": 1000000000000,
+          "measuredMs": 3000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        },
+        "Kimi-K3": {
+          "requests": 1,
+          "output": 50,
+          "measuredOutput": 50,
+          "measuredMs": 3000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        },
         "claude-sonnet-5-5": {
           "requests": 1,
           "output": 500,
@@ -545,6 +561,14 @@
           "costMicroUsd": 0,
           "unpricedRequests": 2
         },
+        "glm-5.3": {
+          "requests": 1,
+          "output": 300,
+          "measuredOutput": 300,
+          "measuredMs": 2000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        },
         "gpt-5.5": {
           "requests": 2,
           "output": 360,
@@ -554,12 +578,12 @@
           "unpricedRequests": 0
         },
         "hy4-preview": {
-          "requests": 1,
-          "output": 260,
-          "measuredOutput": 260,
-          "measuredMs": 4000,
+          "requests": 2,
+          "output": 340,
+          "measuredOutput": 340,
+          "measuredMs": 8000,
           "costMicroUsd": 0,
-          "unpricedRequests": 1
+          "unpricedRequests": 2
         }
       }
     }
