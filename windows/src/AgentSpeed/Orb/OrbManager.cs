@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AgentSpeed.Core;
+using AgentSpeed.Core.Traffic;
 using AgentSpeed.Interop;
 using AgentSpeed.Orb.Gpu;
 using AgentSpeed.Orb.Names;
@@ -81,6 +82,7 @@ internal sealed class OrbManager : IDisposable
     private uint _seed = 1;
     private bool _platesDirty;
     private SourceAvailability? _availability;
+    private TrafficSnapshot _traffic = TrafficSnapshot.Off;
 
     public OrbManager(Dispatcher ui, OrbClock clock, SettingsService settings, ThemeService theme, SpeedModel speed, Localizer loc, IOrbHost host)
     {
@@ -293,6 +295,7 @@ internal sealed class OrbManager : IDisposable
 
         _started = true;
         _clock.RefreshDisplay();
+        UpdateTraffic(_traffic);
         Update(_speed.Snapshot);
         ResolvePlates();
 
@@ -333,6 +336,34 @@ internal sealed class OrbManager : IDisposable
             ResolvePlates();
         }
     }
+
+    /// <summary>
+    /// Applies one traffic sample to every orb's readout (DESIGN 10): its sources' rates with tools per the setting
+    /// (<c>sources</c>), this computer (<c>machine</c>) or nothing; not drawn while measuring is off or, for sources, while
+    /// per-process traffic is unavailable. The quiet rule keeps a quiet orb free of frames.
+    /// </summary>
+    public void UpdateTraffic(TrafficSnapshot traffic)
+    {
+        ArgumentNullException.ThrowIfNull(traffic);
+        _traffic = traffic;
+        var settings = Settings.Traffic;
+        foreach (var entry in _entries.Values)
+        {
+            var mode = entry.Definition.Traffic;
+            var enabled = settings.Enabled && traffic.Enabled && mode != OrbTraffic.Off
+                && (mode == OrbTraffic.Machine || traffic.ProcessState.UnavailableReason is null);
+            TrafficRate? rate = !enabled ? null
+                : mode == OrbTraffic.Machine ? traffic.MachineLive ?? TrafficRate.Zero
+                : traffic.Live(entry.Definition.TrackedSources, settings.IncludeTools) ?? TrafficRate.Zero;
+            entry.Window.Surface.SetTraffic(rate, settings.Bits, enabled);
+        }
+    }
+
+    /// <summary>
+    /// Some visible orb shows its sources' traffic right now (until its readout has faded out): per-source sampling runs
+    /// every second (METRICS 10.10).
+    /// </summary>
+    public bool ShowsSourceTraffic => _entries.Values.Any(e => e.Definition.Traffic == OrbTraffic.Sources && e.Window.Surface.TrafficVisible);
 
     /// <summary>Delivers an engine event to the orbs it belongs to (completions by source, all-sources new peak).</summary>
     public void OnEvent(SpeedEvent speedEvent)
@@ -742,6 +773,12 @@ internal sealed class OrbManager : IDisposable
         else
         {
             accessible = _loc.Format("a11y.orb.named", name, SpeedFormat.Speed(feed.Value), ThemeOf(orb).Text(feed.Title, _loc));
+        }
+
+        if (unavailableTitle is null && surface.TrafficVisible && surface.TrafficReading is { } traffic)
+        {
+            accessible += DisplayText.SpokenSeparator(_loc)
+                + _loc.Format("a11y.orb.traffic", DisplayText.SpokenTrafficRate(traffic.Rx), DisplayText.SpokenTrafficRate(traffic.Tx));
         }
 
         if (accessible != entry.PendingName)

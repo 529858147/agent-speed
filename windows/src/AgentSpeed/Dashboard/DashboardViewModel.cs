@@ -111,13 +111,18 @@ internal sealed class AgentRow : ObservableObject
     public TreeGuides Guides { get => _guides; set => Set(ref _guides, value); }
 
     public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
+
+    /// <summary><c>traffic.agent.tooltip</c> while the agent has attributed traffic today (DESIGN 10); null otherwise.</summary>
+    public string? TrafficTooltip { get => _trafficTooltip; set => Set(ref _trafficTooltip, value); }
+
+    private string? _trafficTooltip;
 }
 
 /// <summary>One source of today's cost in the ⓘ popup: colour dot, name, amount and a thin share bar.</summary>
 internal sealed record TodayCostRow(Brush DotBrush, string Name, string AmountText, double Share, string AccessibleName);
 
 /// <summary>Text and rows for the dashboard, refreshed from snapshots (≤ 4 Hz while visible).</summary>
-internal sealed class DashboardViewModel : ObservableObject
+internal sealed partial class DashboardViewModel : ObservableObject
 {
     /// <summary>Fixed agent row height, so the scrolling viewport is exactly a whole number of rows.</summary>
     public const double AgentRowHeight = 40;
@@ -518,7 +523,20 @@ internal sealed class DashboardViewModel : ObservableObject
             var source = loc[DisplayText.SourceKey(agent.Source)];
             row.Project = string.IsNullOrWhiteSpace(agent.Project) ? source : agent.Project;
             var detail = string.IsNullOrWhiteSpace(agent.Model) ? source : $"{source} · {agent.Model}";
-            row.Detail = agent.IsSubagent ? $"{loc["agents.subagent"]} · {detail}" : detail;
+            detail = agent.IsSubagent ? $"{loc["agents.subagent"]} · {detail}" : detail;
+            if (AgentTraffic(agent.Id) is { } traffic)
+            {
+                // DESIGN 10: the agent's attributed download today ends its secondary line; the tooltip has both directions.
+                var text = new TrafficText(loc, _trafficBits);
+                row.Detail = $"{detail} · ↓ {Core.Traffic.TrafficFormat.Total(traffic.Rx)}";
+                row.TrafficTooltip = loc.Format("traffic.agent.tooltip", text.Pair(traffic));
+            }
+            else
+            {
+                row.Detail = detail;
+                row.TrafficTooltip = null;
+            }
+
             row.Phase = agent.Phase;
             row.Color = HeatPalette.SourceColor(agent.Source).ToColor();
             var live = agent.Live.ValueFor(metric);

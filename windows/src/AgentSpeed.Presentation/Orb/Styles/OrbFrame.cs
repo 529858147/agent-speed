@@ -21,6 +21,10 @@ namespace AgentSpeed.Presentation.Orb.Styles;
 /// <param name="Flash">Tier flash 0..1 (an effect-tier change brightens the primary lit element by 25 % for 0.4 s).</param>
 /// <param name="SignOfLifeAge">Seconds since the current idle sign-of-life event started (every 6 s on the shared clock, the first one skipped when it would start less than 2 s after entering idle), or null when none is running. Each style decides its own duration (0.9 s; liquid 1.2 s).</param>
 /// <param name="Unavailable">Every source of the orb is unavailable: the instrument rests, no sign of life.</param>
+/// <param name="ReadoutShift">
+/// How far (in S) the readout stack sits below its resting place while the traffic block shows above it (DESIGN 10,
+/// Centering); particles fading behind the readout follow it.
+/// </param>
 public readonly record struct OrbFrame(
     double Time,
     double Dt,
@@ -34,7 +38,8 @@ public readonly record struct OrbFrame(
     bool Dark,
     double Flash = 0,
     double? SignOfLifeAge = null,
-    bool Unavailable = false)
+    bool Unavailable = false,
+    double ReadoutShift = 0)
 {
     public bool Idle => Tier == SpeedTier.Idle;
 

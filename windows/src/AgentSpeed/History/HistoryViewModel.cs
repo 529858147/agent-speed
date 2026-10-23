@@ -27,7 +27,7 @@ internal enum HistoryUpdate
 /// currency, rates or subscription marks) are coalesced to at most four recomputations per second; today shown on its
 /// own is re-read quietly every 30 seconds while the window is on screen.
 /// </summary>
-internal sealed class HistoryViewModel : ObservableObject, IDisposable
+internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan CoalesceInterval = TimeSpan.FromMilliseconds(250);
 
@@ -75,7 +75,10 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     /// <param name="includeChanged">Persists the window's own include-subscriptions choice.</param>
-    public HistoryViewModel(HistoryHub hub, Localizer loc, CostDisplay cost, Dispatcher dispatcher, Action<bool>? includeChanged = null)
+    /// <param name="traffic">Observed traffic by day (METRICS 10.9); null: the window has no traffic.</param>
+    /// <param name="includeTools">The include-tools setting (DESIGN 10), read at every recomputation.</param>
+    public HistoryViewModel(HistoryHub hub, Localizer loc, CostDisplay cost, Dispatcher dispatcher, Action<bool>? includeChanged = null,
+        Core.Traffic.TrafficHub? traffic = null, Func<bool>? includeTools = null)
     {
         _hub = hub;
         _loc = loc;
@@ -107,6 +110,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         });
         _hub.Changed += OnHubChanged;
         _cost.Changed += OnCostChanged;
+        AttachTraffic(traffic, includeTools);
         Recompute(HistoryUpdate.Filter);
     }
 
@@ -376,7 +380,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
     /// <summary>The rows as they are shown, as CSV bytes for Excel, with a suggested file name.</summary>
     public (string FileName, byte[] Bytes) ExportCsv() =>
-        (HistoryCsv.FileName(Range, _source), HistoryCsv.Encode(HistoryCsv.Build(Rows, _source, Money)));
+        (HistoryCsv.FileName(Range, _source), HistoryCsv.Encode(HistoryCsv.Build(Rows, _source, Money, ShowsTraffic)));
 
     public void ShowMessage(string text)
     {
@@ -428,6 +432,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         _disposed = true;
         _hub.Changed -= OnHubChanged;
         _cost.Changed -= OnCostChanged;
+        DetachTraffic();
         _pending.Stop();
         _clock.Stop();
         _messageTimer.Stop();
@@ -492,9 +497,11 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         var excluded = options.Excluded(_source);
         DataBounds = HistoryAggregator.Bounds(usage, _source) ?? HistoryAggregator.Bounds(usage);
         Range = HistoryRanges.Resolve(_rangeKind, Today, DataBounds?.Start, _custom);
-        Days = WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range, excluded));
+        Days = ApplyTraffic(WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range, excluded)));
         var previous = HistoryAggregator.Daily(usage, _source, HistoryRanges.Previous(Range), excluded);
-        Bars = HistoryBars.From(Days, Range, _source, _metric, Money);
+        Bars = _metric == HistoryChartMetric.Traffic
+            ? HistoryBars.Traffic(Days, Range, _source, TrafficDays, _traffic.Since)
+            : HistoryBars.From(Days, Range, _source, _metric, Money);
         Rows = HistoryTable.Sort(Days, _sortColumn, _sortDescending);
         IsEmpty = Days.Count == 0;
         Subtitle = HistoryText.RangeSubtitle(Range, Today, _loc);
@@ -503,7 +510,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         OffersSubscriptions = options.OffersSubscriptionToggle;
         ShowsSpeedKey = !Range.IsSingleDay && _metric == HistoryChartMetric.Output;
         ChartName = _loc[HistoryChartMetrics.TitleKey(_metric)];
-        UpdateBreakdown(DayBreakdown.For(usage, Range, _source, _metric, excluded), rebuild: kind == HistoryUpdate.Filter);
+        UpdateBreakdown(DayBreakdown.For(usage, Range, _source, _metric, excluded, TrafficAt(Range.Start)), rebuild: kind == HistoryUpdate.Filter);
 
         var sparkBrush = _source is { } one ? HeatPalette.SourceColor(one).ToBrush() : null;
         var sparkDays = Range.IsSingleDay ? HistoryAggregator.Daily(usage, _source, HistoryRanges.SparkRange(Range), excluded) : null;
@@ -569,7 +576,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
                 Breakdown.Move(at, i);
             }
 
-            view.Apply(row, breakdown.Kind, inProgress, _loc, Money);
+            view.Apply(row, breakdown.Kind, inProgress, _loc, Money, _metric == HistoryChartMetric.Traffic);
         }
 
         foreach (var stale in existing.Values)

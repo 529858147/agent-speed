@@ -31,6 +31,12 @@ internal sealed record ChartTexts(
 
     /// <summary>Output tokens in the compact form.</summary>
     public static string TokenAxis(double value, double step) => SpeedFormat.Tokens((long)Math.Round(value));
+
+    /// <summary>The label of the traffic chart's band of days before measuring began (<c>history.traffic.notRecorded</c>).</summary>
+    public string NotRecorded { get; init; } = string.Empty;
+
+    /// <summary>A traffic day (by index) for screen readers; the traffic chart's days need no usage.</summary>
+    public Func<int, string>? TrafficAccessible { get; init; }
 }
 
 internal enum ChartTransition
@@ -50,9 +56,10 @@ internal enum ChartTransition
 internal readonly record struct ChartHover(int? Index, bool Pointer);
 
 /// <summary>
-/// Daily output bars (stacked by source) with the average-speed line on a second axis (DESIGN 4b, item 3), or daily cost
-/// bars on a money axis without the speed line (DESIGN 9). Drawn into three layers so hovering never redraws the bars:
-/// the slot highlight behind, the chart, and the crosshair in front.
+/// Daily output bars (stacked by source) with the average-speed line on a second axis (DESIGN 4b, item 3), daily cost
+/// bars on a money axis without the speed line (DESIGN 9), or mirrored traffic bars, download above the axis and upload
+/// below it (DESIGN 10). Drawn into three layers so hovering never redraws the bars: the slot highlight behind, the
+/// chart, and the crosshair in front.
 /// </summary>
 internal sealed class HistoryChart : FrameworkElement
 {
@@ -62,6 +69,8 @@ internal sealed class HistoryChart : FrameworkElement
     private const double LabelSize = 11;
     private const double MaxDuration = 0.45;
     private const double FadeDuration = 0.2;
+    private const double UploadOpacity = 0.55;
+    private const double NotRecordedLabelWidth = 120;
 
     public static readonly DependencyProperty FontFamilyProperty = TextElement.FontFamilyProperty.AddOwner(typeof(HistoryChart),
         new FrameworkPropertyMetadata(SystemFonts.MessageFontFamily, FrameworkPropertyMetadataOptions.Inherits, OnVisualsChanged));
@@ -86,6 +95,10 @@ internal sealed class HistoryChart : FrameworkElement
     private double _fromMax;
     private double _shownMax;
     private double _targetMax = 1;
+    private double _fadeFromBelow;
+    private double _fromBelow;
+    private double _shownBelow;
+    private double _targetBelow;
     private double _lineAlpha = 1;
     private double _fade = 1;
     private double _fromLeft = double.NaN;
@@ -100,7 +113,7 @@ internal sealed class HistoryChart : FrameworkElement
     private SourceKind? _source;
     private DateOnly _today;
     private ChartTexts _texts = ChartTexts.Empty;
-    private ChartFrame _frame = new(Rect.Empty, new BarSlots(0, 0, 0), new AxisTicks(1, 4), new AxisTicks(1, 4), 1);
+    private ChartFrame _frame = new(Rect.Empty, new BarSlots(0, 0, 0), new AxisTicks(1, 4), new AxisTicks(1, 4), 1, null, 0);
     private int? _pointerIndex;
     private int? _keyIndex;
     private int? _linkedIndex;
@@ -219,8 +232,11 @@ internal sealed class HistoryChart : FrameworkElement
         _texts = texts;
         var previousShown = _shown;
         var previousMax = _shownMax;
+        var previousBelow = _shownBelow;
         _target = bars;
-        _targetMax = HistoryChartMath.Ticks(bars.Max).Max;
+        var (above, below) = AxesOf(bars);
+        _targetMax = above.Max;
+        _targetBelow = below?.Max ?? 0;
         if (rangeChanged)
         {
             _pointerIndex = null;
@@ -234,6 +250,7 @@ internal sealed class HistoryChart : FrameworkElement
             StopLoop();
             _shown = bars;
             _shownMax = _targetMax;
+            _shownBelow = _targetBelow;
             _lineAlpha = 1;
             _fade = 1;
             _fadeFrom = null;
@@ -244,8 +261,10 @@ internal sealed class HistoryChart : FrameworkElement
             _crossfading = true;
             _fadeFrom = previousShown;
             _fadeFromMax = previousMax > 0 ? previousMax : _targetMax;
+            _fadeFromBelow = previousMax > 0 ? previousBelow : _targetBelow;
             _shown = bars;
             _shownMax = _targetMax;
+            _shownBelow = _targetBelow;
             _fade = 0;
             _lineAlpha = 1;
             StartLoop();
@@ -257,11 +276,14 @@ internal sealed class HistoryChart : FrameworkElement
             _fade = 1;
             _from = previousShown;
             _fromMax = previousMax > 0 ? previousMax : _targetMax;
+            _fromBelow = previousMax > 0 ? previousBelow : _targetBelow;
             if (metricChanged && previousMax > 0)
             {
-                // Output and cost share no unit: the old bars start from their heights on the new scale.
-                _from = previousShown.Scaled(_targetMax / previousMax);
+                // Output, cost and traffic share no unit: the old bars start from their heights on the new scale.
+                var factor = _targetMax / previousMax;
+                _from = previousShown.Scaled(factor);
                 _fromMax = _targetMax;
+                _fromBelow = previousBelow * factor;
             }
 
             // The axes' room (labels of another width, the speed axis coming or going) eases along with the bars.
@@ -303,6 +325,7 @@ internal sealed class HistoryChart : FrameworkElement
             _crossfading = true;
             _fadeFrom = empty;
             _fadeFromMax = _targetMax;
+            _fadeFromBelow = _targetBelow;
             _fade = 0;
         }
         else
@@ -310,6 +333,7 @@ internal sealed class HistoryChart : FrameworkElement
             _crossfading = false;
             _from = empty;
             _fromMax = _targetMax;
+            _fromBelow = _targetBelow;
             _shown = empty;
             _spring = new DampedSpring(0.32, 0.86);
             _lineAlpha = 0;
@@ -337,18 +361,20 @@ internal sealed class HistoryChart : FrameworkElement
     /// <summary>Top of day <paramref name="index"/>'s finished bar, in element coordinates.</summary>
     public double BarTop(int index)
     {
-        var f = _frame;
+        var f = _frame with { ScaleMax = Math.Max(_targetMax, 1e-9), ScaleBelow = _targetBelow };
         if (f.Plot.IsEmpty || index < 0 || index >= _target.Count || _targetMax <= 0)
         {
             return f.Plot.Bottom;
         }
 
-        return f.Plot.Bottom - Math.Min(1, _target.Total(index) / _targetMax) * f.Plot.Height;
+        return Math.Max(f.Plot.Top, f.Y(_target.Total(index)));
     }
 
     public DaySummary? DayAt(int index) => _dayAt(index);
 
-    public string AccessibleName(int index) => _dayAt(index) is { } day ? _texts.Accessible(day) : string.Empty;
+    public string AccessibleName(int index) =>
+        _target.IsMirrored && _texts.TrafficAccessible is { } traffic ? traffic(index)
+        : _dayAt(index) is { } day ? _texts.Accessible(day) : string.Empty;
 
     /// <summary>Indices of days with data, oldest first (what the automation tree lists).</summary>
     public IEnumerable<int> IndicesWithData()
@@ -582,6 +608,7 @@ internal sealed class HistoryChart : FrameworkElement
         StopLoop();
         _shown = _target;
         _shownMax = _targetMax;
+        _shownBelow = _targetBelow;
         _marginT = 1;
         _lineAlpha = 1;
         _fade = 1;
@@ -626,6 +653,7 @@ internal sealed class HistoryChart : FrameworkElement
 
         _shown = HistoryBars.Blend(_from, _target, t);
         _shownMax = Easing.Lerp(_fromMax, _targetMax, Math.Clamp(t, 0, 1.1));
+        _shownBelow = Math.Max(0, Easing.Lerp(_fromBelow, _targetBelow, Math.Clamp(t, 0, 1.1)));
         _marginT = Math.Clamp(t, 0, 1);
         RenderMain();
     }
@@ -644,16 +672,46 @@ internal sealed class HistoryChart : FrameworkElement
         new(text, _texts.Culture, FlowDirection.LeftToRight,
             new Typeface(FontFamily, FontStyles.Normal, weight ?? FontWeights.Normal, FontStretches.Normal), size, brush, PixelsPerDip);
 
+    /// <summary>The value axis above zero, and below it for traffic (null without upload).</summary>
+    private static (AxisTicks Above, AxisTicks? Below) AxesOf(HistoryBars bars) =>
+        bars.IsMirrored ? HistoryChartMath.MirroredTicks(bars.Max, bars.MaxBelow) : (HistoryChartMath.Ticks(bars.Max), null);
+
+    /// <summary>
+    /// The value labels of the left axis, at their signed values. On the traffic chart the outermost labels name their
+    /// side: <c>↓</c> (download) above the axis, <c>↑</c> (upload) below.
+    /// </summary>
+    private IEnumerable<(double Value, string Text)> AxisLabels(AxisTicks above, AxisTicks? below)
+    {
+        var mirrored = _target.IsMirrored;
+        for (var i = 0; i <= above.Intervals; i++)
+        {
+            var value = above.Value(i);
+            var text = _texts.Axis(value, above.Step);
+            yield return (value, !mirrored ? text : i == 0 ? "0" : i == above.Intervals ? "↓ " + text : text);
+        }
+
+        if (below is not { } lower)
+        {
+            yield break;
+        }
+
+        for (var i = 1; i <= lower.Intervals; i++)
+        {
+            var text = _texts.Axis(lower.Value(i), lower.Step);
+            yield return (-lower.Value(i), i == lower.Intervals ? "↑ " + text : text);
+        }
+    }
+
     private ChartFrame Layout()
     {
         var width = ActualWidth;
         var height = ActualHeight;
-        var ticks = HistoryChartMath.Ticks(_target.Max);
+        var (ticks, lower) = AxesOf(_target);
         var speedTicks = HistoryChartMath.AlignedTicks(_target.MaxSpeed, ticks.Intervals);
         var left = 0.0;
-        for (var i = 0; i <= ticks.Intervals; i++)
+        foreach (var (_, text) in AxisLabels(ticks, lower))
         {
-            left = Math.Max(left, Text(_texts.Axis(ticks.Value(i), ticks.Step), LabelBrush).WidthIncludingTrailingWhitespace);
+            left = Math.Max(left, Text(text, LabelBrush).WidthIncludingTrailingWhitespace);
         }
 
         var right = 12.0;
@@ -676,7 +734,7 @@ internal sealed class HistoryChart : FrameworkElement
         }
         var plot = new Rect(left, TopBand, Math.Max(0, width - left - right), Math.Max(0, height - TopBand - BottomBand));
         var slots = HistoryChartMath.Slots(_target.Count, plot.Width);
-        return new ChartFrame(plot, slots, ticks, speedTicks, Math.Max(_shownMax, 1e-9));
+        return new ChartFrame(plot, slots, ticks, speedTicks, Math.Max(_shownMax, 1e-9), lower, _shownBelow);
     }
 
     private void RenderMain()
@@ -690,13 +748,14 @@ internal sealed class HistoryChart : FrameworkElement
         _frame = Layout();
         var f = _frame;
         var ppd = PixelsPerDip;
+        DrawNotRecorded(dc, f, ppd);
         DrawGrid(dc, f, ppd);
         DrawMonths(dc, f, ppd);
 
         if (_crossfading && _fadeFrom is { } old && old.Count == _target.Count)
         {
             dc.PushOpacity(1 - _fade);
-            DrawBars(dc, f with { ScaleMax = Math.Max(_fadeFromMax, 1e-9) }, old, ppd, caption: false);
+            DrawBars(dc, f with { ScaleMax = Math.Max(_fadeFromMax, 1e-9), ScaleBelow = _fadeFromBelow }, old, ppd, caption: false);
             dc.Pop();
             dc.PushOpacity(_fade);
             DrawBars(dc, f, _target, ppd, caption: true);
@@ -719,21 +778,22 @@ internal sealed class HistoryChart : FrameworkElement
     private void DrawGrid(DrawingContext dc, ChartFrame f, double ppd)
     {
         var gridPen = MediaColors.FrozenPen(GridBrush, 1);
-        for (var i = 0; i <= f.Ticks.Intervals; i++)
+        var index = 0;
+        foreach (var (value, text) in AxisLabels(f.Ticks, f.Lower))
         {
-            var value = f.Ticks.Value(i);
-            var y = f.Plot.Bottom - value / f.ScaleMax * f.Plot.Height;
-            if (y < f.Plot.Top - 0.5)
+            var i = index++;
+            var y = f.Y(value);
+            if (y < f.Plot.Top - 0.5 || y > f.Plot.Bottom + 0.5)
             {
                 continue;
             }
 
             var snapped = Snap(y, ppd);
             dc.DrawLine(gridPen, new Point(f.Plot.Left, snapped), new Point(f.Plot.Right, snapped));
-            var label = Text(_texts.Axis(value, f.Ticks.Step), LabelBrush);
+            var label = Text(text, LabelBrush);
             var labelY = Math.Max(0, y - label.Height / 2);
             dc.DrawText(label, new Point(f.Plot.Left - 8 - label.WidthIncludingTrailingWhitespace, labelY));
-            if (_target.HasSpeed)
+            if (_target.HasSpeed && i <= f.SpeedTicks.Intervals)
             {
                 var speed = Text(SpeedFormat.Speed(f.SpeedTicks.Value(i)), LabelBrush);
                 dc.DrawText(speed, new Point(f.Plot.Right + 8, labelY));
@@ -804,16 +864,28 @@ internal sealed class HistoryChart : FrameworkElement
 
         var single = _source is not null;
         var todayIndex = bars.Range.Contains(_today) ? bars.Range.IndexOf(_today) : -1;
+        var zero = f.ZeroY;
+        var aboveHeight = zero - f.Plot.Top;
+        var belowHeight = f.Plot.Bottom - zero;
+        if (bars.HasOutline && !single)
+        {
+            DrawOutlines(dc, f, bars, ppd);
+        }
+
         for (var i = 0; i < bars.Count; i++)
         {
             var values = bars.Values(i);
-            if (values.Count == 0)
+            var under = bars.Below(i);
+            if (values.Count == 0 && under.Count == 0)
             {
                 continue;
             }
 
-            var tops = HistoryChartMath.Stack(values, f.ScaleMax, f.Plot.Height);
-            if (tops.Length == 0 || tops[^1] <= 0.05)
+            var tops = HistoryChartMath.Stack(values, f.ScaleMax, aboveHeight);
+            var depths = under.Count > 0 && f.ScaleBelow > 0 ? HistoryChartMath.Stack(under, f.ScaleBelow, belowHeight) : [];
+            var hasTop = tops.Length > 0 && tops[^1] > 0.05;
+            var hasDepth = depths.Length > 0 && depths[^1] > 0.05;
+            if (!hasTop && !hasDepth)
             {
                 continue;
             }
@@ -821,63 +893,173 @@ internal sealed class HistoryChart : FrameworkElement
             var left = Snap(f.Plot.Left + f.Slots.Left(i), ppd) - 0.5 / ppd;
             var right = Snap(f.Plot.Left + f.Slots.Left(i) + f.Slots.BarWidth, ppd) - 0.5 / ppd;
             var width = Math.Max(right - left, 1 / ppd);
-            var thin = width <= 3;
-            var lastSegment = -1;
-            var firstSegment = -1;
-            for (var k = 0; k < tops.Length; k++)
+            var isToday = i == todayIndex;
+            if (hasTop)
             {
-                var below = k == 0 ? 0 : tops[k - 1];
-                if (tops[k] - below > 0.01)
-                {
-                    lastSegment = k;
-                    if (firstSegment < 0)
-                    {
-                        firstSegment = k;
-                    }
-                }
+                DrawStack(dc, bars, tops, zero, left, width, ppd, single, isToday, upward: true);
             }
 
-            var isToday = i == todayIndex;
-            for (var k = 0; k < tops.Length; k++)
+            if (hasDepth)
             {
-                var below = k == 0 ? 0 : tops[k - 1];
-                var height = tops[k] - below;
-                if (height <= 0.01)
-                {
-                    continue;
-                }
-
-                var top = f.Plot.Bottom - tops[k];
-                var bottom = f.Plot.Bottom - below;
-                if (k != firstSegment && height > 3)
-                {
-                    bottom -= 1;
-                }
-
-                var source = k < bars.Order.Count ? bars.Order[k] : SourceKind.Codex;
-                var brush = BarBrush(source, gradient: single && k == 0 && !HighContrast, hatched: isToday);
-                var rect = new Rect(left, top, width, Math.Max(bottom - top, 0.5 / ppd));
-                if (k == lastSegment && !thin && rect.Height > 1)
-                {
-                    dc.DrawGeometry(brush, null, RoundedTop(rect, Math.Min(3, Math.Min(width / 2, rect.Height))));
-                }
-                else
-                {
-                    dc.DrawRectangle(brush, null, rect);
-                }
+                dc.PushOpacity(HighContrast ? 1 : UploadOpacity);
+                DrawStack(dc, bars, depths, zero, left, width, ppd, single, isToday, upward: false);
+                dc.Pop();
             }
 
             if (caption && isToday && !string.IsNullOrEmpty(_texts.InProgress))
             {
                 var text = Text(_texts.InProgress, MutedBrush, 10);
                 var textWidth = text.WidthIncludingTrailingWhitespace;
-                var y = f.Plot.Bottom - tops[^1] - text.Height - 3;
+                var barTop = Math.Min(zero - (hasTop ? tops[^1] : 0), bars.HasOutline && !single ? f.Y(bars.Outline(i).Above) : zero);
+                var y = barTop - text.Height - 3;
                 if (y >= f.Plot.Top - TopBand + 14 && textWidth <= Math.Max(f.Slots.Slot * 3, 40))
                 {
                     var x = Math.Clamp(f.Plot.Left + f.Slots.Center(i) - textWidth / 2, f.Plot.Left, f.Plot.Right - textWidth);
                     dc.DrawText(text, new Point(x, Math.Max(f.Plot.Top - 2, y)));
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// One day's stacked segments from the axis at <paramref name="zero"/>: upward (output, cost, download) with the last
+    /// segment's top rounded, or downward (upload) with its bottom rounded. A hairline gap separates the segments.
+    /// </summary>
+    private void DrawStack(DrawingContext dc, HistoryBars bars, double[] extents, double zero, double left, double width, double ppd,
+        bool single, bool isToday, bool upward)
+    {
+        var thin = width <= 3;
+        var lastSegment = -1;
+        var firstSegment = -1;
+        for (var k = 0; k < extents.Length; k++)
+        {
+            var inner = k == 0 ? 0 : extents[k - 1];
+            if (extents[k] - inner > 0.01)
+            {
+                lastSegment = k;
+                if (firstSegment < 0)
+                {
+                    firstSegment = k;
+                }
+            }
+        }
+
+        for (var k = 0; k < extents.Length; k++)
+        {
+            var inner = k == 0 ? 0 : extents[k - 1];
+            var height = extents[k] - inner;
+            if (height <= 0.01)
+            {
+                continue;
+            }
+
+            double top;
+            double bottom;
+            if (upward)
+            {
+                top = zero - extents[k];
+                bottom = zero - inner;
+                if (k != firstSegment && height > 3)
+                {
+                    bottom -= 1;
+                }
+            }
+            else
+            {
+                top = zero + inner;
+                bottom = zero + extents[k];
+                if (k != firstSegment && height > 3)
+                {
+                    top += 1;
+                }
+            }
+
+            var source = k < bars.Order.Count ? bars.Order[k] : SourceKind.Codex;
+            var brush = BarBrush(source, gradient: single && k == 0 && !HighContrast && upward, hatched: isToday);
+            var rect = new Rect(left, top, width, Math.Max(bottom - top, 0.5 / ppd));
+            if (k == lastSegment && !thin && rect.Height > 1)
+            {
+                var radius = Math.Min(3, Math.Min(width / 2, rect.Height));
+                dc.DrawGeometry(brush, null, upward ? RoundedTop(rect, radius) : RoundedBottom(rect, radius));
+            }
+            else
+            {
+                dc.DrawRectangle(brush, null, rect);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Behind each day's traffic bars, with every source: a hairline outline of this computer's total, so the agents' share
+    /// of all traffic is visible (DESIGN 10).
+    /// </summary>
+    private void DrawOutlines(DrawingContext dc, ChartFrame f, HistoryBars bars, double ppd)
+    {
+        var width = f.Slots.BarWidth + Math.Min(4, Math.Max(2, f.Slots.BarWidth * 0.25));
+        var brush = HighContrast ? SystemColors.WindowTextBrush : LabelBrush;
+        var pen = MediaColors.FrozenPen(brush, 1);
+        dc.PushOpacity(HighContrast ? 0.75 : 0.45);
+        for (var i = 0; i < bars.Count; i++)
+        {
+            var outline = bars.Outline(i);
+            if (outline.Above <= 0 && outline.Below <= 0)
+            {
+                continue;
+            }
+
+            var top = Math.Max(f.Plot.Top, f.Y(outline.Above));
+            var bottom = Math.Min(f.Plot.Bottom, f.Y(-outline.Below));
+            var left = Snap(f.Plot.Left + f.Slots.Center(i) - width / 2, ppd);
+            var right = Snap(f.Plot.Left + f.Slots.Center(i) + width / 2, ppd);
+            var rect = new Rect(left, Snap(top, ppd), Math.Max(1, right - left), Math.Max(1, Snap(bottom, ppd) - Snap(top, ppd)));
+            var radius = Math.Min(4, rect.Width / 3);
+            dc.DrawRoundedRectangle(null, pen, rect, radius, radius);
+        }
+
+        dc.Pop();
+    }
+
+    /// <summary>
+    /// Days of the traffic chart before measuring began: a faint hatched band, labelled <c>history.traffic.notRecorded</c>
+    /// when it is wide enough (DESIGN 10).
+    /// </summary>
+    private void DrawNotRecorded(DrawingContext dc, ChartFrame f, double ppd)
+    {
+        if (!_target.IsMirrored || _target.NotRecordedDays <= 0 || f.Slots.Slot <= 0)
+        {
+            return;
+        }
+
+        var left = Snap(f.Plot.Left, ppd);
+        var right = Snap(f.Plot.Left + _target.NotRecordedDays * f.Slots.Slot, ppd);
+        var rect = new Rect(left, f.Plot.Top, Math.Max(0, right - left), f.Plot.Height);
+        if (rect.Width <= 0.5)
+        {
+            return;
+        }
+
+        var ink = HighContrast ? SystemColors.WindowTextBrush : LabelBrush;
+        dc.PushOpacity(0.05);
+        dc.DrawRectangle(ink, null, rect);
+        dc.Pop();
+        dc.PushClip(new RectangleGeometry(rect));
+        dc.PushOpacity(HighContrast ? 0.3 : 0.14);
+        var pen = MediaColors.FrozenPen(ink, 1);
+        for (var offset = -rect.Height; offset < rect.Width; offset += 6)
+        {
+            dc.DrawLine(pen, new Point(rect.Left + offset, rect.Bottom), new Point(rect.Left + offset + rect.Height, rect.Top));
+        }
+
+        dc.Pop();
+        dc.Pop();
+        if (rect.Width >= NotRecordedLabelWidth && !string.IsNullOrEmpty(_texts.NotRecorded))
+        {
+            var label = Text(_texts.NotRecorded, LabelBrush);
+            label.MaxTextWidth = rect.Width - 16;
+            label.TextAlignment = TextAlignment.Center;
+            label.MaxLineCount = 3;
+            label.Trimming = TextTrimming.CharacterEllipsis;
+            dc.DrawText(label, new Point(rect.Left + 8, rect.Top + 8));
         }
     }
 
@@ -994,8 +1176,38 @@ internal sealed class HistoryChart : FrameworkElement
         return geometry;
     }
 
+    private static StreamGeometry RoundedBottom(Rect rect, double radius)
+    {
+        var geometry = new StreamGeometry();
+        using (var g = geometry.Open())
+        {
+            g.BeginFigure(new Point(rect.Left, rect.Top), true, true);
+            g.LineTo(new Point(rect.Right, rect.Top), false, false);
+            g.LineTo(new Point(rect.Right, rect.Bottom - radius), false, false);
+            g.ArcTo(new Point(rect.Right - radius, rect.Bottom), new Size(radius, radius), 0, false, SweepDirection.Clockwise, false, false);
+            g.LineTo(new Point(rect.Left + radius, rect.Bottom), false, false);
+            g.ArcTo(new Point(rect.Left, rect.Bottom - radius), new Size(radius, radius), 0, false, SweepDirection.Clockwise, false, false);
+        }
+
+        geometry.Freeze();
+        return geometry;
+    }
+
     private static double Snap(double value, double ppd) => (Math.Round(value * ppd - 0.5) + 0.5) / ppd;
 
     /// <summary>The layout of the last frame drawn.</summary>
-    private readonly record struct ChartFrame(Rect Plot, BarSlots Slots, AxisTicks Ticks, AxisTicks SpeedTicks, double ScaleMax);
+    /// <param name="ScaleMax">The value at the plot's top.</param>
+    /// <param name="Lower">Ticks below the axis (traffic upload); null without.</param>
+    /// <param name="ScaleBelow">The value (positive) at the plot's bottom; 0 when the axis is the bottom.</param>
+    private readonly record struct ChartFrame(Rect Plot, BarSlots Slots, AxisTicks Ticks, AxisTicks SpeedTicks, double ScaleMax,
+        AxisTicks? Lower, double ScaleBelow)
+    {
+        /// <summary>Where 0 is drawn: the bottom, or between download and upload.</summary>
+        public double ZeroY => Plot.Top + ScaleMax / Span * Plot.Height;
+
+        private double Span => Math.Max(ScaleMax + Math.Max(0, ScaleBelow), 1e-9);
+
+        /// <summary>The height of a signed value (negative: below the axis).</summary>
+        public double Y(double value) => ZeroY - value / Span * Plot.Height;
+    }
 }

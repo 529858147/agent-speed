@@ -107,6 +107,19 @@ internal sealed partial class DashboardWindow : Window
     /// <summary>The hero's unit was clicked: switch <c>settings.liveUnit</c> (DESIGN 9).</summary>
     public event EventHandler? UnitToggleRequested;
 
+    /// <summary>A Network row was clicked: Usage History on the traffic metric with that source (DESIGN 10).</summary>
+    public event EventHandler<SourceKind>? TrafficHistoryRequested;
+
+    /// <summary>The Network section's helper button: Settings → 網路流量, never the administrator prompt itself.</summary>
+    public event EventHandler? TrafficSettingsRequested;
+
+    /// <summary>The last minute of this computer's traffic for the Network sparkline (once per second).</summary>
+    public void SetTrafficChart(IReadOnlyList<Core.Traffic.TrafficPoint> history, bool bits, string summary)
+    {
+        TrafficChart.ReduceMotion = _model.ReduceMotion;
+        TrafficChart.SetData(history, bits, summary);
+    }
+
     public OrbView Hero { get; }
 
     public long LastHiddenTick { get; private set; }
@@ -626,6 +639,23 @@ internal sealed partial class DashboardWindow : Window
     }
 
     private void OnHistory(object sender, RoutedEventArgs e) => RequestHistory(null);
+
+    private void OnTrafficRow(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TrafficRowItem row })
+        {
+            Dismiss();
+            TrafficHistoryRequested?.Invoke(this, row.Source);
+        }
+    }
+
+    private void OnTrafficExpand(object sender, RoutedEventArgs e) => _model.ToggleTrafficRows();
+
+    private void OnTrafficHelper(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        TrafficSettingsRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private void RequestHistory(SourceKind? source)
     {

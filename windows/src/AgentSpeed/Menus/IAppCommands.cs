@@ -38,6 +38,8 @@ internal interface IAppCommands
     /// <summary>tok/s or the money unit of one orb (DESIGN 9 Orb, Switching).</summary>
     void SetOrbUnit(string orbId, OrbUnit unit) => UpdateOrbs(d => OrbEditing.SetUnit(d, orbId, unit));
 
+    void SetOrbTraffic(string orbId, OrbTraffic traffic) => UpdateOrbs(d => OrbEditing.SetTraffic(d, orbId, traffic));
+
     /// <summary>The orb tracks every source again.</summary>
     void SetOrbAllSources(string orbId) => UpdateOrbs(d => OrbEditing.SetAllSources(d, orbId));
 

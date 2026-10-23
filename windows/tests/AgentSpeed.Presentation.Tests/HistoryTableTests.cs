@@ -93,7 +93,8 @@ public class HistoryTableTests
         Assert.Equal(
             [
                 HistoryColumn.Date, HistoryColumn.Requests, HistoryColumn.Output, HistoryColumn.Input, HistoryColumn.Cost,
-                HistoryColumn.CacheHit, HistoryColumn.Speed, HistoryColumn.Peak, HistoryColumn.Agents, HistoryColumn.Models,
+                HistoryColumn.Traffic, HistoryColumn.CacheHit, HistoryColumn.Speed, HistoryColumn.Peak, HistoryColumn.Agents,
+                HistoryColumn.Models,
             ],
             HistoryTable.Columns);
         Assert.All(HistoryTable.Columns.Where(c => c != HistoryColumn.Models), c => Assert.True(HistoryTable.DefaultDescending(c)));
@@ -112,8 +113,8 @@ public class HistoryTableTests
             Assert.All(HistoryTable.Columns, c => Assert.NotEqual(HistoryTable.HeaderKey(c), loc[HistoryTable.HeaderKey(c)]));
         }
 
-        Assert.Equal("日期\t請求\t輸出\t輸入（含快取）\t費用\t快取命中\t平均速度\t峰值\tAgent\t主要模型", HistoryTable.HeaderText(For(LanguageCodes.ZhHant)));
-        Assert.Equal("Date\tRequests\tOutput\tInput (incl. cache)\tCost\tCache hit\tAvg speed\tPeak\tAgents\tTop models",
+        Assert.Equal("日期\t請求\t輸出\t輸入（含快取）\t費用\t網路\t快取命中\t平均速度\t峰值\tAgent\t主要模型", HistoryTable.HeaderText(For(LanguageCodes.ZhHant)));
+        Assert.Equal("Date\tRequests\tOutput\tInput (incl. cache)\tCost\tNetwork\tCache hit\tAvg speed\tPeak\tAgents\tTop models",
             HistoryTable.HeaderText(For(LanguageCodes.En)));
     }
 
@@ -139,7 +140,7 @@ public class HistoryTableTests
 
         Assert.Equal("US$4.20", HistoryTable.Cell(row, HistoryColumn.Cost, Today, loc, money));
 
-        Assert.Equal("今天\t12,345\t98.8k\t2.00M\tUS$4.20\t92%\t85 tok/s\t412 tok/s\t4\topus, gpt +1", HistoryTable.RowText(row, Today, loc, money));
+        Assert.Equal("今天\t12,345\t98.8k\t2.00M\tUS$4.20\t–\t92%\t85 tok/s\t412 tok/s\t4\topus, gpt +1", HistoryTable.RowText(row, Today, loc, money));
     }
 
     [Fact]
@@ -153,7 +154,7 @@ public class HistoryTableTests
         Assert.Equal("—", HistoryTable.Cell(R2, HistoryColumn.Models, Today, loc, money));
         Assert.Equal("Oct 18, Sun", HistoryTable.Cell(R2, HistoryColumn.Date, Today, loc, money));
         Assert.Equal("–", HistoryTable.Cell(R2, HistoryColumn.Cost, Today, loc, money));
-        Assert.Equal(10, HistoryTable.RowText(R2, Today, loc, money).Split('\t').Length);
+        Assert.Equal(11, HistoryTable.RowText(R2, Today, loc, money).Split('\t').Length);
         Assert.Equal("Oct 18, Sun\t–", HistoryTable.RowText(R2, Today, loc, money, [HistoryColumn.Date, HistoryColumn.Cost]));
     }
 
@@ -193,7 +194,7 @@ public class HistoryTableTests
         var day = DayOf(CostDays(), Today);
         Assert.Equal("至少 73 新臺幣", HistoryTable.AccessibleCell(day, HistoryColumn.Cost, Today, loc, Twd(loc)));
         Assert.Equal(loc["cost.unknown"], HistoryTable.AccessibleCell(DayOf(CostDays(), D(2026, 10, 19)), HistoryColumn.Cost, Today, loc, Twd(loc)));
-        foreach (var column in HistoryTable.Columns.Where(c => c != HistoryColumn.Cost))
+        foreach (var column in HistoryTable.Columns.Where(c => c is not (HistoryColumn.Cost or HistoryColumn.Traffic)))
         {
             Assert.Equal(HistoryTable.Cell(day, column, Today, loc, Twd(loc)), HistoryTable.AccessibleCell(day, column, Today, loc, Twd(loc)));
         }

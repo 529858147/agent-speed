@@ -64,6 +64,9 @@ public sealed record OrbDefinition
     /// <summary>tok/s or the money unit (DESIGN 2b <c>unit</c>, 9); Add, Duplicate and Split copy it, Merge keeps the target's.</summary>
     public OrbUnit Unit { get; init; } = OrbUnit.Tokens;
 
+    /// <summary>The traffic readout (DESIGN 2b <c>traffic</c>, 10); Add, Duplicate and Split copy it, Merge keeps the target's.</summary>
+    public OrbTraffic Traffic { get; init; } = OrbTraffic.Sources;
+
     /// <summary>The engine's source set: null tracks every enabled source.</summary>
     public SourceSet? TrackedSources => Sources.Set;
 
@@ -107,6 +110,7 @@ public sealed record OrbDefinition
             RedlineTotal = CleanRedline(SpeedMetric.Total, RedlineTotal),
             TitleTheme = CleanId(TitleTheme),
             Unit = Enum.IsDefined(Unit) ? Unit : OrbUnit.Tokens,
+            Traffic = Enum.IsDefined(Traffic) ? Traffic : OrbTraffic.Off,
         };
     }
 

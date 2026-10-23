@@ -18,6 +18,9 @@ public enum OrbPass
 
     /// <summary>The liquid volume shader (<see cref="OrbBatch.LiquidMode"/> 0 the volume, 1 the meniscus).</summary>
     Liquid,
+
+    /// <summary>Text quads drawn in sequence with the shapes (under what follows), <see cref="OrbBatch.Start"/> into the texts.</summary>
+    Text,
 }
 
 /// <summary>A run of instances drawn with one pipeline state.</summary>
@@ -51,6 +54,9 @@ public sealed class OrbDrawList
     public ReadOnlySpan<OrbBatch> Batches => _batches.AsSpan(0, BatchCount);
 
     public ReadOnlySpan<OrbTextInstance> Texts => _texts.AsSpan(0, TextCount);
+
+    /// <summary>The first text quad of the final overlay pass; the ones before it are drawn by <see cref="OrbPass.Text"/> batches.</summary>
+    public int OverlayTextStart { get; private set; }
 
     /// <summary>Parameters of the liquid volume when a liquid pass is present.</summary>
     public OrbLiquidUniforms Liquid;
@@ -89,6 +95,7 @@ public sealed class OrbDrawList
         Count = 0;
         BatchCount = 0;
         TextCount = 0;
+        OverlayTextStart = 0;
         HasLiquid = false;
         AlphaScale = 1;
         ClipRadius = 0;
@@ -134,6 +141,38 @@ public sealed class OrbDrawList
     {
         HasLiquid = true;
         AddBatch(new OrbBatch(OrbPass.Liquid, OrbBlend.Over, 0, 0, Count, 0, mode));
+    }
+
+    /// <summary>
+    /// Adds a rasterized string drawn in sequence with the shapes, so the shapes added after it cover it (the needle's dial
+    /// legend under its graduations and needle). Only before any overlay text of the frame.
+    /// </summary>
+    public void AddInlineText(in OrbGlyph glyph, double x, double baseline, Rgba color)
+    {
+        if (TextCount != OverlayTextStart)
+        {
+            throw new InvalidOperationException("Inline text must be added before the overlay text.");
+        }
+
+        var before = TextCount;
+        AddText(glyph, x, baseline, color);
+        if (TextCount == before)
+        {
+            return;
+        }
+
+        OverlayTextStart = TextCount;
+        if (BatchCount > 0)
+        {
+            ref var last = ref _batches[BatchCount - 1];
+            if (last.Pass == OrbPass.Text && last.Start + last.Count == before)
+            {
+                last = last with { Count = last.Count + 1 };
+                return;
+            }
+        }
+
+        AddBatch(new OrbBatch(OrbPass.Text, OrbBlend.Over, 0, 0, before, 1));
     }
 
     public void AddText(in OrbTextInstance text)

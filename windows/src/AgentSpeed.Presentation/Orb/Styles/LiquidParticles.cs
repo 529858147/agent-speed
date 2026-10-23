@@ -312,7 +312,7 @@ public sealed partial class LiquidModel
         {
             ref readonly var p = ref _motes[i];
             var x = p.X + Math.Sin(p.Phase) * 0.006;
-            var fade = ReadoutZone.Fade(x, p.Y);
+            var fade = ReadoutZone.Fade(x, p.Y - _readoutShift);
             _sprites[n++] = p.Kind == MoteKind.Gold
                 ? new LiquidSprite(LiquidSpriteKind.GoldMote, x, p.Y, p.Size, EnergyPalette.Gold, fade, 1)
                 : new LiquidSprite(LiquidSpriteKind.Mote, x, p.Y, p.Size, _moteGlow, fade, p.Kind == MoteKind.Cool ? 0 : _moteHot);
@@ -323,7 +323,7 @@ public sealed partial class LiquidModel
         {
             ref readonly var p = ref _pops[i];
             var u = p.Age / p.Life;
-            var fade = ReadoutZone.Fade(p.X, p.Y);
+            var fade = ReadoutZone.Fade(p.X, p.Y - _readoutShift);
             _sprites[n++] = new LiquidSprite(LiquidSpriteKind.Pop, p.X, p.Y, p.Size * (1 + 1.5 * u), _popColor, 0.6 * (1 - u) * fade, 0);
         }
 
@@ -332,7 +332,7 @@ public sealed partial class LiquidModel
         {
             ref readonly var p = ref _splashes[i];
             var u = p.Age / p.Life;
-            var fade = ReadoutZone.Fade(p.X, p.Y);
+            var fade = ReadoutZone.Fade(p.X, p.Y - _readoutShift);
             _sprites[n++] = new LiquidSprite(LiquidSpriteKind.Splash, p.X, p.Y, p.Size, _splashColor, 0.9 * (1 - 0.6 * u) * fade, 0);
         }
 
@@ -344,7 +344,7 @@ public sealed partial class LiquidModel
             ref readonly var p = ref _steam[i];
             var u = p.Age / p.Life;
             var y = yL + p.Y;
-            var alpha = Math.Sin(Math.PI * u) * steamAlpha * ReadoutZone.Fade(p.X, y);
+            var alpha = Math.Sin(Math.PI * u) * steamAlpha * ReadoutZone.Fade(p.X, y - _readoutShift);
             _sprites[n++] = new LiquidSprite(LiquidSpriteKind.Steam, p.X, y, p.Size * (1 + u), _steamColor, alpha, 0);
         }
 

@@ -192,10 +192,20 @@ internal sealed partial class HistoryWindow : Window
         if (update != HistoryUpdate.Sort)
         {
             var today = _model.Today;
-            Func<double, double, string> axis = _model.Bars.Metric == HistoryChartMetric.Cost ? money.AxisLabel : ChartTexts.TokenAxis;
+            Func<double, double, string> axis = _model.Bars.Metric switch
+            {
+                HistoryChartMetric.Cost => money.AxisLabel,
+                HistoryChartMetric.Traffic => static (value, _) => HistoryTrafficText.AxisBytes(value),
+                _ => ChartTexts.TokenAxis,
+            };
+            var range = _model.Range;
             var texts = new ChartTexts(loc.Culture, loc["unit.tokS"], loc["history.inProgress"],
                 (day, withYear) => HistoryText.Month(day, withYear, loc), day => HistoryText.MonthDay(day, loc),
-                day => HistoryText.Accessible(day, today, loc, money), axis);
+                day => HistoryText.Accessible(day, today, loc, money), axis)
+            {
+                NotRecorded = loc["history.traffic.notRecorded"],
+                TrafficAccessible = index => HistoryTooltipText.AccessibleTraffic(range.DayAt(index), _model.TrafficAt(range.DayAt(index)), today, loc),
+            };
             Chart.SetData(_model.Bars, _model.DayAt, _model.Source, today, texts, transition);
             SyncRange();
             SyncMetric();
@@ -206,7 +216,7 @@ internal sealed partial class HistoryWindow : Window
             Relocalize();
         }
 
-        Table.SetRows(_model.Rows, _model.Today, loc, money);
+        Table.SetRows(_model.Rows, _model.Today, loc, money, _model.ShowsTraffic);
         if (!_model.HasUnpriced && UnpricedFlyout.IsOpen)
         {
             // The models were priced meanwhile: the list (and its link) is gone.
@@ -246,6 +256,7 @@ internal sealed partial class HistoryWindow : Window
         {
             MetricOutput.IsChecked = _model.Metric == HistoryChartMetric.Output;
             MetricCost.IsChecked = _model.Metric == HistoryChartMetric.Cost;
+            MetricTraffic.IsChecked = _model.Metric == HistoryChartMetric.Traffic;
         }
         finally
         {
@@ -599,7 +610,9 @@ internal sealed partial class HistoryWindow : Window
 
     private void ShowHoverCard()
     {
-        if (_hoverIndex is not { } index || _model.IsEmpty || _model.DayAt(index) is not { } day || !Chart.IsVisible)
+        var traffic = _model.Bars.Metric == HistoryChartMetric.Traffic;
+        if (_hoverIndex is not { } index || _model.IsEmpty || !Chart.IsVisible || index >= _model.Range.DayCount
+            || (traffic ? !_model.Bars.HasData(index) : _model.DayAt(index) is null))
         {
             HoverCard.Hide();
             return;
@@ -612,7 +625,7 @@ internal sealed partial class HistoryWindow : Window
             return;
         }
 
-        var model = TooltipFor(day);
+        var model = traffic ? TrafficTooltipFor(_model.Range.DayAt(index)) : TooltipFor(_model.DayAt(index)!);
         var size = HoverCard.MeasureCard(model);
         var chart = Chart.TranslatePoint(new Point(0, 0), Overlay);
         var card = ChartCard.TranslatePoint(new Point(0, 0), Overlay);
@@ -624,10 +637,14 @@ internal sealed partial class HistoryWindow : Window
         HoverCard.Show(model, x + boundsLeft, y, ReduceMotion);
     }
 
-    private TooltipModel TooltipFor(DaySummary day)
+    private TooltipModel TooltipFor(DaySummary day) => ToTooltip(
+        HistoryTooltipText.Build(day, _model.Bars.Order, _model.Source is null, _model.Bars.Metric, _model.Today, _model.Money, _model.Loc));
+
+    private TooltipModel TrafficTooltipFor(DateOnly day) =>
+        ToTooltip(HistoryTooltipText.BuildTraffic(day, _model.TrafficAt(day), _model.Today, _model.Loc));
+
+    private static TooltipModel ToTooltip(TooltipContent content)
     {
-        var content = HistoryTooltipText.Build(day, _model.Bars.Order, _model.Source is null, _model.Bars.Metric, _model.Today,
-            _model.Money, _model.Loc);
         var lines = content.Rows
             .Select(r => new TooltipLine(r.Label, r.Value, r.Source is { } source ? HeatPalette.SourceColor(source).ToBrush() : null,
                 r.Strong, Indented: r.Source is not null, r.IsNote))

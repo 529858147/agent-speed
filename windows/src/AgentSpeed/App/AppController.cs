@@ -48,6 +48,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     private SettingsService _settings = null!;
     private TitleThemesService _titles = null!;
     private CostService _cost = null!;
+    private Traffic.TrafficService _traffic = null!;
+    private TaskbarState? _lastTaskbarState;
     private SpeedHub _hub = null!;
     private HistoryHub _historyHub = null!;
     private HistoryController? _history;
@@ -117,6 +119,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         _cost.Prices.TableAccepted += (_, _) => _historyHub?.Refresh();
         _cost.Changed += (_, _) => OnCostChanged();
         _dashboardModel.Cost = _cost.Display;
+        _traffic = new Traffic.TrafficService(_ui, _settings) { Helper = new Traffic.WindowsTrafficHelperHost() };
+        _traffic.Hub.SnapshotChanged += (_, _) => OnTrafficChanged();
         phases.Mark("settings+strings");
 
         _theme = new ThemeService(_ui, Settings.Appearance, _launch.ReduceMotion);
@@ -129,7 +133,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _hub = new SpeedHub(new DispatcherSynchronizationContext(_ui));
         _historyHub = new HistoryHub(new DispatcherSynchronizationContext(_ui));
-        _history = new HistoryController(_historyHub, _settings, _theme, _loc, _cost.Display);
+        _history = new HistoryController(_historyHub, _settings, _theme, _loc, _cost.Display) { Traffic = _traffic.Hub };
         _hub.SnapshotChanged += (_, snapshot) =>
         {
             if (!_hub.IsPreviewing)
@@ -211,6 +215,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
             StartUpdates();
             _cost.Start();
+            _traffic.Start();
             if (_launch.DemoSpeedValues is { Count: > 0 } speeds)
             {
                 HeroStats.Enabled = true;
@@ -263,12 +268,24 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
             if (_launch.CaptureDir is { } captureDir && Directory.Exists(captureDir))
             {
-                _capture = new DevCapture(_ui, captureDir, () => _orbs?.CaptureTargets() ?? [], CaptureMenu, _ =>
+                _capture = new DevCapture(_ui, captureDir, () => _orbs?.CaptureTargets() ?? [], CaptureMenu, target =>
                 {
+                    if (target == "dashboard")
+                    {
+                        return _dashboard is { IsShown: true } shown ? shown.Content as FrameworkElement : null;
+                    }
+
+                    if (target == "history")
+                    {
+                        _history?.Open(null, traffic: true);
+                        return _history?.CaptureContent;
+                    }
+
                     OpenSettings(_capturePage);
                     return _settingsWindow?.FindName(char.ToUpperInvariant(_capturePage[0]) + _capturePage[1..] + "Page") as FrameworkElement;
                 })
                 {
+                    Taskbar = () => _lastTaskbarState is { } state ? TaskbarCapture.Render(state, _speed.Value, _speed.Tier, _speed.Redline) : null,
                     Badges = () => AgentSpeed.Orb.Hero.Badge.BadgeCapture.Presets(_loc),
                     Operation = op =>
                     {
@@ -330,13 +347,20 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     public void ClearHistory()
     {
         StartHistory();
+        // Today's traffic restarts at zero and no traffic write is in flight while the store is deleted (METRICS 10.9).
+        _traffic.ClearHistory();
         _historyHub.Clear();
     }
 
     public void UpdateSettings(Func<AppSettings, AppSettings> change) => _settings.Update(change);
 
     private bool ConfirmClearHistory() => ConfirmDialog.Show(_settingsWindow, _loc["app.name"], _loc["win.history.clear.title"],
-        _loc["history.clear.confirm"], _loc["history.clear.action"], _loc["history.cancel"]);
+        _history?.HasTrafficHistory == true ? $"{_loc["history.clear.confirm"]} {_loc["history.clear.traffic"]}" : _loc["history.clear.confirm"],
+        _loc["history.clear.action"], _loc["history.cancel"]);
+
+    /// <summary><c>traffic.helper.removeConfirm</c> / <c>traffic.helper.removeDetail</c> (DESIGN 10); true to remove.</summary>
+    private bool ConfirmRemoveHelper() => ConfirmDialog.Show(_settingsWindow, _loc["app.name"], _loc["traffic.helper.removeConfirm"],
+        _loc["traffic.helper.removeDetail"], _loc["traffic.helper.remove"].TrimEnd('…', '.'), _loc["history.cancel"]);
 
     public void OpenSettings(string? page = null)
     {
@@ -345,6 +369,9 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         {
             _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
                 _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory, _cost) { TitleService = _titles };
+            _settingsModel.Traffic ??= new TrafficPaneViewModel(_settings, _traffic, _traffic.Helper, _loc,
+                () => _settingsWindow is { } window ? new System.Windows.Interop.WindowInteropHelper(window).Handle : 0,
+                ConfirmRemoveHelper);
             if (_settingsModel.Orbs is null && _orbs is not null)
             {
                 _settingsModel.Orbs = new Settings.OrbsPane.OrbsPaneViewModel(_settings, _orbs, _speed, _loc) { TitleService = _titles };
@@ -414,6 +441,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         Try(() => _historyStartFallback?.Stop());
         Try(() => _history?.Dispose());
         Try(() => _historyService?.Dispose());
+        Try(() => _traffic?.Dispose());
         Try(() => _cost.Dispose());
         Try(() => _settings.Flush());
         Try(() => _preview.Stop());
@@ -475,6 +503,10 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         var accessible = DisplayText.Accessibility(value, _titles.Text(title, _titles.General), _loc);
 
         _orbs?.Update(snapshot);
+        if (!_speed.IsPreviewing)
+        {
+            _traffic.UpdateAgents(snapshot.Agents);
+        }
 
         if (_dashboard is { IsShown: true } dashboard)
         {
@@ -645,7 +677,13 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             accessible = $"{accessible}{SpokenSeparator}{secondary.Spoken}";
         }
 
-        _taskbar.Update(new TaskbarState(
+        var traffic = BarTrafficBlock.From(s, _traffic.Snapshot, _loc);
+        if (traffic?.Spoken is { } spokenTraffic)
+        {
+            accessible = $"{accessible}{SpokenSeparator}{spokenTraffic}";
+        }
+
+        _lastTaskbarState = new TaskbarState(
             s.ShowOnTaskbar,
             _speed.Value,
             _speed.Tier,
@@ -660,7 +698,9 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             $"{_loc["app.name"]}: {accessible}",
             bar.Item1,
             money?.Unknown ?? false,
-            secondary));
+            secondary,
+            traffic);
+        _taskbar.Update(_lastTaskbarState);
     }
 
     /// <summary>The taskbar money block (DESIGN 3): the live rate and today's total after tok/s with the live value "tok/s + cost".</summary>
@@ -689,7 +729,67 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         var main = LiveMoney() is { } money
             ? $"{money.NumberText} {money.Unit}"
             : $"{SpeedFormat.Speed(_speed.Value)} {_loc["unit.tokS"]}";
-        return BarSecondaryValue() is { } secondary ? $"{main} · {secondary.Spoken} · {title}" : $"{main} · {title}";
+        var line = BarSecondaryValue() is { } secondary ? $"{main} · {secondary.Spoken} · {title}" : $"{main} · {title}";
+        return BarTrafficBlock.From(Settings, _traffic.Snapshot, _loc)?.Spoken is { } traffic ? $"{line} · {traffic}" : line;
+    }
+
+    // ---- Traffic ----
+
+    /// <summary>Per-process traffic can be measured now (the menus' sources choice says it is unavailable otherwise).</summary>
+    private bool SourceTrafficAvailable => _traffic.Snapshot.ProcessState.UnavailableReason is null;
+
+    /// <summary>A traffic sample (1 Hz while measuring): the orbs' readouts, the taskbar block, the dashboard and the demand.</summary>
+    private void OnTrafficChanged()
+    {
+        var snapshot = _traffic.Snapshot;
+        _orbs?.UpdateTraffic(snapshot);
+        RefreshDashboardTraffic();
+        if (Settings.Traffic.Bar != BarTraffic.Off)
+        {
+            UpdateTaskbar();
+            if (_tooltipShown)
+            {
+                _tooltip?.SetText(LiveLine(), LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(_speed.Snapshot, _loc));
+            }
+        }
+
+        UpdateTrafficDemand();
+    }
+
+    /// <summary>The dashboard's Network section and its sparkline (DESIGN 10), while the dashboard shows.</summary>
+    private void RefreshDashboardTraffic()
+    {
+        if (_dashboard is not { IsShown: true } dashboard)
+        {
+            return;
+        }
+
+        var traffic = Settings.Traffic;
+        var snapshot = _traffic.Snapshot;
+        _dashboardModel.UpdateTraffic(snapshot, traffic.Enabled, traffic.IncludeTools, traffic.Bits, _loc);
+        if (!_dashboardModel.TrafficShown)
+        {
+            return;
+        }
+
+        var window = snapshot.MachineHistory.Count > TrafficSparkline.WindowSeconds
+            ? snapshot.MachineHistory.Skip(snapshot.MachineHistory.Count - TrafficSparkline.WindowSeconds).ToArray()
+            : snapshot.MachineHistory;
+        var text = new TrafficText(_loc, traffic.Bits);
+        var rx = window.Count > 0 ? window.Max(p => p.Rate.Rx) : 0;
+        var tx = window.Count > 0 ? window.Max(p => p.Rate.Tx) : 0;
+        dashboard.SetTrafficChart(window, traffic.Bits, _loc.Format("traffic.a11y.chart", TrafficText.Spoken(text.Rate(rx)), TrafficText.Spoken(text.Rate(tx))));
+    }
+
+    /// <summary>
+    /// METRICS 10.10: per-source traffic is on screen while the dashboard is open, while the taskbar shows the agents' block,
+    /// or while an orb's sources readout is showing (until it has faded out).
+    /// </summary>
+    private void UpdateTrafficDemand()
+    {
+        var s = Settings;
+        var bar = s.ShowOnTaskbar && s.Traffic.Bar == BarTraffic.Agents && s.BarMode != BarDisplayMode.GlyphOnly;
+        _traffic.SetDemand(s.Traffic.Enabled && ((_dashboard?.IsShown ?? false) || bar || (_orbs?.ShowsSourceTraffic ?? false)));
     }
 
     private TrayVisualState TrayState() => new(
@@ -707,7 +807,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         HideTooltip();
-        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources)));
+        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable));
     }
 
     private void ToggleDashboard(POINT anchor)
@@ -752,6 +852,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             _dashboard.AgentsExpandedChanged += (_, expanded) => _settings.Update(s => s with { AgentsExpanded = expanded });
             _dashboard.UpdateRequested += (_, _) => OpenUpdate();
             _dashboard.UnitToggleRequested += (_, _) => ToggleLiveUnit();
+            _dashboard.TrafficHistoryRequested += (_, source) => ShowHistory(source, traffic: true);
+            _dashboard.TrafficSettingsRequested += (_, _) => OpenSettings("traffic");
             _dashboard.IsVisibleChanged += (_, _) =>
             {
                 if (_dashboard?.IsVisible != true)
@@ -777,6 +879,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         RefreshDashboard();
         _dashboard.ShowNear(anchor, _theme.ReduceMotion);
         OnSpeedChanged();
+        RefreshDashboardTraffic();
+        UpdateTrafficDemand();
     }
 
     private void OnTaskbarHover(bool isOver, RECT bounds)
@@ -806,7 +910,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
     // ---- Usage history ----
 
-    private void ShowHistory(SourceKind? source)
+    /// <param name="traffic">Open on the traffic metric (a row of the dashboard's Network section, DESIGN 10).</param>
+    private void ShowHistory(SourceKind? source, bool traffic = false)
     {
         if (_quitting)
         {
@@ -815,7 +920,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _dashboard?.Dismiss();
         StartHistory();
-        _history?.Open(source);
+        _history?.Open(source, traffic);
     }
 
     /// <summary>
@@ -879,6 +984,11 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _updates.OnSettingsChanged(previous, current);
         _cost.OnSettingsChanged(previous, current);
+        _traffic.OnSettingsChanged(previous, current);
+        if (previous.Traffic.IncludeTools != current.Traffic.IncludeTools)
+        {
+            _history?.OnTrafficSettingsChanged();
+        }
 
         if (previous.Language != current.Language)
         {
@@ -912,7 +1022,9 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         ConfigureOrb();
+        _orbs?.UpdateTraffic(_traffic.Snapshot);
         UpdateTaskbar();
+        UpdateTrafficDemand();
         _tray?.Update(TrayState());
         _dashboard?.SetOrbVisible(current.ShowOrbs);
         if (previous.ChartSeconds != current.ChartSeconds)
@@ -1192,8 +1304,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         var menu = kind == "menu-orb" && Settings.Orbs.Orbs.FirstOrDefault() is { } orb
-            ? OrbMenu.Build(this, orb.Id, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc)
-            : AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources));
+            ? OrbMenu.Build(this, orb.Id, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc, SourceTrafficAvailable)
+            : AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable);
         if (menu is null)
         {
             return null;
@@ -1212,7 +1324,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         HideTooltip();
-        if (OrbMenu.Build(this, orbId, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc) is { } menu)
+        if (OrbMenu.Build(this, orbId, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc, SourceTrafficAvailable) is { } menu)
         {
             _menu.Show(menu);
         }

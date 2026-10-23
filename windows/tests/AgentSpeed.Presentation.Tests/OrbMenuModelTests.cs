@@ -51,7 +51,7 @@ public class OrbMenuModelTests
         Assert.Equal(
             [
                 En["orbs.sources.all"], Separator,
-                En["orbs.style"], En["orbs.sources"], En["orbs.unit"], En["orbs.showName"], En["menu.size"], En["menu.effects"], Separator,
+                En["orbs.style"], En["orbs.sources"], En["orbs.unit"], En["orbs.traffic"], En["orbs.showName"], En["menu.size"], En["menu.effects"], Separator,
                 En["menu.alwaysOnTop"], En["menu.clickThrough"], Separator,
                 En["orbs.add"], En["menu.orb.duplicate"], En["menu.orb.split"], En["menu.orb.mergeAll"], Separator,
                 En["menu.orb.hide"], En["menu.orb.remove"], Separator,
@@ -376,7 +376,7 @@ public class OrbMenuModelTests
         var first = orbs.Rows.First();
         Assert.Null(first.Icon);
         Assert.Null(first.Detail);
-        Assert.Equal(Labels("orbs.visible", "menu.clickThrough", "orbs.showName", "orbs.unit", Separator, "menu.orb.settings"), Outline(first.Submenu!));
+        Assert.Equal(Labels("orbs.visible", "menu.clickThrough", "orbs.showName", "orbs.unit", "orbs.traffic", Separator, "menu.orb.settings"), Outline(first.Submenu!));
         Assert.True(Row(first.Submenu!, "orbs.visible").IsChecked);
         Assert.Equal(new MenuAction.SetOrbVisible("a", false), Row(first.Submenu!, "orbs.visible").Action);
 

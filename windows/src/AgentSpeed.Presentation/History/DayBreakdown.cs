@@ -1,4 +1,5 @@
 using AgentSpeed.Core;
+using AgentSpeed.Core.Traffic;
 
 namespace AgentSpeed.Presentation.History;
 
@@ -30,6 +31,9 @@ public sealed record BreakdownRow(
     /// <summary>The bar's cost as counted (an excluded subscription source adds nothing, METRICS 9.4).</summary>
     public HistoryCost Cost { get; init; }
 
+    /// <summary>The source's traffic of the day as displayed (DESIGN 10); null on model bars and before measuring began.</summary>
+    public TrafficBytes? Traffic { get; init; }
+
     /// <summary>Stable identity of the bar while its values change.</summary>
     public string Key => OtherModels ? "\0other" : Model ?? Source.ToString();
 }
@@ -48,20 +52,21 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
 
     /// <summary>The breakdown a range shows: by source with every source, by model with one; null for several days.</summary>
     /// <param name="excluded">Sources whose costs add nothing (subscriptions); a source selected directly is never excluded.</param>
+    /// <param name="traffic">The day's traffic (by source): with the traffic metric the source bars are sized by ↓ + ↑.</param>
     public static DayBreakdown? For(IEnumerable<DailyUsage> usage, DayRange range, SourceKind? source,
-        HistoryChartMetric metric = HistoryChartMetric.Output, SourceSet excluded = default)
+        HistoryChartMetric metric = HistoryChartMetric.Output, SourceSet excluded = default, DayTraffic? traffic = null)
     {
         if (!range.IsSingleDay)
         {
             return null;
         }
 
-        return source is { } only ? ByModel(usage, range.Start, only, metric) : BySource(usage, range.Start, metric, excluded);
+        return source is { } only ? ByModel(usage, range.Start, only, metric) : BySource(usage, range.Start, metric, excluded, traffic);
     }
 
-    /// <summary>Every source with usage on <paramref name="day"/>.</summary>
+    /// <summary>Every source with usage on <paramref name="day"/> (and, with traffic, every source with traffic).</summary>
     public static DayBreakdown BySource(IEnumerable<DailyUsage> usage, DateOnly day, HistoryChartMetric metric = HistoryChartMetric.Output,
-        SourceSet excluded = default)
+        SourceSet excluded = default, DayTraffic? traffic = null)
     {
         ArgumentNullException.ThrowIfNull(usage);
         var tallies = new Dictionary<SourceKind, Tally>();
@@ -69,6 +74,11 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
         {
             tallies[record.Source] = tallies.GetValueOrDefault(record.Source).Add(new Tally(record.Totals.Output, record.Totals.Requests,
                 record.MeasuredOutput, record.MeasuredMs, HistoryAggregator.CostOf(record, excluded)));
+        }
+
+        foreach (var (kind, bytes) in traffic?.BySource ?? new Dictionary<SourceKind, TrafficBytes>())
+        {
+            tallies[kind] = tallies.GetValueOrDefault(kind) with { Traffic = bytes };
         }
 
         var bars = tallies.Select(t => new Bar(t.Key, null, false, t.Value)).ToList();
@@ -141,8 +151,11 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
 
     private static DayBreakdown Build(BreakdownKind kind, DateOnly day, List<Bar> bars, HistoryChartMetric metric)
     {
-        bars.Sort((a, b) => Precedes(a, b, metric));
-        double Value(Bar bar) => metric == HistoryChartMetric.Cost ? bar.Tally.Cost.MicroUsd : bar.Tally.Output;
+        // Models have no traffic of their own: a by-model breakdown keeps sizing by output.
+        var byTraffic = metric == HistoryChartMetric.Traffic && kind == BreakdownKind.Sources;
+        bars.Sort((a, b) => Precedes(a, b, metric, byTraffic));
+        double Value(Bar bar) => byTraffic ? bar.Tally.Traffic?.Sum ?? 0
+            : metric == HistoryChartMetric.Cost ? bar.Tally.Cost.MicroUsd : bar.Tally.Output;
         var total = bars.Sum(Value);
         var largest = bars.Count > 0 ? bars.Max(Value) : 0;
         var rows = bars
@@ -150,23 +163,29 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
                 total > 0 ? Value(b) / total : 0,
                 largest > 0 ? Value(b) / largest : 0,
                 b.Tally.Speed,
-                b.Other) { Cost = b.Tally.Cost })
+                b.Other) { Cost = b.Tally.Cost, Traffic = b.Tally.Traffic })
             .ToArray();
         return new DayBreakdown(kind, day, bars.Sum(b => b.Tally.Output), rows) { Metric = metric };
     }
 
     /// <summary>
-    /// Most of the metric first (cost, then output for the cost metric), then most requests, then source order or model
-    /// name; other models always last.
+    /// Most of the metric first (cost, then output for the cost metric; traffic, sources with traffic first, for the traffic
+    /// metric), then most requests, then source order or model name; other models always last.
     /// </summary>
-    private static int Precedes(Bar a, Bar b, HistoryChartMetric metric)
+    private static int Precedes(Bar a, Bar b, HistoryChartMetric metric, bool byTraffic)
     {
         if (a.Other != b.Other)
         {
             return a.Other ? 1 : -1;
         }
 
-        var order = metric == HistoryChartMetric.Cost ? b.Tally.Cost.MicroUsd.CompareTo(a.Tally.Cost.MicroUsd) : 0;
+        if (byTraffic && (a.Tally.Traffic is null) != (b.Tally.Traffic is null))
+        {
+            return a.Tally.Traffic is null ? 1 : -1;
+        }
+
+        var order = byTraffic ? (b.Tally.Traffic?.Sum ?? 0).CompareTo(a.Tally.Traffic?.Sum ?? 0)
+            : metric == HistoryChartMetric.Cost ? b.Tally.Cost.MicroUsd.CompareTo(a.Tally.Cost.MicroUsd) : 0;
         if (order == 0)
         {
             order = b.Tally.Output.CompareTo(a.Tally.Output);
@@ -192,6 +211,8 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
     /// <summary>Counts of one bar; negative inputs count as zero.</summary>
     private readonly record struct Tally(long Output, long Requests, long MeasuredOutput, long MeasuredMs, HistoryCost Cost = default)
     {
+        public TrafficBytes? Traffic { get; init; }
+
         public double? Speed => MeasuredMs > 0 && MeasuredOutput > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
 
         public Tally Add(Tally part) => new(
@@ -199,6 +220,9 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
             Requests + Math.Max(0, part.Requests),
             MeasuredOutput + Math.Max(0, part.MeasuredOutput),
             MeasuredMs + Math.Max(0, part.MeasuredMs),
-            Cost.Add(part.Cost));
+            Cost.Add(part.Cost))
+        {
+            Traffic = Traffic,
+        };
     }
 }

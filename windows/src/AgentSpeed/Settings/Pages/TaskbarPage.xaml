@@ -33,6 +33,14 @@
         <controls:SettingsCard Header="{loc:Loc settings.bar.unit}" Icon="&#xE8D2;">
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding BarShowUnit, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.unit}" />
         </controls:SettingsCard>
+        <!-- DESIGN 10: the same control as in Settings → 網路流量 -->
+        <controls:SettingsCard Header="{loc:Loc settings.bar.traffic}" Icon="&#xE839;" IsEnabled="{Binding Traffic.Enabled}">
+            <ComboBox MinWidth="200" SelectedIndex="{Binding Traffic.BarIndex, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.traffic}">
+                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.off}" />
+                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.machine}" />
+                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.agents}" />
+            </ComboBox>
+        </controls:SettingsCard>
         <controls:SettingsCard Header="{loc:Loc settings.liveUnit}" Icon="&#xEC4A;" Description="{loc:Loc settings.liveUnit.hint}">
             <Border Style="{StaticResource SegmentedContainer}">
                 <StackPanel Orientation="Horizontal">

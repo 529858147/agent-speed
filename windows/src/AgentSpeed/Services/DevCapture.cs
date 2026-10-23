@@ -16,7 +16,9 @@ namespace AgentSpeed.Services;
 /// folder. Rendering in-process means no screen capture and nothing of other windows is ever recorded. Request lines:
 /// <c>orbs name [#backdrop | @C:\path\to\image.png]</c> (an image covers the captured area, cropped to fill),
 /// <c>menu-tray name</c>, <c>menu-orb name</c>, <c>badge-sheet name [dark|light]</c> (the hero title badge of every theme
-/// but Vehicles at idle and levels 1–13) and <c>badge-strip name [dark|light]</c> (its transitions at fixed τ).
+/// but Vehicles at idle and levels 1–13), <c>badge-strip name [dark|light]</c> (its transitions at fixed τ),
+/// <c>dashboard name [#backdrop]</c> (the open dashboard's content) and <c>taskbar name [#backdrop]</c> (the widget as it
+/// draws now, rendered again in-process).
 /// </summary>
 internal sealed partial class DevCapture
 {
@@ -33,6 +35,9 @@ internal sealed partial class DevCapture
 
     /// <summary>The title themes and language for <c>badge-sheet</c> and <c>badge-strip</c>.</summary>
     public Func<BadgeCaptureSource>? Badges { get; init; }
+
+    /// <summary>The taskbar widget rendered now (<c>taskbar</c>), or null.</summary>
+    public Func<BitmapSource?>? Taskbar { get; init; }
 
     public DevCapture(Dispatcher dispatcher, string folder, Func<IReadOnlyList<(FrameworkElement Visual, Rect ScreenRect, double Opacity)>> orbs,
         Func<string, ContextMenu?> menu, Func<string, FrameworkElement?> element)
@@ -92,6 +97,12 @@ internal sealed partial class DevCapture
                     break;
                 case "settings":
                     CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020");
+                    break;
+                case "dashboard" or "history":
+                    CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020", parts[0]);
+                    break;
+                case "taskbar" when Taskbar?.Invoke() is { } bar:
+                    Save(OnBackdrop(bar, parts.Length > 2 ? parts[2] : "#202020"), parts[1]);
                     break;
                 case "badge-sheet" or "badge-strip" when Badges?.Invoke() is { } source:
                     var dark = !(parts.Length > 2 && string.Equals(parts[2], "light", StringComparison.OrdinalIgnoreCase));
@@ -227,9 +238,24 @@ internal sealed partial class DevCapture
         delay.Start();
     }
 
-    private void CaptureElement(string name, string backdrop)
+    private static BitmapSource OnBackdrop(BitmapSource image, string backdrop)
     {
-        if (_element("settings") is not { } element)
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            var area = new Rect(0, 0, image.PixelWidth, image.PixelHeight);
+            dc.DrawRectangle(new SolidColorBrush((Color)ColorConverter.ConvertFromString(backdrop)), null, area);
+            dc.DrawImage(image, area);
+        }
+
+        var target = new RenderTargetBitmap(image.PixelWidth, image.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        target.Render(visual);
+        return target;
+    }
+
+    private void CaptureElement(string name, string backdrop, string target = "settings")
+    {
+        if (_element(target) is not { } element)
         {
             return;
         }

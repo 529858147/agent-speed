@@ -66,6 +66,9 @@ internal static class MenuBuilder
             case MenuAction.SetOrbUnit a:
                 commands.SetOrbUnit(a.OrbId, a.Unit);
                 break;
+            case MenuAction.SetOrbTraffic a:
+                commands.SetOrbTraffic(a.OrbId, a.Traffic);
+                break;
             case MenuAction.SetOrbAllSources a:
                 commands.SetOrbAllSources(a.OrbId);
                 break;

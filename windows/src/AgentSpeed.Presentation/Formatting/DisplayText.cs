@@ -92,6 +92,17 @@ public static class DisplayText
     public static string Accessibility(double value, string title, Localizer localizer) =>
         localizer.Format("a11y.orb", SpeedFormat.Speed(value), title);
 
+    /// <summary>Joins spoken parts: <c>、</c> in Japanese, <c>, </c> in English, <c>，</c> in Chinese.</summary>
+    public static string SpokenSeparator(Localizer localizer) => localizer.LanguageCode switch
+    {
+        LanguageCodes.Ja => "、",
+        LanguageCodes.En => ", ",
+        _ => "，",
+    };
+
+    /// <summary>A traffic rate read as words (DESIGN 10 Accessibility).</summary>
+    public static string SpokenTrafficRate(Core.Traffic.TrafficFormat.Parts parts) => TrafficText.Spoken(parts);
+
     /// <summary><c>今日 1.2M · 3 個 agent</c></summary>
     public static string TodaySummary(SpeedSnapshot snapshot, Localizer localizer)
     {

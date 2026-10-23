@@ -68,6 +68,15 @@ public sealed class OrbReadoutDraw
     /// <summary>Set when every source of the orb is unavailable: the value reads an en dash and this title.</summary>
     public string? UnavailableTitle { get; set; }
 
+    /// <summary>
+    /// How far the value, unit, title and pill sit below their resting place (points) while the traffic block shows above
+    /// them (DESIGN 10, Centering); the agent dots never move.
+    /// </summary>
+    public double Shift { get; set; }
+
+    /// <summary><c>needle</c> with the traffic readout on: the unit is printed on the dial face, not in the hub (DESIGN 10).</summary>
+    public bool UnitOnDial { get; set; }
+
     public void Configure(OrbGpuContext context, OrbReadoutStrings strings)
     {
         _context = context;
@@ -105,8 +114,8 @@ public sealed class OrbReadoutDraw
         }
 
         var s = ctx.Size;
-        var valueLine = ctx.CenterY + layout.ValueBaseline * s;
-        var unitLine = layout.UnitBaseline is { } unitBaseline ? ctx.CenterY + unitBaseline * s : valueLine;
+        var valueLine = ctx.CenterY + Shift + layout.ValueBaseline * s;
+        var unitLine = layout.UnitBaseline is { } unitBaseline ? ctx.CenterY + Shift + unitBaseline * s : valueLine;
         var unitText = scene.UnitText ?? _strings.Unit;
         var unavailable = UnavailableTitle is not null;
         var current = unavailable ? Dash : scene.Odometer.Current;
@@ -125,7 +134,7 @@ public sealed class OrbReadoutDraw
                 outAlpha);
             AddValue(list, ctx, scene, layout, colors, band, valueLine, current, scene.ValueAtLeast, scene.ValueMuted, false,
                 travel * (1 - inTravel), inAlpha);
-            if (s >= 64 && layout.UnitSize is { } unitSize)
+            if (s >= 64 && layout.UnitSize is { } unitSize && !UnitOnDial)
             {
                 AddUnit(list, ctx, scene, unitSize, unitLine, colors, band, change.FromUnit ?? _strings.Unit, -travel * outTravel, outAlpha, false);
                 AddUnit(list, ctx, scene, unitSize, unitLine, colors, band, unitText, travel * (1 - inTravel), inAlpha, true);
@@ -135,7 +144,7 @@ public sealed class OrbReadoutDraw
         {
             AddValue(list, ctx, scene, layout, colors, clip, valueLine, current, !unavailable && scene.ValueAtLeast,
                 !unavailable && scene.ValueMuted, true, 0, 1);
-            if (s >= 64 && layout.UnitSize is { } unitSize)
+            if (s >= 64 && layout.UnitSize is { } unitSize && !UnitOnDial)
             {
                 AddUnit(list, ctx, scene, unitSize, unitLine, colors, clip, unitText, 0, 1, true);
             }
@@ -146,7 +155,7 @@ public sealed class OrbReadoutDraw
             return;
         }
 
-        AddLabels(list, ctx, scene, layout, ctx.CenterY + layout.TitleBaseline * s, colors, clip);
+        AddLabels(list, ctx, scene, layout, ctx.CenterY + Shift + layout.TitleBaseline * s, colors, clip);
         if (layout.DotsY is { } dots)
         {
             AddOverflow(list, ctx, scene, dots, colors, clip);
@@ -154,7 +163,7 @@ public sealed class OrbReadoutDraw
 
         if (pill)
         {
-            AddPill(list, ctx, scene, ctx.CenterY + layout.PillY * s);
+            AddPill(list, ctx, scene, ctx.CenterY + Shift + layout.PillY * s);
         }
     }
 

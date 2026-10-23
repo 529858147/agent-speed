@@ -215,7 +215,8 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
 
     public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
 
-    public void Apply(BreakdownRow row, BreakdownKind kind, bool inProgress, Localizer loc, HistoryMoney money)
+    /// <param name="traffic">The traffic metric: the bar's tooltip leads with its traffic (DESIGN 10).</param>
+    public void Apply(BreakdownRow row, BreakdownKind kind, bool inProgress, Localizer loc, HistoryMoney money, bool traffic = false)
     {
         var color = (row.OtherModels ? HeatPalette.Neutral : HeatPalette.SourceColor(row.Source)).ToColor();
         Source = row.Source;
@@ -239,6 +240,11 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
         ShareText = HistoryText.Percent(row.Share);
         SpeedText = HistoryText.Speed(row.Speed, loc);
         var value = HistoryText.BreakdownValue(row, loc);
+        if (traffic && row.Traffic is { } bytes)
+        {
+            value = $"{HistoryTrafficText.Pair(bytes, loc)}{Environment.NewLine}{value}";
+        }
+
         var hint = IsSource ? loc["win.history.breakdown.sourceHint"] : string.Empty;
         HelpText = HistoryText.JoinParts([HistoryText.CostNote(row.Cost, loc) ?? string.Empty, hint], loc);
         ToolTip = IsSource ? $"{value}{Environment.NewLine}{hint}" : value;

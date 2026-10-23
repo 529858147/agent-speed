@@ -13,12 +13,19 @@ public enum HistoryChartMetric
 {
     Output,
     Cost,
+
+    /// <summary>Observed network traffic (DESIGN 10, Usage history): mirrored daily bars.</summary>
+    Traffic,
 }
 
 public static class HistoryChartMetrics
 {
-    public static string TitleKey(HistoryChartMetric metric) =>
-        metric == HistoryChartMetric.Cost ? "history.chart.cost" : "history.chart.output";
+    public static string TitleKey(HistoryChartMetric metric) => metric switch
+    {
+        HistoryChartMetric.Cost => "history.chart.cost",
+        HistoryChartMetric.Traffic => "history.chart.traffic",
+        _ => "history.chart.output",
+    };
 }
 
 /// <summary>How costs count in the window (METRICS 9.4, DESIGN 9): the sources left out as subscriptions and the chart metric.</summary>

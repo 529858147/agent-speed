@@ -18,9 +18,22 @@ public static class HistoryCsv
         "agents", "unfinalized", "models", "cost_usd", "unpriced_requests", "price_version",
     ];
 
-    /// <summary>The header: <see cref="Columns"/>, then <c>cost_&lt;code&gt;</c> (lower-case) for a non-USD display currency (DESIGN 9).</summary>
-    public static IReadOnlyList<string> Header(HistoryMoney? money) =>
-        money?.CsvColumn is { } column ? [.. Columns, column] : Columns;
+    /// <summary>Traffic bytes (DESIGN 10): own and tools per source row, empty before measuring began.</summary>
+    public static IReadOnlyList<string> TrafficColumns { get; } =
+        ["traffic_rx_bytes", "traffic_tx_bytes", "traffic_rx_tools_bytes", "traffic_tx_tools_bytes"];
+
+    /// <summary>The <c>source</c> of the row that carries this computer's traffic of a date.</summary>
+    public const string MachineSource = "machine";
+
+    /// <summary>
+    /// The header: <see cref="Columns"/>, then <c>cost_&lt;code&gt;</c> (lower-case) for a non-USD display currency (DESIGN 9),
+    /// then <see cref="TrafficColumns"/> once traffic was measured.
+    /// </summary>
+    public static IReadOnlyList<string> Header(HistoryMoney? money, bool traffic = false)
+    {
+        IReadOnlyList<string> header = money?.CsvColumn is { } column ? [.. Columns, column] : Columns;
+        return traffic ? [.. header, .. TrafficColumns] : header;
+    }
 
     /// <summary>Stable identifier of a source (or <c>all</c>) for the <c>source</c> column and file names.</summary>
     public static string SourceId(SourceKind? source) => source switch
@@ -42,14 +55,17 @@ public static class HistoryCsv
     /// <summary>
     /// The rows as CSV. Costs are every source's (subscription exclusion does not apply to the CSV): <c>cost_usd</c> exact
     /// with 6 decimals, empty for a day without cost data; <c>cost_&lt;code&gt;</c> with the currency's digits + 2 at the rate
-    /// in use (<paramref name="money"/> null or USD: no such column).
+    /// in use (<paramref name="money"/> null or USD: no such column). With <paramref name="traffic"/> every row adds its
+    /// traffic bytes (empty before measuring began), and each date with this computer's traffic adds a row of its own,
+    /// <c>source = machine</c>, carrying only <c>traffic_rx_bytes</c> and <c>traffic_tx_bytes</c>.
     /// </summary>
-    public static string Build(IEnumerable<DaySummary> rows, SourceKind? source, HistoryMoney? money = null)
+    public static string Build(IEnumerable<DaySummary> rows, SourceKind? source, HistoryMoney? money = null, bool traffic = false)
     {
         ArgumentNullException.ThrowIfNull(rows);
         var converted = money is { IsUsd: false } ? money : null;
+        var header = Header(converted, traffic);
         var builder = new StringBuilder();
-        builder.AppendJoin(',', Header(converted)).Append("\r\n");
+        builder.AppendJoin(',', header).Append("\r\n");
         var id = SourceId(source);
         foreach (var row in rows)
         {
@@ -78,7 +94,28 @@ public static class HistoryCsv
                 Field(builder, cost is { } local ? converted.CsvAmount(local.CostMicroUsd) : string.Empty);
             }
 
+            if (traffic)
+            {
+                var day = row.Traffic;
+                Field(builder, day is null ? string.Empty : Integer(day.Own.Rx));
+                Field(builder, day is null ? string.Empty : Integer(day.Own.Tx));
+                Field(builder, day is null ? string.Empty : Integer(day.Tools.Rx));
+                Field(builder, day is null ? string.Empty : Integer(day.Tools.Tx));
+            }
+
             builder.Append("\r\n");
+            if (traffic && row.Traffic?.Machine is { } machine)
+            {
+                Field(builder, HistoryRanges.FormatDay(row.Day), first: true);
+                Field(builder, MachineSource);
+                for (var i = 2; i < header.Count; i++)
+                {
+                    var at = i - (header.Count - TrafficColumns.Count);
+                    Field(builder, at == 0 ? Integer(machine.Rx) : at == 1 ? Integer(machine.Tx) : string.Empty);
+                }
+
+                builder.Append("\r\n");
+            }
         }
 
         return builder.ToString();

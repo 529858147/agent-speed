@@ -44,6 +44,18 @@ internal interface IOrbSurface
 
     void SetHover(bool hovering);
 
+    /// <summary>
+    /// One traffic sample for the readout (DESIGN 10): <paramref name="enabled"/> is the orb's readout setting with measuring
+    /// on, <paramref name="rate"/> the rate it shows (null: nothing to show).
+    /// </summary>
+    void SetTraffic(Core.Traffic.TrafficRate? rate, bool bits, bool enabled);
+
+    /// <summary>The traffic readout is visible now (the accessible label reads it).</summary>
+    bool TrafficVisible { get; }
+
+    /// <summary>What the traffic readout shows, or null.</summary>
+    Presentation.Orb.Traffic.OrbTrafficReading? TrafficReading { get; }
+
     void Pulse(double speed, long outputTokens);
 
     void Peak();

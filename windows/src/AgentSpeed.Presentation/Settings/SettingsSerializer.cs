@@ -150,6 +150,13 @@ public static class SettingsSerializer
 
             w.WriteEndObject();
 
+            w.WriteStartObject("traffic");
+            w.WriteBoolean("enabled", s.Traffic.Enabled);
+            w.WriteBoolean("includeTools", s.Traffic.IncludeTools);
+            w.WriteString("unit", s.Traffic.Bits ? "bits" : "bytes");
+            w.WriteString("bar", TrafficSettings.Key(s.Traffic.Bar));
+            w.WriteEndObject();
+
             w.WriteStartObject("network");
             w.WriteBoolean("enabled", s.NetworkEnabled);
             w.WriteEndObject();
@@ -194,6 +201,7 @@ public static class SettingsSerializer
         var history = Child(root, "history");
         var cost = Child(root, "cost");
         var network = Child(root, "network");
+        var traffic = Child(root, "traffic");
 
         var settings = new AppSettings
         {
@@ -249,6 +257,13 @@ public static class SettingsSerializer
             NotifiedVersion = ReadString(updates, "notifiedVersion"),
             NetworkEnabled = ReadBool(network, "enabled", d.NetworkEnabled),
             Cost = ReadCost(cost),
+            Traffic = new TrafficSettings
+            {
+                Enabled = ReadBool(traffic, "enabled", TrafficSettings.Default.Enabled),
+                IncludeTools = ReadBool(traffic, "includeTools", TrafficSettings.Default.IncludeTools),
+                Unit = ReadString(traffic, "unit") == "bits" ? TrafficUnit.Bits : TrafficUnit.Bytes,
+                Bar = TrafficSettings.ParseBar(ReadString(traffic, "bar")),
+            },
         };
 
         var fileVersion = ReadDouble(root, "version", 1);

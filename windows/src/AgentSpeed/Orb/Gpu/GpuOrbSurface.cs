@@ -239,6 +239,18 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
         _clock.Kick(this);
     }
 
+    public void SetTraffic(Core.Traffic.TrafficRate? rate, bool bits, bool enabled)
+    {
+        if (_orb.SetTraffic(Now(), rate, bits, enabled))
+        {
+            _clock.Kick(this);
+        }
+    }
+
+    public bool TrafficVisible => _orb.TrafficVisible(Now());
+
+    public Presentation.Orb.Traffic.OrbTrafficReading? TrafficReading => _orb.TrafficReading;
+
     public void Pulse(double speed, long outputTokens)
     {
         _orb.Pulse(Now(), speed, outputTokens);
@@ -267,8 +279,20 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
 
         var layout = style.Readout;
         var width = layout.UnitSize is null ? _orb.Readout.ValueWidth : _orb.Readout.UnitWidth;
+        if (_orb.UnitOnDial && layout.UnitSize is not null)
+        {
+            // The needle's unit on the dial face (DESIGN 10): its click target follows it.
+            layout = layout with
+            {
+                UnitSize = Presentation.Orb.Traffic.OrbTrafficPlacement.NeedleDialUnitSize,
+                UnitGap = Presentation.Orb.Traffic.OrbTrafficPlacement.NeedleDialUnitBaseline - layout.ValueBaseline,
+            };
+            width = _orb.DialUnitWidth;
+        }
+
         var center = new PointD(ctx.CenterX, ctx.CenterY);
-        return width > 0 && OrbUnitToggle.Contains(new PointD(x, y), OrbUnitToggle.HitRect(layout, ctx.Size, center, width), center, ctx.Size);
+        var readout = new PointD(ctx.CenterX, ctx.CenterY + _orb.ReadoutShift);
+        return width > 0 && OrbUnitToggle.Contains(new PointD(x, y), OrbUnitToggle.HitRect(layout, ctx.Size, readout, width), center, ctx.Size);
     }
 
     /// <summary>The unit's hover affordance (55 % → 85 % with an underline, 0.15 s).</summary>

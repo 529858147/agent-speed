@@ -178,7 +178,7 @@ public sealed partial class LedDraw
             var bucket = (int)Math.Round(StyleMath.Clamp01(p.Heat) * ParticleBuckets);
             var x = ctx.CenterX + p.X * s;
             var y = ctx.CenterY + p.Y * s;
-            var zone = ReadoutZone.Fade(p.X, p.Y);
+            var zone = ReadoutZone.Fade(p.X, p.Y - frame.ReadoutShift);
             if (p.Kind == ParticleKind.Spark)
             {
                 var alpha = Math.Pow(1 - life, 1.25) * zone;

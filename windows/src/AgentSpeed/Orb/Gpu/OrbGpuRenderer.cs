@@ -113,6 +113,22 @@ internal static class OrbGpuRenderer
                 continue;
             }
 
+            if (batch.Pass == OrbPass.Text)
+            {
+                if (layout != 2)
+                {
+                    context.IASetInputLayout(r.TextLayout);
+                    context.IASetVertexBuffer(0, r.Texts!, OrbTextInstance.Stride);
+                    context.VSSetShader(r.TextVertex);
+                    context.PSSetShader(r.TextPixel);
+                    layout = 2;
+                }
+
+                context.OMSetBlendState(r.Over);
+                context.DrawInstanced(6, (uint)batch.Count, 0, (uint)batch.Start);
+                continue;
+            }
+
             if (layout != 1)
             {
                 context.IASetInputLayout(r.ShapeLayout);
@@ -126,7 +142,7 @@ internal static class OrbGpuRenderer
             context.DrawInstanced(6, (uint)batch.Count, 0, (uint)batch.Start);
         }
 
-        if (list.TextCount > 0)
+        if (list.TextCount > list.OverlayTextStart)
         {
             if (!written || uniforms.Viewport.W != 0 || uniforms.Transform.W != 0)
             {
@@ -143,7 +159,7 @@ internal static class OrbGpuRenderer
             context.VSSetShader(r.TextVertex);
             context.PSSetShader(r.TextPixel);
             context.OMSetBlendState(r.Over);
-            context.DrawInstanced(6, (uint)list.TextCount, 0, 0);
+            context.DrawInstanced(6, (uint)(list.TextCount - list.OverlayTextStart), 0, (uint)list.OverlayTextStart);
         }
 
         Timer?.End(r);

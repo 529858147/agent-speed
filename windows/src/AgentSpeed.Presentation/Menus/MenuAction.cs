@@ -38,6 +38,9 @@ public abstract record MenuAction
     /// <summary>tok/s or the money unit of one orb (DESIGN 9 Orb, Switching 2).</summary>
     public sealed record SetOrbUnit(string OrbId, Settings.Orbs.OrbUnit Unit) : MenuAction;
 
+    /// <summary>What one orb's traffic readout shows (DESIGN 10).</summary>
+    public sealed record SetOrbTraffic(string OrbId, Settings.Orbs.OrbTraffic Traffic) : MenuAction;
+
     public sealed record SetOrbAllSources(string OrbId) : MenuAction;
 
     public sealed record ToggleOrbSource(string OrbId, SourceKind Source) : MenuAction;

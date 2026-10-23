@@ -223,6 +223,9 @@ public sealed record AppSettings
     /// <summary>Currency, live unit, subscriptions and the price-table sync (DESIGN 9).</summary>
     public CostSettings Cost { get; init; } = CostSettings.Default;
 
+    /// <summary>Network traffic measuring and display (DESIGN 10).</summary>
+    public TrafficSettings Traffic { get; init; } = TrafficSettings.Default;
+
     public bool IsSourceEnabled(SourceKind kind) => kind switch
     {
         SourceKind.Codex => CodexEnabled,
@@ -315,6 +318,7 @@ public sealed record AppSettings
         SkippedVersion = CleanTag(SkippedVersion),
         NotifiedVersion = CleanTag(NotifiedVersion),
         Cost = (Cost ?? CostSettings.Default).Validated(),
+        Traffic = (Traffic ?? TrafficSettings.Default).Validated(),
     };
 
     internal static string? CleanTag(string? tag) =>

@@ -217,6 +217,10 @@ public static class OrbEditing
     public static OrbsDocument SetUnit(OrbsDocument document, string id, OrbUnit unit) =>
         Update(document, id, o => o with { Unit = Enum.IsDefined(unit) ? unit : OrbUnit.Tokens });
 
+    /// <summary>The traffic readout (DESIGN 10).</summary>
+    public static OrbsDocument SetTraffic(OrbsDocument document, string id, OrbTraffic traffic) =>
+        Update(document, id, o => o with { Traffic = Enum.IsDefined(traffic) ? traffic : OrbTraffic.Sources });
+
     /// <summary>The orb's title theme: null follows the General theme, else a preset or custom set id.</summary>
     public static OrbsDocument SetTitleTheme(OrbsDocument document, string id, string? themeId) =>
         Update(document, id, o => o with { TitleTheme = OrbDefinition.CleanId(themeId) });
@@ -304,6 +308,7 @@ public static class OrbEditing
         ShowName = template.ShowName,
         TitleTheme = template.TitleTheme,
         Unit = template.Unit,
+        Traffic = template.Traffic,
         Visible = true,
     };
 

@@ -18,7 +18,8 @@ public static class OrbMenuModel
 
     /// <summary>The menu of <paramref name="orbId"/>; null when no such orb exists.</summary>
     /// <param name="sources">Source availability (split, the sources' secondary text and faded dots).</param>
-    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer)
+    /// <param name="sourceTraffic">Per-process traffic can be measured now (else the sources choice says it is unavailable).</param>
+    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer, bool sourceTraffic = true)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(localizer);
@@ -45,6 +46,7 @@ public static class OrbMenuModel
             StyleMenu(orb, localizer),
             SourcesMenu(orb, sources, localizer),
             UnitMenu(orb, settings, localizer),
+            TrafficMenu(orb, settings, localizer, sourceTraffic),
             ShowNameToggle(orb, settings, localizer),
             SizeMenu(orb, localizer),
             EffectsMenu(settings.Effects, localizer),
@@ -94,6 +96,25 @@ public static class OrbMenuModel
             Toggle(localizer["orbs.unit.tokens"], orb.Unit == OrbUnit.Tokens, new MenuAction.SetOrbUnit(orb.Id, OrbUnit.Tokens)),
             Toggle(localizer.Format("orbs.unit.cost", symbol), orb.Unit == OrbUnit.Cost, new MenuAction.SetOrbUnit(orb.Id, OrbUnit.Cost)),
         ]);
+    }
+
+    /// <summary>
+    /// <c>orbs.traffic</c> ▸ <c>orbs.traffic.sources</c> / <c>orbs.traffic.machine</c> / <c>orbs.traffic.off</c>, a check on
+    /// the current one (DESIGN 10); disabled while measuring is off. Without per-process data the sources choice adds
+    /// <c>traffic.unavailable.short</c>. The quick menu's per-orb submenu has the same item.
+    /// </summary>
+    internal static MenuRow TrafficMenu(OrbDefinition orb, AppSettings settings, Localizer localizer, bool sourceTraffic)
+    {
+        var enabled = settings.Traffic.Enabled;
+        return Submenu(localizer["orbs.traffic"],
+        [
+            Toggle(localizer["orbs.traffic.sources"], orb.Traffic == OrbTraffic.Sources, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Sources)) with
+            {
+                Detail = enabled && !sourceTraffic ? localizer["traffic.unavailable.short"] : null,
+            },
+            Toggle(localizer["orbs.traffic.machine"], orb.Traffic == OrbTraffic.Machine, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Machine)),
+            Toggle(localizer["orbs.traffic.off"], orb.Traffic == OrbTraffic.Off, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Off)),
+        ]) with { IsEnabled = enabled };
     }
 
     private static MenuRow StyleMenu(OrbDefinition orb, Localizer localizer) =>

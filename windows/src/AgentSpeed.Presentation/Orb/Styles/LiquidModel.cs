@@ -73,6 +73,7 @@ public sealed partial class LiquidModel : IOrbStyleModel
     private double _flash;
     private bool _unavailable;
     private double? _signOfLifeAge;
+    private double _readoutShift;
     private double? _lastSignOfLifeAge;
 
     private double _f = LiquidGeometry.IdleLevel;
@@ -328,6 +329,7 @@ public sealed partial class LiquidModel : IOrbStyleModel
         _flash = Clamp01(frame.Flash);
         _unavailable = frame.Unavailable;
         _signOfLifeAge = frame.SignOfLifeAge;
+        _readoutShift = double.IsFinite(frame.ReadoutShift) ? frame.ReadoutShift : 0;
     }
 
     private void Step(double dt)

@@ -296,6 +296,7 @@ public static class HistoryText
         [
             Labelled(loc["history.table.output"], FullNumber(row.Output, loc), loc),
             money is null ? string.Empty : Labelled(loc["history.table.cost"], SpokenCost(row.Cost, money, loc), loc),
+            row.Traffic is { } traffic ? Labelled(loc["history.table.traffic"], HistoryTrafficText.Spoken(traffic, loc), loc) : string.Empty,
             Labelled(loc["win.history.share"], Percent(row.Share), loc),
             Labelled(loc["history.table.speed"], Speed(row.Speed, loc), loc),
             Labelled(loc["history.table.requests"], FullNumber(row.Requests, loc), loc),

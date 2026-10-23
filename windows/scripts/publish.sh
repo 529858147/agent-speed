@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds self-contained single-file Agent Speed for Windows (x64 and ARM64) from macOS, Linux or WSL.
 # Output: dist/AgentSpeed-Windows-x64.zip and dist/AgentSpeed-Windows-arm64.zip, each containing AgentSpeed.exe.
+# The traffic helper (spec/WINDOWS-SERVICE.md) is NativeAOT and can only be compiled on Windows (publish.ps1), so these
+# builds carry no helper unless TRAFFIC_HELPER_DIR points at prebuilt win-x64/ and win-arm64/AgentSpeedTrafficHelper.exe.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -35,6 +37,26 @@ trap cleanup EXIT
 COMPRESS=false
 [[ "${AGENT_SPEED_COMPRESS:-0}" == "1" ]] && COMPRESS=true
 
+HELPER_ARGS=()
+HELPER_NOTE="note: these builds carry no traffic helper, so per-process traffic is unavailable and cannot be installed (build on Windows with publish.ps1, or set TRAFFIC_HELPER_DIR)."
+if [[ -n "${TRAFFIC_HELPER_DIR:-}" ]]; then
+  [[ -d "$TRAFFIC_HELPER_DIR" ]] || { echo "error: TRAFFIC_HELPER_DIR is not a directory: $TRAFFIC_HELPER_DIR" >&2; exit 1; }
+  TRAFFIC_HELPER_DIR="$(cd "$TRAFFIC_HELPER_DIR" && pwd)"
+  HELPER_ARGS=(-p:TrafficHelperDir="$TRAFFIC_HELPER_DIR")
+  HELPER_NOTE=""
+  for ARCH in x64 arm64; do
+    HELPER="$TRAFFIC_HELPER_DIR/win-$ARCH/AgentSpeedTrafficHelper.exe"
+    if [[ -f "$HELPER" ]]; then
+      echo "==> Embedding the prebuilt traffic helper for win-$ARCH (SHA-256 $(shasum -a 256 "$HELPER" | cut -d' ' -f1))"
+    else
+      echo "note: no traffic helper for win-$ARCH in $TRAFFIC_HELPER_DIR; that build carries none." >&2
+      HELPER_NOTE="${HELPER_NOTE:+$HELPER_NOTE }note: the win-$ARCH build carries no traffic helper."
+    fi
+  done
+else
+  echo "$HELPER_NOTE" >&2
+fi
+
 mkdir -p "$DIST"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
@@ -59,6 +81,7 @@ for ARCH in x64 arm64; do
     -p:Version="$FILE_VERSION" \
     -p:InformationalVersion="$VERSION" \
     -p:ContinuousIntegrationBuild=true \
+    ${HELPER_ARGS[@]+"${HELPER_ARGS[@]}"} \
     -nologo
 
   EXE="$OUT/AgentSpeed.exe"
@@ -71,4 +94,5 @@ for ARCH in x64 arm64; do
   echo "    AgentSpeed.exe: $((SIZE / 1024 / 1024)) MiB ($SIZE bytes) -> ${ZIP#"$ROOT"/}"
 done
 
+[[ -z "$HELPER_NOTE" ]] || echo "$HELPER_NOTE" >&2
 echo "==> Done"

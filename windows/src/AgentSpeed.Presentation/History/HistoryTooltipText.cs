@@ -82,6 +82,48 @@ public static class HistoryTooltipText
             models);
     }
 
+    /// <summary>
+    /// The traffic chart's hover card (DESIGN 10, Usage history): the day's pair, the tools' part when tools are included,
+    /// this computer's total and how long a partial day was recorded; before measuring began only
+    /// <c>history.traffic.notRecorded</c>.
+    /// </summary>
+    public static TooltipContent BuildTraffic(DateOnly day, DayTraffic? traffic, DateOnly today, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(loc);
+        var rows = new List<TooltipRow>(4);
+        if (traffic is null)
+        {
+            rows.Add(new TooltipRow(loc["history.traffic.notRecorded"], string.Empty, IsNote: true));
+        }
+        else
+        {
+            rows.Add(new TooltipRow(loc["history.table.traffic"], HistoryTrafficText.Pair(traffic.Shown, loc), Strong: true));
+            rows.AddRange(HistoryTrafficText.Notes(traffic, loc).Select(note => new TooltipRow(note, string.Empty, IsNote: true)));
+        }
+
+        return new TooltipContent(HistoryText.LongDate(day, loc), day == today ? loc["history.inProgress"] : string.Empty, rows,
+            string.Empty, string.Empty, []);
+    }
+
+    /// <summary>A traffic day as one sentence for screen readers: the date, then its traffic or that it was not recorded.</summary>
+    public static string AccessibleTraffic(DateOnly day, DayTraffic? traffic, DateOnly today, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(loc);
+        var title = day == today ? $"{HistoryText.LongDate(day, loc)} {loc["history.inProgress"]}" : HistoryText.LongDate(day, loc);
+        var parts = new List<string> { title };
+        if (traffic is null)
+        {
+            parts.Add(loc["history.traffic.notRecorded"]);
+        }
+        else
+        {
+            parts.Add(HistoryText.Labelled(loc["history.table.traffic"], HistoryTrafficText.Spoken(traffic.Shown, loc), loc));
+            parts.AddRange(HistoryTrafficText.Notes(traffic, loc));
+        }
+
+        return HistoryText.JoinParts(parts, loc);
+    }
+
     /// <summary>The day's cost, always present: the amount (with US dollars beside another currency), <c>–</c> or the tag, and why.</summary>
     private static void AddCost(List<TooltipRow> rows, DaySummary day, HistoryMoney money, Localizer loc, bool strong)
     {

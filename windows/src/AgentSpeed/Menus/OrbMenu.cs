@@ -12,8 +12,10 @@ internal static class OrbMenu
 {
     /// <summary>The menu of <paramref name="orbId"/>; null when no such orb exists.</summary>
     /// <param name="sources">Source availability, for example <see cref="SourceAvailability.From"/> of the live snapshot.</param>
-    public static ContextMenu? Build(IAppCommands commands, string orbId, AppSettings settings, SourceAvailability sources, Localizer loc) =>
-        OrbMenuModel.Build(orbId, settings, sources, loc) is { } level ? MenuBuilder.Build(level, commands, loc) : null;
+    /// <param name="sourceTraffic">Per-process traffic can be measured now (DESIGN 10).</param>
+    public static ContextMenu? Build(IAppCommands commands, string orbId, AppSettings settings, SourceAvailability sources, Localizer loc,
+        bool sourceTraffic = true) =>
+        OrbMenuModel.Build(orbId, settings, sources, loc, sourceTraffic) is { } level ? MenuBuilder.Build(level, commands, loc) : null;
 
     /// <summary>The question the menu's Remove asks first (the menu has no undo banner); true to remove.</summary>
     public static bool ConfirmRemove(Window? owner, string orbName, Localizer loc)

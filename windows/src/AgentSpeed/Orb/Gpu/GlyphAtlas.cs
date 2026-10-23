@@ -26,6 +26,7 @@ internal sealed class GlyphAtlas
     private static readonly Typeface LabelFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
     private static readonly Typeface InfoFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI"), FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
     private static readonly Typeface PillFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+    private static readonly Typeface TrafficNumberFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
     private readonly Dictionary<(OrbTextKey Key, int Scale), OrbGlyph> _entries = new();
     private readonly Dictionary<(OrbFont Font, int Size), double> _digitCells = new();
@@ -153,6 +154,7 @@ internal sealed class GlyphAtlas
         OrbFont.Unit => UnitFace,
         OrbFont.Title => LabelFace,
         OrbFont.Info => InfoFace,
+        OrbFont.TrafficNumber or OrbFont.Arrow => TrafficNumberFace,
         _ => PillFace,
     };
 
@@ -197,6 +199,11 @@ internal sealed class GlyphAtlas
     private bool Rasterize(in OrbTextKey key, double scale, out OrbGlyph glyph)
     {
         glyph = default;
+        if (key.Font == OrbFont.Arrow)
+        {
+            return RasterizeArrow(key, scale, out glyph);
+        }
+
         var face = Face(key.Font);
         var size = (double)key.Size;
         var text = key.Text;
@@ -306,6 +313,108 @@ internal sealed class GlyphAtlas
             (float)((ax + width) * inverse),
             (float)((ay + rows) * inverse));
         return true;
+    }
+
+    /// <summary>
+    /// The traffic readout's arrow (DESIGN 10): a vector glyph 0.50 t wide and 0.66 t tall on the baseline, stroke
+    /// max(0.9 pt, 0.11 t) with round caps, pointing down (<c>↓</c>, download) or up (<c>↑</c>, upload).
+    /// </summary>
+    private bool RasterizeArrow(in OrbTextKey key, double scale, out OrbGlyph glyph)
+    {
+        glyph = default;
+        var t = (double)key.Size;
+        var width = 0.50 * t;
+        var height = 0.66 * t;
+        var stroke = Math.Max(0.9, 0.11 * t);
+        var sigma = Math.Max(0, key.GlowSigma);
+        var pad = Math.Ceiling(stroke) + (sigma > 0 ? Math.Ceiling(2.4 * sigma) : 0);
+        var down = key.Text != "↑";
+        var inset = stroke / 2;
+        var midX = pad + width / 2;
+        var top = pad + inset;
+        var bottom = pad + height - inset;
+        var head = Math.Min(width / 2 - inset, 0.26 * t);
+        var tip = down ? bottom : top;
+        var back = down ? tip - head : tip + head;
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(new Point(midX, top), false, false);
+            context.LineTo(new Point(midX, bottom), true, false);
+            context.BeginFigure(new Point(midX - head, back), false, false);
+            context.LineTo(new Point(midX, tip), true, false);
+            context.LineTo(new Point(midX + head, back), true, false);
+        }
+
+        geometry.Freeze();
+        var pen = new Pen(Brushes.White, stroke) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        pen.Freeze();
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawGeometry(null, pen, geometry);
+        }
+
+        var pixelsWide = (int)Math.Ceiling((width + 2 * pad) * scale);
+        var pixelsHigh = (int)Math.Ceiling((height + 2 * pad) * scale);
+        if (pixelsWide <= 0 || pixelsHigh <= 0 || pixelsWide > _side || pixelsHigh > _side)
+        {
+            return true;
+        }
+
+        if (!Allocate(pixelsWide + 2, pixelsHigh + 2, out var bx, out var by))
+        {
+            return false;
+        }
+
+        var bitmap = new RenderTargetBitmap(pixelsWide, pixelsHigh, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        var bgra = new byte[pixelsWide * pixelsHigh * 4];
+        bitmap.CopyPixels(bgra, pixelsWide * 4, 0);
+        Rasterized++;
+        Upload(bx, by, pixelsWide, pixelsHigh, bgra, sigma * scale);
+
+        var inverse = 1.0 / _side;
+        var ax = bx + 1;
+        var ay = by + 1;
+        glyph = new OrbGlyph(
+            (float)width,
+            (float)height,
+            (float)-pad,
+            (float)-(pad + height),
+            (float)(pixelsWide / scale),
+            (float)(pixelsHigh / scale),
+            (float)(ax * inverse),
+            (float)(ay * inverse),
+            (float)((ax + pixelsWide) * inverse),
+            (float)((ay + pixelsHigh) * inverse));
+        return true;
+    }
+
+    /// <summary>Queues an entry's coverage (and its blurred copy for the glow) with a one-texel border of zeros.</summary>
+    private void Upload(int bx, int by, int width, int rows, byte[] bgra, double sigmaPixels)
+    {
+        var coverage = new float[width * rows];
+        for (var i = 0; i < coverage.Length; i++)
+        {
+            coverage[i] = bgra[i * 4 + 3] / 255f;
+        }
+
+        var blurred = sigmaPixels > 0 ? GaussianBlur(coverage, width, rows, sigmaPixels) : null;
+        var stride = width + 2;
+        var texels = new byte[stride * (rows + 2) * 2];
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var i = y * width + x;
+                var t = ((y + 1) * stride + x + 1) * 2;
+                texels[t] = (byte)Math.Round(Math.Clamp(coverage[i], 0, 1) * 255);
+                texels[t + 1] = blurred is null ? (byte)0 : (byte)Math.Round(Math.Clamp(blurred[i], 0, 1) * 255);
+            }
+        }
+
+        _pending.Add((bx, by, width + 2, rows + 2, texels));
     }
 
     /// <summary>Shelf packing; false when the atlas is full.</summary>

@@ -1,8 +1,11 @@
 using AgentSpeed.Core;
+using AgentSpeed.Core.Traffic;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Motion;
+using AgentSpeed.Presentation.Orb.Gpu.Styles;
 using AgentSpeed.Presentation.Orb.Styles;
+using AgentSpeed.Presentation.Orb.Traffic;
 
 namespace AgentSpeed.Presentation.Orb.Gpu;
 
@@ -47,17 +50,35 @@ public sealed class OrbGpuOrb
     private SpeedTitle _lastTitle = (SpeedTitle)(-1);
     private string? _lastUnavailable;
     private readonly List<SourceKind> _lastAgents = new(8);
+    private readonly OrbTrafficQuietRule _traffic = new();
+    private bool _trafficOn;
 
     public OrbGpuOrb(uint seed, IOrbGlyphs glyphs)
     {
         _seed = seed;
         Scene = new OrbScene((int)(seed & 0x7FFF_FFFF)) { SharedSignOfLife = true };
         Readout = new OrbReadoutDraw(glyphs);
+        Traffic = new OrbTrafficDraw(glyphs);
     }
 
     public OrbScene Scene { get; }
 
     public OrbReadoutDraw Readout { get; }
+
+    /// <summary>The traffic readout (DESIGN 10, Floating orb readout).</summary>
+    public OrbTrafficDraw Traffic { get; }
+
+    /// <summary>What the traffic readout shows (null while it never was loud, or with the readout off).</summary>
+    public OrbTrafficReading? TrafficReading => _traffic.Reading;
+
+    /// <summary><c>needle</c> prints its unit on the dial face (the traffic readout is on and fits at this size).</summary>
+    public bool UnitOnDial { get; private set; }
+
+    /// <summary>Width (points) of the unit on the dial face, for the unit's hit area.</summary>
+    public double DialUnitWidth { get; private set; }
+
+    /// <summary>The readout stack's current shift (points), for the unit's hit area.</summary>
+    public double ReadoutShift => _context is { } ctx && _style is { } style ? StackShift(ctx, style) : 0;
 
     public OrbDrawList List { get; } = new();
 
@@ -166,6 +187,25 @@ public sealed class OrbGpuOrb
         return true;
     }
 
+    /// <summary>
+    /// One traffic sample for the readout (DESIGN 10): <paramref name="enabled"/> is the orb's readout setting with measuring on
+    /// (it moves the needle's unit to the dial), <paramref name="rate"/> the shown rate or null (nothing to show: the readout
+    /// clears). Returns true when anything visible changed (the caller asks for a frame).
+    /// </summary>
+    public bool SetTraffic(double now, TrafficRate? rate, bool bits, bool enabled)
+    {
+        Scene.Update(Math.Max(Scene.Time, now));
+        var changed = enabled != _trafficOn;
+        _trafficOn = enabled;
+        changed |= _traffic.Apply(enabled ? rate : null, bits, Scene.Time);
+        return changed;
+    }
+
+    /// <summary>The traffic readout is drawn (or fading) at <paramref name="now"/>: the accessible label reads it.</summary>
+    public bool TrafficVisible(double now) =>
+        _traffic.Reading is { } reading && !reading.IsGone(now) && !_unavailable && _config is { } config
+        && Traffic.Fits(OrbTrafficPlacement.For(config.Style), config.Size, reading.Bits);
+
     public void SetHover(double now, bool hovering)
     {
         Scene.Update(Math.Max(Scene.Time, now));
@@ -219,7 +259,9 @@ public sealed class OrbGpuOrb
             Scene.Update(now);
         }
 
-        var frame = Frame(now, dt, config);
+        Traffic.Glyphs = Readout.Glyphs;
+        UpdateDialUnit(ctx, style, config);
+        var frame = Frame(now, dt, config, StackShift(ctx, style) / ctx.Size);
         if (snap)
         {
             style.Model.Snap(frame);
@@ -246,7 +288,7 @@ public sealed class OrbGpuOrb
             {
                 var outDt = double.IsNaN(_lastOutgoing) ? 0 : Math.Clamp(now - _lastOutgoing, 0, 0.1);
                 _lastOutgoing = now;
-                outgoingFrame = Frame(now, outDt, config);
+                outgoingFrame = Frame(now, outDt, config, StackShift(ctx, outgoing) / ctx.Size);
                 outgoing.Model.Update(outgoingFrame);
             }
         }
@@ -301,7 +343,7 @@ public sealed class OrbGpuOrb
             demand = FramePolicy.Max(demand, FrameClass.Fps60);
         }
 
-        if (Readout.IsMoving(Scene))
+        if (Readout.IsMoving(Scene) || TrafficMoving(now))
         {
             demand = FramePolicy.Max(demand, FrameClass.Fps30);
         }
@@ -338,7 +380,11 @@ public sealed class OrbGpuOrb
 
         OrbSharedDraw.AgentDots(list, ctx, Scene, style.Readout, now, _unavailable);
         var standard = OrbReadoutColors.Standard;
-        if (style.BelowSurface is { } below && list.HasLiquid)
+        var shift = StackShift(ctx, style);
+        Readout.Shift = shift;
+        Readout.UnitOnDial = UnitOnDial && style.Style == OrbStyle.Needle;
+        var liquid = style.BelowSurface is not null && list.HasLiquid;
+        if (style.BelowSurface is { } below && liquid)
         {
             Readout.Add(list, Scene, style.Readout, standard, OrbTextClip.Liquid(below: false), pill: true);
             Readout.Add(list, Scene, style.Readout, below, OrbTextClip.Liquid(below: true), pill: false);
@@ -347,9 +393,88 @@ public sealed class OrbGpuOrb
         {
             Readout.Add(list, Scene, style.Readout, standard, OrbTextClip.None, pill: true);
         }
+
+        if (_traffic.Reading is not { } reading || _unavailable || ctx.Size < 64)
+        {
+            return;
+        }
+
+        // The needle's readout sits in the hub below the value, away from the pill, so it stays during a celebration.
+        var placement = OrbTrafficPlacement.For(style.Style);
+        var yields = style.Style != OrbStyle.Needle;
+        if (liquid)
+        {
+            Traffic.Add(list, ctx, Scene, reading, placement, shift, OrbTrafficColors.Standard(ctx), OrbTextClip.Liquid(below: false), yields);
+            Traffic.Add(list, ctx, Scene, reading, placement, shift, OrbTrafficColors.UnderLiquid(ctx), OrbTextClip.Liquid(below: true), yields);
+        }
+        else
+        {
+            Traffic.Add(list, ctx, Scene, reading, placement, shift, OrbTrafficColors.Standard(ctx), OrbTextClip.None, yields);
+        }
     }
 
-    private OrbFrame Frame(double now, double dt, OrbGpuConfig config) => new(
+    /// <summary>The readout stack's shift (points) for a style at this frame (DESIGN 10, Centering).</summary>
+    private double StackShift(OrbGpuContext ctx, IOrbStyleDraw style)
+    {
+        if (_traffic.Reading is not { } reading || _unavailable || ctx.Size < 64)
+        {
+            return 0;
+        }
+
+        var placement = OrbTrafficPlacement.For(style.Style);
+        if (!placement.Recenters || !Traffic.Fits(placement, ctx.Size, reading.Bits))
+        {
+            return 0;
+        }
+
+        return placement.StackShift(style.Readout, ctx.Size, reading.Alpha(Scene.Time, Scene.Effects.ReduceMotion));
+    }
+
+    /// <summary><c>needle</c>: the unit leaves the hub for the dial face while the readout is on and fits (DESIGN 10).</summary>
+    private void UpdateDialUnit(OrbGpuContext ctx, IOrbStyleDraw style, OrbGpuConfig config)
+    {
+        var bits = _traffic.Reading?.Bits ?? false;
+        UnitOnDial = config.Style == OrbStyle.Needle && _trafficOn && ctx.Size >= 64
+            && Traffic.Fits(OrbTrafficPlacement.Needle, ctx.Size, bits);
+        if (style is not NeedleDraw needle)
+        {
+            return;
+        }
+
+        needle.DialUnit = null;
+        if (!UnitOnDial)
+        {
+            return;
+        }
+
+        var size = OrbReadoutLayout.TextSize(OrbTrafficPlacement.NeedleDialUnitSize, ctx.Size);
+        var text = Scene.UnitText ?? config.Strings.Unit;
+        if (Readout.Glyphs.TryGet(OrbTextKey.Create(text, OrbFont.Unit, size, config.Strings.Latin ? 0.4 * ctx.Unit : 0), out var glyph))
+        {
+            var secondary = ctx.HighContrast ? ctx.Contrast.GrayText : ctx.Tokens.SecondaryText;
+            needle.DialUnit = (glyph, secondary.MultiplyAlpha(0.75));
+            DialUnitWidth = glyph.Advance;
+        }
+    }
+
+    /// <summary>The readout fades (quiet rule), or fades back after the pill (DESIGN 10): frames at 30 fps.</summary>
+    private bool TrafficMoving(double now)
+    {
+        if (_traffic.Reading is not { } reading || _unavailable)
+        {
+            return false;
+        }
+
+        if (reading.IsFading(now, Scene.Effects.ReduceMotion))
+        {
+            return true;
+        }
+
+        return !reading.IsGone(now) && Scene.PeakAge is { } age && age >= OrbScene.PeakPillDuration
+            && age < OrbScene.PeakPillDuration + OrbTrafficDraw.PillFade + 0.05;
+    }
+
+    private OrbFrame Frame(double now, double dt, OrbGpuConfig config, double readoutShift) => new(
         now,
         dt,
         Scene.Heat,
@@ -362,7 +487,8 @@ public sealed class OrbGpuOrb
         _context?.Dark ?? true,
         Scene.Flash,
         _unavailable ? null : Scene.SignOfLifeAge,
-        _unavailable);
+        _unavailable,
+        readoutShift);
 
     private bool SameAgents(IReadOnlyList<SourceKind> generating)
     {

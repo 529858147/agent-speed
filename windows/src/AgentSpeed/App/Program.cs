@@ -9,6 +9,11 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (Traffic.HelperExtraction.TryRun(args) is { } extracted)
+        {
+            return extracted;
+        }
+
         StartupPhases.MarkMain();
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             AppLog.Error($"Unhandled exception (terminating: {e.IsTerminating}).", e.ExceptionObject as Exception);

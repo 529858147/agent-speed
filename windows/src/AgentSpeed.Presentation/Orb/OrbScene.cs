@@ -409,6 +409,9 @@ public sealed class OrbScene
         }
     }
 
+    /// <summary>Seconds since the latest new peak (its pill shows for the first <see cref="PeakPillDuration"/>), or null before any.</summary>
+    public double? PeakAge => double.IsNegativeInfinity(_peakStart) || _now < _peakStart ? null : _now - _peakStart;
+
     /// <summary>Idle light sweep position 0..1 along the arc, or null.</summary>
     public double? IdleSweep
     {

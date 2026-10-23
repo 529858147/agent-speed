@@ -41,8 +41,18 @@ internal sealed class HistoryController : IDisposable
 
     public bool IsOpen => _window is not null;
 
+    /// <summary>Observed network traffic by day (METRICS 10.9), shown with the traffic metric; set by the app.</summary>
+    public Core.Traffic.TrafficHub? Traffic { get; set; }
+
+    /// <summary>The open window's content, for the developer capture.</summary>
+    public FrameworkElement? CaptureContent => _window?.Content as FrameworkElement;
+
+    /// <summary>Some traffic day is stored: "Clear history" says it goes too (DESIGN 10).</summary>
+    public bool HasTrafficHistory => Traffic?.Days.Count > 0;
+
     /// <summary>Opens the window (or brings it forward) showing <paramref name="source"/>, or every source when null.</summary>
-    public void Open(SourceKind? source)
+    /// <param name="traffic">Select the traffic metric (DESIGN 10).</param>
+    public void Open(SourceKind? source, bool traffic = false)
     {
         if (_disposed)
         {
@@ -51,7 +61,8 @@ internal sealed class HistoryController : IDisposable
 
         if (_window is null || _model is null)
         {
-            var model = new HistoryViewModel(_hub, _loc, _cost, _dispatcher, SaveIncludeSubscriptions);
+            var model = new HistoryViewModel(_hub, _loc, _cost, _dispatcher, SaveIncludeSubscriptions, Traffic,
+                () => _settings.Current.Traffic.IncludeTools);
             model.SetSource(source);
             var window = new HistoryWindow(model, _theme.ReduceMotion, _theme.HighContrast)
             {
@@ -88,8 +99,16 @@ internal sealed class HistoryController : IDisposable
             _model.RefreshLiveDay();
         }
 
+        if (traffic)
+        {
+            _model.SetMetric(Presentation.History.HistoryChartMetric.Traffic);
+        }
+
         _window.Activate();
     }
+
+    /// <summary>The include-tools setting changed: the window's traffic counts change with it.</summary>
+    public void OnTrafficSettingsChanged() => _model?.RefreshTraffic();
 
     /// <summary>Developer option: publishes generated history as a short simulated analysis (about 3 s).</summary>
     public void StartPreview()

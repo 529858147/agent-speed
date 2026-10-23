@@ -106,6 +106,39 @@ public static class HistoryChartMath
         return new AxisTicks(NiceStep(dataMax / intervals), intervals);
     }
 
+    /// <summary>
+    /// Ticks of the mirrored traffic chart (DESIGN 10): one step for both sides, about four intervals in all; the side
+    /// below the axis (upload, usually far smaller) takes the smallest fraction of a step that holds it while it needs
+    /// no more than one, so an empty band does not take a quarter of the chart. <c>Below</c> is null without upload.
+    /// </summary>
+    public static (AxisTicks Above, AxisTicks? Below) MirroredTicks(double above, double below)
+    {
+        above = double.IsFinite(above) ? Math.Max(0, above) : 0;
+        below = double.IsFinite(below) ? Math.Max(0, below) : 0;
+        var step = NiceStep(Math.Max(above + below, 1) * 1.04 / 4);
+        var upper = new AxisTicks(step, Math.Max(1, (int)Math.Ceiling(above * 1.04 / step - 1e-9)));
+        var intervals = (int)Math.Ceiling(below * 1.04 / step - 1e-9);
+        if (intervals <= 0)
+        {
+            return (upper, null);
+        }
+
+        var lowerStep = step;
+        if (intervals == 1)
+        {
+            foreach (var fraction in (ReadOnlySpan<double>)[0.2, 0.25, 0.5, 1])
+            {
+                if (fraction * step >= below * 1.04)
+                {
+                    lowerStep = fraction * step;
+                    break;
+                }
+            }
+        }
+
+        return (upper, new AxisTicks(lowerStep, intervals));
+    }
+
     /// <summary>Stacking order: the source with the most output (or cost) in the range first (drawn at the bottom).</summary>
     public static IReadOnlyList<SourceKind> StackOrder(IEnumerable<DaySummary> days, HistoryChartMetric metric = HistoryChartMetric.Output)
     {

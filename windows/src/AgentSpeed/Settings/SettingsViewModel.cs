@@ -120,6 +120,7 @@ internal sealed class SettingsViewModel : ObservableObject
         Pages.Add(new NavItem("orb", "", "settings.orb"));
         Pages.Add(new NavItem("effects", "", "settings.effects"));
         Pages.Add(new NavItem("cost", "", "settings.cost"));
+        Pages.Add(new NavItem("traffic", "", "settings.traffic"));
         Pages.Add(new NavItem("sources", "", "settings.sources"));
         Pages.Add(new NavItem("about", "", "settings.about"));
         _selected = Pages[0];
@@ -198,6 +199,15 @@ internal sealed class SettingsViewModel : ObservableObject
 
     /// <summary>Settings → Cost (DESIGN 9) and the taskbar page's live value unit.</summary>
     public CostPaneViewModel Cost { get; }
+
+    /// <summary>Settings → 網路流量 (DESIGN 10) and the taskbar page's traffic block; set by the app.</summary>
+    public TrafficPaneViewModel? Traffic
+    {
+        get => _traffic;
+        set => Set(ref _traffic, value);
+    }
+
+    private TrafficPaneViewModel? _traffic;
 
     /// <summary>The speed titles that scale with the redline, climbing (DESIGN section 5, General).</summary>
     public ObservableCollection<TitleLadderRow> TitleLadder { get; } = new();
@@ -585,6 +595,7 @@ internal sealed class SettingsViewModel : ObservableObject
         Orbs?.Relocalize(localizer);
         TitleThemes?.Relocalize(localizer);
         Cost.Relocalize();
+        Traffic?.Relocalize(localizer);
         OnPropertyChanged(string.Empty);
     }
 
@@ -593,6 +604,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _snapshot = snapshot;
         Orbs?.UpdateLive();
         Cost.UpdateLive(snapshot);
+        Traffic?.Refresh();
         if (_taskbarPresence != presence)
         {
             _taskbarPresence = presence;

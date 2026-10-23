@@ -1,4 +1,5 @@
 using AgentSpeed.Presentation.Cost;
+using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Settings;
 
@@ -20,7 +21,8 @@ internal sealed record TaskbarState(
     string AccessibleText,
     string? ValueText = null,
     bool ValueMuted = false,
-    BarSecondary? Secondary = null)
+    BarSecondary? Secondary = null,
+    BarTrafficBlock? Traffic = null)
 {
     public static TaskbarState Initial { get; } = new(
         false, 0, SpeedTier.Idle, HeatMath.DefaultRedline, BarDisplayMode.GlyphAndValue, true, true, true, false, false,
@@ -30,7 +32,8 @@ internal sealed record TaskbarState(
     public bool LayoutDiffers(TaskbarState other) =>
         Mode != other.Mode || ShowUnit != other.ShowUnit || UnitText != other.UnitText || Enabled != other.Enabled
         || (Secondary is null) != (other.Secondary is null) || Secondary?.Live.Unit != other.Secondary?.Live.Unit
-        || Secondary?.Today.Unit != other.Secondary?.Today.Unit || Secondary?.Live.Label != other.Secondary?.Live.Label;
+        || Secondary?.Today.Unit != other.Secondary?.Today.Unit || Secondary?.Live.Label != other.Secondary?.Live.Label
+        || (Traffic is null) != (other.Traffic is null) || Traffic?.Bits != other.Traffic?.Bits;
 }
 
 internal enum TaskbarPresence

@@ -20,6 +20,15 @@ public enum OrbFont
 
     /// <summary>Heavy face of the new-peak pill.</summary>
     Pill,
+
+    /// <summary>Semibold text face with tabular cells (the traffic readout's numbers, DESIGN 10).</summary>
+    TrafficNumber,
+
+    /// <summary>
+    /// The traffic readout's vector arrows (DESIGN 10): <c>↓</c> or <c>↑</c>, 0.50 × size wide and 0.66 × size tall on the
+    /// baseline, stroke max(0.9 pt, 0.11 × size) with round caps.
+    /// </summary>
+    Arrow,
 }
 
 /// <summary>

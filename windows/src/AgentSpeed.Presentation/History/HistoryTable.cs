@@ -11,6 +11,9 @@ public enum HistoryColumn
     Output,
     Input,
     Cost,
+
+    /// <summary>Observed traffic (DESIGN 10); shown once traffic was ever measured.</summary>
+    Traffic,
     CacheHit,
     Speed,
     Peak,
@@ -41,6 +44,7 @@ public static class HistoryTable
         HistoryColumn.Output => "history.table.output",
         HistoryColumn.Input => "history.table.input",
         HistoryColumn.Cost => "history.table.cost",
+        HistoryColumn.Traffic => "history.table.traffic",
         HistoryColumn.CacheHit => "history.table.cacheHit",
         HistoryColumn.Speed => "history.table.speed",
         HistoryColumn.Peak => "history.table.peak",
@@ -90,6 +94,7 @@ public static class HistoryTable
             HistoryColumn.Output => SpeedFormat.Tokens(row.Output),
             HistoryColumn.Input => SpeedFormat.Tokens(row.Input),
             HistoryColumn.Cost => money.Text(row.Cost, loc["cost.subscription.tag"]),
+            HistoryColumn.Traffic => HistoryTrafficText.Cell(row.Traffic, loc),
             HistoryColumn.CacheHit => HistoryText.Percent(row.CacheHitRatio),
             HistoryColumn.Speed => HistoryText.Speed(row.AverageSpeed, loc),
             HistoryColumn.Peak => row.Peak is { } peak ? HistoryText.Speed(peak, loc) : "—",
@@ -99,8 +104,12 @@ public static class HistoryTable
     }
 
     /// <summary>A cell as a screen reader reads it: the cost with the currency's name (DESIGN 9), every other cell as shown.</summary>
-    public static string AccessibleCell(DaySummary row, HistoryColumn column, DateOnly today, Localizer loc, HistoryMoney money) =>
-        column == HistoryColumn.Cost ? HistoryText.SpokenCost(row.Cost, money, loc) : Cell(row, column, today, loc, money);
+    public static string AccessibleCell(DaySummary row, HistoryColumn column, DateOnly today, Localizer loc, HistoryMoney money) => column switch
+    {
+        HistoryColumn.Cost => HistoryText.SpokenCost(row.Cost, money, loc),
+        HistoryColumn.Traffic => HistoryTrafficText.AccessibleCell(row.Traffic, loc),
+        _ => Cell(row, column, today, loc, money),
+    };
 
     /// <summary>
     /// The cost cell's tooltip: the amount with US dollars beside another currency, and why a value is partial or missing
@@ -237,6 +246,7 @@ public static class HistoryTable
         HistoryColumn.Output => row.Output,
         HistoryColumn.Input => row.Input,
         HistoryColumn.Cost => row.Cost.SortValue,
+        HistoryColumn.Traffic => row.Traffic?.Shown.Sum,
         HistoryColumn.CacheHit => row.CacheHitRatio,
         HistoryColumn.Speed => row.AverageSpeed,
         HistoryColumn.Peak => row.Peak,

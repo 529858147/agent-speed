@@ -1,3 +1,4 @@
+using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Orb.Styles;
 using AgentSpeed.Presentation.Settings;
 
@@ -37,6 +38,12 @@ public sealed partial class NeedleDraw : IOrbStyleDraw
 
     public OrbReadoutColors? BelowSurface => null;
 
+    /// <summary>
+    /// The unit as the legend of a real tachometer while the traffic readout is on (DESIGN 10): its glyph and color, drawn on
+    /// the dial face under the graduations and the needle; null keeps the unit in the hub. Set by the orb before each frame.
+    /// </summary>
+    public (OrbGlyph Glyph, Rgba Color)? DialUnit { get; set; }
+
     public void Configure(OrbGpuContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -67,6 +74,12 @@ public sealed partial class NeedleDraw : IOrbStyleDraw
         var hc = ctx.HighContrast || m.HighContrast;
         var glowScale = frame.Effects.Level == EffectsIntensity.Max ? MaxGlowScale : 1;
         AddDial(list, ctx, m, hc);
+        if (DialUnit is { } legend && !frame.Thumbnail)
+        {
+            var baseline = ctx.CenterY + Traffic.OrbTrafficPlacement.NeedleDialUnitBaseline * ctx.Size;
+            list.AddInlineText(legend.Glyph, ctx.CenterX - legend.Glyph.Advance / 2, baseline, legend.Color);
+        }
+
         AddGraduations(list, ctx, m, hc, glowScale);
         AddTrace(list, ctx, m, hc);
         AddPins(list, ctx, m, hc);

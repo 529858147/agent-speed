@@ -311,5 +311,29 @@
     "zh-Hans": "面板",
     "en": "Dashboard",
     "ja": "ダッシュボード"
+  },
+  "win.traffic.spokenPair": {
+    "zh-Hant": "下載 %@，上傳 %@",
+    "zh-Hans": "下载 %@，上传 %@",
+    "en": "%@ downloaded, %@ uploaded",
+    "ja": "ダウンロード %@、アップロード %@"
+  },
+  "win.duration.minutes": {
+    "zh-Hant": "%d 分鐘",
+    "zh-Hans": "%d 分钟",
+    "en": "%d min",
+    "ja": "%d 分"
+  },
+  "win.duration.hours": {
+    "zh-Hant": "%d 小時",
+    "zh-Hans": "%d 小时",
+    "en": "%d hr",
+    "ja": "%d 時間"
+  },
+  "win.duration.hoursMinutes": {
+    "zh-Hant": "%d 小時 %d 分鐘",
+    "zh-Hans": "%d 小时 %d 分钟",
+    "en": "%d hr %d min",
+    "ja": "%d 時間 %d 分"
   }
 }

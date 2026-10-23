@@ -283,6 +283,15 @@ internal sealed class OrbSurface : FrameworkElement, IOrbFrameClient, IOrbSurfac
         _clock.Kick(this);
     }
 
+    /// <summary>The WPF fallback renderer draws no traffic readout.</summary>
+    public void SetTraffic(Core.Traffic.TrafficRate? rate, bool bits, bool enabled)
+    {
+    }
+
+    public bool TrafficVisible => false;
+
+    public Presentation.Orb.Traffic.OrbTrafficReading? TrafficReading => null;
+
     public void SetHover(bool hovering)
     {
         if (_hovering == hovering)

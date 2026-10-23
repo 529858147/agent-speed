@@ -304,7 +304,8 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type dash:AgentRow}">
                                     <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->
-                                    <Grid Height="{x:Static dash:DashboardViewModel.AgentRowHeight}" AutomationProperties.Name="{Binding AccessibleName}">
+                                    <Grid Height="{x:Static dash:DashboardViewModel.AgentRowHeight}" AutomationProperties.Name="{Binding AccessibleName}"
+                                          Background="Transparent" ToolTip="{Binding TrafficTooltip}">
                                         <dash:TreeConnectors Guides="{Binding Guides}" Stroke="{DynamicResource DividerStrokeColorDefaultBrush}" />
                                         <Grid Margin="{Binding Indent}">
                                             <Grid.ColumnDefinitions>
@@ -469,6 +470,82 @@
                         </Border>
                     </Popup>
                 </StackPanel>
+
+                    <!-- Network (DESIGN 10): this computer's live rates, its last minute, and the sources with traffic today. -->
+                    <StackPanel Visibility="{Binding TrafficShown, Converter={StaticResource Visible}}">
+                        <Rectangle Style="{StaticResource Hairline}" Margin="0,16,0,12" />
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="{loc:Loc traffic.title}" Style="{StaticResource BodyStrongText}" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                                        ToolTip="{loc:Loc traffic.machine.hint}" AutomationProperties.Name="{Binding TrafficMachineSpoken}">
+                                <dash:TrafficRateText Down="True" Parts="{Binding TrafficMachineRx}" Bits="{Binding TrafficBits}" FontSize="13"
+                                                      NumberWeight="Normal" NumberBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                      SecondaryBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                      DashBrush="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <dash:TrafficRateText Down="False" Parts="{Binding TrafficMachineTx}" Bits="{Binding TrafficBits}" FontSize="13"
+                                                      NumberWeight="Normal" NumberBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                      SecondaryBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                      DashBrush="{DynamicResource TextFillColorTertiaryBrush}" Margin="14,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <dash:TrafficSparkline x:Name="TrafficChart" Height="28" Margin="0,4,0,10"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                               GridBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                               BubbleBrush="{DynamicResource SolidBackgroundFillColorTertiaryBrush}" />
+                        <ItemsControl ItemsSource="{Binding TrafficRows}" Focusable="False"
+                                      Visibility="{Binding TrafficHasRows, Converter={StaticResource Visible}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type dash:TrafficRowItem}">
+                                    <Grid Height="38">
+                                        <dash:SourceRowButton Style="{StaticResource SourceRowButton}" Click="OnTrafficRow" ShowChevron="True"
+                                                              ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              AutomationProperties.Name="{Binding AccessibleName}"
+                                                              AutomationProperties.HelpText="{loc:Loc win.dashboard.sourceHint}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="18" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Width="8" Height="8" Fill="{Binding DotBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding TodayText}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"
+                                                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Grid>
+                                            <dash:SourceRowButton.Trailing>
+                                                <StackPanel VerticalAlignment="Center" Margin="8,0,0,0">
+                                                    <dash:TrafficRateText Down="True" Parts="{Binding Rx}" Bits="{Binding Bits}" FontSize="11"
+                                                                          NumberBrush="{DynamicResource TextFillColorPrimaryBrush}"
+                                                                          SecondaryBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                          DashBrush="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                    <dash:TrafficRateText Down="False" Parts="{Binding Tx}" Bits="{Binding Bits}" FontSize="11"
+                                                                          NumberBrush="{DynamicResource TextFillColorPrimaryBrush}"
+                                                                          SecondaryBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                          DashBrush="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                </StackPanel>
+                                            </dash:SourceRowButton.Trailing>
+                                        </dash:SourceRowButton>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Style="{StaticResource DisclosureButton}" Margin="-6,2,0,0" Click="OnTrafficExpand"
+                                Visibility="{Binding TrafficCanExpand, Converter={StaticResource Visible}}"
+                                AutomationProperties.Name="{Binding TrafficExpandText}">
+                            <TextBlock Text="{Binding TrafficExpandText}" VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
+                        </Button>
+                        <StackPanel Visibility="{Binding TrafficUnavailable, Converter={StaticResource HasText}}">
+                            <TextBlock Text="{Binding TrafficUnavailable}" FontSize="11" LineHeight="16" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <Button Style="{StaticResource LinkButton}" Content="{Binding TrafficHelperButton}" Click="OnTrafficHelper" FontSize="12"
+                                    Height="24" Margin="-4,4,0,0" HorizontalAlignment="Left"
+                                    Visibility="{Binding TrafficHelperButton, Converter={StaticResource HasText}}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding TrafficCaption}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Visibility="{Binding TrafficCaption, Converter={StaticResource HasText}}" />
+                    </StackPanel>
 
                 <!-- Warnings: informational, never alarming -->
                 <Grid Margin="0,12,0,0" Visibility="{Binding HasWarning, Converter={StaticResource Visible}}">

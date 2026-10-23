@@ -69,6 +69,7 @@ internal sealed class DailyTable : FrameworkElement
     private DateOnly _today;
     private IReadOnlyList<ColumnSpan> _spans = [];
     private bool _peakHidden;
+    private bool _trafficShown;
     private double _spansWidth = -1;
     private (int First, int Last) _rendered = (0, -1);
     private ScrollViewer? _scroller;
@@ -181,8 +182,16 @@ internal sealed class DailyTable : FrameworkElement
 
     public int? Current => _current;
 
-    /// <summary>Peaks exist only for days observed live, and only for all sources (METRICS 8); without any the column goes.</summary>
-    public bool IsHidden(HistoryColumn column) => column == HistoryColumn.Peak && _peakHidden;
+    /// <summary>
+    /// Peaks exist only for days observed live, and only for all sources (METRICS 8); without any the column goes. The
+    /// traffic column shows once traffic was ever measured (DESIGN 10).
+    /// </summary>
+    public bool IsHidden(HistoryColumn column) => column switch
+    {
+        HistoryColumn.Peak => _peakHidden,
+        HistoryColumn.Traffic => !_trafficShown,
+        _ => false,
+    };
 
     private IEnumerable<HistoryColumn> ShownColumns => HistoryTable.Columns.Where(c => !IsHidden(c));
 
@@ -200,7 +209,7 @@ internal sealed class DailyTable : FrameworkElement
         }
     }
 
-    public void SetRows(IReadOnlyList<DaySummary> rows, DateOnly today, Localizer loc, HistoryMoney money)
+    public void SetRows(IReadOnlyList<DaySummary> rows, DateOnly today, Localizer loc, HistoryMoney money, bool traffic = false)
     {
         var currentDay = DayOf(_current);
         var hoverDay = DayOf(_hover);
@@ -210,6 +219,7 @@ internal sealed class DailyTable : FrameworkElement
         _loc = loc;
         _money = money;
         _peakHidden = rows.All(r => r.Peak is null);
+        _trafficShown = traffic;
         _cells.Clear();
         _current = currentDay is { } current ? IndexOf(current) : null;
         _hover = hoverDay is { } hover ? IndexOf(hover) : null;
@@ -434,16 +444,21 @@ internal sealed class DailyTable : FrameworkElement
 
     /// <summary>
     /// The cost cell explains itself (DESIGN 9): the amount with US dollars beside another currency, why it is partial
-    /// (<c>history.unpricedDay</c>) or missing (<c>history.costUnavailable</c>). The tip sits under the hovered cell.
+    /// (<c>history.unpricedDay</c>) or missing (<c>history.costUnavailable</c>); the traffic cell says when it was not
+    /// recorded or only partly (DESIGN 10). The tip sits under the hovered cell.
     /// </summary>
     private void UpdateCellTip(int? row, double x, bool keepOpen = false)
     {
         string? text = null;
         var column = ColumnAt(x);
-        if (row is { } r && r < _rows.Count && _loc is { } loc && _money is { } money && column is { } c
-            && HistoryTable.Columns[c] == HistoryColumn.Cost)
+        if (row is { } r && r < _rows.Count && _loc is { } loc && _money is { } money && column is { } c)
         {
-            text = HistoryTable.CostTooltip(_rows[r].Cost, money, loc);
+            text = HistoryTable.Columns[c] switch
+            {
+                HistoryColumn.Cost => HistoryTable.CostTooltip(_rows[r].Cost, money, loc),
+                HistoryColumn.Traffic when !IsHidden(HistoryColumn.Traffic) => HistoryTrafficText.Tooltip(_rows[r].Traffic, loc),
+                _ => null,
+            };
         }
 
         if (text is null)
@@ -691,6 +706,7 @@ internal sealed class DailyTable : FrameworkElement
             {
                 HistoryColumn.Speed when row.AverageSpeed is null => MutedBrush,
                 HistoryColumn.Peak when row.Peak is null => MutedBrush,
+                HistoryColumn.Traffic when row.Traffic is null => MutedBrush,
                 HistoryColumn.Models when row.Models.Count == 0 => MutedBrush,
                 HistoryColumn.Cost when quietCost => row.Cost.Kind == HistoryCostKind.Subscription ? SecondaryBrush : MutedBrush,
                 HistoryColumn.CacheHit or HistoryColumn.Agents or HistoryColumn.Models or HistoryColumn.Peak => SecondaryBrush,

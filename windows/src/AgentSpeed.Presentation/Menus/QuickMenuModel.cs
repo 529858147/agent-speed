@@ -15,7 +15,9 @@ public static class QuickMenuModel
 {
     /// <param name="sources">Source availability for the orbs' colour dots.</param>
     /// <param name="update">The available release; adds the "Update to …" row on top (UPDATES section 4).</param>
-    public static MenuLevel Build(AppSettings settings, SourceAvailability sources, Localizer localizer, ReleaseInfo? update = null)
+    /// <param name="sourceTraffic">Per-process traffic can be measured now (the per-orb traffic submenu says so otherwise).</param>
+    public static MenuLevel Build(AppSettings settings, SourceAvailability sources, Localizer localizer, ReleaseInfo? update = null,
+        bool sourceTraffic = true)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(localizer);
@@ -43,7 +45,7 @@ public static class QuickMenuModel
         }
         else
         {
-            entries.Add(OrbsMenu(settings, orbs, sources, localizer));
+            entries.Add(OrbsMenu(settings, orbs, sources, localizer, sourceTraffic));
             entries.Add(EffectsMenu(settings.Effects, localizer));
         }
 
@@ -70,7 +72,8 @@ public static class QuickMenuModel
         (true, false) => "menu.showOrbs",
     };
 
-    private static MenuRow OrbsMenu(AppSettings settings, IEnumerable<OrbDefinition> orbs, SourceAvailability sources, Localizer localizer) =>
+    private static MenuRow OrbsMenu(AppSettings settings, IEnumerable<OrbDefinition> orbs, SourceAvailability sources, Localizer localizer,
+        bool sourceTraffic) =>
         Submenu(localizer["settings.orb"], orbs.Select(orb =>
         {
             var shown = settings.ShowOrbs && orb.Visible;
@@ -80,6 +83,7 @@ public static class QuickMenuModel
                 Toggle(localizer["menu.clickThrough"], orb.ClickThrough, new MenuAction.SetOrbClickThrough(orb.Id, !orb.ClickThrough)),
                 ShowNameToggle(orb, settings, localizer),
                 OrbMenuModel.UnitMenu(orb, settings, localizer),
+                OrbMenuModel.TrafficMenu(orb, settings, localizer, sourceTraffic),
                 MenuSeparator.Instance,
                 Command(localizer["menu.orb.settings"], new MenuAction.OpenOrbSettings(orb.Id), MenuGlyph.Settings),
             ]) with

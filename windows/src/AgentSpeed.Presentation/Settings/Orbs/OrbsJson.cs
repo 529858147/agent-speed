@@ -126,6 +126,7 @@ public static class OrbsJson
         }
 
         writer.WriteString("unit", OrbUnits.Key(orb.Unit));
+        writer.WriteString("traffic", OrbTraffics.Key(orb.Traffic));
         writer.WriteEndObject();
     }
 
@@ -154,6 +155,7 @@ public static class OrbsJson
             ShowName = ReadNullableBool(element, "showName"),
             TitleTheme = ReadString(element, "titleTheme", OrbDefinition.MaxIdLength),
             Unit = OrbUnits.Parse(ReadString(element, "unit", 32)),
+            Traffic = OrbTraffics.Parse(ReadString(element, "traffic", 32)),
         }.Validated();
     }
 

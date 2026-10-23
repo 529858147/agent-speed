@@ -29,6 +29,7 @@ internal sealed class TaskbarRenderer
     private readonly Dictionary<(char, int), FormattedText> _glyphCache = new();
     private readonly DrawingVisual _visual = new();
     private readonly TaskbarSecondaryText _secondary = new();
+    private readonly TaskbarTrafficText _traffic = new();
     private RenderTargetBitmap? _bitmap;
     private double _cacheScale = -1;
     private Color _cachePrimary;
@@ -63,6 +64,8 @@ internal sealed class TaskbarRenderer
 
     private static bool ShowsSecondary(TaskbarState state) => state.Secondary is not null && state.Mode != BarDisplayMode.GlyphOnly;
 
+    private static bool ShowsTraffic(TaskbarState state) => state.Traffic is not null && state.Mode != BarDisplayMode.GlyphOnly;
+
     /// <summary>Widget length along the taskbar in physical pixels: the content width.</summary>
     public int MeasureLength(TaskbarState state, double scale, bool vertical)
     {
@@ -72,7 +75,7 @@ internal sealed class TaskbarRenderer
         {
             var lines = state.Mode == BarDisplayMode.GlyphAndValue ? 2 : 1;
             var height = Padding + lines * 20 + (state.ShowUnit && state.Mode != BarDisplayMode.GlyphOnly ? 14 : 0)
-                + (ShowsSecondary(state) ? TaskbarSecondaryText.Height : 0) + Padding;
+                + (ShowsSecondary(state) ? TaskbarSecondaryText.Height : 0) + (ShowsTraffic(state) ? TaskbarTrafficText.Height : 0) + Padding;
             return (int)Math.Ceiling(height * scale);
         }
 
@@ -108,6 +111,12 @@ internal sealed class TaskbarRenderer
             {
                 var colors = Palette(state);
                 width += _secondary.Width(state.Secondary!, SecondaryCell, _cacheScale, colors.Primary, colors.Secondary);
+            }
+
+            if (ShowsTraffic(state))
+            {
+                var colors = Palette(state);
+                width += _traffic.Width(state.Traffic!, _cacheScale, colors.Primary, colors.Secondary);
             }
         }
 
@@ -200,6 +209,12 @@ internal sealed class TaskbarRenderer
         if (ShowsSecondary(state))
         {
             _secondary.Draw(dc, state.Secondary!, x, centerY, SecondaryCell, scale, colors.Primary, colors.Secondary);
+            x += _secondary.Width(state.Secondary!, SecondaryCell, scale, colors.Primary, colors.Secondary);
+        }
+
+        if (ShowsTraffic(state))
+        {
+            _traffic.Draw(dc, state.Traffic!, x, centerY, scale, colors.Primary, colors.Secondary);
         }
     }
 
@@ -237,6 +252,14 @@ internal sealed class TaskbarRenderer
             var blockWidth = _secondary.Width(state.Secondary!, SecondaryCell, 1, colors.Primary, colors.Secondary) - TaskbarSecondaryText.Gap;
             _secondary.Draw(dc, state.Secondary!, (width - blockWidth) / 2 - TaskbarSecondaryText.Gap, y + TaskbarSecondaryText.Height / 2,
                 SecondaryCell, 1, colors.Primary, colors.Secondary);
+            y += TaskbarSecondaryText.Height;
+        }
+
+        if (ShowsTraffic(state))
+        {
+            var blockWidth = _traffic.Width(state.Traffic!, 1, colors.Primary, colors.Secondary) - TaskbarTrafficText.Gap;
+            _traffic.Draw(dc, state.Traffic!, (width - blockWidth) / 2 - TaskbarTrafficText.Gap, y + TaskbarTrafficText.Height / 2, 1,
+                colors.Primary, colors.Secondary);
         }
     }
 

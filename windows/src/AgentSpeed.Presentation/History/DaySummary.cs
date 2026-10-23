@@ -41,6 +41,9 @@ public sealed record DaySummary(
     /// <summary>Per model (by name) over the counted sources.</summary>
     public IReadOnlyDictionary<string, ModelCost> ModelCosts { get; init; } = EmptyModelCosts;
 
+    /// <summary>The day's observed traffic (METRICS 10.9); null before measuring began.</summary>
+    public DayTraffic? Traffic { get; init; }
+
     private static IReadOnlyDictionary<string, ModelCost> EmptyModelCosts { get; } = new Dictionary<string, ModelCost>(StringComparer.Ordinal);
 
     /// <summary>Output tok/s over the day's measured responses.</summary>

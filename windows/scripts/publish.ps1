@@ -3,6 +3,9 @@
   Builds self-contained single-file Agent Speed for Windows (x64 and ARM64).
 .DESCRIPTION
   Output: dist\AgentSpeed-Windows-x64.zip and dist\AgentSpeed-Windows-arm64.zip, each containing AgentSpeed.exe.
+  The traffic helper (spec/WINDOWS-SERVICE.md) is published first with NativeAOT for each architecture and embedded in
+  AgentSpeed.exe; this needs the Visual Studio C++ build tools including the ARM64 tools. AGENT_SPEED_NO_HELPER=1
+  builds without it (per-process traffic is then unavailable in that build).
 .PARAMETER Version
   Version to stamp (defaults to the repository VERSION file, then 1.0.0).
 #>
@@ -16,6 +19,7 @@ Set-StrictMode -Version Latest
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $project = Join-Path $root 'windows\src\AgentSpeed\AgentSpeed.csproj'
+$helperProject = Join-Path $root 'windows\src\AgentSpeed.TrafficHelper\AgentSpeed.TrafficHelper.csproj'
 $dist = Join-Path $root 'dist'
 
 if (-not $Version) { $Version = $env:AGENT_SPEED_VERSION }
@@ -42,6 +46,36 @@ New-Item -ItemType Directory -Path $work | Out-Null
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
 try {
+    $helperArgs = @()
+    if ($env:AGENT_SPEED_NO_HELPER -eq '1') {
+        Write-Warning 'AGENT_SPEED_NO_HELPER=1: building without the traffic helper (no per-process traffic on Windows).'
+    }
+    else {
+        # WINDOWS-SERVICE 2: the helper keeps its own version (HelperProtocol.BundledVersion), so no app version is stamped.
+        $helperRoot = Join-Path $work 'helper'
+        foreach ($arch in @('x64', 'arm64')) {
+            $rid = "win-$arch"
+            $helperOut = Join-Path $helperRoot $rid
+            Write-Host "==> Publishing the traffic helper (NativeAOT) for $rid"
+            & dotnet publish $helperProject `
+                -c Release `
+                -r $rid `
+                --artifacts-path (Join-Path $work 'helper-artifacts') `
+                -o $helperOut `
+                -p:DebugType=none `
+                -p:DebugSymbols=false `
+                -p:ContinuousIntegrationBuild=true `
+                -nologo
+            if ($LASTEXITCODE -ne 0) { throw "dotnet publish of the traffic helper failed for $rid" }
+
+            $helperExe = Join-Path $helperOut 'AgentSpeedTrafficHelper.exe'
+            if (-not (Test-Path $helperExe)) { throw "$helperExe was not produced" }
+            $helperHash = (Get-FileHash -Path $helperExe -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Host ("    AgentSpeedTrafficHelper.exe: {0:N0} KiB, SHA-256 {1}" -f ((Get-Item $helperExe).Length / 1KB), $helperHash)
+        }
+        $helperArgs = @("-p:TrafficHelperDir=$helperRoot")
+    }
+
     foreach ($arch in @('x64', 'arm64')) {
         $rid = "win-$arch"
         $out = Join-Path $work $rid
@@ -63,6 +97,7 @@ try {
             "-p:Version=$fileVersion" `
             "-p:InformationalVersion=$Version" `
             -p:ContinuousIntegrationBuild=true `
+            @helperArgs `
             -nologo
         if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $rid" }
 
