@@ -411,7 +411,7 @@ def fit_username(computer_name: str, rules: dict) -> str | None:
     text = unicodedata.normalize("NFKC", computer_name)
     text = "".join(ch for ch in text if ch not in APOSTROPHES)
     if rules["charset"] == "ascii":
-        text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+        text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.category(ch).startswith("M"))
     separator = " " if rules["spaces"] else "-"
     text = "".join(ch if (not ch.isspace() and _allowed(ch, rules)) else separator for ch in text)
     text = re.sub(r"[ \-]*-[ \-]*", "-", text)

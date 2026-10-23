@@ -2452,7 +2452,7 @@ report can only be smaller, since a service that lists fewer sections receives f
   `Zoe’s MacBook Pro`); Windows `GetComputerNameExW(ComputerNamePhysicalDnsHostname)` (keeps the letter case the user
   typed), else `Environment.MachineName`. When fitting leaves nothing usable, a random name is used.
 - **Fitting** (`fit`, vectors `usernames.fit`): NFKC; remove apostrophes (`'` `‘` `’` `ʼ` `` ` ``); for an ASCII-only
-  service decompose (NFKD) and drop combining marks; every white space and every character the rules do not allow
+  service decompose (NFKD) and drop combining marks (General Category `M*`); every white space and every character the rules do not allow
   becomes a space (when spaces are allowed) or `-`; a run of spaces and hyphens that contains a hyphen becomes one
   `-`, a run of spaces one space; drop leading characters until a letter or number; cut to `maxLength` code points;
   drop trailing spaces, `-`, `_` and `.`; the result must pass validation, else there is none.

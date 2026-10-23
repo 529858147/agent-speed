@@ -77,7 +77,7 @@ public enum ReportUsername {
         var text = Array(normalized(computerName).unicodeScalars).filter { !apostrophes.contains($0) }
         if rules.charset == .ascii {
             text = string(text).decomposedStringWithCompatibilityMapping.unicodeScalars
-                .filter { $0.properties.canonicalCombiningClass == .notReordered }
+                .filter { ![.nonspacingMark, .spacingMark, .enclosingMark].contains($0.properties.generalCategory) }
         }
         let separator: Unicode.Scalar = rules.spaces ? " " : "-"
         text = text.map { !isSpace($0) && isAllowed($0, rules) ? $0 : separator }
