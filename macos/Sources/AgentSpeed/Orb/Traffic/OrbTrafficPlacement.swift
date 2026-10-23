@@ -11,12 +11,15 @@ struct OrbTrafficPlacement: Equatable {
     var size: CGFloat
     /// A line must fit in this × S, else the readout is not drawn.
     var fit: CGFloat
+    /// The readout stack moves down while the block shows, so block, value, unit and title stay centered as one stack;
+    /// `reactor` and `needle` keep their readout in a fixed window or hub.
+    var recenters = false
 
-    static let led = OrbTrafficPlacement(nearestBaseline: -0.190, below: false, size: 0.050, fit: 0.44)
+    static let led = OrbTrafficPlacement(nearestBaseline: -0.190, below: false, size: 0.050, fit: 0.44, recenters: true)
     static let liquid = led
     static let reactor = OrbTrafficPlacement(nearestBaseline: -0.148, below: false, size: 0.046, fit: 0.32)
     static let needle = OrbTrafficPlacement(nearestBaseline: 0.108, below: true, size: 0.046, fit: 0.285)
-    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.185, below: false, size: 0.054, fit: 0.50)
+    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.185, below: false, size: 0.054, fit: 0.50, recenters: true)
 
     static func of(_ style: OrbStyleKind) -> OrbTrafficPlacement {
         switch style {
@@ -40,6 +43,19 @@ struct OrbTrafficPlacement: Equatable {
 
     /// Never below the 7 pt floor of every orb label.
     func textSize(diameter s: CGFloat) -> CGFloat { max(7, size * s) }
+
+    /// Cap height of the orb fonts, × size.
+    static let capHeight: CGFloat = 0.70
+
+    /// How far the readout stack (value, unit, title, pill and this block) moves down while the block shows above the
+    /// value, so the whole stack stays centered (DESIGN 10): half the block's height over the value's cap top.
+    func stackShift(layout: OrbReadoutLayout, diameter s: CGFloat) -> CGFloat {
+        guard recenters, !below else { return 0 }
+        let t = textSize(diameter: s)
+        let blockTop = nearestBaseline * s - Self.pitch * t - Self.capHeight * t
+        let valueTop = (layout.valueBaseline - Self.capHeight * layout.valueSize) * s
+        return max(0, (valueTop - blockTop) / 2)
+    }
 
     /// Baselines of the download (first) and upload lines.
     func baselines(center y: CGFloat, diameter s: CGFloat) -> (down: CGFloat, up: CGFloat) {

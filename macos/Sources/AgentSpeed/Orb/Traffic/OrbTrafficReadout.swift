@@ -70,6 +70,15 @@ final class OrbTrafficReadout {
         return alpha
     }
 
+    /// The readout stack's shift at the frame: follows the block's quiet-rule fade (eased), so the value glides down as
+    /// the block appears and back when it has faded; never moves for the new-peak pill.
+    func stackShift(_ frame: OrbFrame, placement: OrbTrafficPlacement, layout: OrbReadoutLayout) -> CGFloat {
+        guard let reading = frame.content.traffic, !frame.unavailable,
+              OrbTrafficMetrics.fits(placement, diameter: frame.s, bits: reading.bits) else { return 0 }
+        let shown = reading.alpha(at: frame.time, reduceMotion: frame.effects.reduceMotion)
+        return placement.stackShift(layout: layout, diameter: frame.s) * CGFloat(Easing.smoothstep(0, 1, shown))
+    }
+
     func add(into scene: inout OrbScene, _ frame: OrbFrame, placement: OrbTrafficPlacement, palette: Palette,
              clip: OrbTextClip = .none, yieldsToPill: Bool = true) {
         guard let reading = frame.content.traffic, !frame.unavailable else { return }
@@ -82,7 +91,7 @@ final class OrbTrafficReadout {
         let width = OrbTrafficMetrics.lineWidth(size: t, bits: reading.bits)
         guard width <= placement.fit * s else { return }
         let left = frame.center.x - width / 2
-        let lines = placement.baselines(center: frame.center.y, diameter: s)
+        let lines = placement.baselines(center: frame.center.y + frame.readoutShift, diameter: s)
         let gap = OrbTrafficPlacement.gap * t
         let numberRight = left + OrbTrafficPlacement.arrowWidth * t + gap + cells.number
         for (parts, baseline, down) in [(reading.rx, lines.down, true), (reading.tx, lines.up, false)] {

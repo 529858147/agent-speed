@@ -95,6 +95,8 @@ struct OrbFrame {
     let alpha: Double
     /// The first frame after the orb could not be seen: show the current state, never a catch-up animation.
     var resumed = false
+    /// How far the readout stack sits below its resting place while the traffic block shows above it (DESIGN 10).
+    var readoutShift: CGFloat = 0
 
     var tokens: OrbTokens { content.tokens }
     var dark: Bool { content.tokens.isDark }
@@ -132,7 +134,7 @@ struct OrbFrame {
     func readoutZoneFade(at point: CGPoint) -> Double {
         guard content.showsReadout else { return 1 }
         let qx = (point.x - center.x) / (0.30 * s)
-        let qy = (point.y - center.y - 0.07 * s) / (0.19 * s)
+        let qy = (point.y - center.y - readoutShift - 0.07 * s) / (0.19 * s)
         return 1 - 0.65 * exp(-Double(qx * qx + qy * qy) * 1.6)
     }
 }

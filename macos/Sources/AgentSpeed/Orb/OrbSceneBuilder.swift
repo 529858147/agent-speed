@@ -101,6 +101,11 @@ enum OrbSceneBuilder {
     }
 
     private static func draw(_ renderer: OrbStyleRenderer, _ frame: OrbFrame, into scene: inout OrbScene, animator: OrbAnimator) {
+        var frame = frame
+        if frame.content.showsReadout, !frame.content.isThumbnail, !frame.content.valueOnly {
+            frame.readoutShift = animator.traffic.stackShift(frame, placement: renderer.trafficPlacement,
+                                                             layout: renderer.readoutLayout)
+        }
         renderer.step(frame)
         scene.alphaScale = Float(frame.alpha)
         guard frame.alpha > 0.002 else { return }

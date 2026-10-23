@@ -2069,7 +2069,14 @@ bottom edge (pretty but unreadable without hovering).
   white 94 %, unit 72 %, black 55 % shadow σ 0.015 S in dark; ink 88 % / 62 % in light). Increase Contrast: number
   92 %, unit 70 %. Windows high contrast: the theme's text and gray-text colors. No glow, lean, jitter or odometer.
 - **Quiet rule**: visible while the shown `↓ + ↑` rate is at least 1 KB/s; after 10 s below it fades out (0.6 s); it
-  fades in (0.25 s) when traffic returns. The space stays reserved, so the value never moves.
+  fades in (0.25 s) when traffic returns.
+- **Centering**: in `led`, `liquid` and `minimal` the readout stack — this block, the value, the unit, the title and
+  the new-peak pill — stays centered as one stack: while the block shows, everything moves down by half the block's
+  height over the value's cap top, `max(0, ((valueBaseline − 0.70 × valueSize) × S − (nearest − 1.32 t − 0.70 t)) / 2)`
+  (0.70 = cap height; ≈ 0.068 S in `led`). The move follows the quiet-rule fade with smoothstep easing (the value glides
+  down as the block fades in and back up once it has faded out; Reduce Motion: instant) and ignores the pill's fade.
+  The agent dots never move. `reactor` and `needle` keep their readout in the core window and the hub, so nothing
+  moves there.
 - **Updates**: once per second with each sample (METRICS 10.7); characters are replaced in their cells, no animation.
 - **New-peak pill**: in `led`, `liquid`, `reactor` and `minimal` the pill appears where the readout is; the readout
   fades out (0.15 s) for the pill's 1.8 s and back.

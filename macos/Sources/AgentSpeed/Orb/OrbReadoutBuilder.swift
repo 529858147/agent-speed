@@ -114,7 +114,7 @@ final class OrbReadoutBuilder {
 
     private func lines(_ frame: OrbFrame, _ layout: OrbReadoutLayout) -> Lines {
         let s = frame.s
-        let y = frame.center.y
+        let y = frame.center.y + frame.readoutShift
         let value = y + layout.valueBaseline * s
         let unit = layout.unitSize == nil ? value : value + layout.unitGap * s
         let title: CGFloat = switch layout.title {
