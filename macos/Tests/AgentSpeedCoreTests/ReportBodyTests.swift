@@ -54,6 +54,15 @@ import Testing
 
     static let everything = ReportOptions(sections: Set(ReportSection.allCases), metric: .output, redline: 2000)
 
+    @Test func disabledSourcesReportNoTraffic() {
+        let baseline = TrafficReportTotals(sources: [.codex: TrafficSplit(own: TrafficBytes(rx: 1000, tx: 100)),
+                                                     .gemini: TrafficSplit(own: TrafficBytes(rx: 2000, tx: 200))])
+        let totals = TrafficReportTotals(sources: [.codex: TrafficSplit(own: TrafficBytes(rx: 5000, tx: 500)),
+                                                   .gemini: TrafficSplit(own: TrafficBytes(rx: 9000, tx: 900))])
+        let sample = ReportTrafficSample(status: .ok, totals: totals, enabled: SourceSet(.codex))
+        #expect(sample.agentBytes(since: baseline) == [.codex: TrafficBytes(rx: 4000, tx: 400)])
+    }
+
     @Test func activeReportHasEverySectionAndExactSums() throws {
         let (content, sample) = Self.busySample()
         let json = ReportBody.json(Self.envelope, content, sample, Self.everything)

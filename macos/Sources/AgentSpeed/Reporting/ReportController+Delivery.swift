@@ -24,7 +24,8 @@ extension ReportController {
         lastSnapshot = nil
         cachedSample = ReportSample(
             snapshot: snapshot,
-            traffic: ReportTrafficSample(snapshot: traffic.snapshot, includeTools: settings.trafficIncludeTools))
+            traffic: ReportTrafficSample(snapshot: traffic.snapshot, includeTools: settings.trafficIncludeTools,
+                                         enabled: SourceSet(settings.enabledSources)))
         return cachedSample
     }
 

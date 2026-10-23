@@ -59,23 +59,27 @@ public struct ReportTrafficSample: Equatable, Sendable {
     /// Σ over sources of own (+ tools); nil while the series has fewer than two samples.
     public var rate: TrafficRate?
     public var sourceRates: [SourceKind: TrafficRate]
+    /// Cumulative bytes of every source, disabled ones included, so a baseline stays valid across a toggle.
     public var totals: TrafficReportTotals
+    /// The sources whose bytes are reported (METRICS 11.4: a disabled source reports no traffic).
+    public var enabled: SourceSet
 
     public init(
         status: Status, includesTools: Bool = true, rate: TrafficRate? = nil, sourceRates: [SourceKind: TrafficRate] = [:],
-        totals: TrafficReportTotals = .zero
+        totals: TrafficReportTotals = .zero, enabled: SourceSet = .everything
     ) {
         self.status = status
         self.includesTools = includesTools
         self.rate = rate
         self.sourceRates = sourceRates
         self.totals = totals
+        self.enabled = enabled
     }
 
     public static let off = ReportTrafficSample(status: .off)
 
-    /// From the traffic snapshot and the `includeTools` setting.
-    public init(snapshot: TrafficSnapshot, includeTools: Bool) {
+    /// From the traffic snapshot and the `includeTools` setting, leaving out sources outside `enabled`.
+    public init(snapshot: TrafficSnapshot, includeTools: Bool, enabled: SourceSet = .everything) {
         guard snapshot.enabled else {
             self = .off
             return
@@ -83,21 +87,21 @@ public struct ReportTrafficSample: Equatable, Sendable {
         let processOK = snapshot.processState.isAvailable
         var rates: [SourceKind: TrafficRate] = [:]
         if processOK {
-            for (kind, traffic) in snapshot.sources {
+            for (kind, traffic) in snapshot.sources where enabled.contains(kind) {
                 if let rate = traffic.live(includeTools: includeTools) { rates[kind] = rate }
             }
         }
         self.init(
             status: processOK ? .ok : .unavailable, includesTools: includeTools,
-            rate: processOK ? snapshot.live(of: nil, includeTools: includeTools) : nil, sourceRates: rates,
-            totals: snapshot.reportTotals
+            rate: processOK ? snapshot.live(of: enabled, includeTools: includeTools) : nil, sourceRates: rates,
+            totals: snapshot.reportTotals, enabled: enabled
         )
     }
 
     /// Agent bytes of the window: own plus tools of every source (own only without tools).
     func agentBytes(since baseline: TrafficReportTotals) -> [SourceKind: TrafficBytes] {
         var out: [SourceKind: TrafficBytes] = [:]
-        for (kind, split) in totals.sources {
+        for (kind, split) in totals.sources where enabled.contains(kind) {
             let before = baseline.sources[kind] ?? .zero
             let now = split.total(includeTools: includesTools)
             let then = before.total(includeTools: includesTools)

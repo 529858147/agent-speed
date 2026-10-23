@@ -1929,7 +1929,9 @@ response's model at that moment.
 **Traffic.** Every sample delta of 10.4 adds to the ledger at its sample time — per source `self` and `tools`; the
 machine series (10.2) is never reported — except deltas of a sample whose interval is longer than 15 s (10.4.5 gap: those bytes are older than the
 window) and the baseline of a stream's first sample (which adds nothing anyway). Agent traffic = Σ over sources of
-`self + tools` (`self` only when `includeTools` is off).
+`self + tools` (`self` only when `includeTools` is off). A source the user disabled (Settings → Data Sources) reports
+no traffic — no rate and no delta — like every view of it (10.5); its bytes keep counting underneath, so the deltas
+after it is enabled again start from the latest report, never from before it was disabled.
 
 **Exactly once.** Every increment is applied once, at the tick where the engine produces it. *Build* (11.5) takes the
 whole ledger into a report and empties it in one step; *discard* empties it without a report. Every increment
