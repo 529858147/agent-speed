@@ -8,7 +8,7 @@ namespace AgentSpeed.Core.Tests.Reporting;
 /// <summary>REPORTING 3: discovery documents, the vectors' <c>discovery</c> cases, and consent pinning.</summary>
 public sealed class ReportDiscoveryTests
 {
-    private const string Repo = "https://github.com/zoefix/agent-speed/blob/main/spec/REPORTING.md";
+    private const string Repo = "https://github.com/zoefix/agent-speed";
 
     private static ReportServiceUrl Service(string text = "https://example.com") => ReportServiceUrl.Parse(text)!;
 

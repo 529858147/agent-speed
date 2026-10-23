@@ -2,3 +2,7 @@
 /dist/
 /build/
 __pycache__/
+
+# Partner documents for live reporting services, kept local and sent to partners directly
+/spec/REPORTING.md
+/spec/REPORTING.zh-Hans.md

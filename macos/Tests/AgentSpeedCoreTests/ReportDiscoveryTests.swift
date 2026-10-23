@@ -9,7 +9,7 @@ private struct RawLiteral {
 
 @Suite("Report discovery")
 struct ReportDiscoveryTests {
-    static let repo = "https://github.com/zoefix/agent-speed/blob/main/spec/REPORTING.md"
+    static let repo = "https://github.com/zoefix/agent-speed"
 
     static func service(_ text: String = "https://example.com") throws -> ReportServiceURL {
         try ReportServiceURL.parse(text).get()

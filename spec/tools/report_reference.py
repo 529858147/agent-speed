@@ -823,7 +823,7 @@ class ReferenceService:
 
     def discovery(self, scheme: str = "https") -> dict:
         api = f"{scheme}://{self.authority}{self.api_path}"
-        repo = "https://github.com/zoefix/agent-speed/blob/main/spec/REPORTING.md"
+        repo = "https://github.com/zoefix/agent-speed"
         return {"protocol": "agent-speed-report", "versions": [1],
                 "service": {"name": self.name, "description": "Local test server (spec/tools/report_server.py).",
                             "terms": repo, "privacy": repo, "retentionDays": 0},
