@@ -159,6 +159,8 @@ internal sealed class ReferenceServer : IDisposable
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
         };
         start.ArgumentList.Add("-I");

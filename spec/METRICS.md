@@ -1113,7 +1113,9 @@ Real users have hundreds of small conversation databases (one audit: 381); only 
   their own `idx` cursors; the trajectory metadata until it is found. Then the phase (4.8) is evaluated. A new identity
   of the `.db` file resets the database (parser state, never the dedupe set) and reads it completely.
 - Connections: a connection idle for 60 seconds is closed, and at most 16 stay open (the least recently changed is
-  closed first). Reopening follows the open rules of 4.8.
+  closed first). Reopening follows the open rules of 4.8. Windows closes each connection right after its read instead:
+  there a file another process holds open cannot be deleted or replaced, so a kept connection would stop Antigravity
+  from deleting or rewriting the conversation.
 
 ## 6. Engine
 

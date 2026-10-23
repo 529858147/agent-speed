@@ -41,7 +41,7 @@ public sealed class AntigravityMonitorTests : IDisposable
         Assert.Equal((2, 1), (report.FilesDiscovered, report.FilesRead));
         Assert.Equal(["r-recent"], observer.Seen.Select(s => s.Response.Key));
         Assert.True(observer.Seen.All(s => s.Seeded && s.IsCompletion));
-        Assert.Equal(1, core.OpenDatabaseConnections);
+        Assert.Equal(0, core.OpenDatabaseConnections);
         var (snapshot, _) = Build(core);
         Assert.Equal(new[] { recent }, snapshot.Agents.Select(a => a.Id));
 
@@ -79,7 +79,7 @@ public sealed class AntigravityMonitorTests : IDisposable
     }
 
     [Fact]
-    public void AtMostSixteenConnectionsStayOpen()
+    public void NoConnectionStaysOpenBetweenReads()
     {
         for (var i = 0; i < 20; i++)
         {
@@ -90,7 +90,7 @@ public sealed class AntigravityMonitorTests : IDisposable
         core.Seed(_now, _todayStart, CancellationToken.None);
 
         Assert.Equal(20, Build(core).Snapshot.Agents.Count);
-        Assert.InRange(core.OpenDatabaseConnections, 1, AntigravityConnections.MaxOpen);
+        Assert.Equal(0, core.OpenDatabaseConnections);
     }
 
     [Fact]

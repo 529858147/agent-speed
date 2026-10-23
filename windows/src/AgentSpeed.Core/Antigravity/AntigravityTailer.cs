@@ -42,8 +42,9 @@ internal readonly record struct AntigravityStamp(long DatabaseLength, DateTime D
 
 /// <summary>
 /// Follows one conversation database (METRICS 5.4): the first read is complete, later reads take the rows above each
-/// table's cursor plus the steps last seen open. The connection follows the open rules of 4.5 and may be closed at any
-/// time between reads (idle or over the connection cap); the next read reopens it. Reads and closing are serialized.
+/// table's cursor plus the steps last seen open. The connection follows the open rules of 4.5 and is closed after every
+/// read: Windows cannot delete or replace a file another process holds open, so a connection kept between reads would
+/// block Antigravity from deleting or rewriting the conversation. Reads and closing are serialized.
 /// </summary>
 internal sealed class AntigravityTailer : TranscriptTailer, IDisposable
 {
@@ -53,6 +54,7 @@ internal sealed class AntigravityTailer : TranscriptTailer, IDisposable
     private AntigravityStamp? _openedAt;
     private (long Length, DateTime WriteUtc)? _skipUntilChanged;
     private long _lastReadTimestamp;
+    private bool _lastReadImmutable;
 
     public AntigravityTailer(string path)
         : base(path)
@@ -64,8 +66,8 @@ internal sealed class AntigravityTailer : TranscriptTailer, IDisposable
 
     public bool HasConnection => Volatile.Read(ref _database) is not null;
 
-    /// <summary>The connection is <c>immutable=1</c> (the conversation was closed when it was opened).</summary>
-    public bool IsImmutable => Volatile.Read(ref _database)?.IsImmutable == true;
+    /// <summary>The last read used <c>immutable=1</c> (the conversation was closed when it was opened).</summary>
+    public bool IsImmutable => Volatile.Read(ref _database)?.IsImmutable ?? _lastReadImmutable;
 
     /// <summary>The last read found no usable <c>steps</c> table.</summary>
     public bool Unsupported { get; private set; }
@@ -124,15 +126,26 @@ internal sealed class AntigravityTailer : TranscriptTailer, IDisposable
             }
 
             Unsupported = _database.Format == AntigravityFormat.Unsupported;
+            _lastReadImmutable = _database.IsImmutable;
             if (Unsupported)
             {
+                CloseConnection();
                 batch.Unsupported = true;
                 NeedsCompleteRead = false;
                 return new TailReadResult(wasReset, stamp.Length, stamp.LastWriteUtc, 0);
             }
 
             var complete = _cursors.IsComplete;
-            var bytes = _database.Read(_cursors, batch);
+            long bytes;
+            try
+            {
+                bytes = _database.Read(_cursors, batch);
+            }
+            finally
+            {
+                CloseConnection();
+            }
+
             NeedsCompleteRead = false;
             Offset = stamp.Length;
             var read = complete ? Math.Max(1, stamp.DatabaseLength) : bytes + batch.Count;

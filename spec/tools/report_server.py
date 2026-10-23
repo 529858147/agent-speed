@@ -125,6 +125,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    # Usernames are Unicode; Windows consoles and pipes otherwise use a legacy code page and fail mid-request.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Agent Speed Live Report API reference server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
