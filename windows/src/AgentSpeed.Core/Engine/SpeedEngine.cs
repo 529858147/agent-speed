@@ -594,7 +594,7 @@ internal sealed class SpeedEngine
             response.Tokens.Total,
             duration,
             speed,
-            DateTimeOffset.FromUnixTimeMilliseconds(response.EndMs));
+            UnixTime.FromMs(response.EndMs));
     }
 
     /// <param name="CostRate">micro-USD per second of the same reference responses (METRICS 9.5); null when none has a known cost.</param>

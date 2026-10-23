@@ -512,7 +512,7 @@ internal sealed class MonitorCore : IDisposable
                 a.Info.IsSubagent,
                 a.Live,
                 a.RecentSpeed,
-                DateTimeOffset.FromUnixTimeMilliseconds(a.Info.LastLineMs ?? nowMs),
+                UnixTime.FromMs(a.Info.LastLineMs ?? nowMs),
                 a.ParentId) { LiveCost = a.LiveCost })
             .ToList();
 
@@ -530,7 +530,7 @@ internal sealed class MonitorCore : IDisposable
             frame.Live,
             frame.EstimatedShare,
             frame.PeakToday,
-            frame.PeakTodayAtMs is { } at ? DateTimeOffset.FromUnixTimeMilliseconds(at) : null,
+            frame.PeakTodayAtMs is { } at ? UnixTime.FromMs(at) : null,
             frame.AverageToday,
             frame.Today,
             sources,
