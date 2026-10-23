@@ -405,6 +405,7 @@ internal sealed partial class LiquidRenderer : IOrbStyleRenderer
     /// <summary>The point on the glass straight outward (horizontally) from an end of the surface.</summary>
     private static Point OnGlass(Point c, Point p, double radius)
     {
+        radius = Math.Max(0, radius);
         var dy = Math.Clamp(p.Y - c.Y, -radius, radius);
         var dx = Math.Sqrt(Math.Max(0, radius * radius - dy * dy));
         return new Point(c.X + (p.X >= c.X ? dx : -dx), c.Y + dy);
