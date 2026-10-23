@@ -16,10 +16,16 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "httpsUrl": {
-      "description": "An https URL. Plain http is allowed only for the loopback hosts of a local test server (REPORTING 2.2).",
+      "description": "An https link (terms, privacy, homepage, leaderboard, apiKey.url, profileUrl). Links are always https, also in a document of a loopback test server (REPORTING 2.2, 2.3). A client drops an optional link that is not one and rejects the document only for terms and privacy (REPORTING 3.2).",
       "type": "string",
       "maxLength": 2048,
-      "pattern": "^(https://[^\\s/?#@]+|http://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]{1,5})?)(/[^\\s]*)?$"
+      "pattern": "^https://[^\\s/?#@]+(/[^\\s]*)?$"
+    },
+    "apiUrl": {
+      "description": "The api base URL: https without query, fragment or user information, or http to a loopback host (127.0.0.1, localhost, [::1]). The http form is valid only in a discovery document that was itself fetched over http from a loopback host (REPORTING 2.2); a schema cannot see how the document was fetched, so clients check that condition.",
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(https://[^\\s/?#@]+|http://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]{1,5})?)(/[^\\s?#]*)?$"
     },
     "tokS": { "description": "Tokens per second, rounded to 0.1.", "type": "number", "minimum": 0, "maximum": 1000000000 },
     "share": { "description": "Fraction 0–1, rounded to 0.001.", "type": "number", "minimum": 0, "maximum": 1 },
@@ -240,7 +246,7 @@
       }
     },
     "discovery": {
-      "description": "GET {service}/.well-known/agent-speed-report (REPORTING 3).",
+      "description": "GET {service}/.well-known/agent-speed-report (REPORTING 3): what a service MUST publish. Clients accept more (REPORTING 3.2): numbers outside their ranges are clamped and optional links that are not https are dropped.",
       "type": "object",
       "required": ["protocol", "versions", "service", "api"],
       "properties": {
@@ -260,10 +266,10 @@
             "retentionDays": { "type": "integer", "minimum": 0, "maximum": 3650 }
           }
         },
-        "api": { "$ref": "#/$defs/httpsUrl" },
+        "api": { "$ref": "#/$defs/apiUrl" },
         "apiKey": {
+          "description": "mode is optional and defaults to none (REPORTING 3.2, 5.6).",
           "type": "object",
-          "required": ["mode"],
           "properties": {
             "mode": { "enum": ["none", "optional", "required"] },
             "url": { "$ref": "#/$defs/httpsUrl" }

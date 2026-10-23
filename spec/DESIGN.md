@@ -1623,7 +1623,9 @@ once; the glow blends two pre-blurred copies (σ 1.6 and 4.2 units) per frame in
 
 ## 5. Settings
 
-Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluent WPF window with Mica). Sections:
+Native settings window (macOS: SwiftUI `Settings`/grouped `Form`, 600 pt wide so that the nine toolbar tabs fit in
+every language — the Japanese labels need at least 580 pt — and 680 pt for 一般 and 懸浮窗; Windows: Fluent WPF window
+with Mica). Sections:
 
 - **一般 General** — Appearance (Auto / Light / Dark), Language (System / 繁體中文 / 简体中文 / English / 日本語),
   Launch at login, Speed metric
@@ -2227,8 +2229,11 @@ text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
    off sends one `leaving` report (METRICS 11.5) and keeps the registration.
 2. **Service** (`report.service`) — a popup: the presets (`Codex Radar`, `https://codexradar.com`), a separator,
    `report.service.custom`. Custom shows the `report.url` field (placeholder `report.url.placeholder`), validated as
-   the user types (0.5 s debounce, REPORTING 2.1): `report.url.invalid`, `report.url.https`; a loopback `http` URL
-   shows the amber note `report.url.loopback`. Below the popup the **service card** fades in after discovery
+   the user types (0.5 s debounce, REPORTING 2.1; local only): `report.url.invalid`, `report.url.https`; a loopback
+   `http` URL shows the amber note `report.url.loopback`. **When discovery is fetched** (REPORTING 3.4): choosing a
+   service in the popup, committing a valid custom URL (Return or leaving the field), opening the consent sheet, and
+   the refreshes while reporting is on. Opening Settings or this pane never touches the network: the card shows the
+   stored copy, or stays hidden until the first fetch. Below the popup the **service card** fades in after discovery
    (REPORTING 3): the name (13 pt semibold), `report.service.host` with the API host (secondary, selectable), the
    description (11 pt secondary, at most 3 lines), `report.service.retention` when given, and borderless link
    buttons `report.service.terms`, `report.service.privacy`, `report.service.leaderboard`. While fetching:
@@ -2265,10 +2270,14 @@ text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
    `settings.network.offHint`; amber `report.status.connecting`, `report.status.registering`,
    `report.status.retrying` (with a short reason such as `HTTP 503`), `report.status.rateLimited` (with the local
    time); red (needs the user) `report.status.apiKey`, `report.status.usernameTaken`, `report.status.keyMismatch`,
-   `report.status.rejected`, `report.status.upgrade`, `report.status.gone`. When the service returns a rank:
+   `report.status.rejected` (three malformed or invalid reports in a row), `report.status.forbidden` (HTTP 403
+   `forbidden`: the service refuses this device by its own policy), `report.status.upgrade`, `report.status.gone`.
+   When the service returns a rank:
    `report.status.rank` after the line. Actions on the right: `report.pause` as a pull-down with
    `report.pause.hour` and `report.pause.indefinite`, or `report.resume` while paused.
-7. **This device** (`report.device`) — `report.device.detail` (username and host), `report.device.fingerprint`
+7. **This device** (`report.device`) — `report.device.detail` (username and host) with, trailing, the borderless
+   link button `report.device.profile` when the service returned a `profileUrl` (the user's public page, REPORTING
+   4.1; opened in the browser on click), `report.device.fingerprint`
    followed by the first 8 characters of the key's RFC 7638 thumbprint (monospaced, selectable), and the destructive
    text button `report.forget`. It asks `report.forget.confirm` with `report.forget.detail` (destructive default
    `report.forget.action`, `history.cancel`), then calls the deletion endpoint (REPORTING 4.6): success →
@@ -2350,26 +2359,36 @@ report) and `report.preview.copy`. While reporting is off or quiet it shows the 
   the pause end (or indefinite), and per service origin: the confirmed discovery fields (REPORTING 3.3), `deviceId`,
   the registered username, `profileUrl`, the API origin, the key's creation date and the pending-key flag (REPORTING
   4.5). At most 8 service identities; the oldest unused one is forgotten locally first.
-- **Private keys and API keys** never go to the settings store, logs or crash reports:
+- **Private keys and API keys** never go to the settings store, logs or crash reports. **Availability** (normative,
+  REPORTING 4.7): every key below is usable once the user has unlocked the computer after it started, without the
+  user's presence — no password, Touch ID, Windows Hello or other prompt for each use — so reports continue while the
+  screen is locked. Accessibility "when unlocked" and any user-presence or biometry flag are not used.
   - **macOS, with a Secure Enclave** (`SecureEnclave.isAvailable`: Apple silicon and Intel Macs with a T2 chip) — the
     normative store. The device key is generated **inside the Secure Enclave** with CryptoKit
-    (`SecureEnclave.P256.Signing.PrivateKey()`, no access-control flags, so signing never asks the user); it cannot be
+    (`SecureEnclave.P256.Signing.PrivateKey(accessControl:)` with
+    `SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, .privateKeyUsage, nil)`:
+    usable after the first unlock since boot, never asking the user; CryptoKit's default access control,
+    `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, would stop signing while the screen is locked); it cannot be
     exported, and its `dataRepresentation` is an encrypted handle that only this Mac's Secure Enclave can use. The
     handle is stored in `<app data>/report/<deviceId>.sekey` (mode 0600, written atomically). The API key is sealed
     with AES-GCM under a key derived (`hkdfDerivedSymmetricKey`, SHA-256, salt `AgentSpeed report`, info `api-key`,
     32 bytes) from an ECDH agreement between a Secure Enclave key-agreement key
-    (`SecureEnclave.P256.KeyAgreement.PrivateKey`, its handle in `<deviceId>.seagree`) and an ephemeral P-256 public key
+    (`SecureEnclave.P256.KeyAgreement.PrivateKey`, the same access control, its handle in `<deviceId>.seagree`) and an
+    ephemeral P-256 public key
     stored with the sealed box in `<deviceId>.apikey`. No Keychain item is used, so updates of the ad-hoc signed app
     never trigger a Keychain password prompt. Verified on 2026-10-22 with ad-hoc signed builds on macOS 27: Secure
     Enclave signing (signatures verified by the reference) and the API-key sealing both work without entitlements.
   - **macOS without a Secure Enclave** (older Intel Macs) — fallback: a software key (`P256.Signing.PrivateKey`, its
     32-byte `rawRepresentation`) and the API key in Keychain generic-password items, service
     `io.github.zoefix.agentspeed.report`, accounts `<deviceId>.key` and `<deviceId>.apikey`,
-    `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, not synchronizable. Because release builds are ad-hoc signed,
+    `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, no `kSecAttrAccessControl`, not synchronizable. Because
+    release builds are ad-hoc signed,
     the Keychain may ask for the login password the first time an updated build reads these items (not verified).
   - Windows: `%LOCALAPPDATA%\AgentSpeed\report\<deviceId>.key` (the PKCS#8 private key from
     `ECDsa.ExportPkcs8PrivateKey`) and `<deviceId>.apikey` (UTF-8), each protected with DPAPI (`CryptProtectData`,
-    current user, the device id's 16 bytes as additional entropy), written to a temporary file and renamed.
+    current user, the device id's 16 bytes as additional entropy, flags `CRYPTPROTECT_UI_FORBIDDEN` only and no
+    prompt structure: readable whenever the user is signed in, the locked screen included, never prompting), written
+    to a temporary file and renamed.
   - Both are deleted by *Forget*, *Reset* and when a service identity is forgotten locally.
 
 ### README and About wording (prepared; applied when the feature ships)

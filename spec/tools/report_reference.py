@@ -10,6 +10,7 @@ Standard library only. It implements:
 - report validation with spec/report-schema.json plus the rules a schema cannot express (REPORTING 6);
 - every server rule of REPORTING 4, 7 and 8 as an in-memory service (used by report_server.py);
 - the client report scheduler of METRICS 11.5 as a simulator;
+- what a client accepts from a discovery document (REPORTING 2.2, 3.2);
 - spec/fixtures/report-vectors.json: checked by default, regenerated with --write.
 
 The ECDSA code is for tests and local servers only: it is not constant time. Apps use CryptoKit or
@@ -512,6 +513,17 @@ def heat(value: float, redline: float) -> float:
     return min(1.0, (value / redline) ** 0.6) if value > 0 else 0.0
 
 
+def source_has_activity(entry: dict) -> bool:
+    """REPORTING 6.6.4: some number of the entry as sent, other than agents.active and the shares, is non-zero."""
+    values = [entry["live"]["outputTokS"], entry["live"]["totalTokS"], entry["agents"]["generating"],
+              entry["agents"]["tools"], *entry["delta"].values()]
+    if "cost" in entry:
+        values += [entry["cost"][field] for field in ("liveMicroUsdPerSecond", "deltaMicroUsd", "unpricedRequests")]
+    if "traffic" in entry:
+        values += [value or 0 for value in entry["traffic"].values()]
+    return any(value > 0 for value in values)
+
+
 def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple = SECTIONS,
                   max_models: int = 16) -> list[str]:
     """Schema errors plus the rules of REPORTING 6 that a schema cannot express (strict = conformance mode)."""
@@ -581,11 +593,7 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
             traffic_ok = report.get("traffic", {}).get("status") == "ok"
             if ("traffic" in entry) != traffic_ok:
                 errors.append(f"sources.{entry['source']}: traffic must be present exactly when traffic is ok")
-            busy = (entry["live"]["outputTokS"] > 0 or entry["live"]["totalTokS"] > 0
-                    or entry["agents"]["generating"] + entry["agents"]["tools"] > 0
-                    or any(entry["delta"].values())
-                    or ("traffic" in entry and entry["traffic"]["rxBytes"] + entry["traffic"]["txBytes"] > 0))
-            if not busy:
+            if not source_has_activity(entry):
                 errors.append(f"sources.{entry['source']}: listed without activity")
         if "cost" in report:
             for field in ("deltaMicroUsd", "unpricedRequests"):
@@ -608,6 +616,8 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
         for field in ("requests", "output", "measuredOutput", "measuredMs"):
             if sum(m[field] for m in models) != delta[field]:
                 errors.append(f"models: {field} does not add up")
+        if "cost" in report and sum(m.get("deltaMicroUsd", 0) for m in models) != report["cost"]["deltaMicroUsd"]:
+            errors.append("models: deltaMicroUsd does not add up")
         if sum(m["generating"] for m in models) != live["agents"]["generating"]:
             errors.append("models: generating does not add up")
         for m in models:
@@ -618,6 +628,112 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
     if report["activity"] == "idle" and (live["agents"]["generating"] or live["agents"]["tools"]):
         errors.append("activity: idle while agents are working")
     return errors
+
+
+# ------------------------------------------------------------------------------------------------- discovery
+
+LIMIT_RANGES = {"intervalSeconds": (5, 300), "heartbeatSeconds": (30, 900), "maxAgeSeconds": (10, 120),
+                "maxBodyBytes": (4096, 65_536), "maxModels": (0, 16)}
+LOOPBACK_HTTP_RE = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]{1,5})?(/|$)")
+
+
+class DiscoveryError(ValueError):
+    """The discovery document is invalid; the argument names the first offending field."""
+
+
+def _member(container: dict, key: str, kind: str, field: str, required: bool = False):
+    if key not in container:
+        if required:
+            raise DiscoveryError(field)
+        return None
+    if not _type_ok(container[key], kind):
+        raise DiscoveryError(field)
+    return container[key]
+
+
+def _plain_text(text: str, limit: int) -> str:
+    """REPORTING 2.3: control and format characters removed, white space collapsed, length capped."""
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Cc", "Cf") or ch.isspace())
+    return " ".join(text.split())[:limit].rstrip()
+
+
+def parse_discovery(document, fetched_from: str) -> dict:
+    """What a client takes from a discovery document (REPORTING 2.2, 3.2): numbers clamped, optional links that are
+    not https dropped, unknown fields ignored. Raises DiscoveryError(field) when the document is invalid."""
+    schema = load_schema()
+
+    def url_ok(definition: str, value: str) -> bool:
+        return not schema_errors(value, schema["$defs"][definition], schema)
+
+    if not isinstance(document, dict):
+        raise DiscoveryError("$")
+    if _member(document, "protocol", "string", "protocol", True) != "agent-speed-report":
+        raise DiscoveryError("protocol")
+    versions = _member(document, "versions", "array", "versions", True)
+    if not versions or not all(_type_ok(version, "integer") for version in versions):
+        raise DiscoveryError("versions")
+    service = _member(document, "service", "object", "service", True)
+    name = _plain_text(_member(service, "name", "string", "service.name", True), 40)
+    if not name:
+        raise DiscoveryError("service.name")
+    result = {"versions": list(versions), "name": name}
+    for key, limit in (("description", 200), ("contact", 254)):
+        text = _member(service, key, "string", f"service.{key}")
+        result[key] = (_plain_text(text, limit) or None) if text is not None else None
+    for key in ("terms", "privacy"):
+        link = _member(service, key, "string", f"service.{key}", True)
+        if not url_ok("httpsUrl", link):
+            raise DiscoveryError(f"service.{key}")
+        result[key] = link
+    for key in ("homepage", "leaderboard"):
+        link = _member(service, key, "string", f"service.{key}")
+        result[key] = link if link is not None and url_ok("httpsUrl", link) else None
+    retention = _member(service, "retentionDays", "integer", "service.retentionDays")
+    result["retentionDays"] = None if retention is None else min(max(retention, 0), 3650)
+
+    api = _member(document, "api", "string", "api", True)
+    if not url_ok("apiUrl", api) or (api.startswith("http://") and not LOOPBACK_HTTP_RE.match(fetched_from)):
+        raise DiscoveryError("api")
+    scheme, rest = api.split("://", 1)
+    authority, slash, path = rest.partition("/")
+    result["api"] = f"{scheme}://{authority.lower()}{slash}{path}".removesuffix("/")
+
+    api_key = _member(document, "apiKey", "object", "apiKey") or {}
+    mode = _member(api_key, "mode", "string", "apiKey.mode")
+    if mode is not None and mode not in ("none", "optional", "required"):
+        raise DiscoveryError("apiKey.mode")
+    result["apiKeyMode"] = mode or "none"
+    key_url = _member(api_key, "url", "string", "apiKey.url")
+    result["apiKeyUrl"] = key_url if key_url is not None and url_ok("httpsUrl", key_url) else None
+
+    username = _member(document, "username", "object", "username") or {}
+    rules = dict(DEFAULT_USERNAME_RULES)
+    for key, low, high in (("minLength", 1, 12), ("maxLength", 12, 32)):
+        value = _member(username, key, "integer", f"username.{key}")
+        if value is not None:
+            rules[key] = min(max(value, low), high)
+    charset = _member(username, "charset", "string", "username.charset")
+    if charset is not None and charset not in ("unicode", "ascii"):
+        raise DiscoveryError("username.charset")
+    rules["charset"] = charset or rules["charset"]
+    spaces = _member(username, "spaces", "boolean", "username.spaces")
+    rules["spaces"] = rules["spaces"] if spaces is None else spaces
+    result["username"] = rules
+
+    given = _member(document, "limits", "object", "limits") or {}
+    limits = dict(DEFAULT_LIMITS)
+    for key, (low, high) in LIMIT_RANGES.items():
+        value = _member(given, key, "integer", f"limits.{key}")
+        if value is not None:
+            limits[key] = min(max(value, low), high)
+    limits["heartbeatSeconds"] = max(limits["heartbeatSeconds"], limits["intervalSeconds"])
+    result["limits"] = limits
+
+    sections = _member(document, "sections", "array", "sections")
+    if sections is not None and not all(isinstance(name, str) for name in sections):
+        raise DiscoveryError("sections")
+    result["sections"] = [name for name in SECTIONS if sections is None or name in sections]
+    return result
 
 
 # ------------------------------------------------------------------------------------------------- service
@@ -1019,7 +1135,8 @@ def simulate_scheduler(case: dict) -> dict:
     outcomes = {int(k): list(v) for k, v in case.get("outcomes", {}).items()}
     delivered, lost = [], []
     st = {"seq": 0, "ledger": 0, "windowStart": None, "lastActive": None, "mode": "quiet", "prev": None,
-          "hold": -1, "failures": 0, "paused": False, "networkOff": False, "inflight": None, "waiting": None}
+          "backoff": -1, "retryAfter": -1, "failures": 0, "paused": False, "networkOff": False,
+          "inflight": None, "waiting": None}
 
     def outcome_for(report):
         queue = outcomes.get(report["seq"], [])
@@ -1035,7 +1152,7 @@ def simulate_scheduler(case: dict) -> dict:
     def fail(report, t):
         lost.append(report["seq"])
         st["failures"] += 1
-        st["hold"] = max(st["hold"], t + backoff_ms(st["failures"]))
+        st["backoff"] = max(st["backoff"], t + backoff_ms(st["failures"]))
 
     def attempt(report, t, single=False):
         result = outcome_for(report)
@@ -1046,7 +1163,7 @@ def simulate_scheduler(case: dict) -> dict:
             return None
         if result.startswith("rateLimited:"):
             lost.append(report["seq"])
-            st["hold"] = t + int(result.split(":")[1]) * 1000
+            st["retryAfter"] = max(st["retryAfter"], t + int(result.split(":")[1]) * 1000)
             return None
         if not single and report["attempts"] < 2 and t + RETRY_MS - report["builtAt"] <= max_age:
             report["nextAt"] = t + RETRY_MS
@@ -1084,7 +1201,8 @@ def simulate_scheduler(case: dict) -> dict:
         mode = "quiet" if since is None or since >= QUIET_MS else ("active" if since < HOLD_MS else "idle")
         previous_mode, st["prev"] = st["mode"], t
         st["mode"] = mode
-        if just_paused and previous_mode != "quiet" and not st["networkOff"]:
+        # Step 4: a backoff does not stop the leaving report; the network switch and a Retry-After wait do.
+        if just_paused and previous_mode != "quiet" and not st["networkOff"] and t >= st["retryAfter"]:
             if st["inflight"] is not None:
                 fail(st["inflight"], t)
                 st["inflight"] = None
@@ -1092,7 +1210,7 @@ def simulate_scheduler(case: dict) -> dict:
                 lost.append(st["waiting"]["seq"])
                 st["waiting"] = None
             attempt(build(t, "leaving"), t, single=True)
-        if st["paused"] or st["networkOff"] or t < st["hold"]:
+        if st["paused"] or st["networkOff"] or t < max(st["backoff"], st["retryAfter"]):
             st["ledger"], st["windowStart"] = 0, t
             continue
         if mode == "quiet":
@@ -1296,6 +1414,7 @@ def build_vectors() -> dict:
         "server": build_server_cases(d1, d2, d3, p1, p2, p3, examples),
         "usernames": USERNAME_CASES,
         "scheduler": SCHEDULER_CASES,
+        "discovery": DISCOVERY_CASES,
     }
 
 
@@ -1593,6 +1712,101 @@ SCHEDULER_CASES = [
                                  [5, 31500, 5000, "active", 500], [6, 36500, 5000, "active", 500]],
                    "lost": [1, 2]},
     },
+    {
+        "name": "pause during a Retry-After wait sends no leaving report",
+        "ticks": [[0, 40000]], "activity": [[0, 40000]],
+        "increments": [{"from": 1000, "to": 40000, "step": 1000, "output": 100}],
+        "outcomes": {"2": ["rateLimited:20"]},
+        "events": [[15000, "pause"], [35000, "resume"]],
+        "expect": {"delivered": [[1, 5000, 5000, "active", 500], [3, 39500, 5000, "active", 500]],
+                   "lost": [2]},
+    },
+    {
+        "name": "pause during a backoff still sends its leaving report (one attempt)",
+        "ticks": [[0, 20000]], "activity": [[0, 20000]],
+        "increments": [{"from": 1000, "to": 20000, "step": 1000, "output": 100}],
+        "outcomes": {"1": ["fail", "fail"], "2": ["fail", "fail"]},
+        "events": [[14000, "pause"]],
+        "expect": {"delivered": [[3, 14000, 500, "leaving", 100]],
+                   "lost": [1, 2]},
+    },
+]
+
+HTTPS_DISCOVERY = "https://example.com/.well-known/agent-speed-report"
+LOOPBACK_DISCOVERY = "http://127.0.0.1:8787/.well-known/agent-speed-report"
+
+
+def _discovery(service=None, **changes) -> dict:
+    document = {"protocol": "agent-speed-report", "versions": [1],
+                "service": {"name": "Example", "terms": "https://example.com/terms",
+                            "privacy": "https://example.com/privacy", **(service or {})},
+                "api": "https://api.example.com/agent-speed"}
+    document.update(changes)
+    return document
+
+
+_LINKS_DROPPED = {"homepage": None, "leaderboard": None, "apiKeyUrl": None}
+DISCOVERY_CASES = [
+    {"name": "a minimal document gets the defaults; apiKey.mode is none",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery(),
+     "expect": {"api": "https://api.example.com/agent-speed", "apiKeyMode": "none", "apiKeyUrl": None,
+                "homepage": None, "leaderboard": None, "limits": DEFAULT_LIMITS, "username": DEFAULT_USERNAME_RULES,
+                "sections": list(SECTIONS)}},
+    {"name": "apiKey without mode means none",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery(apiKey={"url": "https://example.com/keys"}),
+     "expect": {"apiKeyMode": "none", "apiKeyUrl": "https://example.com/keys"}},
+    {"name": "optional links that are not https are dropped; the document stays valid",
+     "fetchedFrom": HTTPS_DISCOVERY,
+     "document": _discovery({"homepage": "http://example.com/", "leaderboard": "javascript:alert(1)"},
+                            apiKey={"mode": "optional", "url": "https://user@example.com/keys"}),
+     "expect": {"apiKeyMode": "optional", **_LINKS_DROPPED}},
+    {"name": "optional links of a loopback test server are dropped too (links are always https)",
+     "fetchedFrom": LOOPBACK_DISCOVERY,
+     "document": _discovery({"leaderboard": "http://127.0.0.1:8787/live"}, api="http://127.0.0.1:8787"),
+     "expect": {"api": "http://127.0.0.1:8787", "leaderboard": None}},
+    {"name": "an optional link of the wrong type makes the document invalid",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery({"leaderboard": 42}),
+     "expect": {"invalid": "service.leaderboard"}},
+    {"name": "terms that are not https make the document invalid",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery({"terms": "http://example.com/terms"}),
+     "expect": {"invalid": "service.terms"}},
+    {"name": "loopback http terms are invalid even from a loopback test server",
+     "fetchedFrom": LOOPBACK_DISCOVERY,
+     "document": _discovery({"terms": "http://127.0.0.1:8787/terms"}, api="http://127.0.0.1:8787"),
+     "expect": {"invalid": "service.terms"}},
+    {"name": "a missing privacy link makes the document invalid",
+     "fetchedFrom": HTTPS_DISCOVERY,
+     "document": {**_discovery(), "service": {"name": "Example", "terms": "https://example.com/terms"}},
+     "expect": {"invalid": "service.privacy"}},
+    {"name": "a loopback http api is accepted from a document fetched over loopback http",
+     "fetchedFrom": LOOPBACK_DISCOVERY, "document": _discovery(api="http://localhost:8787/agent-speed/"),
+     "expect": {"api": "http://localhost:8787/agent-speed"}},
+    {"name": "a loopback http api in a document fetched over https is invalid",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery(api="http://127.0.0.1:8787"),
+     "expect": {"invalid": "api"}},
+    {"name": "an http api with any other host is invalid",
+     "fetchedFrom": LOOPBACK_DISCOVERY, "document": _discovery(api="http://192.168.1.5:8787"),
+     "expect": {"invalid": "api"}},
+    {"name": "an api with a query is invalid",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery(api="https://api.example.com/v?x=1"),
+     "expect": {"invalid": "api"}},
+    {"name": "an unknown apiKey.mode is invalid",
+     "fetchedFrom": HTTPS_DISCOVERY, "document": _discovery(apiKey={"mode": "sometimes"}),
+     "expect": {"invalid": "apiKey.mode"}},
+    {"name": "numbers outside their ranges are clamped; the heartbeat never below the interval",
+     "fetchedFrom": HTTPS_DISCOVERY,
+     "document": _discovery({"retentionDays": 9000},
+                            limits={"intervalSeconds": 600, "heartbeatSeconds": 10, "maxAgeSeconds": 1,
+                                    "maxBodyBytes": 1_000_000, "maxModels": 40},
+                            username={"minLength": 0, "maxLength": 64}),
+     "expect": {"retentionDays": 3650,
+                "limits": {"intervalSeconds": 300, "heartbeatSeconds": 300, "maxAgeSeconds": 10,
+                           "maxBodyBytes": 65_536, "maxModels": 16},
+                "username": {"minLength": 1, "maxLength": 32, "charset": "unicode", "spaces": True}}},
+    {"name": "unknown fields and section names are ignored",
+     "fetchedFrom": HTTPS_DISCOVERY,
+     "document": _discovery(sections=["cost", "future", "sources"], extra={"x": 1}),
+     "expect": {"sections": ["sources", "cost"]}},
 ]
 
 
@@ -1703,7 +1917,23 @@ def check_vectors(vectors: dict, verbose: bool) -> list[str]:
             failures.append(f"scheduler: {case['name']}: got {json.dumps(result)}")
         elif verbose:
             print(f"  scheduler ok: {case['name']}")
+    for case in vectors["discovery"]:
+        try:
+            parsed = parse_discovery(case["document"], case["fetchedFrom"])
+            got = {key: parsed.get(key) for key in case["expect"]}
+        except DiscoveryError as error:
+            got = {"invalid": str(error)}
+        if got != case["expect"]:
+            failures.append(f"discovery: {case['name']}: got {json.dumps(got)}")
     return failures
+
+
+def _discovery_problems(document: dict, fetched_from: str) -> list[str]:
+    try:
+        parse_discovery(document, fetched_from)
+        return []
+    except DiscoveryError as error:
+        return [f"a client rejects it at {error}"]
 
 
 def check_examples(verbose: bool) -> list[str]:
@@ -1714,6 +1944,8 @@ def check_examples(verbose: bool) -> list[str]:
             errors = report_errors(document, schema)
         elif name in ("discovery", "registration"):
             errors = schema_errors(document, schema["$defs"][name], schema, closed=True)
+            if name == "discovery":
+                errors += _discovery_problems(document, HTTPS_DISCOVERY)
         elif name == "responses":
             errors = []
             for index, item in enumerate(document["responses"]):
@@ -1725,6 +1957,11 @@ def check_examples(verbose: bool) -> list[str]:
         failures += [f"examples/{name}.json: {error}" for error in errors]
         if verbose and not errors:
             print(f"  example ok: {name}")
+    for scheme, fetched_from in (("https", HTTPS_DISCOVERY), ("http", LOOPBACK_DISCOVERY)):
+        document = ReferenceService(authority=authority_of(fetched_from)).discovery(scheme)
+        problems = schema_errors(document, schema["$defs"]["discovery"], schema, closed=True)
+        problems += _discovery_problems(document, fetched_from)
+        failures += [f"reference server discovery ({scheme}): {problem}" for problem in problems]
     return failures
 
 
@@ -1790,14 +2027,19 @@ def run_client(args) -> int:
         raise SystemExit("the service URL must be https:// (http only for loopback test servers)")
     status, _, discovery = _http("GET", f"{service}/.well-known/agent-speed-report", {
         "Accept": "application/json", "User-Agent": "AgentSpeed/0.0.0 (macOS)"}, None, 65_536)
-    schema = load_schema()
-    errors = schema_errors(discovery, schema["$defs"]["discovery"], schema) if status == 200 else [f"HTTP {status}"]
-    if errors:
-        raise SystemExit(f"discovery failed: {errors[0]}")
-    print(f"service: {discovery['service']['name']}  api: {discovery['api']}  versions: {discovery['versions']}")
-    api = discovery["api"].rstrip("/")
-    limits = {**DEFAULT_LIMITS, **discovery.get("limits", {})}
-    rules = username_rules(discovery.get("username"))
+    if status != 200:
+        raise SystemExit(f"discovery failed: HTTP {status}")
+    try:
+        discovery = parse_discovery(discovery, f"{service}/.well-known/agent-speed-report")
+    except DiscoveryError as error:
+        raise SystemExit(f"discovery failed: invalid {error}")
+    if 1 not in discovery["versions"]:
+        raise SystemExit(f"the service accepts only protocol versions {discovery['versions']}")
+    print(f"service: {discovery['name']}  api: {discovery['api']}  versions: {discovery['versions']}  "
+          f"api key: {discovery['apiKeyMode']}")
+    api = discovery["api"]
+    limits = discovery["limits"]
+    rules = discovery["username"]
     username = unicodedata.normalize("NFKC", args.username or random_username())
     reason = validate_username(username, rules)
     if reason:
@@ -1826,8 +2068,8 @@ def run_client(args) -> int:
     username = payload.get("username", username)
     run_id = str(uuid.uuid4())
     template = load_examples()["report-active"]
-    accepted = set(discovery.get("sections", SECTIONS)) & set(DEFAULT_SECTIONS + (("machineTraffic",)
-                                                                             if args.machine_traffic else ()))
+    accepted = set(discovery["sections"]) & set(DEFAULT_SECTIONS + (("machineTraffic",)
+                                                                  if args.machine_traffic else ()))
     for seq in range(1, args.reports + 1):
         report = copy.deepcopy(template)
         for section in SECTIONS:
@@ -1892,9 +2134,10 @@ def main() -> int:
         failures.append("report-vectors.json is not what --write produces (run with --write after a spec change)")
     for failure in failures:
         print(f"FAIL {failure}", file=sys.stderr)
-    counts = (len(vectors["verify"]), len(vectors["server"]), len(vectors["scheduler"]))
+    counts = (len(vectors["verify"]), len(vectors["server"]), len(vectors["scheduler"]), len(vectors["discovery"]))
     print(f"{'FAILED' if failures else 'ok'}: {len(failures)} failures; {counts[0]} signature cases, "
-          f"{counts[1]} server cases, {counts[2]} scheduler cases; {cross_check(vectors)}")
+          f"{counts[1]} server cases, {counts[2]} scheduler cases, {counts[3]} discovery cases; "
+          f"{cross_check(vectors)}")
     return 1 if failures else 0
 
 

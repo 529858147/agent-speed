@@ -4195,10 +4195,16 @@
     "ja": "このデバイスの鍵がサービスの記録と一致しません"
   },
   "report.status.rejected": {
-    "zh-Hant": "服務拒絕了這台裝置的上報",
-    "zh-Hans": "服务拒绝了这台设备的上报",
-    "en": "The service rejected this device's reports",
-    "ja": "サービスがこのデバイスの送信を拒否しました"
+    "zh-Hant": "服務一再拒收上報的內容，已停止上報",
+    "zh-Hans": "服务一再拒收上报的内容，已停止上报",
+    "en": "The service keeps rejecting the reports — reporting stopped",
+    "ja": "サービスが送信内容を受け付けないため、送信を停止しました"
+  },
+  "report.status.forbidden": {
+    "zh-Hant": "服務拒絕了這台裝置，已停止上報",
+    "zh-Hans": "服务拒绝了这台设备，已停止上报",
+    "en": "The service refused this device — reporting stopped",
+    "ja": "サービスがこのデバイスを拒否したため、送信を停止しました"
   },
   "report.status.upgrade": {
     "zh-Hant": "這個服務需要較新版本的 Agent Speed",
@@ -4253,6 +4259,12 @@
     "zh-Hans": "以“%@”注册于 %@",
     "en": "Registered as “%@” on %@",
     "ja": "「%@」として %@ に登録済み"
+  },
+  "report.device.profile": {
+    "zh-Hant": "開啟我的公開頁面",
+    "zh-Hans": "打开我的公开页面",
+    "en": "Open My Public Page",
+    "ja": "自分の公開ページを開く"
   },
   "report.device.fingerprint": {
     "zh-Hant": "裝置指紋",

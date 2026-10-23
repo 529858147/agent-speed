@@ -1673,8 +1673,11 @@ not start a new run.
    before this tick's increments are added (11.1).
 3. Update `lastActive` and the mode.
 4. **Leaving on a user action**: when this tick pauses or turns off reporting or quits the app, the previous mode was
-   not `quiet` and the network switch is on, build a `leaving` report and make one attempt (no retry; at quit wait at
-   most 1 s). A waiting report and an in-flight report waiting for its retry are lost.
+   not `quiet`, and nothing but a backoff kept the scheduler from being ready before this tick's event (the network
+   switch is on, no `Retry-After` wait is in effect, the service is confirmed and registered, no error needs the
+   user), build a `leaving` report and make one attempt (no retry; at quit wait at most 1 s). A waiting report and an
+   in-flight report waiting for its retry are lost. During a `Retry-After` wait nothing is built or sent, not even
+   this report (REPORTING 7.2); a backoff does not stop it.
 5. **Not ready** → discard; stop here.
 6. **Quiet**: on the tick the mode becomes `quiet` (the previous mode was `active` or `idle`), build a `leaving`
    report; on later quiet ticks discard.
@@ -1730,8 +1733,11 @@ end of a backoff — waits at least `I` after the previous report.)
 - Rounding is half away from zero (all values are ≥ 0): tok/s to 0.1, shares and heat to 0.001, bytes per second and
   micro-USD per second to integers. Token, byte and micro-USD deltas are exact integers. Every value is rounded on its
   own, so rounded per-source values may differ from the rounded total by the rounding.
-- `sources[]` lists, in the source order of section 1, the sources with any live value above 0, agents in
-  `generating` or `tools`, a non-zero delta, or (traffic `ok`) a non-zero byte delta.
+- `sources[]` lists, in the source order of section 1, every source with activity (REPORTING 6.6.4): some number of
+  its entry as sent — rounded, `null` as 0 — other than `agents.active`, `live.estimatedShare` and `cost.knownShare`
+  is above 0. A source whose only increment in the window is cost (a counted response priced only now, 11.4) is
+  listed, so the per-source cost sums add up. `models[]` lists every resolved id (11.3) that received a ledger
+  increment in the window, a cost increment included, or that an agent is generating with at `t`.
 - The body stays within `min(16384, maxBodyBytes)` bytes: when it would not, drop `models`, then `sources`, for that
   report only.
 

@@ -2598,6 +2598,484 @@
      2
     ]
    }
+  },
+  {
+   "name": "pause during a Retry-After wait sends no leaving report",
+   "ticks": [
+    [
+     0,
+     40000
+    ]
+   ],
+   "activity": [
+    [
+     0,
+     40000
+    ]
+   ],
+   "increments": [
+    {
+     "from": 1000,
+     "to": 40000,
+     "step": 1000,
+     "output": 100
+    }
+   ],
+   "outcomes": {
+    "2": [
+     "rateLimited:20"
+    ]
+   },
+   "events": [
+    [
+     15000,
+     "pause"
+    ],
+    [
+     35000,
+     "resume"
+    ]
+   ],
+   "expect": {
+    "delivered": [
+     [
+      1,
+      5000,
+      5000,
+      "active",
+      500
+     ],
+     [
+      3,
+      39500,
+      5000,
+      "active",
+      500
+     ]
+    ],
+    "lost": [
+     2
+    ]
+   }
+  },
+  {
+   "name": "pause during a backoff still sends its leaving report (one attempt)",
+   "ticks": [
+    [
+     0,
+     20000
+    ]
+   ],
+   "activity": [
+    [
+     0,
+     20000
+    ]
+   ],
+   "increments": [
+    {
+     "from": 1000,
+     "to": 20000,
+     "step": 1000,
+     "output": 100
+    }
+   ],
+   "outcomes": {
+    "1": [
+     "fail",
+     "fail"
+    ],
+    "2": [
+     "fail",
+     "fail"
+    ]
+   },
+   "events": [
+    [
+     14000,
+     "pause"
+    ]
+   ],
+   "expect": {
+    "delivered": [
+     [
+      3,
+      14000,
+      500,
+      "leaving",
+      100
+     ]
+    ],
+    "lost": [
+     1,
+     2
+    ]
+   }
+  }
+ ],
+ "discovery": [
+  {
+   "name": "a minimal document gets the defaults; apiKey.mode is none",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/agent-speed"
+   },
+   "expect": {
+    "api": "https://api.example.com/agent-speed",
+    "apiKeyMode": "none",
+    "apiKeyUrl": null,
+    "homepage": null,
+    "leaderboard": null,
+    "limits": {
+     "intervalSeconds": 5,
+     "heartbeatSeconds": 60,
+     "maxAgeSeconds": 30,
+     "maxBodyBytes": 16384,
+     "maxModels": 16
+    },
+    "username": {
+     "minLength": 2,
+     "maxLength": 32,
+     "charset": "unicode",
+     "spaces": true
+    },
+    "sections": [
+     "sources",
+     "models",
+     "cost",
+     "traffic",
+     "machineTraffic"
+    ]
+   }
+  },
+  {
+   "name": "apiKey without mode means none",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/agent-speed",
+    "apiKey": {
+     "url": "https://example.com/keys"
+    }
+   },
+   "expect": {
+    "apiKeyMode": "none",
+    "apiKeyUrl": "https://example.com/keys"
+   }
+  },
+  {
+   "name": "optional links that are not https are dropped; the document stays valid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy",
+     "homepage": "http://example.com/",
+     "leaderboard": "javascript:alert(1)"
+    },
+    "api": "https://api.example.com/agent-speed",
+    "apiKey": {
+     "mode": "optional",
+     "url": "https://user@example.com/keys"
+    }
+   },
+   "expect": {
+    "apiKeyMode": "optional",
+    "homepage": null,
+    "leaderboard": null,
+    "apiKeyUrl": null
+   }
+  },
+  {
+   "name": "optional links of a loopback test server are dropped too (links are always https)",
+   "fetchedFrom": "http://127.0.0.1:8787/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy",
+     "leaderboard": "http://127.0.0.1:8787/live"
+    },
+    "api": "http://127.0.0.1:8787"
+   },
+   "expect": {
+    "api": "http://127.0.0.1:8787",
+    "leaderboard": null
+   }
+  },
+  {
+   "name": "an optional link of the wrong type makes the document invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy",
+     "leaderboard": 42
+    },
+    "api": "https://api.example.com/agent-speed"
+   },
+   "expect": {
+    "invalid": "service.leaderboard"
+   }
+  },
+  {
+   "name": "terms that are not https make the document invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "http://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/agent-speed"
+   },
+   "expect": {
+    "invalid": "service.terms"
+   }
+  },
+  {
+   "name": "loopback http terms are invalid even from a loopback test server",
+   "fetchedFrom": "http://127.0.0.1:8787/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "http://127.0.0.1:8787/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "http://127.0.0.1:8787"
+   },
+   "expect": {
+    "invalid": "service.terms"
+   }
+  },
+  {
+   "name": "a missing privacy link makes the document invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms"
+    },
+    "api": "https://api.example.com/agent-speed"
+   },
+   "expect": {
+    "invalid": "service.privacy"
+   }
+  },
+  {
+   "name": "a loopback http api is accepted from a document fetched over loopback http",
+   "fetchedFrom": "http://127.0.0.1:8787/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "http://localhost:8787/agent-speed/"
+   },
+   "expect": {
+    "api": "http://localhost:8787/agent-speed"
+   }
+  },
+  {
+   "name": "a loopback http api in a document fetched over https is invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "http://127.0.0.1:8787"
+   },
+   "expect": {
+    "invalid": "api"
+   }
+  },
+  {
+   "name": "an http api with any other host is invalid",
+   "fetchedFrom": "http://127.0.0.1:8787/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "http://192.168.1.5:8787"
+   },
+   "expect": {
+    "invalid": "api"
+   }
+  },
+  {
+   "name": "an api with a query is invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/v?x=1"
+   },
+   "expect": {
+    "invalid": "api"
+   }
+  },
+  {
+   "name": "an unknown apiKey.mode is invalid",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/agent-speed",
+    "apiKey": {
+     "mode": "sometimes"
+    }
+   },
+   "expect": {
+    "invalid": "apiKey.mode"
+   }
+  },
+  {
+   "name": "numbers outside their ranges are clamped; the heartbeat never below the interval",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy",
+     "retentionDays": 9000
+    },
+    "api": "https://api.example.com/agent-speed",
+    "limits": {
+     "intervalSeconds": 600,
+     "heartbeatSeconds": 10,
+     "maxAgeSeconds": 1,
+     "maxBodyBytes": 1000000,
+     "maxModels": 40
+    },
+    "username": {
+     "minLength": 0,
+     "maxLength": 64
+    }
+   },
+   "expect": {
+    "retentionDays": 3650,
+    "limits": {
+     "intervalSeconds": 300,
+     "heartbeatSeconds": 300,
+     "maxAgeSeconds": 10,
+     "maxBodyBytes": 65536,
+     "maxModels": 16
+    },
+    "username": {
+     "minLength": 1,
+     "maxLength": 32,
+     "charset": "unicode",
+     "spaces": true
+    }
+   }
+  },
+  {
+   "name": "unknown fields and section names are ignored",
+   "fetchedFrom": "https://example.com/.well-known/agent-speed-report",
+   "document": {
+    "protocol": "agent-speed-report",
+    "versions": [
+     1
+    ],
+    "service": {
+     "name": "Example",
+     "terms": "https://example.com/terms",
+     "privacy": "https://example.com/privacy"
+    },
+    "api": "https://api.example.com/agent-speed",
+    "sections": [
+     "cost",
+     "future",
+     "sources"
+    ],
+    "extra": {
+     "x": 1
+    }
+   },
+   "expect": {
+    "sections": [
+     "sources",
+     "cost"
+    ]
+   }
   }
  ]
 }
