@@ -1553,3 +1553,193 @@ translated. Cases: `spec/fixtures/traffic-cases.json` `format`.
 - macOS unprivileged interface counters move in 1 KiB steps.
 - Loopback traffic (local model servers such as Ollama or LM Studio, MCP servers on localhost, OpenCode's own client and
   server) is excluded everywhere.
+
+## 11. Live reporting
+
+When the user turns on live reporting (DESIGN 11), the app sends the values below to a service of the user's choice
+with the protocol of `spec/REPORTING.md`. This section defines how every reported value comes from the engine, the
+*report ledger* that makes deltas exact, and the report scheduler. `spec/tools/report_reference.py` implements 11.5 as
+a simulator and checks `spec/fixtures/report-vectors.json` → `scheduler`; both apps run the same cases through their
+own scheduler core with a fake clock and instant sends. Only realtime values are reported: nothing of sections 6.6
+(today), 8 (daily history), 9.6–9.7 or 10.8–10.9 is ever sent.
+
+### 11.1 Scope and clock
+
+- **Sources**: the enabled sources, all together. Never an orb's subset (6.8) and never filtered by subscription marks
+  (9.4): cost is reported for every source.
+- **Sections**: an optional section is built only when the service lists it and the user's switch is on (REPORTING
+  6.1). Default switches (DESIGN 11): `sources`, `models`, `cost`, `traffic` on; `machineTraffic` off. A section that
+  is off is left out of the report.
+- **Build time** `t` is an engine tick (6: every 500 ms) with `nowMs = t`. Durations (`windowMs`, holds, retries) use
+  the monotonic clock. `sentAt` is the wall clock at `t` plus the session's clock correction (11.6), formatted
+  `YYYY-MM-DDTHH:MM:SS.sssZ` in UTC.
+- **Order within a tick**: first the gap rule (11.5 step 2) may discard the ledger; then the engine applies the tick's
+  file changes and traffic sample and the ledger (11.4) receives that tick's increments; then the rest of the
+  scheduler (11.5) runs. Increments of the tick that ends a gap therefore belong to the new window.
+
+### 11.2 Instantaneous values (at `t`)
+
+| Report field | Computation |
+| --- | --- |
+| `live.outputTokS`, `live.totalTokS` | 6.3 `live.output`, `live.total` at `nowMs = t` |
+| `live.estimatedShare` | 6.3 `liveEstimatedShare` |
+| `live.agents.generating`, `.tools` | agents of the 6.7 base set (steps 1–2: staleness applied, no ancestor closure) in phase `generating` / `tools` |
+| `live.agents.active` | the size of that base set |
+| `peak.outputTokS`, `peak.totalTokS` | the maximum of 6.3 `live.output` / `live.total` over the ticks in `(windowStart, t]` (so never below the values at `t`) |
+| `title.metric`, `title.redline` | the General speed metric and its redline `R` (DESIGN 1), never an orb's |
+| `title.level` | the *report title tracker*: the DESIGN 1 title tracker (levels 0–13, entered at the threshold, left at 90 % of it, 0.8 s hold) fed with the live value of `title.metric` and `R` on every tick while a run is active; it starts at 0 when the run starts. An implementation may reuse the dashboard hero's tracker only when that tracker runs on every tick with the same inputs. |
+| `title.heat` | `min(1, (v / R)^0.6)` with `v` the unrounded live value of `title.metric`; not smoothed (no spring) |
+| `cost.liveMicroUsdPerSecond`, `cost.knownShare` | 9.5 `liveCost` and `liveCostKnownShare` over all enabled sources |
+| `cost.peakMicroUsdPerSecond` | the maximum of 9.5 `liveCost` over the ticks in `(windowStart, t]` |
+| `cost.priceVersion` | the table version bound to the local date of `t` (9.7), or the current version when that date is not bound yet |
+| `traffic.*BytesPerSecond` | 10.7 live rates of the latest sample at or before `t`: Σ over sources of `self + tools` (`self` only when `includeTools` is off); `null` while that series has fewer than two samples |
+| `traffic.peak*BytesPerSecond` | the maximum of those rates over the samples in `(windowStart, t]`; `null` when there is none |
+| `traffic.status` | `off` when `trafficEnabled` is off (DESIGN 10); `unavailable` when process traffic is unavailable (10.3 states); else `ok` |
+| `traffic.includesTools` | the `includeTools` setting |
+| `machineTraffic.*` | the same for the machine series (10.2); `unavailable` when no counted interface exists |
+
+Per source (`sources[]`) every value is the same computation restricted to the source (6.3 and 9.5 per source; 10.7
+per source series). Per model (`models[].generating`): agents counted in `live.agents.generating` grouped by the
+resolved id (11.3) of the agent's current model (the model the agents list shows for it).
+
+### 11.3 Model ids
+
+`models[].id` is the 9.2 resolution of a response's (or agent's) `model` and `provider`: a hit on a price table entry
+(priced or free) → that entry's `id`; free by `freeProviders` (step 1) → `local`; everything else (missing model,
+`unknown`, a free suffix without an entry) → `unknown`. The raw model string never leaves the app. Entries are grouped
+by id and sorted by `output` descending, then `id`. With more than `maxModels` (discovery, ≤ 16) entries the first
+`maxModels − 1` are kept and the rest are merged into `other` (fields summed, `sources` united, placed last).
+`maxModels = 0` means the section is not sent.
+
+### 11.4 Report ledger
+
+The ledger holds the increments since the last build (or discard) of a report, in total, per source and per model.
+
+**Counting a response.** A response key (3.4, 4.4) becomes *counted* at its first emission when all hold: the engine
+is running live (not seeding, 6.4), `endMs ≥ nowMs − 120 000` (the `responseCompleted` rule of 6.4), and its source is
+enabled. Counting adds to the ledger: `requests` + 1; `output`, `input`, `cachedInput`, `cacheWriteInput`,
+`reasoning`; `measuredOutput` = `output` and `measuredMs` = `endMs − startMs'` (3.3) when the response is measured,
+else 0; `costMicroUsd` (9.3) when known, else `unpricedRequests` + 1. A key that was not counted at its first emission
+is never counted later (it is history).
+
+**Growth of a counted response.** For every counted key the ledger keeps the values it already added (`reported_k`,
+field by field: the token fields, `measuredOutput`, `measuredMs`, `costMicroUsd`). When an upsert (4.4) or a
+re-pricing (9.7) changes the response, each field adds `max(0, new − reported_k)` and `reported_k` becomes
+`max(reported_k, new)`. So a streaming Claude message adds its growth where it is seen, a response that becomes
+measured (its `stop_reason` arrives) adds its measured output and duration then, and a response priced later adds its
+cost then; `unpricedRequests` never decreases (REPORTING 6.6.1). Counted keys are kept while their response is in the
+engine's retention (6.1, by its latest `endMs`), at most 65 536 (FIFO); a change after that is not reported.
+
+**Attribution.** Each increment also goes to the response's source and to the resolved model id (11.3) of the
+response's model at that moment.
+
+**Traffic.** Every sample delta of 10.4 adds to the ledger at its sample time — machine `rx`/`tx`; per source `self`
+and `tools` — except deltas of a sample whose interval is longer than 15 s (10.4.5 gap: those bytes are older than the
+window) and the baseline of a stream's first sample (which adds nothing anyway). Agent traffic = Σ over sources of
+`self + tools` (`self` only when `includeTools` is off).
+
+**Exactly once.** Every increment is applied once, at the tick where the engine produces it. *Build* (11.5) takes the
+whole ledger into a report and empties it in one step; *discard* empties it without a report. Every increment
+therefore ends up in exactly one built report or is discarded — never in two reports. The deltas of a report that is
+built but not delivered are **lost**: they are never resent and never added to a later report (REPORTING 6.2). Tests
+check: Σ deltas of built reports + Σ discarded = Σ increments, and the windows of built reports are disjoint.
+
+### 11.5 Report scheduler
+
+Limits come from the discovery document (REPORTING 3.2, clamped to its ranges): `I` = `intervalSeconds` (or the
+`intervalSeconds` of the latest success, 5–300), `H` = `heartbeatSeconds` (≥ `I`), `A` = `maxAgeSeconds`. Fixed:
+`HOLD` = 15 s, `QUIET` = 10 min, `GAP` = 15 s, `RETRY` = 2 s.
+
+**Activity.** A tick is *active* when an agent of an enabled source is in phase `generating` or `tools` (after the 6.7
+staleness rule), or `live.output > 0`, or the ledger received a token increment at that tick. `lastActive` = the
+latest active tick of the run (none at its start).
+
+**Mode** at tick `t`: `active` when `t − lastActive < HOLD`; `idle` when `t − lastActive < QUIET`; otherwise (and
+before any activity in the run) `quiet`.
+
+**Ready** = reporting on, the service confirmed (REPORTING 3.3) and registered (REPORTING 4.1), the network master
+switch on (NETWORK 1), not paused, not inside a backoff or `Retry-After` wait, and no error that needs the user
+(REPORTING 8.3).
+
+**Run.** A run starts when reporting becomes ready for the first time after a launch (after seeding has finished), after
+turning reporting on, after switching services, and after `seq_conflict`: a new random `run.id`, `seq = 0`, an empty
+ledger, `windowStart = t`, no `lastActive`, the report title tracker at 0. Pausing, the network switch and backoff do
+not start a new run.
+
+**Each tick `t`**, in this order:
+
+1. User events of this tick: pause, resume, network switch, turning reporting off, quitting.
+2. **Gap**: when `t − previous tick > GAP` (sleep, a stalled engine), discard (empty the ledger, `windowStart = t`)
+   before this tick's increments are added (11.1).
+3. Update `lastActive` and the mode.
+4. **Leaving on a user action**: when this tick pauses or turns off reporting or quits the app, the previous mode was
+   not `quiet` and the network switch is on, build a `leaving` report and make one attempt (no retry; at quit wait at
+   most 1 s). A waiting report and an in-flight report waiting for its retry are lost.
+5. **Not ready** → discard; stop here.
+6. **Quiet**: on the tick the mode becomes `quiet` (the previous mode was `active` or `idle`), build a `leaving`
+   report; on later quiet ticks discard.
+7. **Due**: otherwise, when `t − windowStart ≥ I` (mode `active`) or `≥ H` (mode `idle`), build a report with
+   `activity` = the mode.
+8. **Deliver** (below).
+
+**Build**: `seq + 1`; the report takes the ledger and the instantaneous values at `t`; `windowMs = t − windowStart`;
+then the ledger is empty and `windowStart = t`. A built report goes to the one-slot outbox; a report already waiting
+there is lost (the newer one replaces it), and an in-flight report that is waiting for its retry is lost too (newest
+wins).
+
+**Deliver**: at most one request in flight. When nothing is in flight the outbox report is sent at once. An attempt
+signs with a fresh timestamp and nonce and sends the report's fixed body. A report whose `t − builtAt > A` is lost
+instead of sent. Outcomes:
+
+| Outcome | Effect |
+| --- | --- |
+| `2xx` | delivered; `failures = 0`; adopt `intervalSeconds` when present |
+| network error, timeout, `3xx`, `5xx` without `Retry-After` | retry once at `t + RETRY` if `t + RETRY − builtAt ≤ A`; otherwise (or when the retry fails too) lost |
+| `429`, or `503` with `Retry-After` | lost; not ready until `t + Retry-After` (5 s – 1 h; 60 s when a `429` has none) |
+| `401 timestamp_out_of_window` | correct the clock (11.6); the report is lost (its `sentAt` is on the old clock) |
+| `401 nonce_replayed` | attempt again at once with a new nonce (once) |
+| `401 signature_invalid` with a pending rotated key (REPORTING 4.5) | attempt again at once signed with the pending key (once) |
+| any other error | lost; the reaction of REPORTING 8.3 (re-register, start a new run, or not ready until the user acts) |
+
+**Backoff**: every lost report increments `failures`; when `failures ≥ 2` the scheduler is not ready for
+`min(300 s, 5 s × 2^(failures − 2))` × a random factor in `[0.8, 1.2]` (the fixtures use 1). A delivered report resets
+`failures` to 0.
+
+**Rate guarantees** (what services can rely on): at most one request in flight; two consecutive built reports of a run
+are at least `I` apart (at least `H` while idle), except that a `leaving` report may follow at any time; at most one
+transient retry per report; never a report older than `A`; no queue on disk and nothing replayed after a relaunch.
+(`windowStart` only moves forward from the last build or discard, so every path back to *ready* — resume, network on,
+end of a backoff — waits at least `I` after the previous report.)
+
+### 11.6 Time, midnight, restarts and sleep
+
+- **Clock correction**: on `401 timestamp_out_of_window` with `serverTime`, `correction = serverTime − local Unix
+  seconds` when `|correction| ≤ 24 h`; it applies to `X-AgentSpeed-Timestamp` and `sentAt` of every later report of
+  the session and is discarded at quit. The rejected report itself is lost (11.5).
+- **Local midnight** has no effect: deltas belong to windows, not to days, and today's totals (6.6) are never sent. A
+  window that contains midnight is reported like any other; services assign days themselves (REPORTING 6.10).
+- **Relaunch**: a new run (11.5). Responses read during seeding are never counted (11.4), so nothing that happened
+  before the run is reported; the ledger is never persisted.
+- **Sleep**: the gap rule (11.5 step 2) discards the window that contains the sleep; traffic gap deltas are excluded
+  (11.4).
+- **Wall-clock changes** do not affect windows (monotonic); `sentAt` may jump with the clock. Services order by
+  `run.seq` and their own receive time.
+
+### 11.7 Rounding and size
+
+- Rounding is half away from zero (all values are ≥ 0): tok/s to 0.1, shares and heat to 0.001, bytes per second and
+  micro-USD per second to integers. Token, byte and micro-USD deltas are exact integers. Every value is rounded on its
+  own, so rounded per-source values may differ from the rounded total by the rounding.
+- `sources[]` lists, in the source order of section 1, the sources with any live value above 0, agents in
+  `generating` or `tools`, a non-zero delta, or (traffic `ok`) a non-zero byte delta.
+- The body stays within `min(16384, maxBodyBytes)` bytes: when it would not, drop `models`, then `sources`, for that
+  report only.
+
+### 11.8 Fixtures
+
+`spec/fixtures/report-vectors.json` → `scheduler`: each case gives tick ranges in 500 ms steps (a jump between two
+ranges is a sleep), activity ranges, output increments (`from`, `to`, `step`, `output`), user events
+(`pause`, `resume`, `networkOff`, `networkOn`) and per-`seq` attempt outcomes (`ok`, `fail`, `rateLimited:<s>`;
+default `ok`). `expect.delivered` lists `[seq, endMs, windowMs, activity, output]` of every delivered report and
+`expect.lost` the lost `seq`s. The expected values were written by hand from 11.5 and the simulator must reproduce
+them.

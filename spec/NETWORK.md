@@ -1,16 +1,19 @@
 # Agent Speed — Network Specification
 
-Agent Speed reads local logs and works fully offline. It makes exactly three kinds of network requests, all optional,
-all HTTPS `GET`, none of them carrying anything about the user: the update check (`spec/UPDATES.md`), the daily
-price-table sync (section 3) and the daily exchange rates (section 4). Both platforms implement exactly this
-behaviour; anything not listed here is never requested.
+Agent Speed reads local logs and works fully offline. It makes exactly three kinds of automatic network requests, all
+optional, all HTTPS `GET`, none of them carrying anything about the user: the update check (`spec/UPDATES.md`), the
+daily price-table sync (section 3) and the daily exchange rates (section 4). A fourth kind exists only when the user
+turns it on: live reporting (section 6, `spec/REPORTING.md`), the one feature that sends data about the user's
+activity, to a service the user chose. Both platforms implement exactly this behaviour; anything not listed here is
+never requested.
 
 ## 1. Common rules
 
 - **Master switch** `networkEnabled` (Settings → About → `settings.network`), default on. Off: no request of any kind
   is made — automatic or manual (the manual buttons are disabled and show `settings.network.offHint`). Everything
   keeps working with the bundled or last good data. Turning it back on schedules each feature as after a launch.
-- **What is sent**: the request line and these headers only: `User-Agent: AgentSpeed/<version> (<macOS|Windows>)`,
+- **What is sent** (sections 2–4; live reporting has its own rules, section 6): the request line and these headers
+  only: `User-Agent: AgentSpeed/<version> (<macOS|Windows>)`,
   `Accept` as stated per feature, and `If-None-Match` with the `ETag` that the same URL returned before (when one is
   stored). No cookies, no credentials, no identifiers, no query parameters derived from the user's data or settings.
   Every request asks for the same resource for every user (the price table, the USD-based rate list), so a server
@@ -32,6 +35,7 @@ behaviour; anything not listed here is never requested.
 | Update check (UPDATES) | `api.github.com`; downloads `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com` | 30 s after launch, every 6 h, manual | 300 MiB (assets) |
 | Price table (3) | `raw.githubusercontent.com`, `cdn.jsdelivr.net` | 60 s after launch, then daily, manual | 1 MiB |
 | Exchange rates (4) | `open.er-api.com`, `cdn.jsdelivr.net`, `latest.currency-api.pages.dev`, `api.frankfurter.dev` | only while a non-USD currency is selected: 30 s after launch or on selection, then daily, manual | 256 KiB |
+| Live reporting (6) | the service URL and the API host the user confirmed | only while the user has it on: every 5 s while agents work, a heartbeat while idle, nothing when quiet | 64 KiB discovery, 16 KiB API |
 
 ## 2. Update check
 
@@ -178,3 +182,22 @@ the cost feature ships (until then the README describes the released app).
   > アップデートはインストール前にリリースの SHA-256 チェックサムで検証します。チェックサムはリリースと一緒に公開
   > されるため、破損や改ざんされたダウンロードは検出できますが、リポジトリ自体の侵害は防げません。価格表は厳格な
   > ルールで検証される単なるデータで、署名はされていません。
+
+## 6. Live reporting
+
+Off by default and subject to the master switch: with `networkEnabled` off no report, registration or discovery
+request is made and the pane shows `settings.network.offHint`. The protocol — discovery, device registration,
+signed reports, what is and is never sent, error handling — is `spec/REPORTING.md`; the values and the scheduler are
+METRICS 11; Settings, consent and storage of keys are DESIGN 11. Differences from the common rules above:
+
+- It sends data about the user's live activity (REPORTING 1.3), with a username, a per-service device id and
+  signature headers; and, when the user entered one, `Authorization: Bearer <api key>` — only to that service's API
+  host.
+- Hosts are not a fixed list: the service URL the user entered or picked (preset: `https://codexradar.com`) and the
+  `api` host of its discovery document, both shown in the consent sheet and pinned (REPORTING 3.3). HTTPS only, except
+  `http` to `127.0.0.1`, `[::1]` and `localhost` for local testing.
+- Methods `GET` (discovery), `POST`, `PATCH`, `PUT`, `DELETE`. API requests never follow redirects; discovery
+  follows at most 3, `https` only. Timeouts 15 s (discovery) and 10 s (API).
+- No `ETag`-based caching except for the discovery document; failures are not retried daily but handled by the
+  report scheduler (METRICS 11.5) and shown in the pane's status line, never as dialogs or notifications.
+- README and About wording for this feature: DESIGN 11 (prepared, applied when the feature ships).

@@ -3755,5 +3755,647 @@
     "zh-Hans": "网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象，也不会发送到任何地方。",
     "en": "Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only. It never reads content, addresses or destinations, and sends nothing anywhere.",
     "ja": "通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数えます。内容・アドレス・接続先は一切読まず、どこにも送信しません。"
+  },
+  "settings.report": {
+    "zh-Hant": "即時上報",
+    "zh-Hans": "实时上报",
+    "en": "Live Reporting",
+    "ja": "ライブ送信"
+  },
+  "report.enabled": {
+    "zh-Hant": "即時上報到排行榜",
+    "zh-Hans": "实时上报到排行榜",
+    "en": "Report Live Stats",
+    "ja": "ライブ統計を送信"
+  },
+  "report.enabled.hint": {
+    "zh-Hant": "開啟後，agent 工作時每隔幾秒，把即時速度和 token 用量等數字傳送到你選擇的服務，例如排行榜。不會傳送對話內容、檔案或專案名稱，也不會傳送歷史紀錄。",
+    "zh-Hans": "开启后，agent 工作时每隔几秒，把实时速度和 token 用量等数字发送到你选择的服务，例如排行榜。不会发送对话内容、文件或项目名称，也不会发送历史记录。",
+    "en": "While your agents work, sends live speed, token usage and similar numbers every few seconds to a service you choose, such as a leaderboard. Never sends conversation content, file or project names, or history.",
+    "ja": "agent の作業中、現在の速度や token 使用量などの数値を数秒ごとに、選んだサービス（ランキングなど）へ送信します。会話の内容、ファイル名やプロジェクト名、履歴は送信しません。"
+  },
+  "report.service": {
+    "zh-Hant": "上報到",
+    "zh-Hans": "上报到",
+    "en": "Report To",
+    "ja": "送信先"
+  },
+  "report.service.custom": {
+    "zh-Hant": "自訂網址…",
+    "zh-Hans": "自定义网址…",
+    "en": "Custom URL…",
+    "ja": "カスタム URL…"
+  },
+  "report.url": {
+    "zh-Hant": "服務網址",
+    "zh-Hans": "服务网址",
+    "en": "Service URL",
+    "ja": "サービス URL"
+  },
+  "report.url.placeholder": {
+    "zh-Hant": "https://example.com",
+    "zh-Hans": "https://example.com",
+    "en": "https://example.com",
+    "ja": "https://example.com"
+  },
+  "report.url.invalid": {
+    "zh-Hant": "請輸入有效的網址",
+    "zh-Hans": "请输入有效的网址",
+    "en": "Enter a valid URL",
+    "ja": "有効な URL を入力してください"
+  },
+  "report.url.https": {
+    "zh-Hant": "只能使用 https:// 開頭的網址",
+    "zh-Hans": "只能使用以 https:// 开头的网址",
+    "en": "Only https:// URLs are allowed",
+    "ja": "https:// で始まる URL のみ使用できます"
+  },
+  "report.url.loopback": {
+    "zh-Hant": "未加密的本機測試連線，資料不會離開這台電腦",
+    "zh-Hans": "未加密的本机测试连接，数据不会离开这台电脑",
+    "en": "Unencrypted local test connection; data stays on this computer",
+    "ja": "暗号化されていないローカルテスト接続です。データはこのコンピューターから出ません"
+  },
+  "report.service.checking": {
+    "zh-Hant": "正在讀取服務資訊…",
+    "zh-Hans": "正在读取服务信息…",
+    "en": "Checking the service…",
+    "ja": "サービス情報を確認しています…"
+  },
+  "report.service.failed": {
+    "zh-Hant": "無法讀取服務資訊（%@）",
+    "zh-Hans": "无法读取服务信息（%@）",
+    "en": "Couldn't reach the service (%@)",
+    "ja": "サービスに接続できません（%@）"
+  },
+  "report.service.notSupported": {
+    "zh-Hant": "這個網址不支援 Agent Speed 即時上報",
+    "zh-Hans": "该网址不支持 Agent Speed 实时上报",
+    "en": "This URL doesn't support Agent Speed live reporting",
+    "ja": "この URL は Agent Speed のライブ送信に対応していません"
+  },
+  "report.service.host": {
+    "zh-Hant": "資料會傳送到 %@",
+    "zh-Hans": "数据会发送到 %@",
+    "en": "Data goes to %@",
+    "ja": "送信先：%@"
+  },
+  "report.service.terms": {
+    "zh-Hant": "服務條款",
+    "zh-Hans": "服务条款",
+    "en": "Terms",
+    "ja": "利用規約"
+  },
+  "report.service.privacy": {
+    "zh-Hant": "隱私權政策",
+    "zh-Hans": "隐私政策",
+    "en": "Privacy Policy",
+    "ja": "プライバシーポリシー"
+  },
+  "report.service.leaderboard": {
+    "zh-Hant": "開啟排行榜",
+    "zh-Hans": "打开排行榜",
+    "en": "Open Leaderboard",
+    "ja": "ランキングを開く"
+  },
+  "report.service.retention": {
+    "zh-Hant": "個別上報資料保留 %d 天",
+    "zh-Hans": "单条上报数据保留 %d 天",
+    "en": "Keeps individual reports for %d days",
+    "ja": "個々の送信データを %d 日間保存します"
+  },
+  "report.service.changed": {
+    "zh-Hant": "服務資訊已變更，確認後才會繼續上報",
+    "zh-Hans": "服务信息已变更，确认后才会继续上报",
+    "en": "The service changed its details. Reporting resumes after you review them.",
+    "ja": "サービス情報が変更されました。確認すると送信を再開します。"
+  },
+  "report.service.review": {
+    "zh-Hant": "檢視…",
+    "zh-Hans": "查看…",
+    "en": "Review…",
+    "ja": "確認…"
+  },
+  "report.username": {
+    "zh-Hant": "使用者名稱",
+    "zh-Hans": "用户名",
+    "en": "Username",
+    "ja": "ユーザー名"
+  },
+  "report.username.public": {
+    "zh-Hant": "會公開顯示在排行榜上。預設是這台電腦的名稱，其中可能包含你的名字。",
+    "zh-Hans": "会公开显示在排行榜上。默认是这台电脑的名称，其中可能包含你的名字。",
+    "en": "Shown publicly on the leaderboard. It starts as this computer's name, which may include your real name.",
+    "ja": "ランキングで公開されます。初期値はこのコンピューターの名前で、本名が含まれることがあります。"
+  },
+  "report.username.random": {
+    "zh-Hant": "使用隨機名稱",
+    "zh-Hans": "使用随机名称",
+    "en": "Use a Random Name",
+    "ja": "ランダムな名前にする"
+  },
+  "report.username.updated": {
+    "zh-Hant": "已更新使用者名稱",
+    "zh-Hans": "已更新用户名",
+    "en": "Username updated",
+    "ja": "ユーザー名を更新しました"
+  },
+  "report.username.taken": {
+    "zh-Hant": "這個名稱已被其他裝置使用",
+    "zh-Hans": "该名称已被其他设备使用",
+    "en": "This name belongs to another device",
+    "ja": "この名前は別のデバイスが使用しています"
+  },
+  "report.username.invalid.length": {
+    "zh-Hant": "長度需為 %d–%d 個字元",
+    "zh-Hans": "长度需为 %d–%d 个字符",
+    "en": "Use %d–%d characters",
+    "ja": "%d〜%d 文字にしてください"
+  },
+  "report.username.invalid.characters": {
+    "zh-Hant": "只能使用文字、數字、空格與 - _ .",
+    "zh-Hans": "只能使用文字、数字、空格和 - _ .",
+    "en": "Use only letters, numbers, spaces and - _ .",
+    "ja": "文字・数字・スペースと - _ . のみ使用できます"
+  },
+  "report.username.invalid.ascii": {
+    "zh-Hant": "只能使用英文字母、數字與 - _ .",
+    "zh-Hans": "只能使用英文字母、数字和 - _ .",
+    "en": "Use only A–Z, 0–9 and - _ .",
+    "ja": "英字・数字と - _ . のみ使用できます"
+  },
+  "report.username.invalid.start": {
+    "zh-Hant": "第一個字需為文字或數字",
+    "zh-Hans": "第一个字需为文字或数字",
+    "en": "Start with a letter or number",
+    "ja": "最初の文字は文字か数字にしてください"
+  },
+  "report.username.invalid.spaces": {
+    "zh-Hant": "開頭和結尾不能有空格，也不能連續兩個空格",
+    "zh-Hans": "开头和结尾不能有空格，也不能连续两个空格",
+    "en": "No spaces at the start or end, and no double spaces",
+    "ja": "先頭・末尾のスペースや、連続したスペースは使えません"
+  },
+  "report.username.invalid.noSpaces": {
+    "zh-Hant": "這個服務不允許空格",
+    "zh-Hans": "该服务不允许空格",
+    "en": "This service doesn't allow spaces",
+    "ja": "このサービスではスペースを使えません"
+  },
+  "report.username.invalid.reserved": {
+    "zh-Hant": "這個名稱無法使用",
+    "zh-Hans": "该名称无法使用",
+    "en": "This name isn't available",
+    "ja": "この名前は使用できません"
+  },
+  "report.apiKey": {
+    "zh-Hant": "API 金鑰",
+    "zh-Hans": "API 密钥",
+    "en": "API Key",
+    "ja": "API キー"
+  },
+  "report.apiKey.optional": {
+    "zh-Hant": "選填",
+    "zh-Hans": "选填",
+    "en": "Optional",
+    "ja": "任意"
+  },
+  "report.apiKey.required": {
+    "zh-Hant": "這個服務需要 API 金鑰",
+    "zh-Hans": "该服务需要 API 密钥",
+    "en": "This service requires an API key",
+    "ja": "このサービスには API キーが必要です"
+  },
+  "report.apiKey.hint": {
+    "zh-Hant": "安全地存放在這台電腦上，只會傳送給這個服務。",
+    "zh-Hans": "安全地保存在这台电脑上，只会发送给该服务。",
+    "en": "Stored securely on this computer and sent only to this service.",
+    "ja": "このコンピューターに安全に保存され、このサービスにだけ送信されます。"
+  },
+  "report.apiKey.get": {
+    "zh-Hant": "取得 API 金鑰",
+    "zh-Hans": "获取 API 密钥",
+    "en": "Get an API Key",
+    "ja": "API キーを取得"
+  },
+  "report.apiKey.clear": {
+    "zh-Hant": "清除",
+    "zh-Hans": "清除",
+    "en": "Clear",
+    "ja": "消去"
+  },
+  "report.sections": {
+    "zh-Hant": "傳送的內容",
+    "zh-Hans": "发送的内容",
+    "en": "What's Sent",
+    "ja": "送信する内容"
+  },
+  "report.sections.hint": {
+    "zh-Hant": "一律傳送：即時速度、與上次上報之間的 token 用量、agent 數量和速度稱號等級。下列項目可以個別開啟或關閉；「這台電腦的網路速度」預設關閉。",
+    "zh-Hans": "始终发送：实时速度、与上次上报之间的 token 用量、agent 数量和速度称号等级。以下项目可分别开启或关闭；“这台电脑的网络速度”默认关闭。",
+    "en": "Always sent: live speed, token usage since the previous report, agent counts and the speed title level. Each item below can be turned on or off; this computer's network speed is off by default.",
+    "ja": "常に送信：現在の速度、前回の送信以降の token 使用量、agent の数、速度称号のレベル。下の項目は個別にオン・オフできます。「このコンピューターの通信速度」は初期設定でオフです。"
+  },
+  "report.section.sources": {
+    "zh-Hant": "各來源明細",
+    "zh-Hans": "各来源明细",
+    "en": "Per-source breakdown",
+    "ja": "ソースごとの内訳"
+  },
+  "report.section.models": {
+    "zh-Hant": "使用中的模型",
+    "zh-Hans": "使用中的模型",
+    "en": "Models in use",
+    "ja": "使用中のモデル"
+  },
+  "report.section.cost": {
+    "zh-Hant": "費用（API 等值，以美元計）",
+    "zh-Hans": "费用（API 等值，以美元计）",
+    "en": "Cost (API-equivalent, in US$)",
+    "ja": "費用（API 換算、米ドル）"
+  },
+  "report.section.traffic": {
+    "zh-Hant": "agent 的網路流量",
+    "zh-Hans": "agent 的网络流量",
+    "en": "Agents' network traffic",
+    "ja": "agent の通信量"
+  },
+  "report.section.machineTraffic": {
+    "zh-Hant": "這台電腦的網路速度",
+    "zh-Hans": "这台电脑的网络速度",
+    "en": "This computer's network speed",
+    "ja": "このコンピューターの通信速度"
+  },
+  "report.section.machineTraffic.hint": {
+    "zh-Hant": "包含其他 App 的流量",
+    "zh-Hans": "包含其他应用的流量",
+    "en": "Includes other apps' traffic",
+    "ja": "他のアプリの通信も含みます"
+  },
+  "report.section.notAccepted": {
+    "zh-Hant": "這個服務不使用",
+    "zh-Hans": "该服务不使用",
+    "en": "Not used by this service",
+    "ja": "このサービスでは使われません"
+  },
+  "report.section.trafficOff": {
+    "zh-Hant": "網路流量記錄已關閉",
+    "zh-Hans": "网络流量记录已关闭",
+    "en": "Traffic measuring is off",
+    "ja": "通信量の計測はオフです"
+  },
+  "report.preview": {
+    "zh-Hant": "預覽傳送內容…",
+    "zh-Hans": "预览发送内容…",
+    "en": "Preview Report…",
+    "ja": "送信内容をプレビュー…"
+  },
+  "report.preview.title": {
+    "zh-Hant": "下一次上報的內容",
+    "zh-Hans": "下一次上报的内容",
+    "en": "Next Report",
+    "ja": "次の送信内容"
+  },
+  "report.preview.hint": {
+    "zh-Hant": "這就是實際傳送的完整內容，每秒更新。簽章在送出時才加上。",
+    "zh-Hans": "这就是实际发送的完整内容，每秒更新。签名在发送时才加上。",
+    "en": "This is exactly what is sent, updated every second. The signature is added when it's sent.",
+    "ja": "実際に送信される内容そのものです。毎秒更新されます。署名は送信時に付けられます。"
+  },
+  "report.preview.copy": {
+    "zh-Hant": "複製 JSON",
+    "zh-Hans": "复制 JSON",
+    "en": "Copy JSON",
+    "ja": "JSON をコピー"
+  },
+  "report.preview.next": {
+    "zh-Hant": "%d 秒後送出",
+    "zh-Hans": "%d 秒后发送",
+    "en": "Sends in %d s",
+    "ja": "%d 秒後に送信"
+  },
+  "report.consent.title": {
+    "zh-Hant": "開始即時上報到 %@？",
+    "zh-Hans": "开始实时上报到 %@？",
+    "en": "Start reporting to %@?",
+    "ja": "%@ への送信を開始しますか？"
+  },
+  "report.consent.body": {
+    "zh-Hant": "agent 工作時，Agent Speed 每 %d 秒會把下方預覽的數字連同你的使用者名稱傳送給這個服務；閒置時偶爾回報在線狀態，安靜 10 分鐘後停止。隨時可以暫停或關閉。",
+    "zh-Hans": "agent 工作时，Agent Speed 每 %d 秒会把下方预览的数字连同你的用户名发送给该服务；空闲时偶尔上报在线状态，安静 10 分钟后停止。随时可以暂停或关闭。",
+    "en": "While your agents work, Agent Speed sends the numbers previewed below with your username to this service every %d seconds; while they are idle, only an occasional heartbeat; after 10 quiet minutes, nothing. You can pause or turn it off at any time.",
+    "ja": "agent の作業中、Agent Speed は下のプレビューの数値をユーザー名と一緒に %d 秒ごとにこのサービスへ送信します。待機中はときどき在線状態だけを送り、10 分間動きがなければ止まります。いつでも一時停止やオフにできます。"
+  },
+  "report.consent.never": {
+    "zh-Hant": "永遠不會傳送：對話內容、提示詞、檔案與資料夾名稱、專案名稱、用量歷史。",
+    "zh-Hans": "永远不会发送：对话内容、提示词、文件和文件夹名称、项目名称、用量历史。",
+    "en": "Never sent: conversation content, prompts, file and folder names, project names, usage history.",
+    "ja": "送信しないもの：会話の内容、プロンプト、ファイル名・フォルダー名、プロジェクト名、使用履歴。"
+  },
+  "report.consent.honesty": {
+    "zh-Hant": "服務會看到你的使用者名稱、你何時在使用 agent，以及你的 IP 位址。數字由你的電腦自行回報，服務無法驗證是否正確。",
+    "zh-Hans": "服务会看到你的用户名、你何时在使用 agent，以及你的 IP 地址。数字由你的电脑自行上报，服务无法验证是否准确。",
+    "en": "The service sees your username, when you use agents, and your IP address. The numbers are self-reported by your computer; the service can't verify them.",
+    "ja": "サービスにはユーザー名、agent を使っている時間帯、IP アドレスが見えます。数値はこのコンピューターの自己申告で、サービスは正しさを検証できません。"
+  },
+  "report.start": {
+    "zh-Hant": "開始上報",
+    "zh-Hans": "开始上报",
+    "en": "Start Reporting",
+    "ja": "送信を開始"
+  },
+  "report.status": {
+    "zh-Hant": "狀態",
+    "zh-Hans": "状态",
+    "en": "Status",
+    "ja": "状態"
+  },
+  "report.status.off": {
+    "zh-Hant": "已關閉",
+    "zh-Hans": "已关闭",
+    "en": "Off",
+    "ja": "オフ"
+  },
+  "report.status.never": {
+    "zh-Hant": "尚未上報",
+    "zh-Hans": "尚未上报",
+    "en": "Nothing reported yet",
+    "ja": "まだ送信していません"
+  },
+  "report.status.connecting": {
+    "zh-Hant": "正在連線…",
+    "zh-Hans": "正在连接…",
+    "en": "Connecting…",
+    "ja": "接続しています…"
+  },
+  "report.status.registering": {
+    "zh-Hant": "正在註冊這台裝置…",
+    "zh-Hans": "正在注册这台设备…",
+    "en": "Registering this device…",
+    "ja": "このデバイスを登録しています…"
+  },
+  "report.status.reporting": {
+    "zh-Hant": "上報中 · 上次 %@",
+    "zh-Hans": "上报中 · 上次 %@",
+    "en": "Reporting · last %@",
+    "ja": "送信中・前回 %@"
+  },
+  "report.status.idle": {
+    "zh-Hant": "agent 閒置中，只定時回報在線狀態",
+    "zh-Hans": "agent 空闲中，只定时上报在线状态",
+    "en": "Agents idle — sending occasional heartbeats",
+    "ja": "agent は待機中です。在線状態だけを定期的に送信しています"
+  },
+  "report.status.quiet": {
+    "zh-Hant": "目前沒有 agent 在工作，暫不上報",
+    "zh-Hans": "当前没有 agent 在工作，暂不上报",
+    "en": "No agent is working — nothing to report",
+    "ja": "作業中の agent はありません。送信を休止しています"
+  },
+  "report.status.paused": {
+    "zh-Hant": "已暫停，%@ 恢復",
+    "zh-Hans": "已暂停，%@ 恢复",
+    "en": "Paused until %@",
+    "ja": "%@ まで一時停止中"
+  },
+  "report.status.pausedIndefinitely": {
+    "zh-Hant": "已暫停",
+    "zh-Hans": "已暂停",
+    "en": "Paused",
+    "ja": "一時停止中"
+  },
+  "report.status.retrying": {
+    "zh-Hant": "上報失敗，稍後自動重試（%@）",
+    "zh-Hans": "上报失败，稍后自动重试（%@）",
+    "en": "Couldn't report — retrying shortly (%@)",
+    "ja": "送信に失敗しました。まもなく再試行します（%@）"
+  },
+  "report.status.rateLimited": {
+    "zh-Hant": "服務要求放慢，%@ 繼續",
+    "zh-Hans": "服务要求放慢，%@ 继续",
+    "en": "The service asked to slow down — resuming at %@",
+    "ja": "サービスから間隔を空けるよう求められました。%@ に再開します"
+  },
+  "report.status.apiKey": {
+    "zh-Hant": "需要有效的 API 金鑰",
+    "zh-Hans": "需要有效的 API 密钥",
+    "en": "A valid API key is needed",
+    "ja": "有効な API キーが必要です"
+  },
+  "report.status.usernameTaken": {
+    "zh-Hant": "這個使用者名稱已被其他裝置使用，請換一個",
+    "zh-Hans": "该用户名已被其他设备使用，请换一个",
+    "en": "This username belongs to another device — choose another",
+    "ja": "このユーザー名は別のデバイスが使用しています。別の名前にしてください"
+  },
+  "report.status.keyMismatch": {
+    "zh-Hant": "這台裝置的金鑰與服務的紀錄不符",
+    "zh-Hans": "这台设备的密钥与服务的记录不符",
+    "en": "This device's key doesn't match the service's records",
+    "ja": "このデバイスの鍵がサービスの記録と一致しません"
+  },
+  "report.status.rejected": {
+    "zh-Hant": "服務拒絕了這台裝置的上報",
+    "zh-Hans": "服务拒绝了这台设备的上报",
+    "en": "The service rejected this device's reports",
+    "ja": "サービスがこのデバイスの送信を拒否しました"
+  },
+  "report.status.upgrade": {
+    "zh-Hant": "這個服務需要較新版本的 Agent Speed",
+    "zh-Hans": "该服务需要更新版本的 Agent Speed",
+    "en": "This service needs a newer Agent Speed",
+    "ja": "このサービスには新しいバージョンの Agent Speed が必要です"
+  },
+  "report.status.gone": {
+    "zh-Hant": "這個服務已停止接收上報，即時上報已關閉",
+    "zh-Hans": "该服务已停止接收上报，实时上报已关闭",
+    "en": "This service no longer accepts reports — live reporting is off",
+    "ja": "このサービスは送信の受け付けを終了しました。ライブ送信はオフになりました"
+  },
+  "report.status.rank": {
+    "zh-Hant": "目前排名第 %d",
+    "zh-Hans": "当前排名第 %d",
+    "en": "Currently #%d",
+    "ja": "現在 %d 位"
+  },
+  "report.pause": {
+    "zh-Hant": "暫停上報",
+    "zh-Hans": "暂停上报",
+    "en": "Pause Reporting",
+    "ja": "送信を一時停止"
+  },
+  "report.pause.hour": {
+    "zh-Hant": "暫停 1 小時",
+    "zh-Hans": "暂停 1 小时",
+    "en": "Pause for 1 Hour",
+    "ja": "1 時間停止"
+  },
+  "report.pause.indefinite": {
+    "zh-Hant": "暫停到我恢復為止",
+    "zh-Hans": "暂停到我恢复为止",
+    "en": "Pause Until I Resume",
+    "ja": "再開するまで停止"
+  },
+  "report.resume": {
+    "zh-Hant": "恢復上報",
+    "zh-Hans": "恢复上报",
+    "en": "Resume Reporting",
+    "ja": "送信を再開"
+  },
+  "report.device": {
+    "zh-Hant": "這台裝置",
+    "zh-Hans": "这台设备",
+    "en": "This Device",
+    "ja": "このデバイス"
+  },
+  "report.device.detail": {
+    "zh-Hant": "以「%@」註冊於 %@",
+    "zh-Hans": "以“%@”注册于 %@",
+    "en": "Registered as “%@” on %@",
+    "ja": "「%@」として %@ に登録済み"
+  },
+  "report.device.fingerprint": {
+    "zh-Hant": "裝置指紋",
+    "zh-Hans": "设备指纹",
+    "en": "Device fingerprint",
+    "ja": "デバイスのフィンガープリント"
+  },
+  "report.forget": {
+    "zh-Hant": "忘記這台裝置…",
+    "zh-Hans": "忘记这台设备…",
+    "en": "Forget This Device…",
+    "ja": "このデバイスを削除…"
+  },
+  "report.forget.confirm": {
+    "zh-Hant": "要讓 %@ 忘記這台裝置嗎？",
+    "zh-Hans": "要让 %@ 忘记这台设备吗？",
+    "en": "Ask %@ to forget this device?",
+    "ja": "%@ にこのデバイスを削除してもらいますか？"
+  },
+  "report.forget.detail": {
+    "zh-Hant": "服務會刪除這台裝置、它的使用者名稱和它收到的上報資料，這台電腦上的裝置金鑰也會刪除，即時上報會關閉。之後再開啟時會以新裝置註冊。",
+    "zh-Hans": "服务会删除这台设备、它的用户名和它收到的上报数据，这台电脑上的设备密钥也会删除，实时上报会关闭。之后再开启时会以新设备注册。",
+    "en": "The service deletes this device, its username and the reports it received; the device key on this computer is deleted too and live reporting turns off. Turning it on again registers a new device.",
+    "ja": "サービスはこのデバイス、そのユーザー名、受け取った送信データを削除します。このコンピューター上のデバイス鍵も削除され、ライブ送信はオフになります。再びオンにすると新しいデバイスとして登録されます。"
+  },
+  "report.forget.action": {
+    "zh-Hant": "忘記",
+    "zh-Hans": "忘记",
+    "en": "Forget",
+    "ja": "削除"
+  },
+  "report.forget.done": {
+    "zh-Hant": "服務已刪除這台裝置與它的資料",
+    "zh-Hans": "服务已删除这台设备及其数据",
+    "en": "The service deleted this device and its data",
+    "ja": "サービスがこのデバイスとそのデータを削除しました"
+  },
+  "report.forget.failed": {
+    "zh-Hant": "無法連上服務（%@），尚未刪除任何資料。",
+    "zh-Hans": "无法连接服务（%@），尚未删除任何数据。",
+    "en": "Couldn't reach the service (%@). Nothing was deleted yet.",
+    "ja": "サービスに接続できません（%@）。まだ何も削除されていません。"
+  },
+  "report.forget.localOnly": {
+    "zh-Hant": "只刪除本機金鑰",
+    "zh-Hans": "只删除本机密钥",
+    "en": "Delete the Local Key Only",
+    "ja": "ローカルの鍵だけ削除"
+  },
+  "report.forget.localOnly.detail": {
+    "zh-Hant": "服務上的使用者名稱和資料不會刪除；可以透過它的隱私權政策聯絡服務。",
+    "zh-Hans": "服务上的用户名和数据不会删除；可以通过其隐私政策联系服务。",
+    "en": "The username and data on the service stay; contact the service through its privacy policy.",
+    "ja": "サービス上のユーザー名とデータは残ります。サービスのプライバシーポリシーから問い合わせてください。"
+  },
+  "report.reset": {
+    "zh-Hant": "重設這台裝置…",
+    "zh-Hans": "重置这台设备…",
+    "en": "Reset This Device…",
+    "ja": "このデバイスをリセット…"
+  },
+  "report.reset.detail": {
+    "zh-Hant": "建立新的裝置金鑰並重新註冊；原本的使用者名稱可能已無法使用。",
+    "zh-Hans": "创建新的设备密钥并重新注册；原来的用户名可能已无法使用。",
+    "en": "Creates a new device key and registers again; the previous username may no longer be available.",
+    "ja": "新しいデバイス鍵を作成して登録し直します。以前のユーザー名は使えなくなることがあります。"
+  },
+  "report.others": {
+    "zh-Hant": "其他已註冊的服務",
+    "zh-Hans": "其他已注册的服务",
+    "en": "Other Registered Services",
+    "ja": "登録済みの他のサービス"
+  },
+  "report.menu.on": {
+    "zh-Hant": "即時上報：%@",
+    "zh-Hans": "实时上报：%@",
+    "en": "Live Reporting: %@",
+    "ja": "ライブ送信：%@"
+  },
+  "report.menu.paused": {
+    "zh-Hant": "即時上報已暫停",
+    "zh-Hans": "实时上报已暂停",
+    "en": "Live Reporting Paused",
+    "ja": "ライブ送信は一時停止中"
+  },
+  "report.menu.settings": {
+    "zh-Hant": "即時上報設定…",
+    "zh-Hans": "实时上报设置…",
+    "en": "Live Reporting Settings…",
+    "ja": "ライブ送信の設定…"
+  },
+  "report.indicator": {
+    "zh-Hant": "正在以「%@」即時上報到 %@",
+    "zh-Hans": "正在以“%@”实时上报到 %@",
+    "en": "Reporting live as “%@” to %@",
+    "ja": "「%@」として %@ にライブ送信中"
+  },
+  "report.indicator.attention": {
+    "zh-Hant": "即時上報需要你處理",
+    "zh-Hans": "实时上报需要你处理",
+    "en": "Live reporting needs your attention",
+    "ja": "ライブ送信の設定を確認してください"
+  },
+  "report.traffic.note": {
+    "zh-Hant": "即時上報會把流量數字傳送給 %@。",
+    "zh-Hans": "实时上报会把流量数字发送给 %@。",
+    "en": "Live reporting sends these traffic numbers to %@.",
+    "ja": "ライブ送信がこの通信量の数値を %@ に送信します。"
+  },
+  "privacy.report": {
+    "zh-Hant": "即時上報（選用，預設關閉）：開啟後，Agent Speed 會在 agent 工作時每隔幾秒，把即時速度、token 用量，以及你保留的費用、網路流量和模型等數字，連同你選擇的使用者名稱傳送到你指定的服務。不會傳送對話內容、檔案或專案名稱，也不會傳送歷史紀錄；每筆上報都以只存在這台電腦上的金鑰簽章。",
+    "zh-Hans": "实时上报（可选，默认关闭）：开启后，Agent Speed 会在 agent 工作时每隔几秒，把实时速度、token 用量，以及你保留的费用、网络流量和模型等数字，连同你选择的用户名发送到你指定的服务。不会发送对话内容、文件或项目名称，也不会发送历史记录；每条上报都用只保存在这台电脑上的密钥签名。",
+    "en": "Live reporting (optional, off by default): when you turn it on, Agent Speed sends live speed, token usage and — if you keep them — cost, network traffic and model numbers, with the username you choose, to the service you pick, every few seconds while your agents work. It never sends conversation content, file or project names, or history, and signs every report with a key that stays on this computer.",
+    "ja": "ライブ送信（任意・初期設定はオフ）：オンにすると、Agent Speed は agent の作業中に数秒ごと、現在の速度と token 使用量、そしてオンのままにした費用・通信量・モデルなどの数値を、選んだユーザー名と一緒に指定したサービスへ送信します。会話の内容、ファイル名やプロジェクト名、履歴は送信せず、各送信はこのコンピューターから出ない鍵で署名されます。"
+  },
+  "privacy.statement.report": {
+    "zh-Hant": "Agent Speed 只讀取本機紀錄，不會儲存或顯示對話內容。它只在檢查更新、每天更新公開的模型價格表、使用美元以外的貨幣時更新匯率，以及依你的設定把即時數字上報到 %@ 時連網；除了即時上報的內容，不傳送任何個人資料。可在下方一次關閉所有網路連線。",
+    "zh-Hans": "Agent Speed 只读取本机记录，不会保存或显示对话内容。它只在检查更新、每天更新公开的模型价格表、使用美元以外的货币时更新汇率，以及按你的设置把实时数字上报到 %@ 时联网；除实时上报的内容外，不发送任何个人数据。可在下方一键关闭所有网络连接。",
+    "en": "Agent Speed only reads local transcripts and never stores or shows conversation content. It connects only to check for updates, to refresh the public model price table daily, to refresh exchange rates when you use a currency other than US dollars, and — as you set it up — to report live numbers to %@. Apart from those live reports it sends no personal data. You can turn all network access off below.",
+    "ja": "Agent Speed はローカルの記録のみを読み取り、会話の内容を保存・表示することはありません。通信するのは、アップデートの確認、公開モデル価格表の毎日の更新、米ドル以外の通貨を使うときの為替レートの更新、そして設定に従った %@ へのライブ送信だけです。ライブ送信の内容以外に個人データは送信しません。下のスイッチですべての通信をオフにできます。"
+  },
+  "privacy.traffic.report": {
+    "zh-Hant": "網路流量：Agent Speed 只在本機計算各程式收發的位元組數，從不讀取內容、網址或連線對象；只有在即時上報保留流量項目時，才會把這些位元組數傳送給你選擇的服務。",
+    "zh-Hans": "网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象；只有在实时上报保留流量项目时，才会把这些字节数发送给你选择的服务。",
+    "en": "Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only, and never reads content, addresses or destinations. Only live reporting, while its traffic items are on, sends these byte counts to the service you chose.",
+    "ja": "通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数え、内容・アドレス・接続先は一切読みません。このバイト数を送信するのは、通信量の項目がオンのときのライブ送信だけで、送信先は選んだサービスです。"
+  },
+  "settings.network.hint.report": {
+    "zh-Hant": "用於檢查更新、每天更新價格表和匯率，以及你開啟的即時上報。關閉後完全不連網，即時上報也會停止，費用改用內建資料。",
+    "zh-Hans": "用于检查更新、每天更新价格表和汇率，以及你开启的实时上报。关闭后完全不联网，实时上报也会停止，费用改用内置数据。",
+    "en": "Used to check for updates, to refresh the price table and exchange rates daily, and for the live reporting you turned on. When off, Agent Speed never connects, live reporting stops, and costs use the built-in prices and rates.",
+    "ja": "アップデートの確認、価格表と為替レートの毎日の更新、そしてオンにしたライブ送信に使います。オフにすると一切通信せず、ライブ送信も止まり、費用は内蔵の価格とレートで計算します。"
+  },
+  "report.username.transfer": {
+    "zh-Hant": "把這個名稱移到這台電腦",
+    "zh-Hans": "把这个名称移到这台电脑",
+    "en": "Move This Name to This Computer",
+    "ja": "この名前をこのコンピューターに移す"
+  },
+  "report.username.transfer.hint": {
+    "zh-Hant": "這個名稱屬於你帳號下的另一台裝置。移過來後，那台裝置會被刪除，不能再用這個名稱上報。",
+    "zh-Hans": "这个名称属于你账号下的另一台设备。移过来后，那台设备会被删除，不能再用这个名称上报。",
+    "en": "This name belongs to another device of your account. After the move that device is removed and can no longer report under it.",
+    "ja": "この名前はあなたのアカウントの別のデバイスが使っています。移すとそのデバイスは削除され、この名前では送信できなくなります。"
   }
 }

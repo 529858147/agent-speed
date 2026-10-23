@@ -1642,6 +1642,8 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 - **費用 Cost** — currency, live value unit, subscription marks, price table status (section 9).
 - **網路流量 Network Traffic** — measuring switch, tools, speed unit, menu bar / taskbar speed and the per-agent
   measurement status; on Windows the optional helper service (section 10).
+- **即時上報 Live Reporting** — opt-in reporting of live numbers to a leaderboard service: service, username, API
+  key, what is sent, status, pause and *Forget this device* (section 11, `spec/REPORTING.md`).
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
   Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
   - omp: one row. The path is the default sessions root (METRICS 2); the status counts the sessions of the default
@@ -1654,7 +1656,8 @@ Native settings window (macOS: SwiftUI `Settings`/grouped `Form`; Windows: Fluen
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
   conversation content is never stored or displayed. With the cost feature: `privacy.statement` and the Network group
   with the master switch (section 9, `spec/NETWORK.md`). With traffic measuring: `privacy.traffic` follows
-  (section 10).
+  (section 10). With live reporting: `privacy.report` follows, and the texts switch while reporting is on
+  (section 11).
 
 All settings apply live without restart and persist immediately.
 
@@ -2186,3 +2189,219 @@ Everything applies live; turning measuring off stops the sampler and the helper 
 - The sparkline is an image labelled `traffic.a11y.chart`; the history table is the text equivalent of the chart.
 - Status dots always have text; nothing relies on color.
 - Reduce Motion: the readout's fades become instant; scale changes jump.
+
+## 11. Live reporting (即時上報)
+
+Agent Speed can share its live numbers with a service the user picks — typically a public leaderboard such as Codex
+Radar. The protocol and everything a service sees are `spec/REPORTING.md`; how each value is computed and when a
+report is sent are METRICS 11. Strings are `report.*` in `spec/strings.json`.
+
+### Principles
+
+- **Off until the user says so.** The default is off. Nothing is sent before the user confirmed the consent sheet for
+  that service, and nothing at all while the network master switch (section 9, NETWORK 1) is off.
+- **Show exactly what is sent.** The preview is the real body of the next report, not a description of it.
+- **Always say where.** Wherever reporting is mentioned, the destination host is named; the menu and the dashboard
+  show quietly that reporting is on.
+- **Calm.** No dialogs, notifications, badges or animations for reporting. The orb is unchanged. Problems appear in the
+  pane's status line and as a small attention dot on the dashboard indicator.
+- **The service's words are not ours.** Service names and descriptions are shown as plain text, links only when
+  `https`. Error messages from the service are never shown; every status is a localized string of this table.
+- **Unknown is never zero** applies to the payload too: unavailable values are sent as a status, never as `0`.
+
+### Settings → 即時上報 (Live Reporting)
+
+A pane titled `settings.report` between 網路流量 and 資料來源, the platform's grouped form like the other panes (13 pt
+text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
+
+1. **Master** — `report.enabled` (default off) with the caption `report.enabled.hint`. With the network master switch
+   off the switch is disabled and the caption becomes `settings.network.offHint`. Turning it on opens the consent
+   sheet (below) unless this service is already confirmed and registered; then reporting resumes at once. Turning it
+   off sends one `leaving` report (METRICS 11.5) and keeps the registration.
+2. **Service** (`report.service`) — a popup: the presets (`Codex Radar`, `https://codexradar.com`), a separator,
+   `report.service.custom`. Custom shows the `report.url` field (placeholder `report.url.placeholder`), validated as
+   the user types (0.5 s debounce, REPORTING 2.1): `report.url.invalid`, `report.url.https`; a loopback `http` URL
+   shows the amber note `report.url.loopback`. Below the popup the **service card** fades in after discovery
+   (REPORTING 3): the name (13 pt semibold), `report.service.host` with the API host (secondary, selectable), the
+   description (11 pt secondary, at most 3 lines), `report.service.retention` when given, and borderless link
+   buttons `report.service.terms`, `report.service.privacy`, `report.service.leaderboard`. While fetching:
+   `report.service.checking` with a small inline progress indicator; failures: `report.service.failed`,
+   `report.service.notSupported`; after a change that needs consent (REPORTING 3.3): `report.service.changed` with
+   the button `report.service.review` (opens the consent sheet). Switching services pauses the old one (its identity
+   is kept, `report.others`) and opens the consent sheet for the new one.
+3. **Username** — `report.username` text field with the caption `report.username.public` and, trailing, the
+   borderless `report.username.random` (a dice glyph: SF Symbol `dice`, Segoe Fluent `Shuffle`). Validation as the
+   user types against the service's rules (REPORTING 4.3): `report.username.invalid.length`,
+   `report.username.invalid.characters` (`report.username.invalid.ascii` for an ASCII-only service),
+   `report.username.invalid.start`, `report.username.invalid.spaces`, and `report.username.invalid.noSpaces` when
+   the service allows no spaces. The edit commits on Return or when the field
+   loses focus (Esc restores the registered name): when registered it renames (REPORTING 4.4) and shows the result
+   inline — `report.username.updated` (secondary, fades after 3 s), `report.username.taken`,
+   `report.username.invalid.reserved`. When a registration answers `username_taken`, the service uses API keys and a
+   key is set, the error offers the button `report.username.transfer` with `report.username.transfer.hint`: it
+   registers again with `"transfer": true` (REPORTING 4.7). This is the only path that sends `transfer`.
+4. **API key** — only when the service's `apiKey.mode` is `optional` or `required`: a secure field `report.apiKey`
+   with the placeholder `report.apiKey.optional` or the caption `report.apiKey.required`, the caption
+   `report.apiKey.hint`, the link `report.apiKey.get` when the service gives `apiKey.url`, and `report.apiKey.clear`.
+   A saved key shows as `••••` plus its last 4 characters; it is never shown again in full, never in the preview and
+   never logged.
+5. **What's sent** (`report.sections`) — the caption `report.sections.hint`, then one switch per optional section:
+   `report.section.sources`, `report.section.models`, `report.section.cost` and `report.section.traffic`, on by
+   default, and `report.section.machineTraffic` (caption `report.section.machineTraffic.hint`), **off** by default
+   because it also reveals other programs' network use. A section
+   the service does not list is shown off and disabled with `report.section.notAccepted`; the two traffic switches are
+   disabled with `report.section.trafficOff` while traffic measuring is off (the report then says `status: "off"`).
+   The button `report.preview` opens the preview.
+6. **Status** (`report.status`) — one line with a small dot that always has text: green `report.status.reporting`
+   (with `time.secondsAgo` for the last delivery); gray `report.status.off`, `report.status.never`,
+   `report.status.idle`, `report.status.quiet`, `report.status.paused` / `report.status.pausedIndefinitely`,
+   `settings.network.offHint`; amber `report.status.connecting`, `report.status.registering`,
+   `report.status.retrying` (with a short reason such as `HTTP 503`), `report.status.rateLimited` (with the local
+   time); red (needs the user) `report.status.apiKey`, `report.status.usernameTaken`, `report.status.keyMismatch`,
+   `report.status.rejected`, `report.status.upgrade`, `report.status.gone`. When the service returns a rank:
+   `report.status.rank` after the line. Actions on the right: `report.pause` as a pull-down with
+   `report.pause.hour` and `report.pause.indefinite`, or `report.resume` while paused.
+7. **This device** (`report.device`) — `report.device.detail` (username and host), `report.device.fingerprint`
+   followed by the first 8 characters of the key's RFC 7638 thumbprint (monospaced, selectable), and the destructive
+   text button `report.forget`. It asks `report.forget.confirm` with `report.forget.detail` (destructive default
+   `report.forget.action`, `history.cancel`), then calls the deletion endpoint (REPORTING 4.6): success →
+   `report.forget.done`, the key and device id are deleted and reporting is off; failure → `report.forget.failed`
+   with the button `report.forget.localOnly` and `report.forget.localOnly.detail` (with the service's privacy link).
+   After `report.status.keyMismatch` the button `report.reset` appears (`report.reset.detail`): delete the local
+   identity, make a new key and device id and register again.
+8. **Other services** — a collapsed disclosure `report.others`, only when identities for other services exist: one
+   row per service (host, username) with `report.forget`.
+
+Everything applies at once and persists immediately; a username or API key change takes effect with the next report.
+
+### Consent sheet
+
+A sheet (macOS) / `ContentDialog` (Windows), 520 pt wide, opened when reporting is turned on for a service that is not
+yet confirmed, or by `report.service.review`:
+
+- Title `report.consent.title` (the service name), body `report.consent.body` (with the service's interval).
+- The service card (as in the pane); the **username field**, filled with the default name (the computer name, below)
+  and editable here, with its caption `report.username.public` and the random button; the API key field when needed;
+  and the section switches with their defaults (5 above). The preview shows the name exactly as it will be sent.
+- **Nothing is sent before `report.start`**: no key is created and no request — not even registration — is made while
+  the sheet is open; only the discovery document has been fetched (REPORTING 3). Cancelling leaves no trace on the
+  service.
+- **Live preview**: a disclosure `report.preview.title`, expanded, showing the next report body pretty-printed in the
+  monospaced system font at 11 pt (keys in the secondary color, values in the label color), at most 220 pt tall and
+  scrollable, refreshed once per second while visible (the text changes in place, the scroll position stays), with
+  `report.preview.copy` and the caption `report.preview.hint`.
+- `report.consent.never` and `report.consent.honesty` as 11 pt secondary footnotes.
+- Buttons: `history.cancel` and the default `report.start`. Starting generates the key (when this service has none),
+  registers (REPORTING 4.1) and shows `report.status.registering` inline; errors stay in the sheet next to the field
+  they concern (`report.username.taken`, `report.status.apiKey`, `report.service.failed`). Success closes the sheet
+  and the pane's status turns green with the first delivery.
+
+Keyboard: Tab order follows the layout; Return starts (when valid); Esc cancels. Accessibility: the preview is a
+read-only text area labelled `report.preview.title`; switches and fields have their visible labels.
+
+### Preview window
+
+`report.preview` in the pane opens a small window (macOS panel / Windows dialog, 560 × 640 pt) with the same
+preview: the request line and headers on top — `X-AgentSpeed-Signature` shown as `…` with `report.preview.hint`,
+`Authorization: Bearer ••••` when a key is set — then the body, `report.preview.next` (seconds until the next
+report) and `report.preview.copy`. While reporting is off or quiet it shows the report that would be built now.
+
+### Default username and random names
+
+- When the consent sheet opens without a registered name, the field is filled with the **computer name** fitted to the
+  service's rules: macOS `SCDynamicStoreCopyComputerName` (the name in System Settings → General → Sharing, e.g.
+  `Zoe’s MacBook Pro`); Windows `GetComputerNameExW(ComputerNamePhysicalDnsHostname)` (keeps the letter case the user
+  typed), else `Environment.MachineName`. When fitting leaves nothing usable, a random name is used.
+- **Fitting** (`fit`, vectors `usernames.fit`): NFKC; remove apostrophes (`'` `‘` `’` `ʼ` `` ` ``); for an ASCII-only
+  service decompose (NFKD) and drop combining marks; every white space and every character the rules do not allow
+  becomes a space (when spaces are allowed) or `-`; a run of spaces and hyphens that contains a hyphen becomes one
+  `-`, a run of spaces one space; drop leading characters until a letter or number; cut to `maxLength` code points;
+  drop trailing spaces, `-`, `_` and `.`; the result must pass validation, else there is none.
+- **Random**: `racer-` followed by 6 characters from `23456789abcdefghjkmnpqrstuvwxyz`, from the system's
+  cryptographic random generator. A taken random name is replaced by a new one.
+- The name is never changed silently later; only the user renames it.
+
+### Menu, dashboard and About
+
+- **Quick menu** (macOS status item menu, Windows tray and widget menu): while reporting is on, an item
+  `report.menu.on` (service name) with a small status dot opens a submenu: `report.pause.hour`,
+  `report.pause.indefinite` (or `report.resume`), `report.service.leaderboard` (when the service has one) and
+  `report.menu.settings`. While paused the item reads `report.menu.paused`.
+- **Dashboard footer**: a small broadcast glyph (SF Symbol `dot.radiowaves.left.and.right`; on Windows the closest
+  Segoe Fluent Icons glyph, chosen when implementing) left of the settings button, secondary color, static; tooltip and accessibility label
+  `report.indicator` (username and host); a click opens Settings → 即時上報. Paused: the glyph at 40 % with the tooltip
+  `report.menu.paused`. When the status needs the user (red in the pane), a 5 pt amber dot sits on the glyph and the
+  label becomes `report.indicator.attention`. Hidden while reporting is off.
+- **About**: `privacy.report` follows `privacy.statement` and `privacy.traffic`. While reporting is on,
+  `privacy.statement.report` replaces `privacy.statement`, `privacy.traffic.report` replaces `privacy.traffic` and
+  `settings.network.hint.report` replaces `settings.network.hint`, so no sentence claims that nothing is sent. The
+  Network Traffic pane adds `report.traffic.note` under its switch while a traffic section is being reported.
+
+### Storage
+
+- Settings (plain, in the settings store): `report.enabled`, the selected service URL and preset, the section switches,
+  the pause end (or indefinite), and per service origin: the confirmed discovery fields (REPORTING 3.3), `deviceId`,
+  the registered username, `profileUrl`, the API origin, the key's creation date and the pending-key flag (REPORTING
+  4.5). At most 8 service identities; the oldest unused one is forgotten locally first.
+- **Private keys and API keys** never go to the settings store, logs or crash reports:
+  - **macOS, with a Secure Enclave** (`SecureEnclave.isAvailable`: Apple silicon and Intel Macs with a T2 chip) — the
+    normative store. The device key is generated **inside the Secure Enclave** with CryptoKit
+    (`SecureEnclave.P256.Signing.PrivateKey()`, no access-control flags, so signing never asks the user); it cannot be
+    exported, and its `dataRepresentation` is an encrypted handle that only this Mac's Secure Enclave can use. The
+    handle is stored in `<app data>/report/<deviceId>.sekey` (mode 0600, written atomically). The API key is sealed
+    with AES-GCM under a key derived (`hkdfDerivedSymmetricKey`, SHA-256, salt `AgentSpeed report`, info `api-key`,
+    32 bytes) from an ECDH agreement between a Secure Enclave key-agreement key
+    (`SecureEnclave.P256.KeyAgreement.PrivateKey`, its handle in `<deviceId>.seagree`) and an ephemeral P-256 public key
+    stored with the sealed box in `<deviceId>.apikey`. No Keychain item is used, so updates of the ad-hoc signed app
+    never trigger a Keychain password prompt. Verified on 2026-10-22 with ad-hoc signed builds on macOS 27: Secure
+    Enclave signing (signatures verified by the reference) and the API-key sealing both work without entitlements.
+  - **macOS without a Secure Enclave** (older Intel Macs) — fallback: a software key (`P256.Signing.PrivateKey`, its
+    32-byte `rawRepresentation`) and the API key in Keychain generic-password items, service
+    `io.github.zoefix.agentspeed.report`, accounts `<deviceId>.key` and `<deviceId>.apikey`,
+    `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, not synchronizable. Because release builds are ad-hoc signed,
+    the Keychain may ask for the login password the first time an updated build reads these items (not verified).
+  - Windows: `%LOCALAPPDATA%\AgentSpeed\report\<deviceId>.key` (the PKCS#8 private key from
+    `ECDsa.ExportPkcs8PrivateKey`) and `<deviceId>.apikey` (UTF-8), each protected with DPAPI (`CryptProtectData`,
+    current user, the device id's 16 bytes as additional entropy), written to a temporary file and renamed.
+  - Both are deleted by *Forget*, *Reset* and when a service identity is forgotten locally.
+
+### README and About wording (prepared; applied when the feature ships)
+
+The About texts are the strings above. The README privacy sections add this paragraph after the traffic paragraph
+when the feature ships (until then the README describes the released app):
+
+- English: "Live reporting (optional, off by default): if you turn it on and pick a service — for example a public
+  leaderboard — Agent Speed sends that service your live speed, the tokens used in the last few seconds and, if you
+  leave them on, the API-equivalent cost in US dollars, your agents' network traffic, models in use and a per-tool
+  breakdown (this computer's overall network speed only if you turn it on), together with the username you choose (it starts as your computer's name; one click picks a random one). It reports
+  every few seconds while your agents work and stops when they rest. It never sends conversation content, prompts,
+  file, folder or project names, or your usage history, and failed reports are never resent. Each report is signed
+  with a key that stays on your computer; the service can tell that reports come from the same device, not whether
+  the numbers are true. You can pause, turn it off, or ask the service to forget your device in Settings."
+- 繁體中文：「即時上報（選用，預設關閉）：開啟並選擇一個服務（例如公開排行榜）後，Agent Speed 會把你的即時速度、最近幾秒
+  用掉的 token 數，以及你保留的項目——以美元計的 API 等值費用、agent 的網路流量、使用中的模型、各工具的明細（整台電腦的網速
+  只有在你開啟時才會傳送）——連同你選擇的使用者名稱
+  （預設是電腦名稱，一鍵就能換成隨機名稱）傳送給該服務。agent 工作時每隔幾秒上報一次，閒下來就停止。它從不傳送對話內容、提示
+  詞、檔案／資料夾／專案名稱或用量歷史，上報失敗的資料也不會補傳。每筆上報都以只存在你電腦上的金鑰簽章；服務能確認資料來自同
+  一台裝置，但無法確認數字是否正確。可以在設定中暫停、關閉，或要求服務忘記你的裝置。」
+- 简体中文：「实时上报（可选，默认关闭）：开启并选择一个服务（例如公开排行榜）后，Agent Speed 会把你的实时速度、最近几秒
+  用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型、各工具的明细（整台电脑的网速
+  只有在你开启时才会发送）——连同你选择的用户名
+  （默认是电脑名称，一键即可换成随机名称）发送给该服务。agent 工作时每隔几秒上报一次，空闲时停止。它从不发送对话内容、提示
+  词、文件／文件夹／项目名称或用量历史，上报失败的数据也不会补发。每条上报都用只保存在你电脑上的密钥签名；服务能确认数据来自同
+  一台设备，但无法确认数字是否准确。可以在设置中暂停、关闭，或要求服务忘记你的设备。」
+- 日本語：「ライブ送信（任意・初期設定はオフ）：オンにしてサービス（公開ランキングなど）を選ぶと、Agent Speed は現在の速度、
+  直近数秒に使った token 数、そしてオンのままにした項目——米ドル建ての API 換算費用、agent の通信量、使用中のモデル、ツール
+  ごとの内訳（コンピューター全体の通信速度はオンにした場合のみ）——を、選んだユーザー名（初期値はコンピューター名。ワンクリックでランダムな名前にできます）と一緒にそのサービスへ送信
+  します。agent が作業している間は数秒ごとに送信し、休んでいる間は止まります。会話の内容、プロンプト、ファイル・フォルダー・
+  プロジェクトの名前、使用履歴は一切送信せず、送信に失敗したデータを後から送り直すこともありません。各送信はこのコンピューター
+  から出ない鍵で署名されます。サービスは同じデバイスからの送信であることは確認できますが、数値が正しいかどうかは確認できません。
+  設定から一時停止・オフにしたり、サービスにデバイスの削除を依頼したりできます。」
+
+### Accessibility
+
+- Every control has its visible label; status dots always have text; nothing relies on color.
+- The status line is a live region (polite): changes are announced at most once per minute, except changes to a red
+  state, which are announced at once.
+- The preview is selectable text; `report.preview.copy` copies it.
+- Reduce Motion: the service card and status changes appear without fades.
