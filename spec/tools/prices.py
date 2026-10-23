@@ -37,10 +37,10 @@ MODEL_KEYS = {"id", "provider", "name", "status", "free", "prices", "tiers", "of
 MAX_PRICE = Decimal(10000)
 MAX_CLASS_TOKENS = 100_000_000
 MAX_MODELS = 2000
-DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}Z)?$")
-WINDOW = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
-ID = re.compile(r"^[a-z0-9][a-z0-9._:+-]*$")
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}\Z", re.ASCII)
+INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}Z)?\Z", re.ASCII)
+WINDOW = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})\Z", re.ASCII)
+ID = re.compile(r"^[a-z0-9][a-z0-9._:+-]*\Z")
 DATE_SUFFIX = re.compile(r"-\d{8}$")
 BEDROCK_VERSION = re.compile(r"-v\d+(?::\d+)?$")
 VERTEX_DATE = re.compile(r"@(\d{8})$")
@@ -703,7 +703,7 @@ def validate_currencies(c, strings=None):
         if set(cur) - allowed:
             errors.append("%s: unknown fields %s" % (where, sorted(set(cur) - allowed)))
         code = cur.get("code")
-        if not isinstance(code, str) or not re.match(r"^[A-Z]{3}$", code):
+        if not isinstance(code, str) or not re.match(r"^[A-Z]{3}\Z", code):
             errors.append(where + ": code must be ISO 4217 (three capital letters)")
             continue
         codes.append(code)
