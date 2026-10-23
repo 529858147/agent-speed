@@ -6,6 +6,7 @@ using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.OpenCode;
 using AgentSpeed.Core.Parsing;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core.Monitoring;
 
@@ -144,7 +145,7 @@ internal sealed class MonitorCore : IDisposable
     {
         foreach (var root in _roots)
         {
-            root.Available = SafeDirectoryExists(root.Path);
+            root.Available = SafeDirectoryExists(root.DetectionPath);
         }
 
         if (_openCode is not null)
@@ -233,7 +234,7 @@ internal sealed class MonitorCore : IDisposable
                 continue;
             }
 
-            root.Available = SafeDirectoryExists(root.Path);
+            root.Available = SafeDirectoryExists(root.DetectionPath);
             if (!root.Available)
             {
                 continue;
@@ -386,7 +387,7 @@ internal sealed class MonitorCore : IDisposable
                 continue;
             }
 
-            var available = SafeDirectoryExists(root.Path);
+            var available = SafeDirectoryExists(root.DetectionPath);
             changed |= available != root.Available;
             root.Available = available;
             if (!available)
@@ -425,7 +426,7 @@ internal sealed class MonitorCore : IDisposable
         return changed;
     }
 
-    /// <summary>Files of that source with at least one line today.</summary>
+    /// <summary>Files of that source with at least one line today; WorkBuddy counts main sessions only (DESIGN 5).</summary>
     public int SessionCount(SourceKind kind, long todayStartMs)
     {
         if (kind == SourceKind.OpenCode)
@@ -433,10 +434,12 @@ internal sealed class MonitorCore : IDisposable
             return _openCode?.ActiveSessionCount(todayStartMs) ?? 0;
         }
 
+        var mainOnly = WorkBuddyPaths.IsWorkBuddy(kind);
         var count = 0;
         foreach (var tracked in _files.Values)
         {
-            if (tracked.Parser.Source == kind && tracked.Parser.LastLineMs >= todayStartMs)
+            if (tracked.Parser.Source == kind && tracked.Parser.LastLineMs >= todayStartMs
+                && !(mainOnly && tracked.Parser.IsSubagent))
             {
                 count++;
             }

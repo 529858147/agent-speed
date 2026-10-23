@@ -64,6 +64,8 @@ public static class DisplayText
         SourceKind.Gemini => "source.gemini",
         SourceKind.Omp => "source.omp",
         SourceKind.Antigravity => "source.antigravity",
+        SourceKind.WorkBuddy => "source.workbuddy",
+        SourceKind.WorkBuddyAi => "source.workbuddyAi",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 

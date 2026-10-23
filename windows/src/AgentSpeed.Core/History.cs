@@ -132,6 +132,8 @@ public static class PreviewHistory
             (SourceKind.Gemini, 40_000, 120, ["gemini-3-pro"], 0),
             (SourceKind.Omp, 70_000, 95, ["claude-opus-5-5", "gpt-5.5"], 45),
             (SourceKind.Antigravity, 50_000, 135, ["gemini-3.1-pro", "gemini-3.1-flash"], 30),
+            (SourceKind.WorkBuddy, 45_000, 85, ["glm-5.3", "deepseek-v4-pro"], 14),
+            (SourceKind.WorkBuddyAi, 30_000, 110, ["gpt-5.5", "hy4-preview"], 10),
         ];
         var result = new List<DailyUsage>();
         for (var offset = count - 1; offset >= 0; offset--)

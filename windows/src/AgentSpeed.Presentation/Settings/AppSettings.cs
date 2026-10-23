@@ -151,6 +151,10 @@ public sealed record AppSettings
 
     public bool AntigravityEnabled { get; init; } = true;
 
+    public bool WorkBuddyEnabled { get; init; } = true;
+
+    public bool WorkBuddyAiEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
@@ -171,6 +175,12 @@ public sealed record AppSettings
 
     /// <summary>One Antigravity store folder (or its <c>conversations</c> folder); null reads the three default stores.</summary>
     public string? AntigravityRoot { get; init; }
+
+    /// <summary>The WorkBuddy data folder (or its <c>projects</c> folder); null uses <c>~/.workbuddy</c>.</summary>
+    public string? WorkBuddyRoot { get; init; }
+
+    /// <summary>The WorkBuddy AI data folder (or its <c>projects</c> folder); null uses <c>~/.workbuddy-ai</c>.</summary>
+    public string? WorkBuddyAiRoot { get; init; }
 
     public int ChartSeconds { get; init; } = 120;
 
@@ -223,6 +233,8 @@ public sealed record AppSettings
         SourceKind.Gemini => GeminiEnabled,
         SourceKind.Omp => OmpEnabled,
         SourceKind.Antigravity => AntigravityEnabled,
+        SourceKind.WorkBuddy => WorkBuddyEnabled,
+        SourceKind.WorkBuddyAi => WorkBuddyAiEnabled,
         _ => false,
     };
 
@@ -236,13 +248,16 @@ public sealed record AppSettings
         SourceKind.Gemini => this with { GeminiEnabled = enabled },
         SourceKind.Omp => this with { OmpEnabled = enabled },
         SourceKind.Antigravity => this with { AntigravityEnabled = enabled },
+        SourceKind.WorkBuddy => this with { WorkBuddyEnabled = enabled },
+        SourceKind.WorkBuddyAi => this with { WorkBuddyAiEnabled = enabled },
         _ => this,
     };
 
     public MonitorConfiguration ToMonitorConfiguration()
     {
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
-        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot);
+        return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot,
+            WorkBuddyRoot: WorkBuddyRoot, WorkBuddyAiRoot: WorkBuddyAiRoot);
     }
 
     /// <summary>The master switch; turning it on while every orb is individually hidden makes them all visible.</summary>
@@ -286,6 +301,8 @@ public sealed record AppSettings
         GeminiRoot = CleanPath(GeminiRoot),
         OmpRoot = CleanPath(OmpRoot),
         AntigravityRoot = CleanPath(AntigravityRoot),
+        WorkBuddyRoot = CleanPath(WorkBuddyRoot),
+        WorkBuddyAiRoot = CleanPath(WorkBuddyAiRoot),
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),

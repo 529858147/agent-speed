@@ -234,6 +234,8 @@ public class PaletteTests
     [InlineData(SourceKind.Gemini, "#34B8F0")]
     [InlineData(SourceKind.Omp, "#84CC16")]
     [InlineData(SourceKind.Antigravity, "#EC4899")]
+    [InlineData(SourceKind.WorkBuddy, "#11A68B")]
+    [InlineData(SourceKind.WorkBuddyAi, "#0B84A5")]
     public void SourceColorsMatchDesign(SourceKind source, string hex)
     {
         Assert.Equal(hex, HeatPalette.SourceColor(source).ToHex());
@@ -245,6 +247,7 @@ public class PaletteTests
         var colors = Enum.GetValues<SourceKind>().Select(s => HeatPalette.SourceColor(s).ToHex()).ToArray();
         Assert.Equal(colors.Length, colors.Distinct().Count());
         Assert.DoesNotContain(HeatPalette.Stops[0].Color.ToHex(), colors);
+        Assert.DoesNotContain(HeatPalette.Neutral.ToHex(), colors);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core.Tests;
 
@@ -123,6 +124,8 @@ public sealed class ParserFixtureTests
         SourceKind.Gemini => "gemini",
         SourceKind.Omp => "omp",
         SourceKind.Antigravity => "antigravity",
+        SourceKind.WorkBuddy => "workbuddy",
+        SourceKind.WorkBuddyAi => "workbuddyAi",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -185,6 +188,21 @@ public sealed class ParserFixtureTests
         if (relative.StartsWith("omp/", StringComparison.Ordinal))
         {
             return FeedLines(new OmpParser(path, deduper, OmpFixture.RootOf(path)), content, sink, maxLines);
+        }
+
+        if (relative.StartsWith("workbuddy/", StringComparison.Ordinal))
+        {
+            var workBuddy = new WorkBuddyParser(path, deduper, WorkBuddyFixture.SourceOf(relative));
+            if (maxLines is not null)
+            {
+                return FeedLines(workBuddy, content, sink, maxLines);
+            }
+
+            // Through the tailer, like the app: a line still being written (no newline yet) is not read.
+            var batch = workBuddy.NewBatch();
+            new FileTailer(path).ReadAppended(batch);
+            batch.ApplyTo(sink);
+            return workBuddy;
         }
 
         throw new InvalidOperationException("Unknown fixture source: " + relative);

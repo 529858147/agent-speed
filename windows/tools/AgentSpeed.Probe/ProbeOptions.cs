@@ -21,6 +21,8 @@ internal enum ProbeMode
 /// <param name="PricesPath"><c>--prices PATH</c>: price with this table instead of the bundled one (METRICS 9), as <c>reference.py --prices</c>.</param>
 /// <param name="SyncDirectory">Scratch app-data folder of <c>--sync-prices</c> / <c>--sync-rates</c> (NETWORK 3, 4).</param>
 /// <param name="SyncCurrency">The selected currency of <c>--sync-rates</c>.</param>
+/// <param name="WorkBuddyRoot">The WorkBuddy data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy</c>.</param>
+/// <param name="WorkBuddyAiRoot">The WorkBuddy AI data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy-ai</c>.</param>
 internal sealed record ProbeOptions(
     ProbeMode Mode,
     int WatchSeconds,
@@ -36,11 +38,14 @@ internal sealed record ProbeOptions(
     IReadOnlyList<string>? AntigravityRoots = null,
     string? PricesPath = null,
     string? SyncDirectory = null,
-    string? SyncCurrency = null)
+    string? SyncCurrency = null,
+    string? WorkBuddyRoot = null,
+    string? WorkBuddyAiRoot = null)
 {
     public const string Usage =
         "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N | --sync-prices DIR | --sync-rates DIR CURRENCY) [--prices PATH] " +
-        "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]...";
+        "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]... " +
+        "[--workbuddy PATH] [--workbuddy-ai PATH]";
 
     public MonitorConfiguration Configuration => new(
         new HashSet<SourceKind>(Enum.GetValues<SourceKind>()),
@@ -50,7 +55,9 @@ internal sealed record ProbeOptions(
         OpenCodeRoot,
         GeminiRoots.Count > 0 ? GeminiRoots[0] : null,
         OmpRoots is { Count: > 0 } omp ? omp[0] : null,
-        AntigravityRoots is { Count: > 0 } antigravity ? antigravity[0] : null);
+        AntigravityRoots is { Count: > 0 } antigravity ? antigravity[0] : null,
+        WorkBuddyRoot,
+        WorkBuddyAiRoot);
 
     /// <summary>Resolved roots; several <c>--gemini</c>, <c>--omp</c> or <c>--antigravity</c> folders are all read (like the reference).</summary>
     public SourceLocations Locations
@@ -112,6 +119,7 @@ internal sealed record ProbeOptions(
         var seconds = 0;
         var utc = false;
         string? codex = null, claude = null, dsh = null, opencode = null, store = null, prices = null, sync = null, currency = null;
+        string? workBuddy = null, workBuddyAi = null;
         long? since = null;
         var gemini = new List<string>();
         var omp = new List<string>();
@@ -155,6 +163,12 @@ internal sealed record ProbeOptions(
                 case "--antigravity" when i + 1 < args.Length:
                     antigravity.Add(args[++i]);
                     break;
+                case "--workbuddy" when i + 1 < args.Length:
+                    workBuddy = args[++i];
+                    break;
+                case "--workbuddy-ai" when i + 1 < args.Length:
+                    workBuddyAi = args[++i];
+                    break;
                 case "--store" when i + 1 < args.Length:
                     store = args[++i];
                     break;
@@ -186,6 +200,8 @@ internal sealed record ProbeOptions(
             return null;
         }
 
-        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity, prices, sync, currency);
+        return new ProbeOptions(
+            mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity, prices, sync, currency,
+            workBuddy, workBuddyAi);
     }
 }

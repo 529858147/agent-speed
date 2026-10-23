@@ -185,6 +185,7 @@ public class HistoryCsvTests
         var range = new DayRange(D(2026, 9, 22), D(2026, 10, 21));
         Assert.Equal("agent-speed-history-all-2026-09-22-2026-10-21.csv", HistoryCsv.FileName(range, null));
         Assert.Equal("agent-speed-history-claude-code-2026-09-22-2026-10-21.csv", HistoryCsv.FileName(range, SourceKind.ClaudeCode));
+        Assert.Equal("agent-speed-history-workbuddy-ai-2026-09-22-2026-10-21.csv", HistoryCsv.FileName(range, SourceKind.WorkBuddyAi));
     }
 
     [Theory]
@@ -197,6 +198,8 @@ public class HistoryCsvTests
     [InlineData(SourceKind.Gemini, "gemini")]
     [InlineData(SourceKind.Omp, "omp")]
     [InlineData(SourceKind.Antigravity, "antigravity")]
+    [InlineData(SourceKind.WorkBuddy, "workbuddy")]
+    [InlineData(SourceKind.WorkBuddyAi, "workbuddy-ai")]
     [InlineData((SourceKind)99, "unknown")]
     public void SourceIdsAreStable(SourceKind? source, string id)
     {

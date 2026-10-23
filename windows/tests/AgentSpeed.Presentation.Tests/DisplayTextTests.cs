@@ -158,6 +158,8 @@ public class DisplayTextTests
     [InlineData(SourceKind.Gemini, "source.gemini", "Gemini CLI")]
     [InlineData(SourceKind.Omp, "source.omp", "omp")]
     [InlineData(SourceKind.Antigravity, "source.antigravity", "Antigravity")]
+    [InlineData(SourceKind.WorkBuddy, "source.workbuddy", "WorkBuddy")]
+    [InlineData(SourceKind.WorkBuddyAi, "source.workbuddyAi", "WorkBuddy AI")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));
@@ -190,6 +192,23 @@ public class DisplayTextTests
             Assert.Contains("~/.omp/agent/sessions", ompHint, StringComparison.Ordinal);
             Assert.True(Embedded.TryGet("settings.sources.antigravityHint", language, out var antigravityHint), language);
             Assert.Contains("~/.gemini/antigravity-cli", antigravityHint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void WorkBuddyStringsAreTheAppNamesInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.workbuddy", language, out var workBuddy), language);
+            Assert.Equal("WorkBuddy", workBuddy);
+            Assert.True(Embedded.TryGet("source.workbuddyAi", language, out var workBuddyAi), language);
+            Assert.Equal("WorkBuddy AI", workBuddyAi);
+            Assert.True(Embedded.TryGet("settings.sources.workbuddyHint", language, out var hint), language);
+            Assert.Contains("~/.workbuddy", hint, StringComparison.Ordinal);
+            Assert.DoesNotContain("~/.workbuddy-ai", hint, StringComparison.Ordinal);
+            Assert.True(Embedded.TryGet("settings.sources.workbuddyAiHint", language, out var aiHint), language);
+            Assert.Contains("~/.workbuddy-ai", aiHint, StringComparison.Ordinal);
         }
     }
 

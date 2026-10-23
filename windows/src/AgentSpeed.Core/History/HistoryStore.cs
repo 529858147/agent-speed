@@ -579,6 +579,8 @@ internal static class SourceNames
         SourceKind.Gemini => "gemini",
         SourceKind.Omp => "omp",
         SourceKind.Antigravity => "antigravity",
+        SourceKind.WorkBuddy => "workbuddy",
+        SourceKind.WorkBuddyAi => "workbuddyAi",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -592,6 +594,8 @@ internal static class SourceNames
         "gemini" => SourceKind.Gemini,
         "omp" => SourceKind.Omp,
         "antigravity" => SourceKind.Antigravity,
+        "workbuddy" => SourceKind.WorkBuddy,
+        "workbuddyAi" => SourceKind.WorkBuddyAi,
         _ => null,
     };
 }

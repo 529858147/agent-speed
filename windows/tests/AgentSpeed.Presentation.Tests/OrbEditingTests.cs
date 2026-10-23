@@ -189,10 +189,16 @@ public class OrbEditingTests
 
         Assert.False(OrbEditing.CanSplitBySource(SourceSet.Of(SourceKind.Codex)));
         Assert.Null(OrbEditing.SplitBySource(doc, "t", SourceSet.Of(SourceKind.Codex)));
-        var everything = OrbEditing.SplitBySource(doc, null, SourceSet.Everything)!;
+        var eight = SourceSet.Everything.Without(SourceKind.WorkBuddy).Without(SourceKind.WorkBuddyAi);
+        var everything = OrbEditing.SplitBySource(doc, null, eight)!;
         Assert.Equal(8, everything.Document.Count);
         Assert.False(everything.Limited);
         Assert.Equal(120, everything.Document.Orbs[7].Size);
+
+        var ten = OrbEditing.SplitBySource(doc, null, SourceSet.Everything)!;
+        Assert.Equal(8, ten.Document.Count);
+        Assert.True(ten.Limited);
+        Assert.Equal(eight.ToArray(), ten.Document.Orbs.Select(o => o.Sources.Known.Single()));
     }
 
     [Fact]
@@ -283,7 +289,7 @@ public class OrbEditingTests
         Assert.Equal("Claude Code", OrbNaming.AutomaticName(OrbSources.Of(SourceKind.ClaudeCode), en));
         Assert.Equal("Claude Code + Claude Desktop", OrbNaming.AutomaticName(OrbSources.FromKeys(["claudeDesktop", "claudeCode"]), en));
         Assert.Equal("Codex +2", OrbNaming.AutomaticName(OrbSources.Of(Three), en));
-        Assert.Equal("Codex +7", OrbNaming.AutomaticName(OrbSources.Of(SourceSet.Everything), en));
+        Assert.Equal("Codex +9", OrbNaming.AutomaticName(OrbSources.Of(SourceSet.Everything), en));
         Assert.Equal("Main", OrbNaming.DisplayName(Template, en));
         Assert.Equal("Gemini CLI", OrbNaming.DisplayName(new OrbDefinition("x") { Sources = OrbSources.Of(SourceKind.Gemini) }, en));
         Assert.Equal("Codex, Claude Code, Gemini CLI", OrbNaming.SourceList(Three, en));

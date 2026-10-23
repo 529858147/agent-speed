@@ -204,6 +204,7 @@ public class OrbSettingsTests
     [InlineData(", \"sources\": \"codex\"", "codex")]
     [InlineData(", \"sources\": [\"gemini\", \"codex\", \"gemini\", 7, null]", "codex,gemini")]
     [InlineData(", \"sources\": [\"antigravity\", \"newThing\", \"claudeCode\", \"newThing\"]", "claudeCode,antigravity,newThing")]
+    [InlineData(", \"sources\": [\"workbuddyAi\", \"codex\", \"workbuddy\"]", "codex,workbuddy,workbuddyAi")]
     [InlineData(", \"sources\": [\"newThing\"]", "newThing")]
     public void SourcesAreNormalized(string fields, string? expectedKeys)
     {
@@ -686,6 +687,17 @@ public class OrbSettingsTests
         Assert.Null(OrbSources.All.ToKeys());
         Assert.Throws<ArgumentOutOfRangeException>(() => OrbSources.KeyOf((SourceKind)99));
         Assert.All(Enum.GetValues<SourceKind>(), k => Assert.True(OrbSources.TryParseKey(OrbSources.KeyOf(k), out var back) && back == k));
+    }
+
+    [Fact]
+    public void SourceKeysAreTheMetricsKeysInSourceOrder()
+    {
+        Assert.Equal(
+            ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy", "workbuddyAi"],
+            Enum.GetValues<SourceKind>().Select(OrbSources.KeyOf));
+        Assert.Equal(["antigravity", "workbuddy", "workbuddyAi"], OrbSources.Of(SourceSet.Everything).ToKeys()!.TakeLast(3));
+        Assert.False(OrbSources.TryParseKey("workbuddy-ai", out _));
+        Assert.False(OrbSources.TryParseKey("WorkBuddy", out _));
     }
 
     [Theory]

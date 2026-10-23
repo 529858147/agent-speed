@@ -15,7 +15,7 @@ public readonly record struct OrbSources
     public const int MaxKeysRead = 64;
 
     private static readonly string[] Keys =
-        ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity"];
+        ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy", "workbuddyAi"];
 
     private readonly bool _explicit;
     private readonly SourceSet _known;

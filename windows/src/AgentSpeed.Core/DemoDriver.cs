@@ -19,6 +19,7 @@ public sealed class DemoDriver : IDisposable
         new("demo-quasar", SourceKind.DeepSeek, "quasar", "deepseek-flash", false, 0.24),
         new("demo-meridian", SourceKind.Omp, "meridian", "claude-opus-5-5", false, 0.18),
         new("demo-orbit", SourceKind.ClaudeDesktop, "orbit", "claude-fable-5-1", false, 0.2),
+        new("demo-lumen", SourceKind.WorkBuddy, "lumen", "glm-5.3", false, 0.16),
     ];
 
     private static readonly SourceKind[] Sources = Enum.GetValues<SourceKind>();

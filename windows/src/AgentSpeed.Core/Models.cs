@@ -16,6 +16,12 @@ public enum SourceKind
 
     /// <summary>Google Antigravity (CLI, desktop app, IDE), METRICS 4.8.</summary>
     Antigravity,
+
+    /// <summary>Tencent WorkBuddy, China edition (<c>~/.workbuddy</c>), METRICS 4.9.</summary>
+    WorkBuddy,
+
+    /// <summary>WorkBuddy AI, international edition (<c>~/.workbuddy-ai</c>), METRICS 4.9.</summary>
+    WorkBuddyAi,
 }
 
 public enum AgentPhase
@@ -207,6 +213,8 @@ public abstract record SpeedEvent
 /// <param name="GeminiRoot">Null uses the default Gemini CLI home folder.</param>
 /// <param name="OmpRoot">One omp <c>sessions</c> folder; null scans the default root and every named profile.</param>
 /// <param name="AntigravityRoot">One Antigravity store folder (or its <c>conversations</c> folder); null reads all three stores.</param>
+/// <param name="WorkBuddyRoot">The WorkBuddy data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy</c>.</param>
+/// <param name="WorkBuddyAiRoot">The WorkBuddy AI data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy-ai</c>.</param>
 public sealed record MonitorConfiguration(
     IReadOnlySet<SourceKind> EnabledSources,
     string? CodexRoot = null,
@@ -215,7 +223,9 @@ public sealed record MonitorConfiguration(
     string? OpenCodeRoot = null,
     string? GeminiRoot = null,
     string? OmpRoot = null,
-    string? AntigravityRoot = null)
+    string? AntigravityRoot = null,
+    string? WorkBuddyRoot = null,
+    string? WorkBuddyAiRoot = null)
 {
     public static MonitorConfiguration Default { get; } =
         new(new HashSet<SourceKind>(Enum.GetValues<SourceKind>()));
@@ -229,8 +239,12 @@ public sealed record MonitorConfiguration(
         && OpenCodeRoot == other.OpenCodeRoot
         && GeminiRoot == other.GeminiRoot
         && OmpRoot == other.OmpRoot
-        && AntigravityRoot == other.AntigravityRoot;
+        && AntigravityRoot == other.AntigravityRoot
+        && WorkBuddyRoot == other.WorkBuddyRoot
+        && WorkBuddyAiRoot == other.WorkBuddyAiRoot;
 
-    public override int GetHashCode() =>
-        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot);
+    public override int GetHashCode() => HashCode.Combine(
+        HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot),
+        WorkBuddyRoot,
+        WorkBuddyAiRoot);
 }

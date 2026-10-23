@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Settings.Orbs;
 
 namespace AgentSpeed.Presentation.Tests;
 
@@ -10,6 +11,8 @@ public class SourceAndWindowSettingsTests
     private static readonly string Gemini = Path.Combine(Path.GetTempPath(), ".gemini", "tmp");
     private static readonly string Omp = Path.Combine(Path.GetTempPath(), ".omp", "profiles", "work", "agent", "sessions");
     private static readonly string Antigravity = Path.Combine(Path.GetTempPath(), ".gemini", "antigravity-cli");
+    private static readonly string WorkBuddy = Path.Combine(Path.GetTempPath(), "wb", ".workbuddy");
+    private static readonly string WorkBuddyAiProjects = Path.Combine(Path.GetTempPath(), "wb", ".workbuddy-ai", "projects");
 
     [Fact]
     public void EverySourceKindHasItsOwnToggle()
@@ -25,6 +28,24 @@ public class SourceAndWindowSettingsTests
         }
 
         Assert.True(AppSettings.Default.ToMonitorConfiguration().EnabledSources.SetEquals(Enum.GetValues<SourceKind>()));
+    }
+
+    [Fact]
+    public void EverySourceToggleIsStoredUnderItsMetricsKey()
+    {
+        foreach (var kind in Enum.GetValues<SourceKind>())
+        {
+            var json = SettingsSerializer.Serialize(AppSettings.Default.WithSourceEnabled(kind, false));
+            using (var document = JsonDocument.Parse(json))
+            {
+                var sources = document.RootElement.GetProperty("sources");
+                Assert.All(Enum.GetValues<SourceKind>(), other =>
+                    Assert.Equal(other != kind, sources.GetProperty(OrbSources.KeyOf(other)).GetBoolean()));
+            }
+
+            var back = SettingsSerializer.Deserialize(json);
+            Assert.All(Enum.GetValues<SourceKind>(), other => Assert.Equal(other != kind, back.IsSourceEnabled(other)));
+        }
     }
 
     [Fact]
@@ -118,6 +139,118 @@ public class SourceAndWindowSettingsTests
         Assert.Contains(SourceKind.Antigravity, config.EnabledSources);
         Assert.Null(config.OmpRoot);
         Assert.Null(config.AntigravityRoot);
+    }
+
+    [Fact]
+    public void WorkBuddyFoldersReachTheMonitorAndRoundTrip()
+    {
+        var settings = AppSettings.Default.WithSourceEnabled(SourceKind.WorkBuddy, false) with
+        {
+            WorkBuddyRoot = WorkBuddy,
+            WorkBuddyAiRoot = WorkBuddyAiProjects,
+        };
+        Assert.False(settings.WorkBuddyEnabled);
+        Assert.True(settings.WorkBuddyAiEnabled);
+
+        var config = settings.ToMonitorConfiguration();
+        Assert.DoesNotContain(SourceKind.WorkBuddy, config.EnabledSources);
+        Assert.Contains(SourceKind.WorkBuddyAi, config.EnabledSources);
+        Assert.Equal(WorkBuddy, config.WorkBuddyRoot);
+        Assert.Equal(WorkBuddyAiProjects, config.WorkBuddyAiRoot);
+        var defaults = AppSettings.Default.ToMonitorConfiguration();
+        var china = (AppSettings.Default with { WorkBuddyRoot = WorkBuddy }).ToMonitorConfiguration();
+        var international = (AppSettings.Default with { WorkBuddyAiRoot = WorkBuddy }).ToMonitorConfiguration();
+        Assert.NotEqual(defaults, china);
+        Assert.NotEqual(defaults, international);
+        Assert.NotEqual(china, international);
+        Assert.Null(china.WorkBuddyAiRoot);
+        Assert.Null(international.WorkBuddyRoot);
+
+        var json = SettingsSerializer.Serialize(settings);
+        using (var document = JsonDocument.Parse(json))
+        {
+            var sources = document.RootElement.GetProperty("sources");
+            Assert.False(sources.GetProperty("workbuddy").GetBoolean());
+            Assert.True(sources.GetProperty("workbuddyAi").GetBoolean());
+            Assert.Equal(WorkBuddy, sources.GetProperty("workbuddyRoot").GetString());
+            Assert.Equal(WorkBuddyAiProjects, sources.GetProperty("workbuddyAiRoot").GetString());
+        }
+
+        var back = SettingsSerializer.Deserialize(json);
+        Assert.False(back.WorkBuddyEnabled);
+        Assert.True(back.WorkBuddyAiEnabled);
+        Assert.Equal(WorkBuddy, back.WorkBuddyRoot);
+        Assert.Equal(WorkBuddyAiProjects, back.WorkBuddyAiRoot);
+
+        using var defaultDocument = JsonDocument.Parse(SettingsSerializer.Serialize(AppSettings.Default));
+        var defaultSources = defaultDocument.RootElement.GetProperty("sources");
+        Assert.True(defaultSources.GetProperty("workbuddy").GetBoolean());
+        Assert.True(defaultSources.GetProperty("workbuddyAi").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("workbuddyRoot").ValueKind);
+        Assert.Equal(JsonValueKind.Null, defaultSources.GetProperty("workbuddyAiRoot").ValueKind);
+    }
+
+    [Fact]
+    public void EachWorkBuddyRowShowsItsOwnDataFolder()
+    {
+        Assert.Equal(".workbuddy", Path.GetFileName(LiveMonitor.DefaultWorkBuddyFolder));
+        Assert.Equal(".workbuddy-ai", Path.GetFileName(LiveMonitor.DefaultWorkBuddyAiFolder));
+        var d = AppSettings.Default;
+        Assert.Equal(LiveMonitor.DefaultWorkBuddyFolder, LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddy, d.WorkBuddyRoot));
+        Assert.Equal(LiveMonitor.DefaultWorkBuddyAiFolder, LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddyAi, d.WorkBuddyAiRoot));
+
+        var changed = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(d with { WorkBuddyAiRoot = WorkBuddyAiProjects }));
+        Assert.Equal(LiveMonitor.DefaultWorkBuddyFolder, LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddy, changed.WorkBuddyRoot));
+        Assert.Equal(Path.GetDirectoryName(WorkBuddyAiProjects), LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddyAi, changed.WorkBuddyAiRoot));
+        Assert.Equal(WorkBuddy, LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddy, WorkBuddy));
+
+        var reset = changed with { WorkBuddyAiRoot = null };
+        Assert.Equal(LiveMonitor.DefaultWorkBuddyAiFolder, LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddyAi, reset.WorkBuddyAiRoot));
+    }
+
+    [Fact]
+    public void OlderFilesKeepBothWorkBuddyEditionsOnWithDefaultFolders()
+    {
+        var s = SettingsSerializer.Deserialize("""
+            { "version": 1, "sources": { "codex": true, "omp": false, "antigravity": true, "antigravityRoot": null } }
+            """);
+        Assert.True(s.WorkBuddyEnabled);
+        Assert.True(s.WorkBuddyAiEnabled);
+        Assert.Null(s.WorkBuddyRoot);
+        Assert.Null(s.WorkBuddyAiRoot);
+        Assert.False(s.OmpEnabled);
+
+        var config = s.ToMonitorConfiguration();
+        Assert.Contains(SourceKind.WorkBuddy, config.EnabledSources);
+        Assert.Contains(SourceKind.WorkBuddyAi, config.EnabledSources);
+        Assert.Null(config.WorkBuddyRoot);
+        Assert.Null(config.WorkBuddyAiRoot);
+    }
+
+    [Theory]
+    [InlineData("""
+        { "sources": { "workbuddy": "no", "workbuddyAi": 0, "workbuddyRoot": 5, "workbuddyAiRoot": "relative/projects" } }
+        """)]
+    [InlineData("""
+        { "sources": { "workbuddy": null, "workbuddyAi": [], "workbuddyRoot": "", "workbuddyAiRoot": "   " } }
+        """)]
+    public void InvalidWorkBuddyValuesFallBackPerField(string json)
+    {
+        var s = SettingsSerializer.Deserialize(json);
+        Assert.True(s.WorkBuddyEnabled);
+        Assert.True(s.WorkBuddyAiEnabled);
+        Assert.Null(s.WorkBuddyRoot);
+        Assert.Null(s.WorkBuddyAiRoot);
+    }
+
+    [Fact]
+    public void WorkBuddyPathsAreCleaned()
+    {
+        var s = (AppSettings.Default with { WorkBuddyRoot = $"  {WorkBuddy}  ", WorkBuddyAiRoot = $"{WorkBuddyAiProjects}\0" }).Validated();
+        Assert.Equal(WorkBuddy, s.WorkBuddyRoot);
+        Assert.Null(s.WorkBuddyAiRoot);
+        Assert.Null((AppSettings.Default with { WorkBuddyRoot = Path.Combine("relative", ".workbuddy") }).Validated().WorkBuddyRoot);
+        Assert.Null((AppSettings.Default with { WorkBuddyAiRoot = Path.Combine("relative", "projects") }).Validated().WorkBuddyAiRoot);
     }
 
     [Fact]

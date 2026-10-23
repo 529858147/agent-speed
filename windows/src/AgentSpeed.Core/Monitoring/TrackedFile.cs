@@ -3,6 +3,7 @@ using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core.Monitoring;
 
@@ -17,6 +18,12 @@ internal enum RootFamily
     /// <summary>One SQLite database per conversation, ordered and tracked like a file (METRICS 5.4).</summary>
     Antigravity,
 
+    /// <summary>The China edition's <c>projects</c> folder (METRICS 4.9).</summary>
+    WorkBuddy,
+
+    /// <summary>The international edition's <c>projects</c> folder; same layout and parser as <see cref="WorkBuddy"/>.</summary>
+    WorkBuddyAi,
+
     /// <summary>One SQLite database instead of transcript files (METRICS 5.2).</summary>
     OpenCode,
 }
@@ -26,7 +33,10 @@ internal static class Families
 {
     /// <summary>Families read from transcript files, in a stable order.</summary>
     public static readonly RootFamily[] FileFamilies =
-        [RootFamily.Codex, RootFamily.Claude, RootFamily.DeepSeek, RootFamily.Gemini, RootFamily.Omp, RootFamily.Antigravity];
+        [
+            RootFamily.Codex, RootFamily.Claude, RootFamily.DeepSeek, RootFamily.Gemini, RootFamily.Omp, RootFamily.Antigravity,
+            RootFamily.WorkBuddy, RootFamily.WorkBuddyAi,
+        ];
 
     public static TranscriptNaming Naming(RootFamily family) => family switch
     {
@@ -35,6 +45,7 @@ internal static class Families
         RootFamily.Gemini => TranscriptNaming.GeminiSession,
         RootFamily.Omp => TranscriptNaming.OmpSession,
         RootFamily.Antigravity => TranscriptNaming.AntigravityDatabase,
+        RootFamily.WorkBuddy or RootFamily.WorkBuddyAi => TranscriptNaming.WorkBuddySession,
         RootFamily.OpenCode => TranscriptNaming.OpenCodeDatabase,
         _ => TranscriptNaming.Jsonl,
     };
@@ -48,6 +59,8 @@ internal static class Families
         RootFamily.Claude => new ClaudeParser(path, deduper),
         RootFamily.Omp => new OmpParser(path, deduper, root),
         RootFamily.Antigravity => new AntigravityParser(path, deduper),
+        RootFamily.WorkBuddy => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddy),
+        RootFamily.WorkBuddyAi => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddyAi),
         _ => throw new ArgumentOutOfRangeException(nameof(family)),
     };
 
@@ -64,6 +77,8 @@ internal static class Families
         RootFamily.Gemini => enabled.Contains(SourceKind.Gemini),
         RootFamily.Omp => enabled.Contains(SourceKind.Omp),
         RootFamily.Antigravity => enabled.Contains(SourceKind.Antigravity),
+        RootFamily.WorkBuddy => enabled.Contains(SourceKind.WorkBuddy),
+        RootFamily.WorkBuddyAi => enabled.Contains(SourceKind.WorkBuddyAi),
         RootFamily.OpenCode => enabled.Contains(SourceKind.OpenCode),
         _ => false,
     };
@@ -76,6 +91,8 @@ internal static class Families
         SourceKind.OpenCode => RootFamily.OpenCode,
         SourceKind.Omp => RootFamily.Omp,
         SourceKind.Antigravity => RootFamily.Antigravity,
+        SourceKind.WorkBuddy => RootFamily.WorkBuddy,
+        SourceKind.WorkBuddyAi => RootFamily.WorkBuddyAi,
         _ => RootFamily.Claude,
     };
 }
@@ -88,6 +105,13 @@ internal sealed class SourceRoot(RootFamily family, string path, bool enabled)
     public TranscriptNaming Naming => Families.Naming(Family);
 
     public string Path { get; } = path;
+
+    /// <summary>
+    /// The folder whose existence makes the source detected (METRICS 2): the root itself, except for WorkBuddy, whose data
+    /// folder counts even before its <c>projects</c> folder exists.
+    /// </summary>
+    public string DetectionPath { get; } =
+        (family is RootFamily.WorkBuddy or RootFamily.WorkBuddyAi) && path.Length > 0 ? WorkBuddyPaths.DataFolderOf(path) : path;
 
     public bool Enabled { get; } = enabled;
 

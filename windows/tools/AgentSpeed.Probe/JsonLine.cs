@@ -86,6 +86,8 @@ internal sealed class JsonLine
         SourceKind.Gemini => "gemini",
         SourceKind.Omp => "omp",
         SourceKind.Antigravity => "antigravity",
+        SourceKind.WorkBuddy => "workbuddy",
+        SourceKind.WorkBuddyAi => "workbuddyAi",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

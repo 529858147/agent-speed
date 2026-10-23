@@ -27,6 +27,9 @@ internal enum TranscriptNaming
 
     /// <summary><c>&lt;uuid&gt;.db</c> directly in a <c>conversations</c> folder (Antigravity, METRICS 4.8).</summary>
     AntigravityDatabase,
+
+    /// <summary><c>&lt;slug&gt;/*.jsonl</c> and <c>&lt;slug&gt;/&lt;dir&gt;/subagents/*.jsonl</c> (WorkBuddy, METRICS 4.9).</summary>
+    WorkBuddySession,
 }
 
 /// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
@@ -49,6 +52,7 @@ internal static class TranscriptDiscovery
             TranscriptNaming.OpenCodeDatabase => false,
             TranscriptNaming.OmpSession => Omp.OmpDiscovery.IsSessionFileName(fileName),
             TranscriptNaming.AntigravityDatabase => Antigravity.AntigravityPaths.IsDatabaseName(fileName),
+            TranscriptNaming.WorkBuddySession => WorkBuddy.WorkBuddyDiscovery.IsSessionFileName(fileName),
             _ => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
         };
 
@@ -98,6 +102,11 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.AntigravityDatabase)
         {
             return Antigravity.AntigravityDiscovery.Enumerate(root, limit);
+        }
+
+        if (naming == TranscriptNaming.WorkBuddySession)
+        {
+            return WorkBuddy.WorkBuddyDiscovery.Enumerate(root, limit, cancellationToken);
         }
 
         var scanCap = limit == int.MaxValue ? int.MaxValue : MaxScannedEntries;
@@ -170,6 +179,11 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.AntigravityDatabase)
         {
             return Antigravity.AntigravityDiscovery.IsDatabasePath(root, path);
+        }
+
+        if (naming == TranscriptNaming.WorkBuddySession)
+        {
+            return WorkBuddy.WorkBuddyDiscovery.IsSessionPath(root, path);
         }
 
         if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan()), naming))

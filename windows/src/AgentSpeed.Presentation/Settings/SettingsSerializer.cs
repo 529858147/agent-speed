@@ -90,6 +90,8 @@ public static class SettingsSerializer
             w.WriteBoolean("gemini", s.GeminiEnabled);
             w.WriteBoolean("omp", s.OmpEnabled);
             w.WriteBoolean("antigravity", s.AntigravityEnabled);
+            w.WriteBoolean("workbuddy", s.WorkBuddyEnabled);
+            w.WriteBoolean("workbuddyAi", s.WorkBuddyAiEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
             WriteNullableString(w, "dshRoot", s.DshRoot);
@@ -97,6 +99,8 @@ public static class SettingsSerializer
             WriteNullableString(w, "geminiRoot", s.GeminiRoot);
             WriteNullableString(w, "ompRoot", s.OmpRoot);
             WriteNullableString(w, "antigravityRoot", s.AntigravityRoot);
+            WriteNullableString(w, "workbuddyRoot", s.WorkBuddyRoot);
+            WriteNullableString(w, "workbuddyAiRoot", s.WorkBuddyAiRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
@@ -224,6 +228,8 @@ public static class SettingsSerializer
             GeminiEnabled = ReadBool(sources, "gemini", d.GeminiEnabled),
             OmpEnabled = ReadBool(sources, "omp", d.OmpEnabled),
             AntigravityEnabled = ReadBool(sources, "antigravity", d.AntigravityEnabled),
+            WorkBuddyEnabled = ReadBool(sources, "workbuddy", d.WorkBuddyEnabled),
+            WorkBuddyAiEnabled = ReadBool(sources, "workbuddyAi", d.WorkBuddyAiEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             DshRoot = ReadString(sources, "dshRoot"),
@@ -231,6 +237,8 @@ public static class SettingsSerializer
             GeminiRoot = ReadString(sources, "geminiRoot"),
             OmpRoot = ReadString(sources, "ompRoot"),
             AntigravityRoot = ReadString(sources, "antigravityRoot"),
+            WorkBuddyRoot = ReadString(sources, "workbuddyRoot"),
+            WorkBuddyAiRoot = ReadString(sources, "workbuddyAiRoot"),
             HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),

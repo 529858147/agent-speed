@@ -150,6 +150,20 @@ internal static class Ts
         DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
 }
 
+/// <summary>The fixture folder <c>workbuddy</c> plays the home folder of both WorkBuddy editions (METRICS 4.9).</summary>
+internal static class WorkBuddyFixture
+{
+    public static string DataFolder(SourceKind source) =>
+        FixtureLocator.PathOf(source == SourceKind.WorkBuddyAi ? "workbuddy/.workbuddy-ai" : "workbuddy/.workbuddy");
+
+    public static string RootOf(SourceKind source) => Path.Combine(DataFolder(source), "projects");
+
+    public static SourceKind SourceOf(string relative) =>
+        relative.StartsWith("workbuddy/.workbuddy-ai/", StringComparison.Ordinal) ? SourceKind.WorkBuddyAi
+        : relative.StartsWith("workbuddy/.workbuddy/", StringComparison.Ordinal) ? SourceKind.WorkBuddy
+        : throw new ArgumentOutOfRangeException(nameof(relative), relative, null);
+}
+
 /// <summary>The fixture folder <c>omp</c> plays <c>~/.omp</c>: its automatic roots are the default root and every profile.</summary>
 internal static class OmpFixture
 {

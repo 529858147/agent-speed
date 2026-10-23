@@ -38,6 +38,8 @@ public class SettingsSerializerTests
             GeminiEnabled = true,
             OmpEnabled = false,
             AntigravityEnabled = false,
+            WorkBuddyEnabled = false,
+            WorkBuddyAiEnabled = true,
             CodexRoot = Path.Combine(Path.GetTempPath(), "codex sessions"),
             ClaudeRoot = Path.Combine(Path.GetTempPath(), "claude", "projects"),
             DshRoot = Path.Combine(Path.GetTempPath(), "dsh", "sessions"),
@@ -45,6 +47,8 @@ public class SettingsSerializerTests
             GeminiRoot = Path.Combine(Path.GetTempPath(), ".gemini", "tmp"),
             OmpRoot = Path.Combine(Path.GetTempPath(), ".omp", "profiles", "work", "agent", "sessions"),
             AntigravityRoot = Path.Combine(Path.GetTempPath(), ".gemini", "antigravity-ide"),
+            WorkBuddyRoot = Path.Combine(Path.GetTempPath(), ".workbuddy"),
+            WorkBuddyAiRoot = Path.Combine(Path.GetTempPath(), ".workbuddy-ai", "projects"),
             ChartSeconds = 300,
             AgentsExpanded = true,
             HistoryWindow = new WindowFrame(-1600.5, 120.25, 1040, 720, Maximized: true),
@@ -275,12 +279,14 @@ public class SettingsSerializerTests
         Assert.True(settings.IsSourceEnabled(SourceKind.Gemini));
         Assert.True(settings.IsSourceEnabled(SourceKind.Omp));
         Assert.True(settings.IsSourceEnabled(SourceKind.Antigravity));
+        Assert.True(settings.IsSourceEnabled(SourceKind.WorkBuddy));
+        Assert.True(settings.IsSourceEnabled(SourceKind.WorkBuddyAi));
 
         var config = (settings with { CodexRoot = Path.Combine(Path.GetTempPath(), "c") }).ToMonitorConfiguration();
         Assert.True(config.EnabledSources.SetEquals(
         [
             SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek, SourceKind.OpenCode, SourceKind.Gemini,
-            SourceKind.Omp, SourceKind.Antigravity,
+            SourceKind.Omp, SourceKind.Antigravity, SourceKind.WorkBuddy, SourceKind.WorkBuddyAi,
         ]));
         Assert.Equal(Path.Combine(Path.GetTempPath(), "c"), config.CodexRoot);
         Assert.Null(config.ClaudeRoot);
@@ -300,7 +306,7 @@ public class SettingsSerializerTests
         Assert.True(config.EnabledSources.SetEquals(
         [
             SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop, SourceKind.OpenCode, SourceKind.Gemini,
-            SourceKind.Omp, SourceKind.Antigravity,
+            SourceKind.Omp, SourceKind.Antigravity, SourceKind.WorkBuddy, SourceKind.WorkBuddyAi,
         ]));
         Assert.Equal(dsh, config.DshRoot);
         Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { DshRoot = dsh }).ToMonitorConfiguration());

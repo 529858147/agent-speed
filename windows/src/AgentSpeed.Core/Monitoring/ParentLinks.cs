@@ -2,6 +2,7 @@ using AgentSpeed.Core.Antigravity;
 using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core.Monitoring;
 
@@ -28,6 +29,12 @@ internal enum LinkKind : byte
 
     /// <summary>Antigravity: by <c>parent_conversation_id</c>, compared case-insensitively.</summary>
     AntigravityConversation,
+
+    /// <summary>WorkBuddy: by the <c>subagents</c> folder layout, like Claude, within the China edition only.</summary>
+    WorkBuddyPath,
+
+    /// <summary>WorkBuddy AI: by the <c>subagents</c> folder layout, within the international edition only.</summary>
+    WorkBuddyAiPath,
 }
 
 /// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
@@ -48,6 +55,12 @@ internal readonly record struct AgentLink(
             antigravity.ConversationId.ToLowerInvariant(),
             antigravity.ParentConversationId?.ToLowerInvariant(),
             antigravity.CreatedMs),
+        WorkBuddyParser workBuddy => new AgentLink(
+            workBuddy.AgentId,
+            workBuddy.Source == SourceKind.WorkBuddyAi ? LinkKind.WorkBuddyAiPath : LinkKind.WorkBuddyPath,
+            null,
+            ParentLinks.ClaudeParentPath(workBuddy.AgentId),
+            null),
         _ => new AgentLink(parser.AgentId, LinkKind.Path, null, null, null),
     };
 
@@ -81,8 +94,8 @@ internal readonly record struct AgentLink(
 }
 
 /// <summary>
-/// Resolves parent agent ids (METRICS 6.7): Claude and omp by path, Codex by parent thread, dsh, OpenCode and Gemini by
-/// parent session, Antigravity by parent conversation.
+/// Resolves parent agent ids (METRICS 6.7): Claude, omp and WorkBuddy by path, Codex by parent thread, dsh, OpenCode and
+/// Gemini by parent session, Antigravity by parent conversation.
 /// </summary>
 internal static class ParentLinks
 {
@@ -111,7 +124,7 @@ internal static class ParentLinks
                     copies.Add(agent);
                 }
             }
-            else if (agent.Kind is not (LinkKind.Path or LinkKind.OmpPath) && agent.ThreadId is { Length: > 0 } thread
+            else if (!IsPathKind(agent.Kind) && agent.ThreadId is { Length: > 0 } thread
                 && (!byThread.TryGetValue((agent.Kind, thread), out var known) || CreatedBefore(agent, known)))
             {
                 byThread[(agent.Kind, thread)] = agent;
@@ -135,6 +148,14 @@ internal static class ParentLinks
                     if (agent.ParentThreadId is { } folder && byPath.TryGetValue(folder, out var session) && session.Kind == LinkKind.OmpPath)
                     {
                         parent = session.Id;
+                    }
+
+                    break;
+                case LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath:
+                    // Nested sub-agents are stored flat under the main session, so they attach to it.
+                    if (agent.ParentThreadId is { } main && byPath.TryGetValue(main, out var mainSession) && mainSession.Kind == agent.Kind)
+                    {
+                        parent = mainSession.Id;
                     }
 
                     break;
@@ -180,6 +201,9 @@ internal static class ParentLinks
             ? string.Concat(folder[..start], TranscriptExtension)
             : null;
     }
+
+    private static bool IsPathKind(LinkKind kind) =>
+        kind is LinkKind.Path or LinkKind.OmpPath or LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath;
 
     // Copies of one conversation in several stores: the one in the child's own conversations folder, then ordinal path.
     private static AgentLink PreferredCopy(List<AgentLink> copies, string child)

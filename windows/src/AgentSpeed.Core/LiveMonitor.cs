@@ -4,6 +4,7 @@ using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core;
 
@@ -129,6 +130,21 @@ public sealed class LiveMonitor : IDisposable
     /// <summary>The Antigravity folders read for a setting (null: the default stores); a <c>*-backup</c> store is never read.</summary>
     public static IReadOnlyList<string> AntigravityStores(string? setting) =>
         AntigravityPaths.Stores(Path.Combine(UserHome, ".gemini"), setting);
+
+    /// <summary>The WorkBuddy (China edition) data folder, <c>~/.workbuddy</c>; transcripts are in its <c>projects</c> folder (METRICS 4.9).</summary>
+    public static string DefaultWorkBuddyFolder => WorkBuddyPaths.DefaultDataFolder(SourceKind.WorkBuddy, UserHome);
+
+    /// <summary>The WorkBuddy AI (international edition) data folder, <c>~/.workbuddy-ai</c> (METRICS 4.9).</summary>
+    public static string DefaultWorkBuddyAiFolder => WorkBuddyPaths.DefaultDataFolder(SourceKind.WorkBuddyAi, UserHome);
+
+    /// <summary>
+    /// The data folder a WorkBuddy row names (DESIGN 5): the default one, else the chosen folder, or the parent of a chosen
+    /// <c>projects</c> folder.
+    /// </summary>
+    public static string WorkBuddyDataFolder(SourceKind source, string? setting) =>
+        string.IsNullOrWhiteSpace(setting)
+            ? WorkBuddyPaths.DefaultDataFolder(source, UserHome)
+            : WorkBuddyPaths.DataFolderOf(setting);
 
     private static string GeminiHome
     {

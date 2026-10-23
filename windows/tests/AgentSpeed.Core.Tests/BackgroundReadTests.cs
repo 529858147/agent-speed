@@ -62,7 +62,8 @@ public sealed class BackgroundReadTests : IDisposable
         hub.SnapshotChanged += (_, s) => snapshots.Enqueue(s);
         using var monitor = new LiveMonitor(hub, new MonitorConfiguration(
             new HashSet<SourceKind>(Enum.GetValues<SourceKind>()), CodexRoot, ClaudeRoot, _temp.Combine("dsh"),
-            _temp.Combine("opencode"), _temp.Combine("gemini", "tmp"), _temp.Combine("omp", "sessions"), _temp.Combine("antigravity-cli")))
+            _temp.Combine("opencode"), _temp.Combine("gemini", "tmp"), _temp.Combine("omp", "sessions"), _temp.Combine("antigravity-cli"),
+            _temp.Combine(".workbuddy"), _temp.Combine(".workbuddy-ai")))
         {
             BeforeBackgroundRead = _ => gate.Wait(TimeSpan.FromSeconds(20)),
         };

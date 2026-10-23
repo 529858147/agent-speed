@@ -184,7 +184,8 @@ public sealed class EngineCaseTests
     [Fact]
     public void EverySourceKeyParses()
     {
-        string[] keys = ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity"];
+        string[] keys =
+            ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy", "workbuddyAi"];
 
         Assert.Equal(Enum.GetValues<SourceKind>(), keys.Select(ParseSource));
         Assert.Throws<ArgumentOutOfRangeException>(() => ParseSource("cursor"));

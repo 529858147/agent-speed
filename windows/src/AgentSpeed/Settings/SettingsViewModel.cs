@@ -154,6 +154,12 @@ internal sealed class SettingsViewModel : ObservableObject
         ResetOmpCommand = new RelayCommand(() => _settings.Update(s => s with { OmpRoot = null }), () => _settings.Current.OmpRoot is not null);
         ResetAntigravityCommand = new RelayCommand(() => _settings.Update(s => s with { AntigravityRoot = null }),
             () => _settings.Current.AntigravityRoot is not null);
+        ChangeWorkBuddyCommand = new RelayCommand(() => ChangeFolder(WorkBuddyPath, (s, path) => s with { WorkBuddyRoot = path }));
+        ChangeWorkBuddyAiCommand = new RelayCommand(() => ChangeFolder(WorkBuddyAiPath, (s, path) => s with { WorkBuddyAiRoot = path }));
+        ResetWorkBuddyCommand = new RelayCommand(() => _settings.Update(s => s with { WorkBuddyRoot = null }),
+            () => _settings.Current.WorkBuddyRoot is not null);
+        ResetWorkBuddyAiCommand = new RelayCommand(() => _settings.Update(s => s with { WorkBuddyAiRoot = null }),
+            () => _settings.Current.WorkBuddyAiRoot is not null);
         OpenHistoryCommand = new RelayCommand(openHistory);
         ClearHistoryCommand = new RelayCommand(() =>
         {
@@ -268,6 +274,14 @@ internal sealed class SettingsViewModel : ObservableObject
     public RelayCommand ResetOmpCommand { get; }
 
     public RelayCommand ResetAntigravityCommand { get; }
+
+    public RelayCommand ChangeWorkBuddyCommand { get; }
+
+    public RelayCommand ChangeWorkBuddyAiCommand { get; }
+
+    public RelayCommand ResetWorkBuddyCommand { get; }
+
+    public RelayCommand ResetWorkBuddyAiCommand { get; }
 
     public RelayCommand OpenHistoryCommand { get; }
 
@@ -461,6 +475,21 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string AntigravityStatus => StatusFor(SourceKind.Antigravity);
 
+    /// <summary>The WorkBuddy data folder: the default, the chosen one, or the parent of a chosen <c>projects</c> folder.</summary>
+    public string WorkBuddyPath => LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddy, S.WorkBuddyRoot);
+
+    /// <summary>The WorkBuddy AI data folder, like <see cref="WorkBuddyPath"/>.</summary>
+    public string WorkBuddyAiPath => LiveMonitor.WorkBuddyDataFolder(SourceKind.WorkBuddyAi, S.WorkBuddyAiRoot);
+
+    public bool WorkBuddyIsCustom => S.WorkBuddyRoot is not null;
+
+    public bool WorkBuddyAiIsCustom => S.WorkBuddyAiRoot is not null;
+
+    /// <summary>Main session files with a line today; an installed but unused app shows 0 (DESIGN 5).</summary>
+    public string WorkBuddyStatus => StatusFor(SourceKind.WorkBuddy);
+
+    public string WorkBuddyAiStatus => StatusFor(SourceKind.WorkBuddyAi);
+
     public string CodexStatus => StatusFor(SourceKind.Codex);
 
     public string DshStatus => StatusFor(SourceKind.DeepSeek);
@@ -584,6 +613,8 @@ internal sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(OmpStatus));
         OnPropertyChanged(nameof(AntigravityStatus));
         OnPropertyChanged(nameof(AntigravityPath));
+        OnPropertyChanged(nameof(WorkBuddyStatus));
+        OnPropertyChanged(nameof(WorkBuddyAiStatus));
         OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 

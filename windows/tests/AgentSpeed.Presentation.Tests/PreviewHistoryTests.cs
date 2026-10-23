@@ -24,6 +24,23 @@ public class PreviewHistoryTests
     }
 
     [Fact]
+    public void PreviewHistoryIncludesBothWorkBuddyEditions()
+    {
+        var usage = PreviewHistory.Days(End);
+        var sources = HistoryAggregator.SourcesWithHistory(usage);
+        Assert.Contains(SourceKind.WorkBuddy, sources);
+        Assert.Contains(SourceKind.WorkBuddyAi, sources);
+        Assert.Equal(["deepseek-v4-pro", "glm-5.3"], ModelsOf(usage, SourceKind.WorkBuddy));
+        Assert.Equal(["gpt-5.5", "hy4-preview"], ModelsOf(usage, SourceKind.WorkBuddyAi));
+        Assert.All(usage.Where(u => u.Source is SourceKind.WorkBuddy or SourceKind.WorkBuddyAi), u =>
+        {
+            Assert.NotNull(u.Cost);
+            Assert.Equal(0, u.Cost.Value.UnpricedRequests);
+            Assert.True(u.Cost.Value.CostMicroUsd > 0);
+        });
+    }
+
+    [Fact]
     public void PreviewModelsHaveTheirOwnSpeeds()
     {
         var usage = PreviewHistory.Days(End);
@@ -44,6 +61,8 @@ public class PreviewHistoryTests
     [InlineData(SourceKind.Omp, 45)]
     [InlineData(SourceKind.Antigravity, 30)]
     [InlineData(SourceKind.OpenCode, 20)]
+    [InlineData(SourceKind.WorkBuddy, 14)]
+    [InlineData(SourceKind.WorkBuddyAi, 10)]
     public void NewerSourcesOnlyCoverTheirRecentDays(SourceKind source, int days)
     {
         var bounds = HistoryAggregator.Bounds(PreviewHistory.Days(End), source);
@@ -69,17 +88,23 @@ public class PreviewHistoryTests
         var order = HistoryChartMath.StackOrder(days);
         Assert.Contains(SourceKind.Omp, order);
         Assert.Contains(SourceKind.Antigravity, order);
+        Assert.Contains(SourceKind.WorkBuddy, order);
+        Assert.Contains(SourceKind.WorkBuddyAi, order);
         Assert.Equal(order.Count, order.Select(s => HeatPalette.SourceColor(s)).Distinct().Count());
 
         var range = new DayRange(Today.AddDays(-29), Today);
         var bars = HistoryBars.From(days, range, null);
         Assert.Contains(SourceKind.Omp, bars.Order);
         Assert.Contains(SourceKind.Antigravity, bars.Order);
+        Assert.Contains(SourceKind.WorkBuddy, bars.Order);
+        Assert.Contains(SourceKind.WorkBuddyAi, bars.Order);
     }
 
     [Theory]
     [InlineData(SourceKind.Omp, "omp")]
     [InlineData(SourceKind.Antigravity, "antigravity")]
+    [InlineData(SourceKind.WorkBuddy, "workbuddy")]
+    [InlineData(SourceKind.WorkBuddyAi, "workbuddy-ai")]
     public void ExportsNameTheNewSources(SourceKind source, string id)
     {
         var days = HistoryAggregator.Daily(PreviewHistory.Days(End), source);

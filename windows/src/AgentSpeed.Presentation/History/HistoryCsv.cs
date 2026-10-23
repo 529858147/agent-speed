@@ -34,6 +34,8 @@ public static class HistoryCsv
         SourceKind.Gemini => "gemini",
         SourceKind.Omp => "omp",
         SourceKind.Antigravity => "antigravity",
+        SourceKind.WorkBuddy => "workbuddy",
+        SourceKind.WorkBuddyAi => "workbuddy-ai",
         _ => "unknown",
     };
 
