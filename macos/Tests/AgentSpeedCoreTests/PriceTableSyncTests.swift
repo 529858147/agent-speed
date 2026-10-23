@@ -11,11 +11,14 @@ struct PriceTableSyncTests {
     static let noon = Date(timeIntervalSince1970: 1_792_670_400)
 
     /// The bundled table with another version, schema or `updated` date.
-    static func table(version: Int, schema: Int = 1, updated: String = "2026-10-22") -> Data {
+    /// The bundled table with another version, schema or `updated` date (nil keeps the bundled date).
+    static func table(version: Int, schema: Int = 1, updated: String? = nil) -> Data {
         var text = BundledPriceAssets.prices
         text = text.replacingOccurrences(of: "\"schema\": 1,", with: "\"schema\": \(schema),")
         text = text.replacingOccurrences(of: "\"version\": 1,", with: "\"version\": \(version),")
-        text = text.replacingOccurrences(of: "\"updated\": \"2026-10-22\",", with: "\"updated\": \"\(updated)\",")
+        if let updated, let range = text.range(of: #""updated": "\d{4}-\d{2}-\d{2}","#, options: .regularExpression) {
+            text.replaceSubrange(range, with: "\"updated\": \"\(updated)\",")
+        }
         return Data(text.utf8)
     }
 

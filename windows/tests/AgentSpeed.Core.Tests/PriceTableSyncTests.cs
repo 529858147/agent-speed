@@ -1,12 +1,13 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AgentSpeed.Core.Network;
 using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.Tests;
 
-public sealed class PriceTableSyncTests
+public sealed partial class PriceTableSyncTests
 {
     private static readonly Uri Raw = PriceTableSync.Urls[0];
     private static readonly Uri Mirror = PriceTableSync.Urls[1];
@@ -287,15 +288,19 @@ public sealed class PriceTableSyncTests
         Assert.Equal(new PriceSyncState(), store.LoadState());
     }
 
-    /// <summary>The bundled table with another version, schema or <c>updated</c> date.</summary>
-    private static byte[] Table(int version, int schema = 1, string updated = "2026-10-22")
+    /// <summary>The bundled table with another version, schema or <c>updated</c> date (null keeps the bundled date).</summary>
+    private static byte[] Table(int version, int schema = 1, string? updated = null)
     {
         var text = Bundled.Value
             .Replace("\"schema\": 1,", $"\"schema\": {schema},", StringComparison.Ordinal)
-            .Replace("\"version\": 1,", $"\"version\": {version},", StringComparison.Ordinal)
-            .Replace("\"updated\": \"2026-10-22\",", $"\"updated\": \"{updated}\",", StringComparison.Ordinal);
+            .Replace("\"version\": 1,", $"\"version\": {version},", StringComparison.Ordinal);
+        if (updated is not null)
+            text = UpdatedField().Replace(text, $"\"updated\": \"{updated}\",", 1);
         return Encoding.UTF8.GetBytes(text);
     }
+
+    [GeneratedRegex("\"updated\": \"\\d{4}-\\d{2}-\\d{2}\",")]
+    private static partial Regex UpdatedField();
 
     private sealed class Harness(DateTimeOffset? start = null) : IDisposable
     {
