@@ -413,7 +413,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <Slider Minimum="100" Maximum="2000" TickFrequency="50" IsSnapToTickEnabled="True" SmallChange="50" LargeChange="200"
+                                <Slider Minimum="50" Maximum="2000" TickFrequency="50" IsSnapToTickEnabled="True" SmallChange="50" LargeChange="200"
                                         Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
                                         Visibility="{Binding IsOutputMetric, Converter={StaticResource BoolToVisibility}}" VerticalAlignment="Center" />
                                 <Slider Minimum="{Binding RedlineTotalMinimumLog}" Maximum="{Binding RedlineTotalMaximumLog}" SmallChange="0.02" LargeChange="0.1"

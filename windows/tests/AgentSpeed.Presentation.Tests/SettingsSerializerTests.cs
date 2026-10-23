@@ -141,7 +141,7 @@ public class SettingsSerializerTests
     }
 
     [Theory]
-    [InlineData(37, 100)]
+    [InlineData(37, 50)]
     [InlineData(9999, 2000)]
     [InlineData(433, 450)]
     [InlineData(400, 400)]

@@ -18,7 +18,7 @@ this document wins for the orb, the bar widget and all speed visuals.
 ## 1. Speed → heat
 
 `R` = redline speed of the selected metric. Output speed (default metric): setting default **2000 tok/s** (the
-slider's maximum), range 100–2000, step 50. Total throughput (includes cached input, typically ~1000× larger): its own
+slider's maximum), range 50–2000, step 50. Total throughput (includes cached input, typically ~1000× larger): its own
 setting, default **2M tok/s** (maximum), range 20k–2M. Settings migration: a stored redline equal to the old
 default (400 tok/s, 200 000 tok/s) counts as never set and moves to the new default once; any other stored value is
 kept. The redline slider edits the value of the current metric. `v` = live value of the
@@ -1671,7 +1671,7 @@ with Mica). Sections:
 
 - **一般 General** — Appearance (Auto / Light / Dark), Language (System / 繁體中文 / 简体中文 / English / 日本語),
   Launch at login, Speed metric
-  (Output speed / Total throughput incl. input), Redline speed (slider 100–2000, step 50). Under the slider the heat
+  (Output speed / Total throughput incl. input), Redline speed (slider 50–2000, step 50). Under the slider the heat
   strip carries one thin tick per speed title (positions `(t / R)^0.6`, so they stay put while the values move); below
   it `settings.redline.hint` and the `title.ladder` list: every title of the selected title theme followed by its
   threshold at the current redline (at R = 2000: `自行車 40 · 電動自行車 60 · … · 火箭 2.00k`), title in secondary
