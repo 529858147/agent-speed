@@ -19,7 +19,7 @@ public class SourceColorTests
 
     [Theory]
     [InlineData(SourceKind.WorkBuddy, "#11A68B", 5.4, 3.1)]
-    [InlineData(SourceKind.WorkBuddyAi, "#0B84A5", 3.9, 4.3)]
+    [InlineData(SourceKind.WorkBuddyAi, "#007AB4", 3.5, 4.7)]
     public void WorkBuddyColorsReadOnBothAppearances(SourceKind source, string hex, double onDark, double onWhite)
     {
         var color = HeatPalette.SourceColor(source);
@@ -45,11 +45,12 @@ public class SourceColorTests
     }
 
     [Fact]
-    public void WorkBuddyColorsAreNotTheNeutralSlate()
+    public void WorkBuddyColorsStayApartFromTheNeutralSlate()
     {
         foreach (var source in WorkBuddyEditions)
         {
-            Assert.NotEqual(HeatPalette.Neutral, HeatPalette.SourceColor(source));
+            var distance = Distance(HeatPalette.SourceColor(source), HeatPalette.Neutral);
+            Assert.True(distance >= 0.12, $"{source} vs slate: {distance:F3}");
         }
     }
 

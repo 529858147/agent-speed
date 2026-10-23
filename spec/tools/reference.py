@@ -143,7 +143,8 @@ class FileState:
         self.open_calls = OrderedDict()
         if source in WB_FOLDERS:
             self.source_decided = True
-            self.is_subagent = "subagents" in [p for p in re.split(r"[\\/]", path) if p]
+            rel = [p for p in re.split(r"[\\/]", os.path.relpath(path, root) if root else path) if p]
+            self.is_subagent = len(rel) == 4 and rel[2] == "subagents"
 
 
 def emit(state, key, start, end, tokens, model, final=True, provider=None, fast=False):
@@ -2091,6 +2092,8 @@ def fixture_omp_roots(root):
 def fixture_state(root, rel):
     path = os.path.join(root, rel)
     source = fixture_source(rel)
+    if source in WB_FOLDERS:
+        return FileState(path, source, next((r for _, r in fixture_wb_roots(root) if path.startswith(r + os.sep)), None))
     omp_root = next((r for r in fixture_omp_roots(root) if path.startswith(r + os.sep)), None)
     return FileState(path, source, omp_root if source == "omp" else None)
 
@@ -2156,7 +2159,8 @@ def discover(root, limit=20_000, deepseek=False, codex=False):
 
 def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
                   limit=20_000, include_archived=False):
-    """(time, path, source, omp root) of every discovered file and Antigravity database, in startup order (5)."""
+    """(time, path, source, root) of every discovered file and Antigravity database, in startup order (5); the root
+    (omp root or WorkBuddy `projects`) decides sub-agents by folder structure."""
     files = [(p, "codex", None) for p in discover(codex_root, limit=limit, codex=True)]
     if include_archived:
         archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
@@ -2166,7 +2170,7 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
     files += [(p, "gemini", None) for d in gemini_dirs for p in discover_gemini(d, limit=limit)]
     files += [(p, "omp", r) for r in OrderedDict.fromkeys(omp_dirs) for p in discover_omp(r, limit=limit)]
     files += [(p, "antigravity", None) for s in ag_stores for p in discover_antigravity(s, limit=limit)]
-    files += [(p, s, None) for s, r in wb_roots for p in discover_workbuddy(r, limit=limit)]
+    files += [(p, s, r) for s, r in wb_roots for p in discover_workbuddy(r, limit=limit)]
     timed = {(ag_mtime(p) if s == "antigravity" else os.path.getmtime(p), p, s, r) for p, s, r in files}
     return sorted(timed, key=lambda t: (t[0], t[1]))
 
@@ -2180,7 +2184,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
     files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots)
     dedupe = Deduper()
     rows, read_files, read_bytes = [], 0, 0
-    for mtime, path, source, omp_root in files:
+    for mtime, path, source, root in files:
         if mtime * 1000 < today_start - 15 * 60_000:
             continue
         size = os.path.getsize(path)
@@ -2195,7 +2199,7 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
             offset = 0
         else:
             offset = size - 64 * 1024 * 1024 if size > 256 * 1024 * 1024 and not path.endswith(".jsonl.zst") else 0
-            state = FileState(path, source, omp_root)
+            state = FileState(path, source, root)
             process_file(state, dedupe, offset)
         read_files += 1
         read_bytes += size - offset
@@ -2229,13 +2233,13 @@ def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), 
                           limit=10 ** 9, include_archived=include_archived)
     dedupe = Deduper(limit=10 ** 9)
     out = []
-    for _, path, source, omp_root in files:
+    for _, path, source, root in files:
         if source == "antigravity":
             state = antigravity_state(path, dedupe)
             if state is None:
                 continue
         else:
-            state = FileState(path, source, omp_root)
+            state = FileState(path, source, root)
             process_file(state, dedupe)
         out += [(state.source, path, r) for r in state.responses.values()]
     if opencode_db and os.path.exists(opencode_db):

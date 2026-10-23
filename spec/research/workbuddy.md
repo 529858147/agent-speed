@@ -190,7 +190,7 @@ continues. The Stop hook's continuation and the error-recovery reminder are user
   the derived `message.usage`.
 - **Copied history is removed by `messageId` deduplication only**; a fork has no creation time to compare with.
 - **Routing slots stay unpriced**; hosting suffixes of DeepSeek ids price as DeepSeek; other suffixes stay unpriced.
-- **Colors** (DESIGN 1): the brand teal is nearly Codex mint, so the editions take a darker jade and a deep sea blue
+- **Colors** (DESIGN 1): the brand teal is nearly Codex mint, so the editions take a darker jade and an ocean blue
   from the same family.
 
 ## Verify with real data

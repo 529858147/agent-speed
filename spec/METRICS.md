@@ -906,7 +906,8 @@ Output items and `model-usage`:
 2. Usage: when `providerData.usage` or `providerData.rawUsage` is an object and the normalized `input` or `output` is
    > 0 — a new key emits a response with `startMs = pendingStartMs`, `endMs = ts`, `final = true`, `model` and
    `provider` below, then `pendingStartMs = null`; a known key (same file) is an update (4.4): `endMs = max`, every
-   token field `= max(previous, new)`, `model = new ?? previous`.
+   token field `= max(previous, new)`, `model = new ?? previous`, `provider = new ?? previous` (so a `custom` model
+   keeps its provider when a later line of the call lacks the prefix).
 3. Phase:
    - `model-usage`: the run has ended → phase `idle`, `pendingStartMs = null`, `openCalls` cleared.
    - First, drop the `openCalls` entries of other keys (calls left without a result).
@@ -960,7 +961,8 @@ hits are often only in `rawUsage`). `totalTokens`, `requests`, `credit` and the 
 - `project` = basename of the latest `cwd` (split on `/` and `\`); `cwdPath` = that `cwd`. A chat without a chosen
   folder runs in the app's default workspace folder, whose name then shows as the project.
 - `model` = the model of the latest response created or updated in this file.
-- `isSubagent` = the file lies in a `subagents` folder. Parent: 6.7.
+- `isSubagent` = the file's path relative to the root is `<slug>/<dir>/subagents/<file>` (the folder structure only;
+  a `subagents` folder above the root does not count). Parent: 6.7.
 - `lastLineMs` = the latest valid timestamp of any line, including lines ignored by deduplication.
 
 #### Deduplication and copied history

@@ -290,15 +290,16 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | omp | `#84CC16` lime |
 | Antigravity | `#EC4899` pink |
 | WorkBuddy | `#11A68B` jade |
-| WorkBuddy AI | `#0B84A5` deep sea |
+| WorkBuddy AI | `#007AB4` ocean |
 
 Pink is `#EC4899`, not the lighter `#F472B6` (too close to coral and lilac); lime is `#84CC16`, not the lighter `#A3E635`, which nearly vanishes on light backgrounds.
 
 The two WorkBuddy editions share one app icon, teal-green (`#0EC8A8` → `#05C890`), which is nearly Codex mint (OKLab
 distance about 0.04; the closest existing pair, coral and amber, is 0.11 apart). So both take a darker member of that teal family,
-which keeps them related to each other and to the brand: jade at the brand's hue for WorkBuddy, and deep sea, bluer
-and darker, for WorkBuddy AI. Each is at least 0.12 from every other source color and from the other edition, and
-reads on both appearances (contrast against `#1E1E1E`: 5.4 and 3.9; against white: 3.1 and 4.3). They follow every
+which keeps them related to each other and to the brand: jade at the brand's hue for WorkBuddy, and ocean, bluer
+and darker, for WorkBuddy AI. Each is at least 0.12 from every other source color, from the other edition and from
+the slate `#7C8798` of idle and "other" values (history), and reads on both appearances (contrast against `#1E1E1E`:
+5.4 and 3.5; against white: 3.1 and 4.7). They follow every
 rule of the other colors (bezel, dots, chips, history bars, light-mode darkening). As for every source, there is no
 separate light or dark tint, no icon and no short name: a source is its colour dot and its name (`source.workbuddy`
 "WorkBuddy", `source.workbuddyAi` "WorkBuddy AI", the apps' own names in every language), in source order (METRICS 1)
