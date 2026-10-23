@@ -1319,8 +1319,10 @@ Machine counters need no permission and work whether or not process traffic is a
   counters. Requirements, all verified on macOS 27.0.1 (M5 Pro):
   - **stdin** must be an open pipe that is never written (or a terminal). With `/dev/null` nettop busy-loops at
     ≈ 120 % of a core.
-  - **stdout and stderr** must be a pseudo-terminal (`openpty`). On a pipe, nettop buffers its output until it exits,
-    so no sample arrives while it runs.
+  - **stdout and stderr** must be a pseudo-terminal (`openpty`), and it must be the child's **controlling terminal**
+    (new session, `TIOCSCTTY`). On a pipe, nettop buffers its output until it exits, so no sample arrives while it
+    runs; without a controlling terminal, a crashed parent leaves nettop spinning at ≈ 126 % of a core instead of
+    receiving SIGHUP.
   - Environment `LC_ALL=C`; the child is in its own process group and is killed with the app.
   - Output: each sample starts with a header line beginning with `,` (`,bytes_in,bytes_out,`); every following line
     until the next header is `<name>.<pid>,<bytes_in>,<bytes_out>,`. The pid is the digits after the last `.` of the
@@ -1483,8 +1485,9 @@ one conversation is active, else source only.
 
 Traffic is observed, not read from logs: there is no history before sampling started, and it cannot be recomputed.
 
-- **Store**: a new table in the history database (section 8), created by an additive migration (the schema version
-  increases by one; the analysis version does not change, so nothing is re-analysed):
+- **Store**: a new table in the history database (section 8), created if missing every time the database is opened (the schema
+  version does **not** change, so older builds can still open the file; the analysis version does not change either,
+  so nothing is re-analysed):
   `day_traffic(day TEXT, key TEXT, rx INTEGER, tx INTEGER, rx_tools INTEGER, tx_tools INTEGER, sampled_ms INTEGER,
   PRIMARY KEY (day, key)) WITHOUT ROWID`. `key` is a source (section 1), whose `rx`/`tx` are `self` and
   `rx_tools`/`tx_tools` are `tools`, or `machine` (`rx_tools` and `tx_tools` are 0). `sampled_ms` is the machine
