@@ -335,8 +335,9 @@ Layers, back to front:
    is not available for layered windows, use a solid gradient) overlaid with a vertical gradient `#1B2030 → #090B10`
    at 88 % (multiplied by the opacity setting). A 1 px inner stroke, white 14 % at the top fading to 0 % at the bottom
    (specular rim), and a soft inner shadow. A faint radial "lens" highlight at the top-left (white 6 %).
+   - Floating orb: the **silk core** (section 2.1) is drawn here, above the body and below the gauge.
    - Embedded style (dashboard hero) only: the hero vehicle layer (section 4c) is drawn here, above the body and below
-     the gauge.
+     the gauge (no silk core).
 3. **Gauge** — 270° arc starting at 135° (bottom-left) going clockwise to 45° (bottom-right), gap at the bottom.
    Radius `0.41 S`, made of **36 LED segments**, each `0.045 S` long radially, with 2.2° gaps. Unlit segments:
    white 7 %. Lit count = `h * 36` (fractional: the last segment is partially lit by brightness). Each lit segment has
@@ -385,21 +386,122 @@ Interaction:
   Soft / Standard / Max), always on top, click-through, add / duplicate / split / merge, hide, remove, settings, quit.
 - Click-through mode (per orb): the orb ignores all mouse events; it is controlled from the menu bar / taskbar.
 
-Effects intensity (setting, default Standard):
+Layers 1–8 above are the v1.3 base; section 2.1 adds the silk core and the effects that build on these layers, and its
+effects-level table replaces the one that used to stand here. Effects intensity is a setting, default Standard.
+System "Reduce Motion" caps the level at Soft and replaces movement with crossfades. Every other style has its own row
+set in 2a (their "as `led`" rows keep the v1.3 behaviour: Off static; Soft aura, comet and pulses; Standard adds sparks,
+embers and skew; Max 1.6× particle rates and stronger bloom).
+
+Performance: the frame policy and budget of 2a apply to every style, `led` included (idle is static apart from the 6 s
+sweep, active is capped at 60 fps, never the display rate). Particles use a fixed-size pool (≤ 640). The renderer
+pauses entirely while the orb is hidden or fully occluded.
+
+## 2.1 `led` effects: silk core, corona and lightning (v1.4)
+
+The look was tuned in the prototype `spec/prototypes/led-effects.html` (open it in a browser: 新版 is this section,
+目前版本 the v1.3 look; `?v=<tok/s>&t=<seconds>[&look=light][&peak=<seconds>][&level=1.6][&zap=1]` renders a still
+frame). The prototype's fragment shader and its particle, arc and lightning code are the **normative reference** for
+shapes, constants and colors: port those functions instead of re-deriving them; this section names every element, its
+parameters, and what differs in the apps. Prototype coordinates are orb units with the rim at r = 0.5 and y up:
+`(x, y) = ((X − c.x) / S, (c.y − Y) / S)`. `lvl` = 1 at Standard, 1.6 at Max. `act = smoothstep(0, 0.08, h)`. The
+prototype draws on a 1.9 S canvas; the apps keep the 1.5 S window, so everything outside the disc fades to zero by
+**0.74 S** from `c` (constants that reach further in the prototype are clamped as stated below).
+
+Speed phases (accumulated, 4c resolved detail 3), advanced only on rendered frames with `dt ≤ 1/15 s` so a static orb
+never jumps when it renders again:
+
+| Phase | Rate per second | Drives |
+| --- | --- | --- |
+| `φsilk` | `0.12 + 1.4 h + 2.2 o` | silk folds |
+| `φlight` | `0.05 + 0.5 h + 1.2 o` | silk light azimuth and glide |
+| `φflow` | `0.35 + 1.9 h + 1.6 o` | gauge energy flow |
+| `φwarp` | `0.2 + 1.1 h + 1.2 o` | warp streaks |
+| `φcorona` | `0.5 + 1.7 h + 1.8 o` | corona |
+
+Elements, back to front (layer numbers of section 2):
+
+- **Silk core** (layer 2, floating orb only; prototype `silkCore`, `silk_height`). A satin height field of long
+  diagonal folds — three folded sine bands along the 37° diagonal, gently fanned and warped by one simplex noise —
+  shaded by a key light and a rim light whose colors are the heat palette around `h`. Four height samples per pixel
+  (four noise evaluations), normals by finite differences.
+  - Dark: near-black satin (`#020304` at 70 %) whose body light, sheen, glints and rim light glow additively: at idle a
+    few faint silver glints; cruise teal; 700 tok/s indigo; extreme orange-gold to rose; past the redline the sheen
+    turns white-gold and fine ripple packets run across the cloth (`rip = min(1, 2.5 o)`).
+  - Light: pearl-white silk (`#FCFBF9` at 55 %) with grey fold shadows, white glints and a soft heat-colored sheen.
+  - Fades from 0.385 S to 0.475 S radius. Behind the readout (rounded boxes around the value and around unit + title)
+    it drops to 30 %.
+  - Brightness `(0.3 + 0.65 act + 0.3 h + 0.25 o) · (1 + 0.35 (lvl − 1))`, × (1 + 0.3 tier flash + 0.5 wave).
+  - Response pulse: the cloth is displaced along the wave ring and brightens 50 % under it. New peak: a gold band
+    (`#FFD673`) sweeps diagonally across the silk in 1.2 s.
+- **Gauge energy flow** (layer 3): bright pulses run along the lit segments toward the leading one: segment `i` gets
+  `flow = (1 − fract(2.2 i / 36 − φflow))^9 · act · (0.5 + 0.9 h)`; its color moves `0.75 flow` toward white-hot (light:
+  ×1.15) and its brightness × `(1 + 0.9 flow)`. The outer glow of the lit arc is 30 % stronger than v1.3.
+- **Tip flare** (layer 3, from `h ≥ 0.5`): a four-pointed star on the leading segment — two crossed Gaussian lines,
+  tangential `exp(−|t| / (0.05 + 0.16 o)) · exp(−|n| / 0.0032)` plus radial `exp(−|n| / (0.035 + 0.09 o)) ·
+  exp(−|t| / 0.0028)` — at `smoothstep(0.5, 0.85, h) · (0.55 + 0.9 o) · lvl`, white-hot at 90 % (light: heat at 40 %).
+- **Comets** (layer 4): tail `40° + 60° h`; from `h > 0.55` a second comet half a turn behind at 70 %; past the redline
+  the period shortens by a further `1 + 0.6 o`.
+- **Corona** (outside the rim, from `h ≥ 0.45`; prototype "corona"): flame tongues licking off the rim — ridged simplex
+  noise rising outward (`rise = 9 (r − 0.5) − φcorona`), reach `0.02 + (0.06 h + 0.12 o) · 1.7 · body^1.4` with a slow
+  body noise, variable tongues `mix(0.12, 1.25, tongues)`, and a thin bright base hugging the rim; white-hot at the base
+  to the heat color at the tips (light: heat, ink-blended at 95 %). Amount `smoothstep(0.45, 0.85, h) · (0.45 + 0.55 o)
+  · lvl`. Only in the annulus 0.47–0.74 S, faded by `smoothstep(0.74, 0.64, r)` (the prototype fades by 0.81); three
+  noise evaluations per pixel.
+- **Warp streaks** (outside the rim, from `h ≥ 0.32`): thin lines of light rushing into the orb. 96 angular bins; a bin
+  is active when its hash < `0.18 + 0.42 h`; its head travels from **0.74 S** (prototype 0.9) to 0.51 S at
+  `φwarp · (0.55 + 0.9 seed)`, length `(0.02 + 0.08 h + 0.07 o)(0.55 + seed)` S, width `0.0018 + 0.001 h` S, fading in
+  over the first 30 % of its travel and out over the last 18 %; color `mix(heat(h), #FFF7D6, 0.45)` at 80 % (light:
+  heat at 75 %). Amount `smoothstep(0.32, 0.62, h) · lvl`. No noise; one hash per pixel.
+- **Sparks** (layer 5): emission × 1.6; speed `(0.3–0.9) S/s · (1 + 0.8 o) · 1.3` outward plus a tangential
+  `(−0.35…0.65) · 0.6 S/s · 1.3`. Each spark is a streak from its position back along its velocity for
+  `clamp(0.06 · v / (0.12 S), 0.02, 0.06)` s, fading to transparent at the tail, width 0.75 × size (light 1 ×), with a
+  white-mixed head dot of 0.55 × size in dark; alpha × `(0.25 + 0.75 min(1, v / 0.12 S))` so a slowed spark fades
+  instead of becoming a dot. Embers × 1.4, size 1.2–3.0 px, radius flickering `0.55 + 0.45 sin(18 t + seed)`, a radial
+  glow of 2.2 × radius. Particles fade out by 0.74 S.
+- **Electric arcs** (redline tier, Standard and Max): jagged discharges from a random lit point of the arc (0.41 S) out to
+  0.50–0.60 S and ±0.45 rad, one every `(0.28 − 0.2 o) / lvl · (0.5…1.5)` s, living 0.09–0.19 s; a 10-point `polyline`
+  re-jittered by ±0.0225 S every frame, drawn as three strokes: 0.022 S at 18 % and 0.008 S at 50 % in
+  `mix(heat(h), #BFD9FF, 0.5)`, 0.0032 S white at 95 % (light: heat darkened 15 % for all three, no white core).
+- **Readout** (layer 6): from boost the glow σ is × `(1 + 0.8 o)`; from overdrive a second glow 2.4× wider at 45 %
+  (light 20 %). Dark: whenever `v ≥ 0.5` a black backing under the value (Gaussian σ 0.0125 S at 70 % plus a drop
+  shadow 0.006 S down, σ 0.006 S, at 60 %) keeps it legible over the silk sheen. Lean `−7.5° h` from overdrive; redline
+  jitter `0.9 + 1.2 o` px. Redline, dark only: a chromatic split — the value drawn twice more under the main glyphs,
+  offset `±(0.6 + 1.6 o) · S / 300` pt horizontally, `#FF3C8C` at 55 % to the left and `#3CD2FF` at 55 % to the right.
+- **Digit lightning** (Standard and Max; not with Reduce Motion; drawn above the readout): when the odometer changes a
+  digit, lightning crackles off it.
+  - Per changed digit position: cooldown 0.11 s; chance `min(1, 0.3 + 0.3 s + 0.4 h)`, `s` = the digits to its right;
+    power `p = (0.55 + 0.22 s)(0.6 + 0.6 h + 0.6 o) · lvl`. A change of length (999 → 1.00k) changes every digit.
+  - Flash: a radial glow over the digit's cell, radius 1.44 × the cell width, peak `min(0.8, 0.35 p)` fading as
+    `(1 − t/T)²`, `T = 0.16 + 0.06 p` s; white in dark, `#6B80FF` at half strength in light.
+  - Bolts: `1 + [h > 0.55] + [redline tier, 60 %]` per digit, at most 16 alive. A bolt starts on the top or bottom
+    edge of the digit (±0.36 cell height, within ±0.29 cell width of its center) and ends — redline tier, 30 %: on
+    the LED ring (0.39 S) in the direction of its start; otherwise 30 %: on the same edge of a neighboring digit;
+    else a short crackle `S (0.05 + 0.07 p)` long pointing away from the digit (±90° ± 0.85 rad). Path: midpoint
+    displacement, 5 levels, roughness 0.3, × 0.55 per level; one fork (two when `p > 0.9`) from an interior point at
+    ±0.95 rad, 0.2–0.5 of the bolt length, 4 levels, roughness 0.35. Re-shaped every 45 ms; life
+    `0.14 + 0.1 rand + 0.05 p` s; alpha `min(1, 1.6 (1 − t/T))` with a 22 % chance per frame of dropping to 40 %.
+  - Strokes like the arcs with `w = 0.0032 S (0.7 + 0.5 p)`: 5 w at 16 % and 2 w at 45 % in the glow color, 0.8 w at
+    95 % in the core color; forks 0.6 w at 80 %. Dark: glow `mix(heat(max(h, 0.3)), #B3D1FF, 0.45)`, core white,
+    additive. Light: glow `#6B80FF`, core `#3340D9`, normal blending.
+- **Pulse** (layer 7): plus a soft wake ring (`0.5 → 0.66 S`, 3.5× wider, 30 %) and the silk ripple; 0.85 s.
+- **New peak** (layer 8): the disc flashes (white-hot, `0.75 e^(−4.5 t)` fading out by 0.3 S from the rim inward; light:
+  `#FFB021` at 35 %); a gold ring `#FFC74D` blows from 0.5 S to 0.74 S in 1.4 s; the 24 rays are 0.014 S wide, turn at
+  0.4 rad/s and reach 0.74 S; 160 sparks burst outward from 0.48 S (30 % gold `#FFD159`, 0.5–1.8 S/s, 0.7–1.6 s); plus
+  the silk's gold sweep.
+
+Effects levels for `led`:
 
 | Level | Behaviour |
 | --- | --- |
-| Off | Static colors and segments only; no aura breathing, comet, particles, pulses, jitter or skew |
-| Soft | Aura, comet and pulses; no particles, no jitter |
-| Standard | Everything above, sparks, embers, skew; jitter only at redline |
-| Max | Standard with 1.6× particle rates, stronger bloom, and a faint heat-distortion shimmer at redline |
+| Off | Static: silk (no flow), colors and segments; no aura breathing, comet, particles, pulses, lightning, jitter or skew |
+| Soft | Silk at half rate without ripples; aura, one comet, pulses (with the silk ripple); no flow, tip flare, corona, warp streaks, particles, arcs, lightning, jitter or chromatic split |
+| Standard | Everything above at `lvl` = 1 |
+| Max | `lvl` = 1.6: particle and arc rates × 1.6, corona, warp, flare and lightning amounts × 1.6, stronger bloom |
 
-System "Reduce Motion" caps the level at Soft and replaces movement with crossfades. The table describes `led`; every
-other style has its own row set in 2a.
-
-Performance: the frame policy and budget of 2a apply to every style, `led` included (idle is static apart from the 6 s
-sweep, active is capped at 60 fps, never the display rate). Particles use a fixed-size pool (≤ 400). The renderer
-pauses entirely while the orb is hidden or fully occluded.
+Reduce Motion caps the level at Soft and freezes the silk. LOD: S < 120 halves the spark, ember and bolt counts;
+thumbnails draw the silk static and no corona or warp streaks. Budget: the silk is one disc-sized quad (4 noise per
+pixel), corona and warp streaks one annulus quad (≤ 3 noise per pixel); the 2a budgets and frame classes apply
+unchanged — the benchmark harness must show it.
 
 ## 2a. Orb styles
 
