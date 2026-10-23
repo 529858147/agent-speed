@@ -64,12 +64,22 @@ public struct ModelResolver: Sendable {
         return result
     }
 
-    private func computeResolution(model: String?, provider: String?) -> (resolution: ModelResolution, key: String?) {
-        if let provider, normalize.freeProviders.contains(Self.lowercasedText(Self.strip(Array(provider.unicodeScalars)))) {
-            let cloud = model.map { Self.lowercasedKey(Self.strip(Array($0.unicodeScalars))) }
-            let remote = cloud.map { key in normalize.cloudSuffixes.contains { Self.hasSuffix(key, $0) } } ?? false
-            if !remote { return (.free, nil) }
+    /// The table entry an id or alias names.
+    func entryIndex(forKey key: String) -> Int? {
+        byKey[key]
+    }
+
+    /// Step 1 of METRICS 9.2: a local runtime's provider with a model that does not run in its cloud.
+    func isLocalProvider(model: String?, provider: String?) -> Bool {
+        guard let provider, normalize.freeProviders.contains(Self.lowercasedText(Self.strip(Array(provider.unicodeScalars)))) else {
+            return false
         }
+        let cloud = model.map { Self.lowercasedKey(Self.strip(Array($0.unicodeScalars))) }
+        return !(cloud.map { key in normalize.cloudSuffixes.contains { Self.hasSuffix(key, $0) } } ?? false)
+    }
+
+    private func computeResolution(model: String?, provider: String?) -> (resolution: ModelResolution, key: String?) {
+        if isLocalProvider(model: model, provider: provider) { return (.free, nil) }
         guard let model, !Self.strip(Array(model.unicodeScalars)).isEmpty else { return (.unknown(reason: "no model"), nil) }
         var seen: Set<String> = []
         for candidate in candidates(model) {

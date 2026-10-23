@@ -27,6 +27,8 @@ struct LaunchOptions: Sendable {
     var orbsDemoDirectory: URL?
     /// `--nameplates-demo DIR`: four orbs with name plates on the desktop, see `NameplatesDemoHarness`.
     var nameplatesDemoDirectory: URL?
+    /// `--report-e2e URL`: live reporting against a local reference server, see `ReportHarness`.
+    var reportEndToEndURL: String?
     #endif
 
     static func parse(_ arguments: [String] = CommandLine.arguments) -> LaunchOptions {
@@ -73,6 +75,8 @@ struct LaunchOptions: Sendable {
                 if let path = iterator.next() {
                     options.heroFramesDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
+            case "--report-e2e":
+                options.reportEndToEndURL = iterator.next()
             case "--screenshots", "--history-screenshots":
                 if let path = iterator.next() {
                     options.screenshotsDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)

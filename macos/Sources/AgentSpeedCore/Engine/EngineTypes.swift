@@ -116,4 +116,6 @@ struct EngineOutput: Sendable {
     var todayStartMs: Int64
     var lastResponse: ResponseSummary?
     var events: [SpeedEvent]
+    /// Live reporting's view of this instant (METRICS 11.2, 11.4).
+    var report: ReportLiveFacts = .empty
 }

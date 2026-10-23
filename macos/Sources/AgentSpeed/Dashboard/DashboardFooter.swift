@@ -50,6 +50,11 @@ struct DashboardFooter: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
 
+            if model.report.isOn {
+                ReportIndicator(model: model)
+                    .transition(.opacity)
+            }
+
             Button {
                 model.commands?.showSettings(nil)
             } label: {
@@ -71,6 +76,7 @@ struct DashboardFooter: View {
             .accessibilityLabel(l10n("menu.quit"))
         }
         .animation(model.dashboardMotion, value: model.updates.availableRelease?.tag)
+        .animation(model.dashboardMotion, value: model.report.isOn)
     }
 }
 

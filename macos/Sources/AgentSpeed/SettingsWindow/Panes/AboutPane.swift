@@ -41,7 +41,7 @@ struct AboutPane: View {
             UpdateSettingsCard(model: model)
                 .padding(.top, Spacing.s)
 
-            privacyCard(l10n("privacy.statement"), l10n("privacy.traffic"))
+            privacyCard(privacyParagraphs)
                 .padding(.top, Spacing.s)
 
             VStack(spacing: Spacing.xxs) {
@@ -64,7 +64,18 @@ struct AboutPane: View {
         }
     }
 
-    private func privacyCard(_ text: String, _ second: String) -> some View {
+    /// DESIGN 11, About: while reporting is on no sentence claims that nothing is sent.
+    private var privacyParagraphs: [String] {
+        let l10n = model.l10n
+        let report = model.report
+        guard report.isOn else {
+            return [l10n("privacy.statement"), l10n("privacy.traffic"), l10n("privacy.report")]
+        }
+        let host = report.destinationHost ?? ""
+        return [l10n("privacy.statement.report", host), l10n("privacy.traffic.report"), l10n("privacy.report")]
+    }
+
+    private func privacyCard(_ paragraphs: [String]) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return HStack(alignment: .top, spacing: Spacing.s) {
             Image(systemName: "hand.raised.fill")
@@ -74,8 +85,7 @@ struct AboutPane: View {
                 .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(text)
-                Text(second)
+                ForEach(paragraphs, id: \.self) { Text($0) }
             }
             .font(.callout)
             .foregroundStyle(.secondary)

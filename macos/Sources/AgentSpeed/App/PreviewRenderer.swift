@@ -102,6 +102,9 @@ enum PreviewRenderer {
         if wants("cost") {
             CostPreviews.render(model: model, into: directory)
         }
+        if wants("report") {
+            ReportPreviews.render(model: model, into: directory)
+        }
         if wants("history") {
             HistoryLogicChecks.run(l10n: model.l10n, into: directory)
             HistoryPreviews.render(model: model, into: directory)

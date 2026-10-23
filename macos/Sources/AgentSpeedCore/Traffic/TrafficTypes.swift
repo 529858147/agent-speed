@@ -153,6 +153,20 @@ public enum ProcessTrafficState: Equatable, Sendable {
     }
 }
 
+/// Bytes counted since the traffic engine started, without the deltas of gap samples (METRICS 11.4): the machine
+/// and each source's own and tool processes. Live reporting takes differences of it.
+public struct TrafficReportTotals: Equatable, Sendable {
+    public var machine: TrafficBytes
+    public var sources: [SourceKind: TrafficSplit]
+
+    public init(machine: TrafficBytes = .zero, sources: [SourceKind: TrafficSplit] = [:]) {
+        self.machine = machine
+        self.sources = sources
+    }
+
+    public static let zero = TrafficReportTotals()
+}
+
 /// Everything the UI shows about network traffic (METRICS 10.7, 10.8), published once per tick.
 public struct TrafficSnapshot: Equatable, Sendable {
     public var timestamp: Date
@@ -176,6 +190,10 @@ public struct TrafficSnapshot: Equatable, Sendable {
     public var agents: [String: AgentTraffic]
     /// Local midnight at which "today" starts.
     public var dayStart: Date
+    /// Live reporting's cumulative bytes (METRICS 11.4).
+    public var reportTotals: TrafficReportTotals
+    /// A counted interface was up at the latest sample (METRICS 10.2).
+    public var machineAvailable: Bool
 
     public init(
         timestamp: Date,
@@ -189,7 +207,9 @@ public struct TrafficSnapshot: Equatable, Sendable {
         processSampledMs: Int64 = 0,
         sources: [SourceKind: SourceTraffic] = [:],
         agents: [String: AgentTraffic] = [:],
-        dayStart: Date = .distantPast
+        dayStart: Date = .distantPast,
+        reportTotals: TrafficReportTotals = .zero,
+        machineAvailable: Bool = true
     ) {
         self.timestamp = timestamp
         self.enabled = enabled
@@ -203,6 +223,8 @@ public struct TrafficSnapshot: Equatable, Sendable {
         self.sources = sources
         self.agents = agents
         self.dayStart = dayStart
+        self.reportTotals = reportTotals
+        self.machineAvailable = machineAvailable
     }
 
     public static let off = TrafficSnapshot(timestamp: .distantPast, enabled: false, processState: .off)

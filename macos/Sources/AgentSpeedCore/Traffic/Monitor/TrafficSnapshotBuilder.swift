@@ -37,7 +37,9 @@ enum TrafficSnapshotBuilder {
             processSampledMs: today.processSampledMs,
             sources: sources,
             agents: agents,
-            dayStart: engine.ledger.dayStart(forMs: wallMs)
+            dayStart: engine.ledger.dayStart(forMs: wallMs),
+            reportTotals: engine.reportTotals,
+            machineAvailable: engine.machineInterfaceCount > 0
         )
     }
 }

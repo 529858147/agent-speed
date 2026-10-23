@@ -10,6 +10,7 @@ public final class SpeedStore {
 
     @ObservationIgnored private var latestLive: SpeedSnapshot = .empty
     @ObservationIgnored private var listeners: [UUID: @MainActor (SpeedEvent) -> Void] = [:]
+    @ObservationIgnored private var liveListeners: [UUID: @MainActor (SpeedSnapshot) -> Void] = [:]
 
     public init() {}
 
@@ -19,6 +20,7 @@ public final class SpeedStore {
     /// Called by `LiveMonitor`. Ignored for display while a preview runs, but always remembered.
     public func publishLive(_ snapshot: SpeedSnapshot, events: [SpeedEvent] = []) {
         latestLive = snapshot
+        for handler in liveListeners.values { handler(snapshot) }
         guard !isPreviewing else { return }
         self.snapshot = snapshot
         dispatch(events)
@@ -49,6 +51,18 @@ public final class SpeedStore {
 
     public func removeEventListener(_ token: UUID) {
         listeners[token] = nil
+    }
+
+    /// Called with every live snapshot (one per engine tick), also while a preview is displayed.
+    @discardableResult
+    public func addLiveListener(_ handler: @escaping @MainActor (SpeedSnapshot) -> Void) -> UUID {
+        let token = UUID()
+        liveListeners[token] = handler
+        return token
+    }
+
+    public func removeLiveListener(_ token: UUID) {
+        liveListeners[token] = nil
     }
 
     private func dispatch(_ events: [SpeedEvent]) {

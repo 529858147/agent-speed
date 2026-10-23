@@ -53,6 +53,10 @@ final class TrafficEngine {
     private(set) var sourceSeries: [SourceKind: TrafficSeriesPair] = [:]
     private(set) var sourceBuckets: [SourceKind: TrafficBuckets] = [:]
     private(set) var agentSeries: [String: TrafficSeriesPair] = [:]
+    /// Bytes for live reporting since the engine started, without gap samples (METRICS 11.4).
+    private(set) var reportTotals = TrafficReportTotals()
+    /// Counted interfaces that were up at the latest machine sample (METRICS 11.2: none → `unavailable`).
+    private(set) var machineInterfaceCount = 0
     /// Diagnostics: bytes per root agent process since the engine started, and the trees they went to ("" = none).
     private(set) var rootTotals: [ProcessIdentity: (split: TrafficSplit, assigned: [String: TrafficSplit])] = [:]
 
@@ -101,6 +105,8 @@ final class TrafficEngine {
                 if let previous = interfaces[name] { sum += CounterDelta.delta(from: previous, to: counter, intervalMs: dt) }
             }
             interfaces = current
+            machineInterfaceCount = current.count
+            if !gap { reportTotals.machine += sum }
             ledger.modify(day) { totals in
                 totals.machine += sum
                 if let dt, dt <= Self.gapMs { totals.machineSampledMs += dt }
@@ -163,6 +169,7 @@ final class TrafficEngine {
         for (root, entry) in perRoot {
             let split = entry.split
             sourceTotals[entry.source, default: .zero].add(split)
+            if !gap { reportTotals.sources[entry.source, default: .zero].add(split) }
             let candidates = trees.candidates(
                 source: entry.source, startMs: startMs, endMs: wallMs, platform: platform,
                 openFiles: { self.openFiles(ofRoot: root, inspector: inspector, nowMs: t) },

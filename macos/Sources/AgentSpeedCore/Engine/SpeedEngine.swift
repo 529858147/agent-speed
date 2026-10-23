@@ -32,6 +32,10 @@ struct SpeedEngine: Sendable {
     /// The current table version the stored responses were last priced with.
     private var pricedVersion: Int?
     private var dayLabeler = DayLabeler(timeZone: .current)
+    /// What live reporting counts (METRICS 11.4); fed whatever reporting does, so nothing depends on its settings.
+    private var reportLedger = ReportLedger()
+    /// The provider of each agent's latest response, for the model id of a generating agent (METRICS 11.2).
+    private var agentProviders: [String: String] = [:]
 
     init(pricing: PriceBook? = nil) {
         self.pricing = pricing
@@ -73,6 +77,13 @@ struct SpeedEngine: Sendable {
         let old = responses.updateValue(record, forKey: record.key)
         projects[record.key] = project
         ledger?.replace(old, with: record)
+        if let provider = record.provider { agentProviders[record.agentId] = provider }
+        let isLiveCompletion = isCompletion && emitsEvents && nowMs.map { record.endMs >= $0 - Self.completionEventMaxAgeMs } ?? false
+        if isLiveCompletion {
+            reportLedger.count(record, modelId: reportModelId(of: record))
+        } else if reportLedger.isCounted(record.key) {
+            reportLedger.grow(record, modelId: reportModelId(of: record))
+        }
         let summary = Self.summary(of: record, project: project)
         if lastResponse.map({ summary.endedAt >= $0.endedAt }) ?? true {
             lastResponse = summary
@@ -154,8 +165,44 @@ struct SpeedEngine: Sendable {
             subsetPeaks: subsetPeaks,
             todayStartMs: todayStartMs,
             lastResponse: lastResponse,
-            events: events
+            events: events,
+            report: reportFacts(nowMs: nowMs)
         )
+    }
+
+    // MARK: - Live reporting
+
+    /// The table that names models for live reporting: the current one (METRICS 11.3).
+    private var reportTable: PriceTable { pricing?.current ?? PriceBook.bundled }
+
+    private func reportModelId(of record: ResponseRecord) -> String {
+        reportTable.reportModelId(model: record.model, provider: record.provider)
+    }
+
+    /// Agents of the 6.7 base set per source, generating agents per model, and the report ledger (METRICS 11.2).
+    private func reportFacts(nowMs: Int64) -> ReportLiveFacts {
+        var facts = ReportLiveFacts(counters: reportLedger.counters)
+        let table = reportTable
+        for agent in agents.values {
+            let isFresh = agent.lastLineMs.map { nowMs - $0 <= Self.staleMs } ?? false
+            let phase = isFresh ? agent.phase : .idle
+            let isRecent = agent.lastLineMs.map { $0 >= nowMs - Self.agentListWindowMs } ?? false
+            guard isRecent || phase == .generating else { continue }
+            var counts = facts.agents[agent.source] ?? .zero
+            counts.active += 1
+            switch phase {
+            case .generating:
+                counts.generating += 1
+                let id = table.reportModelId(model: agent.model, provider: agentProviders[agent.id])
+                facts.generatingModels[ReportModelKey(modelId: id, source: agent.source), default: 0] += 1
+            case .tools:
+                counts.tools += 1
+            case .idle:
+                break
+            }
+            facts.agents[agent.source] = counts
+        }
+        return facts
     }
 
     // MARK: - Day and retention
@@ -171,6 +218,7 @@ struct SpeedEngine: Sendable {
             priced.costMicroUsd = cost
             responses[key] = priced
             ledger?.replace(record, with: priced)
+            if reportLedger.isCounted(key) { reportLedger.grow(priced, modelId: reportModelId(of: priced)) }
         }
     }
 
@@ -195,6 +243,8 @@ struct SpeedEngine: Sendable {
         guard responses.values.contains(where: { $0.endMs < cutoff }) else { return }
         responses = responses.filter { $0.value.endMs >= cutoff }
         projects = projects.filter { responses[$0.key] != nil }
+        reportLedger.prune(before: cutoff)
+        agentProviders = agentProviders.filter { agents[$0.key] != nil }
     }
 
     /// Latest end of any stored response (valid or not) per agent.

@@ -45,6 +45,10 @@ enum MenuFactory {
         }
         menu.addItem(ActionMenuItem(l10n("menu.dashboard")) { [weak model] in model?.commands?.showDashboard() })
         menu.addItem(historyItem(model: model))
+        if let report = ReportMenu.item(model: model) {
+            menu.addItem(.separator())
+            menu.addItem(report)
+        }
         menu.addItem(.separator())
         menu.addItem(orbVisibilityItem(model: model))
         OrbMenus.addQuickItems(to: menu, model: model)

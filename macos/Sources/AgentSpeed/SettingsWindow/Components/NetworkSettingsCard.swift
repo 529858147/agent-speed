@@ -20,14 +20,14 @@ struct NetworkSettingsCard: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(l10n("settings.network"))
-                Footnote(l10n("settings.network.hint"))
+                Footnote(l10n(model.report.isOn ? "settings.network.hint.report" : "settings.network.hint"))
             }
             .accessibilityHidden(true)
             Spacer(minLength: Spacing.xs)
             Toggle(l10n("settings.network"), isOn: $settings.networkEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .accessibilityHint(l10n("settings.network.hint"))
+                .accessibilityHint(l10n(model.report.isOn ? "settings.network.hint.report" : "settings.network.hint"))
         }
         .padding(Spacing.m)
         .background(Color.primary.opacity(0.04), in: shape)

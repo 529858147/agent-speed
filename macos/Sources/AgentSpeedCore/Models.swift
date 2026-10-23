@@ -258,6 +258,8 @@ public struct SpeedSnapshot: Equatable, Sendable {
     public var liveCost: LiveCost
     /// Today's cost of every source (METRICS 9.6).
     public var todayCost: CostTally
+    /// Live reporting's agent counts and cumulative ledger (METRICS 11.2, 11.4).
+    public var report: ReportLiveFacts
 
     public init(
         timestamp: Date,
@@ -278,7 +280,8 @@ public struct SpeedSnapshot: Equatable, Sendable {
         subsetPeaks: [SourceSet: Double] = [:],
         dayStart: Date = .distantPast,
         liveCost: LiveCost = .zero,
-        todayCost: CostTally = .zero
+        todayCost: CostTally = .zero,
+        report: ReportLiveFacts = .empty
     ) {
         self.timestamp = timestamp
         self.state = state
@@ -299,6 +302,7 @@ public struct SpeedSnapshot: Equatable, Sendable {
         self.dayStart = dayStart
         self.liveCost = liveCost
         self.todayCost = todayCost
+        self.report = report
     }
 
     public static let empty = SpeedSnapshot(

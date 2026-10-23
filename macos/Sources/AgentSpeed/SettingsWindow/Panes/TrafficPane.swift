@@ -14,6 +14,10 @@ struct TrafficPane: View {
             Section {
                 SettingToggle(title: l10n("settings.traffic.enabled"), subtitle: l10n("settings.traffic.enabled.hint"),
                               isOn: $settings.trafficEnabled)
+                if model.report.reportsTraffic {
+                    Notice(text: l10n("report.traffic.note", model.report.destinationHost ?? ""),
+                           symbol: "dot.radiowaves.left.and.right")
+                }
             }
 
             Section {

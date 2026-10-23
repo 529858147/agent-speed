@@ -473,5 +473,11 @@
     "zh-Hans": "网络流量",
     "en": "Traffic",
     "ja": "通信量"
+  },
+  "mac.settings.tab.report": {
+    "zh-Hant": "即時上報",
+    "zh-Hans": "实时上报",
+    "en": "Reporting",
+    "ja": "ライブ送信"
   }
 }

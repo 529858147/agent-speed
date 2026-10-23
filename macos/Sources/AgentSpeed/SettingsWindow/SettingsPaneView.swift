@@ -5,7 +5,8 @@ struct SettingsPaneView: View {
     let pane: SettingsPane
     let model: AppModel
 
-    static let width: CGFloat = 520
+    /// Wide enough for all nine toolbar tabs in every language (the Japanese labels need 580 pt).
+    static let width: CGFloat = 600
     /// The floating orb pane lists live orbs and five style cards in a row; General holds three columns of title
     /// theme cards and the custom set editor beside its previews (DESIGN 5: content up to 680 pt).
     static let wideWidth: CGFloat = 680
@@ -29,6 +30,7 @@ struct SettingsPaneView: View {
         case .effects: EffectsPane(model: model)
         case .cost: CostPane(model: model)
         case .traffic: TrafficPane(model: model)
+        case .report: ReportPane(model: model)
         case .sources: SourcesPane(model: model)
         case .about: AboutPane(model: model)
         }

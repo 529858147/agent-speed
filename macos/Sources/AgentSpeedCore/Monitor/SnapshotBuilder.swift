@@ -106,7 +106,8 @@ enum SnapshotBuilder {
             subsetPeaks: output.subsetPeaks,
             dayStart: date(output.todayStartMs),
             liveCost: output.liveCost,
-            todayCost: output.todayCost
+            todayCost: output.todayCost,
+            report: output.report
         )
     }
 

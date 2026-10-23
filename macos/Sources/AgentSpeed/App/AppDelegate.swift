@@ -55,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             MotionHarness.start(into: directory)
             return
         }
+        if let url = options.reportEndToEndURL {
+            ReportHarness.start(url: url)
+            return
+        }
         if let directory = options.screenshotsDirectory {
             ScreenshotHarness.run(into: directory, onlyHistory: options.screenshotsOnlyHistory)
             return
@@ -157,6 +161,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
 
     @objc func openHistoryFromMenu(_ sender: Any?) {
         showHistory(source: nil)
+    }
+
+    /// Live reporting gets up to a second for its leaving report (REPORTING 7.1).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let report = model?.report else { return .terminateNow }
+        var replied = false
+        var later = false
+        report.prepareToQuit {
+            replied = true
+            if later { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        if replied { return .terminateNow }
+        later = true
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {

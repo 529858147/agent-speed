@@ -52,6 +52,8 @@ final class AppModel {
     let cost: CostDisplay
     /// Network traffic (METRICS 10, DESIGN 10): the live snapshot and the stored days.
     let traffic: TrafficStore
+    /// Live reporting (DESIGN 11): off until the user confirms a service.
+    let report: ReportController
 
     /// True while the 20 s effects preview (or the `--demo` loop) drives the store.
     private(set) var isPreviewing = false
@@ -93,7 +95,20 @@ final class AppModel {
         rates = ExchangeRateController(userAgent: userAgent)
         cost = CostDisplay(settings: settings, l10n: l10n, rates: rates, prices: prices)
         traffic = TrafficStore()
+        report = ReportController(settings: settings, store: store, traffic: traffic, priceBook: priceBook,
+                                  appData: Self.appDataDirectory)
         gauge.redline = settings.redline
+    }
+
+    /// `~/Library/Application Support/AgentSpeed`; debug runs may use another folder (`AGENT_SPEED_APP_DATA`), so
+    /// a development run never writes report keys next to the installed app's.
+    static var appDataDirectory: URL {
+        #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["AGENT_SPEED_APP_DATA"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        #endif
+        return PriceSyncController.defaultAppDataDirectory
     }
 
     var snapshot: SpeedSnapshot { store.snapshot }
@@ -162,6 +177,7 @@ final class AppModel {
         appliedConfiguration = settings.monitorConfiguration
         monitor.setSubsets(orbSubsets)
         monitor.start()
+        report.activate()
         loops.append(ObservationLoop { [weak self] in
             guard let self else { return }
             let configuration = self.settings.monitorConfiguration
@@ -240,6 +256,7 @@ final class AppModel {
     }
 
     func shutdown() {
+        report.shutdown()
         trafficController?.stop()
         trafficController = nil
         orbs.shutdown()
@@ -298,7 +315,7 @@ enum DemoDriverRatio {
 
 /// Settings window panes (DESIGN section 5).
 enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
-    case general, menuBar, orb, effects, cost, traffic, sources, about
+    case general, menuBar, orb, effects, cost, traffic, report, sources, about
 
     var id: String { rawValue }
 
@@ -310,6 +327,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .effects: "settings.effects"
         case .cost: "settings.cost"
         case .traffic: "settings.traffic"
+        case .report: "settings.report"
         case .sources: "settings.sources"
         case .about: "settings.about"
         }
@@ -321,6 +339,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .orb: "mac.settings.tab.orb"
         case .traffic: "mac.settings.tab.traffic"
+        case .report: "mac.settings.tab.report"
         default: titleKey
         }
     }
@@ -333,6 +352,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .effects: "sparkles"
         case .cost: "banknote"
         case .traffic: "arrow.up.arrow.down"
+        case .report: "dot.radiowaves.left.and.right"
         case .sources: "folder"
         case .about: "info.circle"
         }
