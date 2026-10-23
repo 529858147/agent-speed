@@ -55,7 +55,9 @@ struct ReportPreviewBox: View {
             ScrollView(.vertical) {
                 Group {
                     if let preview {
-                        ReportJSONText(json: preview.body, headerLines: showsRequest ? requestLines(preview) : [])
+                        // Before the document is known the API URL, and so the request line, is not (DESIGN 11).
+                        ReportJSONText(json: preview.body,
+                                       headerLines: showsRequest && !preview.assumed ? requestLines(preview) : [])
                     } else {
                         Text("{}")
                             .font(.system(size: 11, design: .monospaced))
@@ -73,7 +75,7 @@ struct ReportPreviewBox: View {
             .accessibilityValue(preview?.copyText ?? "")
 
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                Text(l10n("report.preview.hint"))
+                Text(l10n(preview?.assumed == true ? "report.preview.assumed" : "report.preview.hint"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

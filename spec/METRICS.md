@@ -1553,7 +1553,9 @@ Read on every sampling tick (10.4), cumulative 64-bit counters per interface.
   `FilterInterface` and `EndPointInterface` clear, `Type` not `IF_TYPE_SOFTWARE_LOOPBACK` or `IF_TYPE_TUNNEL`,
   `TunnelType == TUNNEL_TYPE_NONE`, `OperStatus == IfOperStatusUp`; `InOctets` / `OutOctets`. This excludes NDIS
   filter-module duplicates of the same adapter, Hyper-V/WSL/VMware virtual adapters, WAN miniports (VPN), Bluetooth
-  PAN and Teredo/6to4/IP-HTTPS tunnels (verified against `Get-NetAdapter -IncludeHidden` on the test machine).
+  PAN and Teredo/6to4/IP-HTTPS tunnels (verified against `Get-NetAdapter -IncludeHidden` on the test machine). The
+  table decides the counted set; between table reads each tick reads only the counted rows, one `GetIfEntry2` per
+  `InterfaceLuid` (10.10). The table is read again every 10 s and as soon as a counted row fails or is no longer up.
 - An interface is identified by its BSD name (macOS) or `InterfaceLuid` (Windows).
 
 Machine counters need no permission and work whether or not process traffic is available.
@@ -1602,9 +1604,9 @@ Machine counters need no permission and work whether or not process traffic is a
 Sampling runs while `trafficEnabled` is on (DESIGN 10, default on). All times below are monotonic except where a local
 date is needed.
 
-1. **Tick**: every 1000 ms the app reads the machine counters (10.2), refreshes its process table (10.5) and applies
-   the newest process-counter sample (nettop's latest complete sample, or one helper snapshot). Sample time = the
-   tick's time.
+1. **Tick**: every 1000 ms the app reads the machine counters (10.2), refreshes its process table (10.5) when 10.10
+   says so and applies the newest process-counter sample (nettop's latest complete sample, or a helper snapshot when one
+   is due). Sample time = the tick's time.
 2. **Delta** of one counter key (interface, or process identity) between consecutive values `prev` → `cur`:
    - `cur ≥ prev` → `d = cur − prev`;
    - `cur < prev` (counter reset: interface re-created, helper restarted, nettop restarted) → `d = 0` and the new value
@@ -1626,13 +1628,17 @@ date is needed.
 
 ### 10.5 Attribution: processes → sources
 
-The app keeps a **process table** of the current user's processes, refreshed every tick: pid, parent pid, start time,
+The app keeps a **process table** of the current user's processes (on Windows: of the app's session), refreshed on the
+ticks 10.10 gives: pid, parent pid, start time,
 executable path and, only for script hosts (`node`, `bun`, `deno`, with or without `.exe`) and WorkBuddy's
 executables (below), the argument list; on macOS, for WorkBuddy, also the bundle id of the app whose `Contents/MacOS`
 holds the executable (`CFBundleIdentifier` of its `Contents/Info.plist`, read once per app path).
-macOS: `proc_listallpids`, `proc_pidinfo(PROC_PIDTBSDINFO)`, `proc_pidpath`, `sysctl(KERN_PROCARGS2)`. Windows:
-`CreateToolhelp32Snapshot`, `QueryFullProcessImageNameW`, `GetProcessTimes`,
-`NtQueryInformationProcess(ProcessCommandLineInformation)` (Windows 8.1+, `PROCESS_QUERY_LIMITED_INFORMATION`). Path
+macOS: `proc_listallpids`, `proc_pidinfo(PROC_PIDTBSDINFO)`, `proc_pidpath`, `sysctl(KERN_PROCARGS2)`. Windows: one
+`NtQuerySystemInformation(SystemSessionProcessInformation)` listing of the session (pid, parent pid, create time; no
+handles opened; `SystemProcessInformation` filtered by session where the session listing fails), then, once per new
+identity, `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` with `GetProcessTimes` (the handle's create time must match
+the listing), `QueryFullProcessImageNameW` and `NtQueryInformationProcess(ProcessCommandLineInformation)` (Windows
+8.1+). Path
 and arguments are read once per process identity; an exited process stays in the table for 10 s, so the counter rows
 that still list it (10.3) can be matched. Paths compare with `/` and `\` equivalent, case-insensitively on Windows;
 `~` is the home folder. File **names** compare case-sensitively on both platforms, without the `.exe` extension: the
@@ -1680,6 +1686,13 @@ linked (known approximation, 10.12).
 
 `includeTools` (DESIGN 10, default on) chooses whether displayed source and agent values include `tools`; totals and
 history always keep `self` and `tools` separately, so the setting changes no stored data.
+
+**Disabled sources** (Settings → Data Sources, DESIGN 5) are attributed, counted and stored like the others: bytes,
+unlike transcripts, cannot be read again later, so a source turned back on shows its traffic for the days it was off,
+as it shows its tokens. Every view leaves a disabled source out (DESIGN 10) — its live rates, today's bytes, its
+sparkline and its history rows, and every sum shown over sources (orbs, menu bar and taskbar, dashboard, history
+chart, table and CSV) — so it shows no traffic anywhere, as it shows no tokens. This computer's traffic (10.2) is
+unaffected.
 
 ### 10.6 Attribution: agent processes → agents (best effort)
 
@@ -1737,6 +1750,7 @@ source only.
 - per agent tree (memory only, not stored): `rxSelf`, `txSelf`, `rxTools`, `txTools` attributed today while running.
 - On day change everything restarts at zero; a relaunch restores machine and source values from the history store
   (10.9), agent values start at zero.
+- Kept for every source, enabled or not; views show and sum only the enabled ones (10.5).
 
 ### 10.9 Daily history
 
@@ -1761,7 +1775,13 @@ Traffic is observed, not read from logs: there is no history before sampling sta
 
 ### 10.10 Sampling intervals and CPU budget
 
-- Machine counters: every tick (1 Hz) while traffic sampling is on. Cost: ≤ 0.02 % of one core.
+- Machine counters: every tick (1 Hz) while traffic sampling is on. Cost: ≤ 0.02 % of one core. macOS reads every
+  interface in one `sysctl` (10.2). Windows reads each counted interface by its `InterfaceLuid` (`GetIfEntry2`: ≈ 0.2 ms
+  wall, no measurable CPU) and reads the whole table (`GetIfTable2Ex`) only every 10 s and when a counted row fails or
+  goes down: the table call asks every adapter and NDIS filter driver for its statistics, ≈ 0.8 ms of CPU and ≈ 100 ms
+  wall per call (measured on the test machine, 47 rows), so reading it every second alone would cost 0.08 % of one
+  core, four times the budget; every 10 s it costs 0.008 %. A new interface (Wi-Fi joined, tethering) is counted within
+  10 s.
 - Process counters (macOS nettop child), measured on the M5 Pro with ≈ 760 open sockets: ≈ 1.6 % of one core at
   `-s 1` (≈ 15 ms per sample plus ≈ 0.25 % fixed), ≈ 0.5 % at `-s 5`, 1.0 % at `-s 2`; memory 5 MB. To stay near the
   app's budget the interval adapts:
@@ -1771,10 +1791,25 @@ Traffic is observed, not read from logs: there is no history before sampling sta
   - otherwise → `-s 1`.
   An interval change restarts nettop (≈ 50 ms of CPU) and happens at most once per 30 s; bytes are never lost by it
   (10.4.7), only the rate resolution changes.
-- Windows helper: ≈ 0.1 % of one core at normal desktop traffic, < 1 % at 1 Gbit/s (WINDOWS-SERVICE 3). The app polls
-  it at 1 Hz whenever per-source traffic is sampled (the service has no interval).
+- Windows helper: ≈ 0.1 % of one core at normal desktop traffic, < 1 % at 1 Gbit/s (WINDOWS-SERVICE 3). It counts every
+  event and has no interval; the same three states decide how often the app asks it for a snapshot: never (the
+  connection closes and the service stops itself after 120 s), every 5 s, or every second. Its counters are cumulative,
+  so a slower poll loses no bytes, only rate resolution.
 - App side (process table, parsing, attribution): ≤ 0.2 % of one core at 1 Hz with 800 processes; path and argument
-  reads only for new processes.
+  reads only for new processes. macOS lists every tick, and every 2 s while nettop is not running (only to notice agent
+  processes).
+- Windows process table: one listing of the session costs ≈ 1.6 ms of CPU for 143 processes (≈ 4.7 ms for all 273
+  processes of the machine; measured on the test machine), so listing every second would take most of the app-side
+  budget by itself. The table therefore matters only while per-process counters can arrive, and is listed:
+  - never while the helper is not installed, outdated or refused (its state is checked again every 30 s): nothing
+    could be attributed, and the first sample of the next stream is a baseline (10.4.3), so nothing is lost;
+  - every 2 s while no agent process exists (the helper is not asked), only to notice agent processes;
+  - every tick while an agent is active (10.6) or was within the last 60 s: its tool processes come and go then;
+  - otherwise every 5 s, and in the same tick whenever a counter row names a process the table does not know yet. A
+    process's first row arrives in the tick it first uses the network, so it is listed while it still runs, as a 1 Hz
+    listing would find it; rows of processes that had already exited when listed do not ask again.
+  With a typical session this keeps the listing at ≈ 0.16 % of one core while an agent is active and ≤ 0.08 %
+  otherwise, within the app-side budget; it is not needed at all for the machine counters.
 - Benchmark harness (both platforms): 10 minutes idle with agents running, 10 minutes with a 100 MB download in a tool
   process; report average CPU of the app plus nettop or the helper.
 
@@ -1827,7 +1862,7 @@ own scheduler core with a fake clock and instant sends. Only realtime values are
 - **Sources**: the enabled sources, all together. Never an orb's subset (6.8) and never filtered by subscription marks
   (9.4): cost is reported for every source.
 - **Sections**: an optional section is built only when the service lists it and the user's switch is on (REPORTING
-  6.1). Default switches (DESIGN 11): `sources`, `models`, `cost`, `traffic` on; `machineTraffic` off. A section that
+  6.1). Default switches (DESIGN 11): `sources`, `models`, `cost`, `traffic`, all on. A section that
   is off is left out of the report.
 - **Build time** `t` is an engine tick (6: every 500 ms) with `nowMs = t`. Durations (`windowMs`, holds, retries) use
   the monotonic clock. `sentAt` is the wall clock at `t` plus the session's clock correction (11.6), formatted
@@ -1855,7 +1890,6 @@ own scheduler core with a fake clock and instant sends. Only realtime values are
 | `traffic.peak*BytesPerSecond` | the maximum of those rates over the samples in `(windowStart, t]`; `null` when there is none |
 | `traffic.status` | `off` when `trafficEnabled` is off (DESIGN 10); `unavailable` when process traffic is unavailable (10.3 states); else `ok` |
 | `traffic.includesTools` | the `includeTools` setting |
-| `machineTraffic.*` | the same for the machine series (10.2); `unavailable` when no counted interface exists |
 
 Per source (`sources[]`) every value is the same computation restricted to the source (6.3 and 9.5 per source; 10.7
 per source series). Per model (`models[].generating`): agents counted in `live.agents.generating` grouped by the
@@ -1892,8 +1926,8 @@ engine's retention (6.1, by its latest `endMs`), at most 65 536 (FIFO); a change
 **Attribution.** Each increment also goes to the response's source and to the resolved model id (11.3) of the
 response's model at that moment.
 
-**Traffic.** Every sample delta of 10.4 adds to the ledger at its sample time — machine `rx`/`tx`; per source `self`
-and `tools` — except deltas of a sample whose interval is longer than 15 s (10.4.5 gap: those bytes are older than the
+**Traffic.** Every sample delta of 10.4 adds to the ledger at its sample time — per source `self` and `tools`; the
+machine series (10.2) is never reported — except deltas of a sample whose interval is longer than 15 s (10.4.5 gap: those bytes are older than the
 window) and the baseline of a stream's first sample (which adds nothing anyway). Agent traffic = Σ over sources of
 `self + tools` (`self` only when `includeTools` is off).
 
@@ -1992,7 +2026,7 @@ end of a backoff — waits at least `I` after the previous report.)
 - Rounding is half away from zero (all values are ≥ 0): tok/s to 0.1, shares and heat to 0.001, bytes per second and
   micro-USD per second to integers. Token, byte and micro-USD deltas are exact integers. Every value is rounded on its
   own, so rounded per-source values may differ from the rounded total by the rounding.
-- `sources[]` lists, in the source order of section 1, every source with activity (REPORTING 6.6.4): some number of
+- `sources[]` lists, in the source order of section 1, every source with activity (REPORTING 6.6.3): some number of
   its entry as sent — rounded, `null` as 0 — other than `agents.active`, `live.estimatedShare` and `cost.knownShare`
   is above 0. A source whose only increment in the window is cost (a counted response priced only now, 11.4) is
   listed, so the per-source cost sums add up. `models[]` lists every resolved id (11.3) that received a ledger

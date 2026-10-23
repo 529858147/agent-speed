@@ -153,14 +153,12 @@ public enum ProcessTrafficState: Equatable, Sendable {
     }
 }
 
-/// Bytes counted since the traffic engine started, without the deltas of gap samples (METRICS 11.4): the machine
-/// and each source's own and tool processes. Live reporting takes differences of it.
+/// Bytes counted since the traffic engine started, without the deltas of gap samples (METRICS 11.4): each source's
+/// own and tool processes (the machine series is never reported). Live reporting takes differences of it.
 public struct TrafficReportTotals: Equatable, Sendable {
-    public var machine: TrafficBytes
     public var sources: [SourceKind: TrafficSplit]
 
-    public init(machine: TrafficBytes = .zero, sources: [SourceKind: TrafficSplit] = [:]) {
-        self.machine = machine
+    public init(sources: [SourceKind: TrafficSplit] = [:]) {
         self.sources = sources
     }
 

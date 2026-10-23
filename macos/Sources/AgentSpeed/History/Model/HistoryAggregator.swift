@@ -28,6 +28,8 @@ enum HistoryAggregator {
             totals.output += day.output
             totals.measuredOutput += day.measuredOutput
             totals.measuredMs += day.measuredMs
+            // A day listed only for its traffic is not an active day (DESIGN 10).
+            guard day.hasUsage else { continue }
             totals.activeDays += 1
             if let busiest = totals.busiestDay {
                 if day.output > busiest.output || (day.output == busiest.output && day.day > busiest.day) {

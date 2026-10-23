@@ -2,10 +2,12 @@
 import AgentSpeedCore
 import AppKit
 
-/// `--report-e2e URL`: drives the real live reporting controller — consent, the Secure Enclave key, registration,
-/// reports while busy and idle, rename, key rotation, pause, API key, network off, turning off and Forget — against a
-/// local reference server (`spec/tools/report_server.py`). Run it with `AGENT_SPEED_APP_DATA` pointing at a temporary
-/// folder; settings live in the `AgentSpeedReportE2E` suite. Prints one line per check and quits.
+/// `--report-e2e URL`: drives the real live reporting controller — the dashboard invitation (declined, then accepted),
+/// consent, the Secure Enclave key, registration, reports while busy and idle, rename, key rotation, pause, API key,
+/// network off, turning off and Forget — against a local reference server (`spec/tools/report_server.py`). Run it with
+/// `AGENT_SPEED_APP_DATA` pointing at a temporary folder and `AGENT_SPEED_REPORT_PRESET_URL` set to the same URL, so
+/// the preset never reaches the real service; settings live in the `AgentSpeedReportE2E` suite. Prints one line per
+/// check and quits.
 @MainActor
 enum ReportHarness {
     private static var feed: Timer?
@@ -59,6 +61,7 @@ enum ReportHarness {
     private static func run(_ model: AppModel, url: String) async {
         let report = model.report
         let apiKey = ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_E2E_API_KEY"]
+        if apiKey == nil { await invitation(model, url: url) }
         report.selectPreset(.custom)
         report.commitCustomURL(url)
         await check("discovery", within: 10) { if case .ready = report.serviceState { true } else { false } }
@@ -127,6 +130,54 @@ enum ReportHarness {
         await check("forgotten on the service", within: 10) { report.forgetState == .done }
         check("keys deleted locally", keyFiles(model).isEmpty && report.identity == nil)
         feed?.invalidate()
+    }
+
+    // MARK: - Invitation
+
+    /// The dashboard invitation for the preset, pointed at the local server: declining never touches the network and
+    /// creates nothing; accepting is the consent that fetches, creates the key, registers and reports.
+    private static func invitation(_ model: AppModel, url: String) async {
+        let report = model.report
+        guard let local = try? ReportServiceURL.parse(url).get(), report.selectedService == local else {
+            check("the preset points at the local server (AGENT_SPEED_REPORT_PRESET_URL)", false)
+            return
+        }
+        let counting = CountingReportTransport(base: report.api.transport)
+        report.api.transport = counting
+        check("invitation offered on a fresh install", report.invitationOffered)
+        check("showing it touches nothing", counting.count == 0 && report.serviceState == .unknown)
+
+        report.declineInvitation()
+        try? await Task.sleep(for: .seconds(3))
+        check("declined: answered and never offered again", report.preferences.invite == .declined && !report.invitationOffered)
+        check("declined: no request, no key, nothing stored",
+              counting.count == 0 && keyFiles(model).isEmpty && report.preferences.identities.isEmpty
+                  && !report.preferences.enabled)
+
+        report.updatePreferences { $0.invite = nil }
+        check("offered again once the answer is reset", report.invitationOffered && counting.count == 0)
+        report.acceptInvitation()
+        check("accepted: the done line shows and the indicator waits", report.inviteJustAccepted && !report.indicatorShown)
+        await check("accepted: registered as the fitted computer name", within: 10) {
+            report.isOn && report.identity?.username == "Zoes MacBook Pro"
+        }
+        check("accepted: answered, the default sections kept", report.preferences.invite == .accepted
+              && report.preferences.sections == ReportPreferences.defaultSections)
+        busy = true
+        await check("accepted: reports delivered while busy", within: 20) {
+            report.lastDeliveryAt != nil && report.status.tone == .green
+        }
+        busy = false
+        await check("accepted: the indicator appears after the done line", within: 5) { report.indicatorShown }
+        let requests = counting.count
+        check("accepted: requests went to the local server only", requests >= 3)
+
+        report.forget()
+        await check("invitation device forgotten on the service", within: 10) { report.forgetState == .done }
+        report.dismissForgetResult()
+        check("forgotten: off, keys deleted, invitation stays answered", !report.preferences.enabled
+              && keyFiles(model).isEmpty && report.preferences.invite == .accepted && !report.invitationOffered)
+        report.api.transport = counting.base
     }
 
     // MARK: - CPU
@@ -208,6 +259,33 @@ enum ReportHarness {
     private static func fileMode(_ model: AppModel, _ name: String) -> Int? {
         let path = AppModel.appDataDirectory.appendingPathComponent("report").appendingPathComponent(name).path
         return (try? FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int) ?? nil
+    }
+}
+
+/// Counts the requests the controller makes (discovery and API), passing them on unchanged.
+private final class CountingReportTransport: ReportTransport, @unchecked Sendable {
+    let base: any ReportTransport
+    private let lock = NSLock()
+    private var calls = 0
+
+    init(base: any ReportTransport) {
+        self.base = base
+    }
+
+    var count: Int { lock.withLock { calls } }
+
+    private func bump() { lock.withLock { calls += 1 } }
+
+    func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval)
+        async throws(ReportTransportError) -> ReportHTTPResponse {
+        bump()
+        return try await base.get(url, etag: etag, userAgent: userAgent, maxBytes: maxBytes, timeout: timeout)
+    }
+
+    func send(_ request: ReportRequest, maxBytes: Int, timeout: TimeInterval)
+        async throws(ReportTransportError) -> ReportHTTPResponse {
+        bump()
+        return try await base.send(request, maxBytes: maxBytes, timeout: timeout)
     }
 }
 #endif

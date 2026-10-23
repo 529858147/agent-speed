@@ -239,6 +239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         updateWindow?.show()
     }
 
+    func showReportPreview() {
+        guard let model else { return }
+        dashboard?.close()
+        ReportPreviewWindow.show(model: model)
+    }
+
     func checkForUpdates() {
         model?.updates.startCheck(manual: true)
         showUpdate()

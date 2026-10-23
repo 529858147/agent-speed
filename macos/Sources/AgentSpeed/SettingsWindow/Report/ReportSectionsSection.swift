@@ -2,7 +2,7 @@ import AgentSpeedCore
 import SwiftUI
 
 /// `report.sections` (DESIGN 11, What's sent): one switch per optional section. A section the service does not list is
-/// off and disabled; the traffic switches wait for traffic measuring; this computer's network speed is off by default.
+/// off and disabled; the traffic switch waits for traffic measuring.
 struct ReportSectionsSection: View {
     let model: AppModel
 
@@ -21,7 +21,7 @@ struct ReportSectionsSection: View {
             HStack {
                 Spacer()
                 Button(l10n("report.preview")) { ReportPreviewWindow.show(model: model) }
-                    .disabled(report.discovery == nil || report.identity == nil)
+                    .disabled(report.selectedService == nil)
             }
         } header: {
             Text(l10n("report.sections"))
@@ -31,7 +31,7 @@ struct ReportSectionsSection: View {
     }
 }
 
-/// The five section switches, shared by the pane and the consent sheet.
+/// The four section switches, shared by the pane and the consent sheet.
 struct ReportSectionToggles: View {
     let model: AppModel
     @Binding var selection: Set<ReportSection>
@@ -43,7 +43,7 @@ struct ReportSectionToggles: View {
         let trafficOn = model.settings.trafficEnabled
         ForEach(ReportSection.allCases, id: \.self) { section in
             let listed = accepted?.contains(section) ?? true
-            let isTraffic = section == .traffic || section == .machineTraffic
+            let isTraffic = section == .traffic
             Toggle(isOn: Binding(
                 get: { listed && selection.contains(section) },
                 set: { on in
@@ -56,8 +56,6 @@ struct ReportSectionToggles: View {
                         Footnote(l10n("report.section.notAccepted"))
                     } else if isTraffic, !trafficOn {
                         Footnote(l10n("report.section.trafficOff"))
-                    } else if section == .machineTraffic {
-                        Footnote(l10n("report.section.machineTraffic.hint"))
                     }
                 }
             }

@@ -1220,7 +1220,7 @@ Opened from a source row (pre-selected source), the Today header's 歷史 button
 Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 
 1. **Toolbar** — leading: source picker (`history.allSources` plus every source with its color dot; sources without
-   any history are hidden). Center: range segmented control `今天 · 昨天 · 7 天 · 30 天 · 90 天 · 今年 · 全部 · 自訂…`
+   any history — token usage or recorded agent traffic, section 10 — are hidden, and so are disabled ones). Center: range segmented control `今天 · 昨天 · 7 天 · 30 天 · 90 天 · 今年 · 全部 · 自訂…`
    (`history.range.today`, `history.range.yesterday`). A single-day range (今天, 昨天, or a custom range of one day)
    compares with the day before (`history.summary.vsPreviousDay`), shows card sparklines over the 7 days ending on that
    day with the selected day's point highlighted, replaces the daily chart with a breakdown of that day
@@ -1281,7 +1281,8 @@ rows, section 10); the file name is `agent-speed-history-<code>-<first date>-<la
 | `workbuddy` | `workbuddy` |
 | `workbuddyAi` | `workbuddy-ai` |
 
-Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
+Empty state (the range has neither token usage nor agent traffic, section 10): centered muted gauge glyph,
+`history.empty` and `history.empty.hint`. First launch after upgrading:
 the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
 spinner. All numbers and dates follow the selected language; weeks start per locale.
 
@@ -1685,8 +1686,9 @@ with Mica). Sections:
 - **費用 Cost** — currency, live value unit, subscription marks, price table status (section 9).
 - **網路流量 Network Traffic** — measuring switch, tools, speed unit, menu bar / taskbar speed and the per-agent
   measurement status; on Windows the optional helper service (section 10).
-- **即時上報 Live Reporting** — opt-in reporting of live numbers to a leaderboard service: service, username, API
-  key, what is sent, status, pause and *Forget this device* (section 11, `spec/REPORTING.md`).
+- **API** (`settings.report`, the same short name in every language; the broadcast icon) — opt-in live reporting to
+  an API the user chooses, for example a leaderboard service: service, username, API key, what is sent, status, pause
+  and *Forget this device* (section 11, `spec/REPORTING.md`).
 - **資料來源 Data sources** — per source: toggle, detected path, status (`找到 128 個工作階段` / `未找到資料夾`),
   Change…, Reset. Below the list: `history.open` and `history.clear` (with a confirmation dialog `history.clear.confirm`).
   - omp: one row. The path is the default sessions root (METRICS 2); the status counts the sessions of the default
@@ -2071,6 +2073,10 @@ METRICS 10; the optional Windows helper is `spec/WINDOWS-SERVICE.md`.
   before measuring began) the value is `–` with the reason, never `0`.
 - **Two scopes, always named.** This computer (`traffic.machine`) is everything on the network hardware; agent values
   are the agents' own processes plus, by default, the tools they run (`traffic.includesTools`).
+- **A disabled source shows no traffic.** A source turned off in Settings → Data Sources disappears from traffic as it
+  does from tokens: no dashboard row, no part of an orb's, the menu bar's or the taskbar's agent readout, no history
+  bars, table values, CSV bytes or picker entry. This computer's values are unchanged. Its bytes are still recorded
+  (METRICS 10.5), so turning it back on brings back its traffic, as it brings back its tokens.
 
 ### Formatting
 
@@ -2191,11 +2197,23 @@ traffic could only be assigned to their source show nothing.
   all traffic is visible. The speed line and right axis are hidden; the left axis uses METRICS 10.11. Days before
   `trafficSince` show a faint hatched band labelled `history.traffic.notRecorded`; today is hatched as usual.
 - **Tooltip card**: a traffic line (`traffic.pair`), `history.traffic.tools` when tools are included,
-  `history.traffic.machine`, and `history.traffic.partial` with the recorded time when the day is partial.
+  `history.traffic.machine`, and `history.traffic.partial` with the recorded time when the day is partial (whole
+  minutes, at least one: `time.minutes` below an hour, else `time.hours` or `time.hoursMinutes`).
 - **Table**: column `history.table.traffic` after the cost column: `traffic.pair`, sorted by ↓ + ↑; `–` with the
   tooltip `history.traffic.notRecorded` before measuring began; the partial tooltip on partial days; copy row includes
   it. Single-day breakdowns size the bars by ↓ + ↑ when the traffic metric is selected.
 - **Summary**: no new card; with the traffic metric the chart header shows the range total (`traffic.pair`).
+- **Traffic without token usage**: recorded agent traffic is part of a source's history. A day of the range with agent
+  traffic of the selection (tools per the setting; with all sources, any enabled source's — this computer's own total
+  does not count) is a day with data even without token usage: the table lists it (requests, output and input `0`,
+  `history.noSpeed`), the CSV exports it, the source picker offers its source, `全部` reaches back to it, and the
+  window's empty state appears only when a range has neither. The summary cards keep counting tokens only (活躍 N 天
+  and 單日最高 count days with token usage). A single day of one source without token usage breaks down into that
+  source's one bar when the traffic metric is selected.
+- **Opening on traffic**: when the window opens or its source or range changes while the chart shows output or cost,
+  and the range has agent traffic but no token usage, the chart switches to `history.chart.traffic`, so a source that
+  only used the network (or the dashboard's Network row of one) never opens on an empty chart. It never switches back
+  by itself; the user can still choose output or cost.
 - **Footer**: when the range starts before `trafficSince`, the left side adds `history.traffic.since`.
 - **CSV**: every source row adds `traffic_rx_bytes`, `traffic_tx_bytes`, `traffic_rx_tools_bytes`,
   `traffic_tx_tools_bytes` (empty before measuring began); each date adds a row with `source = machine` carrying only
@@ -2247,37 +2265,51 @@ Everything applies live; turning measuring off stops the sampler and the helper 
 
 ### Accessibility
 
-- Rates and totals are read as words (`a11y.orb.traffic`, `traffic.a11y.totals`); arrows are never read; units are
-  read as written (KB, MB).
+- Rates and totals are read as words (`a11y.orb.traffic`; today's totals `traffic.a11y.totals`; a day or range that
+  its context names — history rows, chart days, breakdown bars, the table's traffic cells — `traffic.a11y.pair`, after
+  the `history.table.traffic` label); arrows are never read; units are read as written (KB, MB). Recorded times read
+  as `time.minutes`, `time.hours` and `time.hoursMinutes`. Both platforms read a history row with its traffic.
 - The sparkline is an image labelled `traffic.a11y.chart`; the history table is the text equivalent of the chart.
 - Status dots always have text; nothing relies on color.
 - Reduce Motion: the readout's fades become instant; scale changes jump.
 
 ## 11. Live reporting (即時上報)
 
-Agent Speed can share its live numbers with a service the user picks — typically a public leaderboard such as Codex
+Agent Speed can share its live numbers with an API the user picks — for example a leaderboard service such as Codex
 Radar. The protocol and everything a service sees are `spec/REPORTING.md`; how each value is computed and when a
 report is sent are METRICS 11. Strings are `report.*` in `spec/strings.json`.
 
+**Naming.** The feature is named after where the numbers go: the settings tab and its window title are
+`settings.report` — "API" in every language — and the main switch is `report.enabled` (即時上報到 API · 实时上报到
+API · Live reporting to an API · API へのライブ送信). Running text keeps the short name 即時上報 (实时上报 · live
+reporting · ライブ送信) where a sentence needs a noun: the quick menu, the dashboard indicator and invitation, About and
+the statuses. Links to a service's own pages keep their words (`report.service.leaderboard`).
+
 ### Principles
 
-- **Off until the user says so.** The default is off. Nothing is sent before the user confirmed the consent sheet for
-  that service, and nothing at all while the network master switch (section 9, NETWORK 1) is off.
+- **Off until the user says so.** The default is off. Nothing is sent before the user confirmed that service — in
+  the consent sheet, or with `report.invite.accept` on the one-time dashboard invitation (below) — and nothing at all
+  while the network master switch (section 9, NETWORK 1) is off.
 - **Show exactly what is sent.** The preview is the real body of the next report, not a description of it.
 - **Always say where.** Wherever reporting is mentioned, the destination host is named; the menu and the dashboard
   show quietly that reporting is on.
-- **Calm.** No dialogs, notifications, badges or animations for reporting. The orb is unchanged. Problems appear in the
-  pane's status line and as a small attention dot on the dashboard indicator.
+- **Calm.** No dialogs, notifications, badges or animations for reporting, apart from the one-time dashboard
+  invitation. The orb is unchanged. Problems appear in the pane's status line and as a small attention dot on the
+  dashboard indicator.
 - **The service's words are not ours.** Service names and descriptions are shown as plain text, links only when
   `https`. Error messages from the service are never shown; every status is a localized string of this table.
+- **No internals.** Status codes, error classes, field names and anything else technical are never shown — not even in
+  parentheses; each failure is one of the plain sentences below, and the details go to the log (REPORTING 2.3).
 - **Unknown is never zero** applies to the payload too: unavailable values are sent as a status, never as `0`.
 
-### Settings → 即時上報 (Live Reporting)
+### Settings → API
 
-A pane titled `settings.report` between 網路流量 and 資料來源, the platform's grouped form like the other panes (13 pt
-text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
+A pane titled `settings.report` ("API"; toolbar tab and window title alike, with the broadcast icon — SF Symbol
+`dot.radiowaves.left.and.right`, on Windows the closest Segoe Fluent Icons glyph) between 網路流量 and 資料來源, the
+platform's grouped form like the other panes (13 pt text, 11 pt secondary captions, inset groups, accent selection).
+Top to bottom:
 
-1. **Master** — `report.enabled` (default off) with the caption `report.enabled.hint`. With the network master switch
+1. **Master** — `report.enabled` (即時上報到 API; default off) with the caption `report.enabled.hint`. With the network master switch
    off the switch is disabled and the caption becomes `settings.network.offHint`. Turning it on opens the consent
    sheet (below) unless this service is already confirmed and registered; then reporting resumes at once. Turning it
    off sends one `leaving` report (METRICS 11.5) and keeps the registration.
@@ -2285,50 +2317,82 @@ text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
    `report.service.custom`. Custom shows the `report.url` field (placeholder `report.url.placeholder`), validated as
    the user types (0.5 s debounce, REPORTING 2.1; local only): `report.url.invalid`, `report.url.https`; a loopback
    `http` URL shows the amber note `report.url.loopback`. **When discovery is fetched** (REPORTING 3.4): choosing a
-   service in the popup, committing a valid custom URL (Return or leaving the field), opening the consent sheet, and
-   the refreshes while reporting is on. Opening Settings or this pane never touches the network: the card shows the
-   stored copy, or stays hidden until the first fetch. Below the popup the **service card** fades in after discovery
-   (REPORTING 3): the name (13 pt semibold), `report.service.host` with the API host (secondary, selectable), the
-   description (11 pt secondary, at most 3 lines), `report.service.retention` when given, and borderless link
-   buttons `report.service.terms`, `report.service.privacy`, `report.service.leaderboard`. While fetching:
-   `report.service.checking` with a small inline progress indicator; failures: `report.service.failed`,
-   `report.service.notSupported`; after a change that needs consent (REPORTING 3.3): `report.service.changed` with
-   the button `report.service.review` (opens the consent sheet). Switching services pauses the old one (its identity
-   is kept, `report.others`) and opens the consent sheet for the new one.
-3. **Username** — `report.username` text field with the caption `report.username.public` and, trailing, the
-   borderless `report.username.random` (a dice glyph: SF Symbol `dice`, Segoe Fluent `Shuffle`). Validation as the
-   user types against the service's rules (REPORTING 4.3): `report.username.invalid.length`,
+   service in the popup, committing a valid custom URL (Return or leaving the field), opening the consent sheet,
+   accepting the dashboard invitation, `report.service.retry`, and the refreshes while reporting is on (also while an
+   accepted invitation still waits for the document). Opening Settings or this pane never touches the network.
+   Below the popup the **service card** (REPORTING 3): the name (13 pt semibold), `report.service.host` with the API
+   host (secondary, selectable), the description (11 pt secondary, at most 3 lines), `report.service.retention` when
+   given, and borderless link buttons `report.service.terms`, `report.service.privacy`,
+   `report.service.leaderboard`. Before the first fetch the card shows only what the app itself knows, without links:
+   a preset's name and `report.service.host` with its host, or for a custom URL just `report.service.host`; the
+   fetched document's details fade in when they arrive (no fade with Reduce Motion). While fetching:
+   `report.service.checking` with a small inline progress indicator. A failed fetch shows one plain sentence with a
+   symbol and, trailing, the small push button `report.service.retry` — never a status code, an error class or
+   anything from the response (REPORTING 3.1); while reporting is being set up after the invitation the status line
+   (item 6) carries the sentence instead, so it is not said twice:
+
+   | Outcome of the fetch | Text | Symbol |
+   | --- | --- | --- |
+   | `404`, any other `4xx` except `410` and `429`, or a `200` that is not an `agent-speed-report` document: not a JSON object, over 64 KiB (typically a web page), another `protocol` | `report.service.notSupported` | red octagon |
+   | an `agent-speed-report` document that breaks REPORTING 3.2 | `report.service.invalid` | red octagon |
+   | no connection, the host not found or refusing, a timeout | `report.service.unreachable` | amber triangle |
+   | a TLS failure, or a redirect to a non-`https` URL | `report.service.insecure` | amber triangle |
+   | `429`, `5xx`, a `3xx` (a fourth redirect included) or any other status | `report.service.unavailable` | amber triangle |
+   | `410` | `report.status.gone` | red octagon |
+
+   The details (status, error class, the first invalid field) are logged. While reporting is off, the message
+   belongs to the attempt that caused it and is cleared when the pane closes, so a later visit never shows an old
+   error. After a change that needs consent (REPORTING 3.3): `report.service.changed` with the button
+   `report.service.review` (opens the consent sheet). Switching services pauses the old one (its identity is kept,
+   `report.others`) and opens the consent sheet for the new one.
+3. **Username** — always shown, whether or not the service's document is known and whether or not this device is
+   registered: `report.username` text field with the caption `report.username.public` and, trailing, the borderless
+   `report.username.random` (a dice glyph: SF Symbol `dice`, Segoe Fluent `Shuffle`). Registered, it shows the
+   registered name. Not registered yet, it shows the name the next registration will use: the user's own once they
+   edited it (stored locally, no request), else the computer name fitted to the rules (Default username, below).
+   Validation as the user types against the service's rules (REPORTING 4.3) — the stored or fetched document's, and
+   before the first fetch the protocol grammar with the default lengths 2–32, since a service's narrower rules
+   cannot be known without fetching (REPORTING 4.3): `report.username.invalid.length`,
    `report.username.invalid.characters` (`report.username.invalid.ascii` for an ASCII-only service),
    `report.username.invalid.start`, `report.username.invalid.spaces`, and `report.username.invalid.noSpaces` when
-   the service allows no spaces. The edit commits on Return or when the field
-   loses focus (Esc restores the registered name): when registered it renames (REPORTING 4.4) and shows the result
-   inline — `report.username.updated` (secondary, fades after 3 s), `report.username.taken`,
-   `report.username.invalid.reserved`. When a registration answers `username_taken`, the service uses API keys and a
-   key is set, the error offers the button `report.username.transfer` with `report.username.transfer.hint`: it
-   registers again with `"transfer": true` (REPORTING 4.7). This is the only path that sends `transfer`.
-4. **API key** — only when the service's `apiKey.mode` is `optional` or `required`: a secure field `report.apiKey`
-   with the placeholder `report.apiKey.optional` or the caption `report.apiKey.required`, the caption
-   `report.apiKey.hint`, the link `report.apiKey.get` when the service gives `apiKey.url`, and `report.apiKey.clear`.
-   A saved key shows as `••••` plus its last 4 characters; it is never shown again in full, never in the preview and
-   never logged.
+   the service allows no spaces. When a document arrives whose rules the user's own name breaks, the message appears
+   under the field and nothing is registered until the name fits; the computer-name default is fitted to the new
+   rules instead. The edit commits on Return or when the field loses focus (Esc restores the previous name): when
+   registered it renames (REPORTING 4.4) and shows the result inline — `report.username.updated` (secondary, fades
+   after 3 s), `report.username.taken`, `report.username.invalid.reserved`; when reporting waits for a new name
+   (`report.status.usernameTaken`, `report.status.usernameRejected`) it registers at once with the new one. When a
+   registration answers `username_taken`, the service uses API keys and a key is set, the error offers the button
+   `report.username.transfer` with `report.username.transfer.hint`: it registers again with `"transfer": true`
+   (REPORTING 4.7). This is the only path that sends `transfer`.
+4. **API key** — shown once this device exists for the service (the user confirmed it) and the known document's
+   `apiKey.mode` is `optional` or `required`; before that, a key is entered in the consent sheet. The row never shows
+   for a service whose document is unknown or says `none`: most services use no keys, and an empty key field would
+   suggest that one is needed. A secure field `report.apiKey` with the placeholder `report.apiKey.optional` or the
+   caption `report.apiKey.required`, the caption `report.apiKey.hint`, the link `report.apiKey.get` when the
+   service gives `apiKey.url`, and `report.apiKey.clear`. A saved key shows as `••••` plus its last 4 characters; it
+   is never shown again in full, never in the preview and never logged. Saving a key while reporting waits for one
+   (`report.status.apiKey`) registers at once.
 5. **What's sent** (`report.sections`) — the caption `report.sections.hint`, then one switch per optional section:
-   `report.section.sources`, `report.section.models`, `report.section.cost` and `report.section.traffic`, on by
-   default, and `report.section.machineTraffic` (caption `report.section.machineTraffic.hint`), **off** by default
-   because it also reveals other programs' network use. A section
-   the service does not list is shown off and disabled with `report.section.notAccepted`; the two traffic switches are
-   disabled with `report.section.trafficOff` while traffic measuring is off (the report then says `status: "off"`).
-   The button `report.preview` opens the preview.
+   `report.section.sources`, `report.section.models`, `report.section.cost` and `report.section.traffic` (the
+   agents' own traffic), all on by default. The computer's overall network traffic is never reported (REPORTING 1.3);
+   a switch stored for it by an earlier build is ignored. A section the service does not list is shown off and
+   disabled with `report.section.notAccepted`; the traffic switch is disabled with `report.section.trafficOff` while
+   traffic measuring is off (the report then says `status: "off"`). The button `report.preview` opens the preview.
 6. **Status** (`report.status`) — one line with a small dot that always has text: green `report.status.reporting`
    (with `time.secondsAgo` for the last delivery); gray `report.status.off`, `report.status.never`,
    `report.status.idle`, `report.status.quiet`, `report.status.paused` / `report.status.pausedIndefinitely`,
    `settings.network.offHint`; amber `report.status.connecting`, `report.status.registering`,
-   `report.status.retrying` (with a short reason such as `HTTP 503`), `report.status.rateLimited` (with the local
-   time); red (needs the user) `report.status.apiKey`, `report.status.usernameTaken`, `report.status.keyMismatch`,
-   `report.status.rejected` (three malformed or invalid reports in a row), `report.status.forbidden` (HTTP 403
-   `forbidden`: the service refuses this device by its own policy), `report.status.upgrade`, `report.status.gone`.
-   When the service returns a rank:
-   `report.status.rank` after the line. Actions on the right: `report.pause` as a pull-down with
-   `report.pause.hour` and `report.pause.indefinite`, or `report.resume` while paused.
+   `report.status.retrying` and `report.status.registerFailed` (each with its reason under it as a footnote, one of
+   `report.error.*`), `report.status.rateLimited` (with the local time); red (needs the user) `report.status.apiKey`,
+   `report.status.usernameTaken`, `report.status.usernameRejected` (the service refused the name as invalid or
+   reserved), `report.status.review` (an accepted invitation needs the consent sheet, REPORTING 3.3),
+   `report.status.keyMismatch`, `report.status.rejected` (three malformed or invalid reports in a row),
+   `report.status.forbidden` (the service refuses this device by its own policy), `report.status.upgrade`,
+   `report.status.gone`. While an accepted invitation cannot fetch the document, the line is the fetch's sentence of
+   item 2, red or amber as its symbol. When the service returns a rank: `report.status.rank` after the line. Actions
+   on the right: `report.pause` as a pull-down with `report.pause.hour` and `report.pause.indefinite`, or
+   `report.resume` while paused; while reporting is being set up, `report.service.retry` after a failed fetch or
+   registration and `report.service.review` for `report.status.review`.
 7. **This device** (`report.device`) — `report.device.detail` (username and host) with, trailing, the borderless
    link button `report.device.profile` when the service returned a `profileUrl` (the user's public page, REPORTING
    4.1; opened in the browser on click), `report.device.fingerprint`
@@ -2336,7 +2400,7 @@ text, 11 pt secondary captions, inset groups, accent selection). Top to bottom:
    text button `report.forget`. It asks `report.forget.confirm` with `report.forget.detail` (destructive default
    `report.forget.action`, `history.cancel`), then calls the deletion endpoint (REPORTING 4.6): success →
    `report.forget.done`, the key and device id are deleted and reporting is off; failure → `report.forget.failed`
-   with the button `report.forget.localOnly` and `report.forget.localOnly.detail` (with the service's privacy link).
+   (with its `report.error.*` reason) and the button `report.forget.localOnly` and `report.forget.localOnly.detail` (with the service's privacy link).
    After `report.status.keyMismatch` the button `report.reset` appears (`report.reset.detail`): delete the local
    identity, make a new key and device id and register again.
 8. **Other services** — a collapsed disclosure `report.others`, only when identities for other services exist: one
@@ -2347,11 +2411,11 @@ Everything applies at once and persists immediately; a username or API key chang
 ### Consent sheet
 
 A sheet (macOS) / `ContentDialog` (Windows), 520 pt wide, opened when reporting is turned on for a service that is not
-yet confirmed, or by `report.service.review`:
+yet confirmed, or by `report.service.review` (after a change, or when an accepted invitation needs it):
 
 - Title `report.consent.title` (the service name), body `report.consent.body` (with the service's interval).
-- The service card (as in the pane); the **username field**, filled with the default name (the computer name, below)
-  and editable here, with its caption `report.username.public` and the random button; the API key field when needed;
+- The service card (as in the pane); the **username field**, filled with the pane's name (by default the computer
+  name, below) and editable here, with its caption `report.username.public` and the random button; the API key field when needed;
   and the section switches with their defaults (5 above). The preview shows the name exactly as it will be sent.
 - **Nothing is sent before `report.start`**: no key is created and no request — not even registration — is made while
   the sheet is open; only the discovery document has been fetched (REPORTING 3). Cancelling leaves no trace on the
@@ -2363,7 +2427,8 @@ yet confirmed, or by `report.service.review`:
 - `report.consent.never` and `report.consent.honesty` as 11 pt secondary footnotes.
 - Buttons: `history.cancel` and the default `report.start`. Starting generates the key (when this service has none),
   registers (REPORTING 4.1) and shows `report.status.registering` inline; errors stay in the sheet next to the field
-  they concern (`report.username.taken`, `report.status.apiKey`, `report.service.failed`). Success closes the sheet
+  they concern (`report.username.taken`, `report.status.apiKey`; anything else as its `report.error.*` reason beside
+  the buttons). Success closes the sheet
   and the pane's status turns green with the first delivery.
 
 Keyboard: Tab order follows the layout; Return starts (when valid); Esc cancels. Accessibility: the preview is a
@@ -2374,12 +2439,16 @@ read-only text area labelled `report.preview.title`; switches and fields have th
 `report.preview` in the pane opens a small window (macOS panel / Windows dialog, 560 × 640 pt) with the same
 preview: the request line and headers on top — `X-AgentSpeed-Signature` shown as `…` with `report.preview.hint`,
 `Authorization: Bearer ••••` when a key is set — then the body, `report.preview.next` (seconds until the next
-report) and `report.preview.copy`. While reporting is off or quiet it shows the report that would be built now.
+report) and `report.preview.copy`. While reporting is off or quiet it shows the report that would be built now. It
+can also be opened from the dashboard invitation (`report.invite.preview`). Before the service's document is known it
+shows the body only — no request line or headers, whose API URL comes from the document — built with the default
+switches and the protocol's default limits, and `report.preview.assumed` instead of `report.preview.hint`: the real
+report can only be smaller, since a service that lists fewer sections receives fewer.
 
 ### Default username and random names
 
-- When the consent sheet opens without a registered name, the field is filled with the **computer name** fitted to the
-  service's rules: macOS `SCDynamicStoreCopyComputerName` (the name in System Settings → General → Sharing, e.g.
+- Before registration the username field (pane, consent sheet, invitation) starts with the **computer name** fitted
+  to the service's rules (the protocol grammar with the default lengths before the first fetch): macOS `SCDynamicStoreCopyComputerName` (the name in System Settings → General → Sharing, e.g.
   `Zoe’s MacBook Pro`); Windows `GetComputerNameExW(ComputerNamePhysicalDnsHostname)` (keeps the letter case the user
   typed), else `Environment.MachineName`. When fitting leaves nothing usable, a random name is used.
 - **Fitting** (`fit`, vectors `usernames.fit`): NFKC; remove apostrophes (`'` `‘` `’` `ʼ` `` ` ``); for an ASCII-only
@@ -2389,19 +2458,72 @@ report) and `report.preview.copy`. While reporting is off or quiet it shows the 
   drop trailing spaces, `-`, `_` and `.`; the result must pass validation, else there is none.
 - **Random**: `racer-` followed by 6 characters from `23456789abcdefghjkmnpqrstuvwxyz`, from the system's
   cryptographic random generator. A taken random name is replaced by a new one.
-- The name is never changed silently later; only the user renames it.
+- A name the user typed, and every registered name, is never changed silently; only the user renames it. Only the
+  computer-name default follows the service's rules as they become known.
+
+### Dashboard invitation (一鍵開啟)
+
+Reporting stays off by default; instead the dashboard offers it once, so that people who would like it need not
+find the setting.
+
+- **When.** At the top of the dashboard, above the hero, while all of these hold: the invitation was never answered;
+  reporting is off; the network master switch is on; the selected service is the built-in preset (Codex Radar) and no
+  identity is registered for any service. The answer is stored (`report.invite`, Storage below); a fresh install, and
+  an update from a build that had no invitation, start unanswered, so every installation sees it once. Unanswered, it
+  stays until answered — closing the dashboard does not answer it. While `update.done` shows (UPDATES 4) the
+  invitation waits for the next opening of the dashboard: one card at a time. It is answered — and never shown again —
+  by `report.invite.accept`, `report.invite.decline`, its close button (the same as decline) or by turning reporting
+  on in Settings. Showing it touches nothing: no request, no key, no stored name.
+- **Content.** Title `report.invite.title`; `report.invite.body` with the preset's name and host (as the app knows
+  them — nothing is fetched); `report.invite.username` with the username field's name (Default username, below; the
+  name in the label color, medium weight, isolated with U+2068 … U+2069); then, on one row, the borderless link
+  `report.invite.preview` leading and the buttons `report.invite.decline` and `report.invite.accept` (prominent)
+  trailing; a close button (`xmark`) in the top trailing corner.
+- **Layout.** The dashboard's width minus its padding (328 pt / DIP). A card with 12 pt continuous corners, the accent
+  color at 8 % (light) / 14 % (dark) over the panel and a 0.5 pt hairline of the accent at 20 % (40 % with Increase
+  Contrast); 12 pt padding. A header row: a 22 pt rounded-square badge (6 pt corners, accent gradient, the broadcast
+  glyph in white, 10.5 pt semibold), 8 pt, the title (13 pt semibold), leaving room for the close button. Below it,
+  at the full width of the card: 8 pt; the body (12 pt secondary, the primary color with Increase Contrast); 4 pt;
+  the username line (11 pt secondary); 10 pt; the button row (small controls, 8 pt apart; the link with an `eye`
+  glyph in the accent color). Every text wraps — at most 4 lines for the body — and nothing is ever truncated or
+  shrunk, in any of the four languages; the buttons keep their full labels. The close button is a 9 pt bold `xmark`
+  in an 18 pt hit target, secondary color, as on the update banner.
+- **Motion.** It enters like the update banner (opacity and a short move from the top with the dashboard's layout
+  spring). `report.invite.accept` cross-fades the card's content to one line, `report.invite.done` with an accent
+  checkmark, holds it 2.4 s and then collapses the card (height and opacity) while the footer's indicator fades in;
+  decline and close collapse it at once. Reduce Motion: nothing slides or springs — the card and its content fade
+  with the dashboard's 0.2 s ease-out, as every other dashboard change does; the done line still holds 2.4 s.
+- **Accessibility.** One container labelled `report.invite.title`; reading and Tab order: title, body, username,
+  `report.invite.preview`, `report.invite.decline`, `report.invite.accept`, close. The close button's label is
+  `report.invite.decline`. No button is the default: Return never accepts, so consent cannot come from a stray key.
+  `report.invite.done` is announced politely when it appears. Nothing relies on color.
+- **Accept** turns reporting on for the preset with the section switches as they are (all on unless the user changed
+  them) and the username field's name, without
+  opening Settings: the discovery document is fetched (REPORTING 3.4) and confirmed without a sheet when the
+  invitation covered it (REPORTING 3.3), the key is created, the device registers (REPORTING 4.1) and reporting
+  starts. Progress and problems appear like any other: the footer indicator (amber states quietly, an attention dot
+  when the user must act) and the pane's status line, whose actions finish what needs the user
+  (`report.service.retry`, `report.service.review`, a new username, an API key). **Decline** does nothing else; no
+  request is ever made.
+- **Preview** (`report.invite.preview`) opens the Preview window above (document not known yet) and does not answer
+  the invitation.
+- Strings: `report.invite.title`, `report.invite.body` (service name, host), `report.invite.username` (name),
+  `report.invite.preview`, `report.invite.accept`, `report.invite.decline`, `report.invite.done`.
 
 ### Menu, dashboard and About
 
-- **Quick menu** (macOS status item menu, Windows tray and widget menu): while reporting is on, an item
+- **Quick menu** (macOS status item menu, Windows tray and widget menu): while reporting is on and this device is
+  registered (not while it is still being set up), an item
   `report.menu.on` (service name) with a small status dot opens a submenu: `report.pause.hour`,
   `report.pause.indefinite` (or `report.resume`), `report.service.leaderboard` (when the service has one) and
   `report.menu.settings`. While paused the item reads `report.menu.paused`.
 - **Dashboard footer**: a small broadcast glyph (SF Symbol `dot.radiowaves.left.and.right`; on Windows the closest
   Segoe Fluent Icons glyph, chosen when implementing) left of the settings button, secondary color, static; tooltip and accessibility label
-  `report.indicator` (username and host); a click opens Settings → 即時上報. Paused: the glyph at 40 % with the tooltip
+  `report.indicator` (username and host); a click opens Settings → API. Paused: the glyph at 40 % with the tooltip
   `report.menu.paused`. When the status needs the user (red in the pane), a 5 pt amber dot sits on the glyph and the
-  label becomes `report.indicator.attention`. Hidden while reporting is off.
+  label becomes `report.indicator.attention`. Shown while reporting is on — also while it is still being set up
+  after the invitation (fetching, registering, waiting for the user), so that its problems have a place — and hidden
+  while it is off.
 - **About**: `privacy.report` follows `privacy.statement` and `privacy.traffic`. While reporting is on,
   `privacy.statement.report` replaces `privacy.statement`, `privacy.traffic.report` replaces `privacy.traffic` and
   `settings.network.hint.report` replaces `settings.network.hint`, so no sentence claims that nothing is sent. The
@@ -2410,7 +2532,9 @@ report) and `report.preview.copy`. While reporting is off or quiet it shows the 
 ### Storage
 
 - Settings (plain, in the settings store): `report.enabled`, the selected service URL and preset, the section switches,
-  the pause end (or indefinite), and per service origin: the confirmed discovery fields (REPORTING 3.3), `deviceId`,
+  the pause end (or indefinite), the invitation's answer (`report.invite`: unanswered, accepted or declined), the
+  username for the next registration when the user typed one (absent: the computer-name default), and per service
+  origin: the confirmed discovery fields (REPORTING 3.3), `deviceId`,
   the registered username, `profileUrl`, the API origin, the key's creation date and the pending-key flag (REPORTING
   4.5). At most 8 service identities; the oldest unused one is forgotten locally first.
 - **Private keys and API keys** never go to the settings store, logs or crash reports. **Availability** (normative,
@@ -2450,29 +2574,30 @@ report) and `report.preview.copy`. While reporting is off or quiet it shows the 
 The About texts are the strings above. The README privacy sections add this paragraph after the traffic paragraph
 when the feature ships (until then the README describes the released app):
 
-- English: "Live reporting (optional, off by default): if you turn it on and pick a service — for example a public
-  leaderboard — Agent Speed sends that service your live speed, the tokens used in the last few seconds and, if you
-  leave them on, the API-equivalent cost in US dollars, your agents' network traffic, models in use and a per-tool
-  breakdown (this computer's overall network speed only if you turn it on), together with the username you choose (it starts as your computer's name; one click picks a random one). It reports
+- English: "Live reporting (optional, off by default; the dashboard offers it once): if you turn it on for an API —
+  for example a public leaderboard service — Agent Speed sends that service your live speed, the tokens used in the
+  last few seconds and, if you leave them on, the API-equivalent cost in US dollars, your agents' network traffic,
+  models in use and a per-tool breakdown, together with the username you choose (it starts as your computer's name;
+  one click picks a random one). It reports
   every few seconds while your agents work and stops when they rest. It never sends conversation content, prompts,
   file, folder or project names, or your usage history, and failed reports are never resent. Each report is signed
   with a key that stays on your computer; the service can tell that reports come from the same device, not whether
   the numbers are true. You can pause, turn it off, or ask the service to forget your device in Settings."
-- 繁體中文：「即時上報（選用，預設關閉）：開啟並選擇一個服務（例如公開排行榜）後，Agent Speed 會把你的即時速度、最近幾秒
-  用掉的 token 數，以及你保留的項目——以美元計的 API 等值費用、agent 的網路流量、使用中的模型、各工具的明細（整台電腦的網速
-  只有在你開啟時才會傳送）——連同你選擇的使用者名稱
+- 繁體中文：「即時上報（選用，預設關閉；儀表板會詢問一次）：為某個 API（例如公開排行榜服務）開啟後，Agent Speed 會把你的即
+  時速度、最近幾秒用掉的 token 數，以及你保留的項目——以美元計的 API 等值費用、agent 的網路流量、使用中的模型、各工具的明
+  細——連同你選擇的使用者名稱
   （預設是電腦名稱，一鍵就能換成隨機名稱）傳送給該服務。agent 工作時每隔幾秒上報一次，閒下來就停止。它從不傳送對話內容、提示
   詞、檔案／資料夾／專案名稱或用量歷史，上報失敗的資料也不會補傳。每筆上報都以只存在你電腦上的金鑰簽章；服務能確認資料來自同
   一台裝置，但無法確認數字是否正確。可以在設定中暫停、關閉，或要求服務忘記你的裝置。」
-- 简体中文：「实时上报（可选，默认关闭）：开启并选择一个服务（例如公开排行榜）后，Agent Speed 会把你的实时速度、最近几秒
-  用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型、各工具的明细（整台电脑的网速
-  只有在你开启时才会发送）——连同你选择的用户名
+- 简体中文：「实时上报（可选，默认关闭；仪表板会询问一次）：为某个 API（例如公开排行榜服务）开启后，Agent Speed 会把你的实
+  时速度、最近几秒用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型、各工具的明
+  细——连同你选择的用户名
   （默认是电脑名称，一键即可换成随机名称）发送给该服务。agent 工作时每隔几秒上报一次，空闲时停止。它从不发送对话内容、提示
   词、文件／文件夹／项目名称或用量历史，上报失败的数据也不会补发。每条上报都用只保存在你电脑上的密钥签名；服务能确认数据来自同
   一台设备，但无法确认数字是否准确。可以在设置中暂停、关闭，或要求服务忘记你的设备。」
-- 日本語：「ライブ送信（任意・初期設定はオフ）：オンにしてサービス（公開ランキングなど）を選ぶと、Agent Speed は現在の速度、
-  直近数秒に使った token 数、そしてオンのままにした項目——米ドル建ての API 換算費用、agent の通信量、使用中のモデル、ツール
-  ごとの内訳（コンピューター全体の通信速度はオンにした場合のみ）——を、選んだユーザー名（初期値はコンピューター名。ワンクリックでランダムな名前にできます）と一緒にそのサービスへ送信
+- 日本語：「ライブ送信（任意・初期設定はオフ。ダッシュボードで一度だけ案内します）：API（公開ランキングサービスなど）に対して
+  オンにすると、Agent Speed は現在の速度、直近数秒に使った token 数、そしてオンのままにした項目——米ドル建ての API 換算費
+  用、agent の通信量、使用中のモデル、ツールごとの内訳——を、選んだユーザー名（初期値はコンピューター名。ワンクリックでランダムな名前にできます）と一緒にそのサービスへ送信
   します。agent が作業している間は数秒ごとに送信し、休んでいる間は止まります。会話の内容、プロンプト、ファイル・フォルダー・
   プロジェクトの名前、使用履歴は一切送信せず、送信に失敗したデータを後から送り直すこともありません。各送信はこのコンピューター
   から出ない鍵で署名されます。サービスは同じデバイスからの送信であることは確認できますが、数値が正しいかどうかは確認できません。
@@ -2484,4 +2609,5 @@ when the feature ships (until then the README describes the released app):
 - The status line is a live region (polite): changes are announced at most once per minute, except changes to a red
   state, which are announced at once.
 - The preview is selectable text; `report.preview.copy` copies it.
-- Reduce Motion: the service card and status changes appear without fades.
+- Reduce Motion: the service card and status changes appear without fades; the dashboard invitation fades without
+  sliding (Dashboard invitation).

@@ -277,7 +277,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
                     if (target == "history")
                     {
-                        _history?.Open(null, traffic: true);
+                        // An open window is captured as the ops left it (op history-all, op history-<source>).
+                        if (_history?.IsOpen != true)
+                        {
+                            _history?.Open(null, traffic: true);
+                        }
+
                         return _history?.CaptureContent;
                     }
 
@@ -985,7 +990,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         _updates.OnSettingsChanged(previous, current);
         _cost.OnSettingsChanged(previous, current);
         _traffic.OnSettingsChanged(previous, current);
-        if (previous.Traffic.IncludeTools != current.Traffic.IncludeTools)
+        if (previous.Traffic.IncludeTools != current.Traffic.IncludeTools || previous.EnabledSourceSet() != current.EnabledSourceSet())
         {
             _history?.OnTrafficSettingsChanged();
         }
@@ -1088,6 +1093,14 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         else if (op == "dashboard")
         {
             ShowDashboard(CursorAnchor());
+        }
+        else if (op == "history-all")
+        {
+            _history?.Open(null);
+        }
+        else if (op.StartsWith("history-", StringComparison.Ordinal) && Enum.TryParse<SourceKind>(op[8..], true, out var source))
+        {
+            _history?.Open(source);
         }
     }
 

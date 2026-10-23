@@ -71,14 +71,17 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
     private string _rateNote = string.Empty;
     private (string Currency, decimal Rate, long RateDate, SourceSet Marked, string Language) _costKey;
     private bool _shown;
+    private bool _hasTokenUsage = true;
+    private bool _hasAgentTraffic;
     private DateTimeOffset? _quietSince;
     private bool _disposed;
 
     /// <param name="includeChanged">Persists the window's own include-subscriptions choice.</param>
     /// <param name="traffic">Observed traffic by day (METRICS 10.9); null: the window has no traffic.</param>
     /// <param name="includeTools">The include-tools setting (DESIGN 10), read at every recomputation.</param>
+    /// <param name="enabledSources">The sources turned on in Settings → Data Sources; others show no traffic (DESIGN 10).</param>
     public HistoryViewModel(HistoryHub hub, Localizer loc, CostDisplay cost, Dispatcher dispatcher, Action<bool>? includeChanged = null,
-        Core.Traffic.TrafficHub? traffic = null, Func<bool>? includeTools = null)
+        Core.Traffic.TrafficHub? traffic = null, Func<bool>? includeTools = null, Func<SourceSet>? enabledSources = null)
     {
         _hub = hub;
         _loc = loc;
@@ -110,7 +113,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         });
         _hub.Changed += OnHubChanged;
         _cost.Changed += OnCostChanged;
-        AttachTraffic(traffic, includeTools);
+        AttachTraffic(traffic, includeTools, enabledSources);
         Recompute(HistoryUpdate.Filter);
     }
 
@@ -167,6 +170,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
             {
                 _source = value.Kind;
                 Recompute(HistoryUpdate.Filter);
+                FollowTraffic();
             }
         }
     }
@@ -308,15 +312,16 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         _hub.Refresh();
     }
 
+    /// <summary>Also when the source is already shown: opening the window applies the traffic rule again.</summary>
     public void SetSource(SourceKind? source)
     {
-        if (source == _source && _selectedSource is not null)
+        if (source != _source || _selectedSource is null)
         {
-            return;
+            _source = source;
+            Recompute(HistoryUpdate.Filter);
         }
 
-        _source = source;
-        Recompute(HistoryUpdate.Filter);
+        FollowTraffic();
     }
 
     public void SetRange(HistoryRangeKind kind)
@@ -333,6 +338,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
 
         _rangeKind = kind;
         Recompute(HistoryUpdate.Filter);
+        FollowTraffic();
         RefreshLiveDay();
     }
 
@@ -342,6 +348,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         _custom = HistoryRanges.Clamp(from, to, bounds.Start < Today ? bounds.Start : Today, Today);
         _rangeKind = HistoryRangeKind.Custom;
         Recompute(HistoryUpdate.Filter);
+        FollowTraffic();
         RefreshLiveDay();
     }
 
@@ -495,9 +502,15 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         var usage = _hub.Days;
         var options = new HistoryCostOptions(_cost.Settings.Subscriptions, _includeSubscriptions, _metric);
         var excluded = options.Excluded(_source);
-        DataBounds = HistoryAggregator.Bounds(usage, _source) ?? HistoryAggregator.Bounds(usage);
+        // Recorded agent traffic is history too (DESIGN 10): its days count for the bounds, the rows and the picker.
+        var agentDays = CurrentTraffic().AgentDays(_source);
+        DataBounds = Union(HistoryAggregator.Bounds(usage, _source), agentDays.Count > 0 ? new DayRange(agentDays[0], agentDays[^1]) : null)
+            ?? HistoryAggregator.Bounds(usage);
         Range = HistoryRanges.Resolve(_rangeKind, Today, DataBounds?.Start, _custom);
-        Days = ApplyTraffic(WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range, excluded)));
+        var tokenDays = WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range, excluded));
+        _hasTokenUsage = tokenDays.Count > 0;
+        _hasAgentTraffic = agentDays.Any(Range.Contains);
+        Days = ApplyTraffic(WithTrafficOnlyDays(tokenDays, agentDays));
         var previous = HistoryAggregator.Daily(usage, _source, HistoryRanges.Previous(Range), excluded);
         Bars = _metric == HistoryChartMetric.Traffic
             ? HistoryBars.Traffic(Days, Range, _source, TrafficDays, _traffic.Since)
@@ -607,13 +620,40 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// DESIGN 10, Opening on traffic: a range with agent traffic but no token usage would chart nothing as output or cost,
+    /// so the chart switches to traffic; it never switches back by itself.
+    /// </summary>
+    private void FollowTraffic()
+    {
+        if (_metric != HistoryChartMetric.Traffic && _trafficHub is not null && !_hasTokenUsage && _hasAgentTraffic)
+        {
+            SetMetric(HistoryChartMetric.Traffic);
+        }
+    }
+
+    /// <summary>The token days plus the range's days with agent traffic but no token usage, oldest first.</summary>
+    private IReadOnlyList<DaySummary> WithTrafficOnlyDays(IReadOnlyList<DaySummary> tokenDays, IReadOnlyList<DateOnly> agentDays)
+    {
+        var known = tokenDays.Select(d => d.Day).ToHashSet();
+        var extra = agentDays.Where(d => Range.Contains(d) && !known.Contains(d)).Select(DaySummary.TrafficOnly).ToArray();
+        return extra.Length == 0 ? tokenDays : tokenDays.Concat(extra).OrderBy(d => d.Day).ToArray();
+    }
+
+    private static DayRange? Union(DayRange? a, DayRange? b) => (a, b) switch
+    {
+        ({ } x, { } y) => new DayRange(x.Start < y.Start ? x.Start : y.Start, x.End > y.End ? x.End : y.End),
+        _ => a ?? b,
+    };
+
     /// <summary>A stored peak is the day's overall peak, so a single source never shows it (METRICS 8).</summary>
     private IReadOnlyList<DaySummary> WithoutSourcePeaks(IReadOnlyList<DaySummary> days) =>
         _source is null ? days : days.Select(d => d.Peak is null ? d : d with { Peak = null }).ToArray();
 
     private void UpdateSources(IReadOnlyList<DailyUsage> usage)
     {
-        var withHistory = HistoryAggregator.SourcesWithHistory(usage);
+        var found = CurrentTraffic().SourcesWithTraffic().Union(HistoryAggregator.SourcesWithHistory(usage)).ToHashSet();
+        IReadOnlyList<SourceKind> withHistory = Enum.GetValues<SourceKind>().Where(found.Contains).ToArray();
         var kinds = new List<SourceKind?> { null };
         kinds.AddRange(Enum.GetValues<SourceKind>()
             .Where(k => withHistory.Contains(k) || k == _source)

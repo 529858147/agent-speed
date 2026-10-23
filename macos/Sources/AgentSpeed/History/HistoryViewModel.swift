@@ -56,6 +56,7 @@ final class HistoryViewModel {
             _ = HistoryMoney(self.cost)
             _ = self.cost.settings.subscriptionSources
             _ = (self.traffic.days, self.traffic.since, self.cost.settings.trafficIncludeTools, self.cost.settings.trafficUnit)
+            _ = self.cost.settings.enabledSources
             self.rebuild()
         }
         let center = NotificationCenter.default
@@ -68,11 +69,14 @@ final class HistoryViewModel {
 
     var motion: Animation? { accessibility.reduceMotion ? nil : HistoryMotion.chart }
 
+    /// Also when the source is already selected: opening the window applies the traffic rule below again.
     func select(source: SourceKind?) {
-        guard source != self.source else { return }
-        self.source = source
-        interaction.reset()
-        rebuild()
+        if source != self.source {
+            self.source = source
+            interaction.reset()
+            rebuild()
+        }
+        followTraffic()
     }
 
     func select(range kind: HistoryRangeKind) {
@@ -80,6 +84,7 @@ final class HistoryViewModel {
         rangeKind = kind
         interaction.reset()
         rebuild()
+        followTraffic()
         // Today is still being written: bring in what the logs hold now, the view follows as the store publishes.
         if kind == .today { refreshToday() }
     }
@@ -89,6 +94,14 @@ final class HistoryViewModel {
         rangeKind = .custom
         interaction.reset()
         rebuild()
+        followTraffic()
+    }
+
+    /// DESIGN 10, Opening on traffic: a range with agent traffic but no token usage would chart nothing as output or
+    /// cost, so the chart switches to traffic; it never switches back by itself.
+    private func followTraffic() {
+        guard chartMetric != .traffic, offersTraffic, content.showsOnlyTraffic else { return }
+        select(metric: .traffic)
     }
 
     /// The chart's (and a single day's breakdown's) metric: output or cost.
@@ -142,9 +155,10 @@ final class HistoryViewModel {
         if next != content { content = next }
     }
 
+    /// Disabled sources' rows are left out (METRICS 10.5, DESIGN 10); this computer's rows stay.
     private static func historyTraffic(_ store: TrafficStore, settings: AppSettings) -> HistoryTraffic {
-        HistoryTraffic(days: store.days, since: store.since, includeTools: settings.trafficIncludeTools,
-                       bits: settings.trafficUnit == .bits)
+        HistoryTraffic(days: TrafficVisibility.days(store.days, enabled: SourceSet(settings.enabledSources)), since: store.since,
+                       includeTools: settings.trafficIncludeTools, bits: settings.trafficUnit == .bits)
     }
 
     /// The metric control offers traffic while measuring is on or traffic history exists (DESIGN 10).

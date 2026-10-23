@@ -54,7 +54,7 @@ struct ReportEndToEndTests {
             let sample = ReportSample(live: Rate(output: 128.4, total: 18_000), estimatedShare: 0.4,
                                       liveCost: LiveCost(microUsdPerSecond: 900, knownOutput: 128.4),
                                       sources: [.codex: .init(live: Rate(output: 128.4, total: 18_000))], facts: facts,
-                                      traffic: ReportTrafficSample(status: .unavailable, machineStatus: .unavailable))
+                                      traffic: ReportTrafficSample(status: .unavailable))
             let envelope = ReportEnvelope(client: ReportEndToEndTests.client, deviceId: deviceId, username: username,
                                           runId: runId, seq: seq, sentAtMs: Int64(Date().timeIntervalSince1970 * 1000),
                                           windowMs: 5000, activity: activity, titleLevel: 6)

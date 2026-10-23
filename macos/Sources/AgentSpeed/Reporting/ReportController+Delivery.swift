@@ -200,8 +200,8 @@ extension ReportController {
             rotateKeyIfDue()
         case .transient:
             switch result {
-            case .success(let reply): retryReason = "HTTP \(reply.status)"
-            case .failure(let error): retryReason = error.reason
+            case .success: retryReason = .unavailable
+            case .failure(let error): retryReason = error.failure
             }
         case .rateLimited(let seconds):
             rateLimitedUntil = Date().addingTimeInterval(TimeInterval(seconds))

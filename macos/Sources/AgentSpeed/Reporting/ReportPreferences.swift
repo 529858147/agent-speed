@@ -7,8 +7,16 @@ enum ReportPreset: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    static let codexRadarURL = "https://codexradar.com"
     static let codexRadarName = "Codex Radar"
+
+    /// Debug runs may point the preset at a local reference server (`AGENT_SPEED_REPORT_PRESET_URL`), so the
+    /// invitation's path can be tested end to end without contacting the real service.
+    static var codexRadarURL: String {
+        #if DEBUG
+        if let url = ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_PRESET_URL"], !url.isEmpty { return url }
+        #endif
+        return "https://codexradar.com"
+    }
 }
 
 /// One service this device registered with (DESIGN 11, Storage): what the user confirmed, the device id, the
@@ -47,6 +55,10 @@ struct ReportPreferences: Codable, Equatable, Sendable {
     /// `distantFuture` pauses until the user resumes.
     var pausedUntil: Date?
     var identities: [ReportIdentity] = []
+    /// The dashboard invitation's answer (`report.invite`); nil until the user answers it.
+    var invite: ReportInvite.Answer?
+    /// The name for the next registration when the user typed one; nil means the computer name (DESIGN 11, Username).
+    var username: String?
 
     init() {}
 
@@ -55,10 +67,17 @@ struct ReportPreferences: Codable, Equatable, Sendable {
         enabled = (try? container.decode(Bool.self, forKey: .enabled)) ?? false
         preset = (try? container.decode(ReportPreset.self, forKey: .preset)) ?? .codexRadar
         customURL = (try? container.decode(String.self, forKey: .customURL)) ?? ""
-        sections = (try? container.decode(Set<ReportSection>.self, forKey: .sections)) ?? Self.defaultSections
+        // Names this build no longer knows (the retired `machineTraffic`) are ignored, the rest is kept.
+        sections = (try? container.decode([String].self, forKey: .sections))
+            .map { Set($0.compactMap(ReportSection.init(rawValue:))) } ?? Self.defaultSections
         pausedUntil = try? container.decode(Date.self, forKey: .pausedUntil)
         identities = (try? container.decode([ReportIdentity].self, forKey: .identities)) ?? []
+        invite = try? container.decode(ReportInvite.Answer.self, forKey: .invite)
+        username = try? container.decode(String.self, forKey: .username)
     }
+
+    /// An identity is registered with some service (the invitation is not offered then).
+    var hasRegisteredIdentity: Bool { identities.contains { $0.isRegistered } }
 
     func identity(for service: ReportServiceURL?) -> ReportIdentity? {
         guard let service else { return nil }

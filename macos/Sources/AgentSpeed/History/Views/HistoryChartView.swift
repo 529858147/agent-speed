@@ -249,11 +249,21 @@ struct HistoryChartView: View {
         .accessibilityHint(l10n("mac.history.chart.hint"))
         .accessibilityChartDescriptor(HistoryChartDescriptor(chart: chart, l10n: l10n))
         .accessibilityChildren {
-            ForEach(chart.days.values.sorted { $0.day < $1.day }) { day in
-                Rectangle()
-                    .accessibilityLabel(HistoryText.dayTitle(day.day, today: chart.today, l10n))
-                    .accessibilityValue(HistoryText.accessible(day, today: chart.today, money: chart.money, l10n))
-                    .accessibilityAction { interaction.revealInTable(day.day) }
+            if chart.metric == .traffic {
+                // Each day with traffic, read as its traffic (DESIGN 10, Accessibility), as on Windows.
+                ForEach(chart.traffic.filter { !$0.value.shown.isZero || !($0.value.machine ?? .zero).isZero }.keys.sorted(), id: \.self) { day in
+                    Rectangle()
+                        .accessibilityLabel(HistoryText.dayTitle(day, today: chart.today, l10n))
+                        .accessibilityValue(HistoryText.accessibleTraffic(day, traffic: chart.traffic[day], today: chart.today, l10n))
+                        .accessibilityAction { interaction.revealInTable(day) }
+                }
+            } else {
+                ForEach(chart.days.values.sorted { $0.day < $1.day }) { day in
+                    Rectangle()
+                        .accessibilityLabel(HistoryText.dayTitle(day.day, today: chart.today, l10n))
+                        .accessibilityValue(HistoryText.accessible(day, today: chart.today, money: chart.money, l10n))
+                        .accessibilityAction { interaction.revealInTable(day.day) }
+                }
             }
         }
     }

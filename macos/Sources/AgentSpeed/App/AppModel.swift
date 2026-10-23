@@ -20,6 +20,8 @@ protocol AppCommands: AnyObject {
     func showOrbSettings(_ id: String?)
     /// Opens the update window on the current update state.
     func showUpdate()
+    /// Opens the live reporting preview window (DESIGN 11, Preview window), e.g. from the dashboard invitation.
+    func showReportPreview()
     /// Manual check from a menu: opens the update window, which reports the result.
     func checkForUpdates()
     func quit()
@@ -339,7 +341,6 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .orb: "mac.settings.tab.orb"
         case .traffic: "mac.settings.tab.traffic"
-        case .report: "mac.settings.tab.report"
         default: titleKey
         }
     }

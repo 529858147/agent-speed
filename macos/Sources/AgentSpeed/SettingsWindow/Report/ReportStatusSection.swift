@@ -26,6 +26,9 @@ struct ReportStatusSection: View {
                             .monospacedDigit()
                             .fixedSize(horizontal: false, vertical: true)
                             .contentTransition(.opacity)
+                        if let detail = status.detail {
+                            Footnote(l10n(detail.key))
+                        }
                         if let rank = report.rank, report.isOn {
                             Footnote(l10n("report.status.rank", rank))
                         }
@@ -35,12 +38,28 @@ struct ReportStatusSection: View {
                     .accessibilityAddTraits(.updatesFrequently)
                     if report.isOn {
                         ReportPauseControl(model: model)
+                    } else if status == .review {
+                        Button(l10n("report.service.review")) { report.reviewInvitation() }
+                            .controlSize(.small)
+                            .fixedSize()
+                    } else if Self.offersRetry(status) {
+                        Button(l10n("report.service.retry")) { report.retry() }
+                            .controlSize(.small)
+                            .fixedSize()
                     }
                 }
                 .onChange(of: Self.kind(status)) { _, _ in announce(status, now: context.date) }
             }
         } header: {
             Text(l10n("report.status"))
+        }
+    }
+
+    /// Setting up after the invitation: a failed fetch or registration can be tried again at once.
+    private static func offersRetry(_ status: ReportStatus) -> Bool {
+        switch status {
+        case .service, .registerFailed: true
+        default: false
         }
     }
 

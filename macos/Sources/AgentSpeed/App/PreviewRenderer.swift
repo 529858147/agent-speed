@@ -231,16 +231,25 @@ enum PreviewSnapshot {
         let size = host.fittingSize
         host.frame = CGRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.appearance = appearance
         window.backgroundColor = background
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        defer { release(window) }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let image = rep.cgImage else { return }
         write(image, to: url)
+    }
+
+    /// AppKit keeps every window it created until it is closed: an unclosed snapshot window would keep its views alive
+    /// and updating for the rest of the run, which slows (and with live sheets can stall) later renders.
+    static func release(_ window: NSWindow) {
+        window.contentView = nil
+        window.close()
     }
 
     static func write(_ image: CGImage, to url: URL) {

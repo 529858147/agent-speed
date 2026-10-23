@@ -159,11 +159,6 @@ public enum ReportBody {
                 status: sample.traffic.status, includesTools: sample.traffic.includesTools, rate: sample.traffic.rate,
                 peak: content.peakRate, bytes: bytes)))
         }
-        if sections.contains(.machineTraffic) {
-            members.append(.init("machineTraffic", traffic(
-                status: sample.traffic.machineStatus, includesTools: nil, rate: sample.traffic.machineRate,
-                peak: content.peakMachineRate, bytes: content.machineBytes)))
-        }
         if sections.contains(.sources) {
             members.append(.init("sources", .array(sourceEntries(content, sample, sections: sections))))
         }
@@ -176,27 +171,26 @@ public enum ReportBody {
 
     // MARK: - Sections
 
-    private static func traffic(status: ReportTrafficSample.Status, includesTools: Bool?, rate: TrafficRate?,
+    private static func traffic(status: ReportTrafficSample.Status, includesTools: Bool, rate: TrafficRate?,
                                 peak: TrafficRate?, bytes: TrafficBytes) -> ReportJSON {
         guard status == .ok else { return .object(["status": .string(status.rawValue)]) }
         let top: TrafficRate? = switch (peak, rate) {
         case let (peak?, rate?): TrafficRate(rx: max(peak.rx, rate.rx), tx: max(peak.tx, rate.tx))
         case let (peak, rate): peak ?? rate
         }
-        var members: [ReportJSON.Member] = [.init("status", .string("ok"))]
-        if let includesTools { members.append(.init("includesTools", .bool(includesTools))) }
-        members += [
+        return .object([
+            .init("status", .string("ok")),
+            .init("includesTools", .bool(includesTools)),
             .init("rxBytesPerSecond", .optionalInt(rate.map { bytesPerSecond($0.rx) })),
             .init("txBytesPerSecond", .optionalInt(rate.map { bytesPerSecond($0.tx) })),
             .init("peakRxBytesPerSecond", .optionalInt(top.map { bytesPerSecond($0.rx) })),
             .init("peakTxBytesPerSecond", .optionalInt(top.map { bytesPerSecond($0.tx) })),
             .init("rxBytes", .int(max(0, bytes.rx))),
             .init("txBytes", .int(max(0, bytes.tx))),
-        ]
-        return .object(members)
+        ])
     }
 
-    /// One entry per source with activity in the window, in source order (REPORTING 6.6.4, METRICS 11.7).
+    /// One entry per source with activity in the window, in source order (REPORTING 6.6.3, METRICS 11.7).
     private static func sourceEntries(_ content: ReportWindowContent, _ sample: ReportSample,
                                       sections: Set<ReportSection>) -> [ReportJSON] {
         var usage: [SourceKind: ReportUsage] = [:]
@@ -209,7 +203,7 @@ public enum ReportBody {
             let delta = usage[kind] ?? .zero
             let bytes = content.agentBytes[kind] ?? .zero
             let rate = trafficOK ? sample.traffic.sourceRates[kind] ?? (sample.traffic.rate == nil ? nil : .zero) : nil
-            // Activity (REPORTING 6.6.4): a number of the entry as sent, other than `agents.active` and the shares,
+            // Activity (REPORTING 6.6.3): a number of the entry as sent, other than `agents.active` and the shares,
             // is above 0 — a source whose only increment is a late price included, so the cost sums add up.
             var values: [Double] = [
                 rounded(source.live.output, 1), rounded(source.live.total, 1), Double(agents.generating),
@@ -261,7 +255,7 @@ public enum ReportBody {
     }
 
     /// One entry per model with any increment in the window (a late price included) or a generating agent, by output
-    /// then id, `other` last (REPORTING 6.6.5, METRICS 11.3, 11.7).
+    /// then id, `other` last (REPORTING 6.6.4, METRICS 11.3, 11.7).
     private static func modelEntries(_ content: ReportWindowContent, _ sample: ReportSample, maxModels: Int,
                                      withCost: Bool) -> [ReportJSON] {
         var byId: [String: ModelEntry] = [:]

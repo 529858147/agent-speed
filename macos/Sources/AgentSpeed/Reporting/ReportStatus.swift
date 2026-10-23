@@ -2,7 +2,7 @@ import AgentSpeedCore
 import SwiftUI
 
 /// The pane's status line (DESIGN 11, Status): always a localized string of the table, with a dot whose color never
-/// carries meaning alone.
+/// carries meaning alone, and never a status code or error class.
 enum ReportStatus: Equatable {
     case off
     case networkOff
@@ -14,9 +14,15 @@ enum ReportStatus: Equatable {
     case pausedIndefinitely
     case connecting
     case registering
-    case retrying(reason: String)
+    case retrying(reason: ReportFailure)
     case rateLimited(until: Date)
     case changed
+    /// Setting up after the invitation: the discovery fetch failed.
+    case service(ReportServiceIssue)
+    /// Setting up after the invitation: registration failed for a reason that passes (REPORTING 7.3).
+    case registerFailed(ReportFailure)
+    /// The invitation did not cover the service's document; the consent sheet finishes it (REPORTING 3.3).
+    case review
     case problem(ReportProblem)
 
     enum Tone: Equatable {
@@ -27,13 +33,23 @@ enum ReportStatus: Equatable {
         switch self {
         case .reporting: .green
         case .off, .networkOff, .never, .idle, .quiet, .paused, .pausedIndefinitely: .gray
-        case .connecting, .registering, .retrying, .rateLimited: .amber
-        case .changed, .problem: .red
+        case .connecting, .registering, .retrying, .rateLimited, .registerFailed: .amber
+        case .service(let issue): issue.isPermanent ? .red : .amber
+        case .changed, .review, .problem: .red
         }
     }
 
     /// Red: the user has to act (the dashboard indicator's attention dot).
     var needsUser: Bool { tone == .red }
+
+    /// The plain reason shown under the line (`report.error.*`), when there is one.
+    var detail: ReportFailure? {
+        switch self {
+        case .retrying(let reason): reason
+        case .registerFailed(let reason): reason
+        default: nil
+        }
+    }
 
     @MainActor
     func text(_ l10n: Localizer, now: Date) -> String {
@@ -53,9 +69,12 @@ enum ReportStatus: Equatable {
         case .pausedIndefinitely: return l10n("report.status.pausedIndefinitely")
         case .connecting: return l10n("report.status.connecting")
         case .registering: return l10n("report.status.registering")
-        case .retrying(let reason): return l10n("report.status.retrying", reason)
+        case .retrying: return l10n("report.status.retrying")
         case .rateLimited(let until): return l10n("report.status.rateLimited", Self.time(until, l10n))
         case .changed: return l10n("report.service.changed")
+        case .service(let issue): return l10n(issue.key)
+        case .registerFailed: return l10n("report.status.registerFailed")
+        case .review: return l10n("report.status.review")
         case .problem(let problem): return l10n(problem.statusKey)
         }
     }
@@ -75,11 +94,40 @@ enum ReportStatus: Equatable {
     }
 }
 
+/// A failed discovery fetch, as one plain sentence (DESIGN 11, Service; REPORTING 3.1).
+enum ReportServiceIssue: Equatable {
+    case notSupported, invalid, unreachable, insecure, unavailable
+
+    init(_ failure: ReportFailure) {
+        switch failure {
+        case .unreachable: self = .unreachable
+        case .insecure: self = .insecure
+        case .unavailable, .response, .key: self = .unavailable
+        }
+    }
+
+    var key: String {
+        switch self {
+        case .notSupported: "report.service.notSupported"
+        case .invalid: "report.service.invalid"
+        case .unreachable: "report.service.unreachable"
+        case .insecure: "report.service.insecure"
+        case .unavailable: "report.service.unavailable"
+        }
+    }
+
+    /// The service itself does not offer the API: trying again soon will not help (a red octagon).
+    var isPermanent: Bool { self == .notSupported || self == .invalid }
+
+    var symbol: String { isPermanent ? "xmark.octagon.fill" : "exclamationmark.triangle.fill" }
+}
+
 extension ReportProblem {
     var statusKey: String {
         switch self {
         case .apiKey: "report.status.apiKey"
         case .usernameTaken: "report.status.usernameTaken"
+        case .usernameRejected: "report.status.usernameRejected"
         case .keyMismatch: "report.status.keyMismatch"
         case .rejected: "report.status.rejected"
         case .forbidden: "report.status.forbidden"

@@ -11,12 +11,15 @@ public struct ReportAPI: Sendable {
     public enum DiscoveryOutcome: Equatable, Sendable {
         case document(ReportDiscovery, etag: String?)
         case notModified
-        /// `404`, or a document that is not valid (REPORTING 3.2).
+        /// The URL does not offer this API: `404`, another `4xx` except `410` and `429`, or a response that is not an
+        /// `agent-speed-report` document — not a JSON object, over 64 KiB (typically a web page), another `protocol`.
         case notSupported
+        /// An `agent-speed-report` document that breaks REPORTING 3.2.
+        case invalid
         /// `410`: the service stopped for good (REPORTING 8.3).
         case gone
-        /// Anything else: try again later. The reason is short and holds nothing personal.
-        case failed(String)
+        /// Anything else: try again later (DESIGN 11 maps each to a sentence; the details are logged).
+        case failed(ReportFailure)
     }
 
     public var transport: any ReportTransport
@@ -34,22 +37,32 @@ public struct ReportAPI: Sendable {
                                                maxBytes: ReportDiscovery.maxBytes, timeout: Self.discoveryTimeout)
         } catch {
             ReportLog.network.info("discovery \(service.host, privacy: .public) failed: \(error.reason, privacy: .public)")
-            return .failed(error.reason)
+            // A body over 64 KiB is not a discovery document (REPORTING 3.2): usually the site's web page.
+            return error == .tooLarge ? .notSupported : .failed(error.failure)
         }
         ReportLog.network.info(
             "GET \(service.host, privacy: .public) discovery -> \(response.status) \(response.body.count) bytes")
-        switch response.status {
+        return Self.discoveryOutcome(status: response.status, body: response.body, etag: etag,
+                                     responseETag: response.headers["etag"], service: service)
+    }
+
+    /// REPORTING 3.1 and 3.2 for one response; DESIGN 11 shows each outcome as one localized sentence.
+    static func discoveryOutcome(status: Int, body: Data, etag: String?, responseETag: String?,
+                                 service: ReportServiceURL) -> DiscoveryOutcome {
+        switch status {
         case 200:
-            switch ReportDiscovery.parse(response.body, service: service) {
-            case .success(let document): return .document(document, etag: response.headers["etag"])
+            switch ReportDiscovery.parse(body, service: service) {
+            case .success(let document):
+                return .document(document, etag: responseETag)
             case .failure(let problem):
                 ReportLog.network.info("discovery invalid: \(String(describing: problem), privacy: .public)")
-                return .notSupported
+                return problem.isOtherDocument ? .notSupported : .invalid
             }
-        case 304: return etag == nil ? .failed("HTTP 304") : .notModified
-        case 404: return .notSupported
+        case 304: return etag == nil ? .failed(.unavailable) : .notModified
         case 410: return .gone
-        default: return .failed("HTTP \(response.status)")
+        case 429: return .failed(.unavailable)
+        case 400..<500: return .notSupported
+        default: return .failed(.unavailable)
         }
     }
 

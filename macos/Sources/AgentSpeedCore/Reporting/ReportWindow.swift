@@ -59,24 +59,20 @@ public struct ReportTrafficSample: Equatable, Sendable {
     /// Σ over sources of own (+ tools); nil while the series has fewer than two samples.
     public var rate: TrafficRate?
     public var sourceRates: [SourceKind: TrafficRate]
-    public var machineStatus: Status
-    public var machineRate: TrafficRate?
     public var totals: TrafficReportTotals
 
     public init(
         status: Status, includesTools: Bool = true, rate: TrafficRate? = nil, sourceRates: [SourceKind: TrafficRate] = [:],
-        machineStatus: Status, machineRate: TrafficRate? = nil, totals: TrafficReportTotals = .zero
+        totals: TrafficReportTotals = .zero
     ) {
         self.status = status
         self.includesTools = includesTools
         self.rate = rate
         self.sourceRates = sourceRates
-        self.machineStatus = machineStatus
-        self.machineRate = machineRate
         self.totals = totals
     }
 
-    public static let off = ReportTrafficSample(status: .off, machineStatus: .off)
+    public static let off = ReportTrafficSample(status: .off)
 
     /// From the traffic snapshot and the `includeTools` setting.
     public init(snapshot: TrafficSnapshot, includeTools: Bool) {
@@ -94,7 +90,6 @@ public struct ReportTrafficSample: Equatable, Sendable {
         self.init(
             status: processOK ? .ok : .unavailable, includesTools: includeTools,
             rate: processOK ? snapshot.live(of: nil, includeTools: includeTools) : nil, sourceRates: rates,
-            machineStatus: snapshot.machineAvailable ? .ok : .unavailable, machineRate: snapshot.machineLive,
             totals: snapshot.reportTotals
         )
     }
@@ -118,11 +113,9 @@ public struct ReportTrafficSample: Equatable, Sendable {
 public struct ReportWindowContent: Equatable, Sendable {
     public var usage: ReportCounters
     public var agentBytes: [SourceKind: TrafficBytes]
-    public var machineBytes: TrafficBytes
     public var peak: Rate
     public var peakCost: Double
     public var peakRate: TrafficRate?
-    public var peakMachineRate: TrafficRate?
 }
 
 /// The open window of a run: a baseline of the cumulative counters and the peaks since the window started.
@@ -134,7 +127,6 @@ public struct ReportWindow: Equatable, Sendable {
     private var peak = Rate.zero
     private var peakCost = 0.0
     private var peakRate: TrafficRate?
-    private var peakMachineRate: TrafficRate?
 
     public init(_ sample: ReportSample) {
         baseline = sample.facts.counters
@@ -155,7 +147,6 @@ public struct ReportWindow: Equatable, Sendable {
         peak = .zero
         peakCost = 0
         peakRate = nil
-        peakMachineRate = nil
     }
 
     /// Ends a tick: its values join the peaks unless the window started at this tick (`peaks` false), and it becomes
@@ -170,20 +161,16 @@ public struct ReportWindow: Equatable, Sendable {
         peak.total = max(peak.total, sample.live.total)
         peakCost = max(peakCost, sample.liveCost.microUsdPerSecond)
         peakRate = Self.larger(peakRate, sample.traffic.status == .ok ? sample.traffic.rate : nil)
-        peakMachineRate = Self.larger(peakMachineRate, sample.traffic.machineStatus == .ok ? sample.traffic.machineRate : nil)
     }
 
     /// The window's content as of `sample` (which it includes), without emptying it (the preview).
     public func content(_ sample: ReportSample) -> ReportWindowContent {
         var copy = self
         copy.observe(sample)
-        let machineNow = sample.traffic.totals.machine
         return ReportWindowContent(
             usage: sample.facts.counters.since(baseline),
             agentBytes: sample.traffic.agentBytes(since: trafficBaseline),
-            machineBytes: TrafficBytes(rx: max(0, machineNow.rx - trafficBaseline.machine.rx),
-                                       tx: max(0, machineNow.tx - trafficBaseline.machine.tx)),
-            peak: copy.peak, peakCost: copy.peakCost, peakRate: copy.peakRate, peakMachineRate: copy.peakMachineRate
+            peak: copy.peak, peakCost: copy.peakCost, peakRate: copy.peakRate
         )
     }
 

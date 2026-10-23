@@ -2,8 +2,9 @@ import AgentSpeedCore
 import AppKit
 import SwiftUI
 
-/// Live reporting for `--render-previews` (group `report`, DESIGN 11): Settings → 即時上報 and the consent sheet in all
-/// four languages, light and dark, plus the off, paused and attention states, the preview window's content, the
+/// Live reporting for `--render-previews` (group `report`, DESIGN 11): Settings → API, the consent sheet and the
+/// dashboard invitation in all four languages, light and dark, plus the off, paused, attention, set-up-failed and
+/// review states, the invitation's done line, the preview window's content (also before the document is known), the
 /// dashboard footer's indicator and the quick menu item. Nothing is created, stored or sent.
 @MainActor
 enum ReportPreviews {
@@ -29,10 +30,19 @@ enum ReportPreviews {
                 write(pane: model, dark: dark, to: directory.appendingPathComponent("report-settings-\(name)-\(scheme).png"))
                 model.report.preview(.consent, username: username)
                 write(consent: model, dark: dark, to: directory.appendingPathComponent("report-consent-\(name)-\(scheme).png"))
+                model.report.preview(.invite, username: username)
+                write(dashboard: model, dark: dark, to: directory.appendingPathComponent("report-invite-\(name)-\(scheme).png"))
+                model.report.preview(.off, username: username)
+                write(pane: model, dark: dark, to: directory.appendingPathComponent("report-settings-off-\(name)-\(scheme).png"))
             }
         }
         apply(model, .zhHant)
-        for (state, label) in [(ReportController.PreviewState.off, "off"), (.paused, "paused"), (.attention, "attention")] {
+        for dark in [false, true] {
+            model.report.preview(.inviteDone, username: "小明的 MacBook Pro")
+            write(dashboard: model, dark: dark, to: directory.appendingPathComponent("report-invite-done-\(dark ? "dark" : "light").png"))
+        }
+        for (state, label) in [(ReportController.PreviewState.setupFailed, "setupfailed"), (.review, "review"),
+                               (.paused, "paused"), (.attention, "attention")] {
             model.report.preview(state, username: "小明的 MacBook Pro")
             for dark in [false, true] {
                 write(pane: model, dark: dark,
@@ -46,7 +56,13 @@ enum ReportPreviews {
                 ReportPreviewBox(model: model, preview: model.report.preview(), showsRequest: true, maxHeight: 900)
                     .frame(width: 528).padding(Spacing.m).appEnvironment(model),
                 dark: dark, to: directory.appendingPathComponent("report-preview-window-\(scheme).png"))
-            for (state, label) in [(ReportController.PreviewState.reporting, "on"), (.paused, "paused"), (.attention, "attention")] {
+            model.report.preview(.invite, username: "小明的 MacBook Pro")
+            PreviewSnapshot.writeHosted(
+                ReportPreviewBox(model: model, preview: model.report.preview(), showsRequest: true, maxHeight: 900)
+                    .frame(width: 528).padding(Spacing.m).appEnvironment(model),
+                dark: dark, to: directory.appendingPathComponent("report-preview-window-assumed-\(scheme).png"))
+            for (state, label) in [(ReportController.PreviewState.reporting, "on"), (.paused, "paused"),
+                                   (.attention, "attention"), (.setupFailed, "setupfailed")] {
                 model.report.preview(state, username: "小明的 MacBook Pro")
                 PreviewSnapshot.writeHosted(
                     DashboardFooter(model: model).frame(width: 360).padding(Spacing.s).appEnvironment(model),
@@ -116,6 +132,12 @@ enum ReportPreviews {
         model.l10n.apply(language)
     }
 
+    /// The whole dashboard, so the invitation is seen where it lives (above the hero).
+    private static func write(dashboard model: AppModel, dark: Bool, to url: URL) {
+        PreviewSnapshot.writeHosted(
+            DashboardView(model: model).environment(\.orbStillTime, Clock.now).appEnvironment(model), dark: dark, to: url)
+    }
+
     private static func write(pane model: AppModel, dark: Bool, to url: URL) {
         PreviewSnapshot.writeHosted(
             SettingsPaneView(pane: .report, model: model).appEnvironment(model), dark: dark, to: url)
@@ -130,6 +152,7 @@ enum ReportPreviews {
         host.appearance = appearance
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: ReportConsentSheet.width, height: 600),
                               styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.appearance = appearance
         window.contentView = host
         for _ in 0..<3 {
@@ -139,6 +162,7 @@ enum ReportPreviews {
             RunLoop.main.run(until: Date().addingTimeInterval(0.15))
         }
         host.displayIfNeeded()
+        defer { PreviewSnapshot.release(window) }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
         host.cacheDisplay(in: host.bounds, to: rep)
         if let image = rep.cgImage { PreviewSnapshot.write(image, to: url) }

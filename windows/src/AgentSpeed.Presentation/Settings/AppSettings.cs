@@ -67,6 +67,8 @@ public sealed record AppSettings
 
     public static IReadOnlyList<double> OrbSizePresets { get; } = [112, 148, 196];
 
+    private static readonly SourceKind[] AllSources = Enum.GetValues<SourceKind>();
+
     public static AppSettings Default { get; } = new();
 
     public AppearanceMode Appearance { get; init; } = AppearanceMode.Auto;
@@ -240,6 +242,21 @@ public sealed record AppSettings
         SourceKind.WorkBuddyAi => WorkBuddyAiEnabled,
         _ => false,
     };
+
+    /// <summary>The sources turned on in Settings → Data Sources.</summary>
+    public SourceSet EnabledSourceSet()
+    {
+        var set = SourceSet.Empty;
+        foreach (var kind in AllSources)
+        {
+            if (IsSourceEnabled(kind))
+            {
+                set = set.With(kind);
+            }
+        }
+
+        return set;
+    }
 
     public AppSettings WithSourceEnabled(SourceKind kind, bool enabled) => kind switch
     {

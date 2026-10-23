@@ -281,4 +281,75 @@ public class HistoryTrafficTests
         var byOutput = DayBreakdown.For(usage, DayRange.Single(day), null, HistoryChartMetric.Output, traffic: traffic)!;
         Assert.Equal(SourceKind.Gemini, byOutput.Rows[0].Source);
     }
+
+    [Fact]
+    public void AgentDaysCountSourcesOnlyWithToolsPerTheSetting()
+    {
+        TrafficDay[] rows =
+        [
+            new(Day(D(2026, 10, 18)), "machine", 9_000, 900, 0, 0, FullDayMs),
+            new(Day(D(2026, 10, 19)), "gemini", 0, 0, 700, 70, FullDayMs),
+            new(Day(D(2026, 10, 20)), "codex", 2_000, 200, 0, 0, FullDayMs),
+            new(Day(D(2026, 10, 20)), "gemini", 0, 0, 0, 0, FullDayMs),
+        ];
+        var traffic = new HistoryTraffic(rows, Day(D(2026, 10, 18)), includeTools: true);
+
+        // This computer's own total is not a day with data; a source row of zeros is not either.
+        Assert.Equal([D(2026, 10, 19), D(2026, 10, 20)], traffic.AgentDays(null));
+        Assert.Equal([D(2026, 10, 19)], traffic.AgentDays(SourceKind.Gemini));
+        Assert.Equal([SourceKind.Codex, SourceKind.Gemini], traffic.SourcesWithTraffic().Order());
+
+        // Without tools, a source whose bytes all came from tools shows none.
+        var own = new HistoryTraffic(rows, Day(D(2026, 10, 18)), includeTools: false);
+        Assert.Empty(own.AgentDays(SourceKind.Gemini));
+        Assert.Equal([SourceKind.Codex], own.SourcesWithTraffic());
+    }
+
+    [Fact]
+    public void ADayListedForItsTrafficIsNotAnActiveDay()
+    {
+        var day = DaySummary.TrafficOnly(D(2026, 10, 20));
+        Assert.False(day.HasUsage);
+        Assert.Equal(0, day.Requests + day.Output + day.Input);
+        Assert.Null(day.AverageSpeed);
+        Assert.Same(HistoryTotals.Empty, HistoryAggregator.Totals([day]));
+
+        var totals = HistoryAggregator.Totals([day, Summary(D(2026, 10, 19), output: 500)]);
+        Assert.Equal(1, totals.ActiveDays);
+        Assert.Equal(D(2026, 10, 19), totals.BusiestDay?.Day);
+
+        var cards = HistorySummary.Build([day], [], new DayRange(D(2026, 10, 15), D(2026, 10, 21)), Today, For(LanguageCodes.En));
+        Assert.All(cards, c => Assert.Equal(string.Empty, c.Secondary));
+    }
+
+    [Fact]
+    public void OneSourcesTrafficOnlyDayBreaksDownIntoItsOneBar()
+    {
+        var traffic = Traffic().Day(D(2026, 10, 20), SourceKind.ClaudeCode, Today, Noon, TimeZoneInfo.Utc);
+        var day = DayRange.Single(D(2026, 10, 20));
+        var breakdown = DayBreakdown.For([Usage(Day(D(2026, 10, 20)))], day, SourceKind.ClaudeCode, HistoryChartMetric.Traffic, traffic: traffic)!;
+        Assert.Equal(BreakdownKind.Sources, breakdown.Kind);
+        var bar = Assert.Single(breakdown.Rows);
+        Assert.Equal(SourceKind.ClaudeCode, bar.Source);
+        Assert.Equal(1, bar.Share);
+        Assert.Equal(new TrafficBytes(9_000, 900), bar.Traffic);
+
+        // With token usage, or another metric, it stays a breakdown by model.
+        Assert.Equal(BreakdownKind.Models, DayBreakdown.For([Usage(Day(D(2026, 10, 20)), SourceKind.ClaudeCode)], day, SourceKind.ClaudeCode,
+            HistoryChartMetric.Traffic, traffic: traffic)!.Kind);
+        Assert.Equal(BreakdownKind.Models, DayBreakdown.For([], day, SourceKind.ClaudeCode, HistoryChartMetric.Output, traffic: traffic)!.Kind);
+    }
+
+    [Theory]
+    [InlineData(LanguageCodes.ZhHant, "下載 11.0_KB，上傳 1.10_KB")]
+    [InlineData(LanguageCodes.ZhHans, "下载 11.0_KB，上传 1.10_KB")]
+    [InlineData(LanguageCodes.En, "11.0_KB downloaded and 1.10_KB uploaded")]
+    [InlineData(LanguageCodes.Ja, "ダウンロード 11.0_KB、アップロード 1.10_KB")]
+    public void ADaysTrafficIsReadWithoutToday(string language, string expected)
+    {
+        var loc = For(language);
+        var spoken = HistoryTrafficText.Spoken(new TrafficBytes(11_000, 1_100), loc);
+        Assert.Equal(expected.Replace('_', Nbsp), spoken);
+        Assert.NotEqual(loc.Format("traffic.a11y.totals", TrafficFormat.Total(11_000), TrafficFormat.Total(1_100)), spoken);
+    }
 }

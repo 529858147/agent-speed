@@ -90,8 +90,14 @@ struct HistoryContent: Equatable, Sendable {
     var unpricedModels: [UnpricedModel] = []
     /// The first day traffic was recorded, when the range starts before it (`history.traffic.since`).
     var trafficSince: DayKey?
+    /// The range has token usage, and agent traffic, of the selection (DESIGN 10, Traffic without token usage).
+    var hasTokenUsage = true
+    var hasAgentTraffic = false
 
     var isEmpty: Bool { days.isEmpty }
+
+    /// Only traffic to show: a chart of output or cost would be empty (DESIGN 10, Opening on traffic).
+    var showsOnlyTraffic: Bool { !hasTokenUsage && hasAgentTraffic }
 
     /// Requests of the range whose model has no known price.
     var unpricedRequests: Int { unpricedModels.reduce(0) { $0 + $1.requests } }
@@ -124,7 +130,9 @@ struct HistoryContent: Equatable, Sendable {
         traffic: HistoryTraffic = .none,
         now: Date = Date()
     ) -> HistoryContent {
-        let bounds = HistoryAggregator.bounds(usage, source: source)
+        // Recorded agent traffic is history too (DESIGN 10): its days count for the bounds, the rows and the picker.
+        let trafficDays = traffic.agentDays(source: source)
+        let bounds = union(HistoryAggregator.bounds(usage, source: source), trafficDays.first.map { DayRange($0, trafficDays[trafficDays.count - 1]) })
         let range = HistoryRanges.resolve(rangeKind, today: today, firstDataDay: bounds?.start, custom: customRange)
         let previousRange = HistoryRanges.previous(range)
         let sparkRange = HistoryRanges.sparkRange(range)
@@ -132,7 +140,10 @@ struct HistoryContent: Equatable, Sendable {
         let excluded = costOptions.excluded(for: source)
         let loaded = HistoryAggregator.daily(usage, source: source, range: window, excluded: excluded)
         let calendar = HistoryDates.calendar
-        let days = loaded.filter { range.contains($0.day) }.map { summary -> DaySummary in
+        let tokenDays = loaded.filter { range.contains($0.day) }
+        let tokenKeys = Set(tokenDays.map(\.day))
+        let trafficOnly = trafficDays.filter { range.contains($0) && !tokenKeys.contains($0) }.map(DaySummary.trafficOnly)
+        let days = (tokenDays + trafficOnly).sorted { $0.day < $1.day }.map { summary -> DaySummary in
             var summary = summary
             summary.traffic = traffic.day(summary.day, source: source, today: today, now: now, calendar: calendar)
             return summary
@@ -140,7 +151,8 @@ struct HistoryContent: Equatable, Sendable {
         let previous = loaded.filter { previousRange.contains($0.day) }
         let sparkDays = loaded.filter { sparkRange.contains($0.day) }
 
-        var pickerSources = HistoryAggregator.sourcesWithHistory(usage)
+        let withHistory = Set(HistoryAggregator.sourcesWithHistory(usage)).union(traffic.sourcesWithTraffic)
+        var pickerSources = SourceKind.allCases.filter(withHistory.contains)
         if let source, !pickerSources.contains(source) {
             pickerSources = SourceKind.allCases.filter { pickerSources.contains($0) || $0 == source }
         }
@@ -170,8 +182,16 @@ struct HistoryContent: Equatable, Sendable {
             money: money,
             costOptions: costOptions,
             unpricedModels: HistoryAggregator.unpricedModels(usage, source: source, range: range, excluded: excluded),
-            trafficSince: traffic.since.flatMap { $0 > range.start && $0 <= range.end ? $0 : nil }
+            trafficSince: traffic.since.flatMap { $0 > range.start && $0 <= range.end ? $0 : nil },
+            hasTokenUsage: !tokenDays.isEmpty,
+            hasAgentTraffic: trafficDays.contains(where: range.contains)
         )
+    }
+
+    private static func union(_ a: DayRange?, _ b: DayRange?) -> DayRange? {
+        guard let a else { return b }
+        guard let b else { return a }
+        return DayRange(min(a.start, b.start), max(a.end, b.end))
     }
 
     /// The same content in another row order.
@@ -182,7 +202,7 @@ struct HistoryContent: Equatable, Sendable {
             today: today, source: source, rangeKind: rangeKind, range: range, dataBounds: dataBounds,
             pickerSources: pickerSources, days: days, cards: cards, chart: chart, breakdown: breakdown, columns: columns, sort: sort,
             rows: HistoryTable.sort(days, by: sort), money: money, costOptions: costOptions, unpricedModels: unpricedModels,
-            trafficSince: trafficSince
+            trafficSince: trafficSince, hasTokenUsage: hasTokenUsage, hasAgentTraffic: hasAgentTraffic
         )
     }
 

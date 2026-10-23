@@ -39,14 +39,12 @@ import Testing
         let trafficSample = ReportTrafficSample(
             status: traffic, includesTools: true, rate: TrafficRate(rx: 24_310.4, tx: 1288.2),
             sourceRates: [.codex: TrafficRate(rx: 4200, tx: 288), .claudeCode: TrafficRate(rx: 20_110.4, tx: 1000.2)],
-            machineStatus: .ok, machineRate: TrafficRate(rx: 1_281_000, tx: 64_020),
-            totals: TrafficReportTotals(machine: TrafficBytes(rx: 6_405_000, tx: 320_100),
-                                        sources: [.codex: TrafficSplit(own: TrafficBytes(rx: 21_000, tx: 1440)),
+            totals: TrafficReportTotals(sources: [.codex: TrafficSplit(own: TrafficBytes(rx: 21_000, tx: 1440)),
                                                   .claudeCode: TrafficSplit(own: TrafficBytes(rx: 90_000, tx: 4000),
                                                                             tools: TrafficBytes(rx: 10_550, tx: 1000))]))
         let sample = ReportSample(live: live, estimatedShare: 0.2154, liveCost: LiveCost(microUsdPerSecond: 4213, knownOutput: 400.44),
                                   sources: sources, facts: facts, traffic: trafficSample)
-        let window = ReportWindow(ReportSample(traffic: ReportTrafficSample(status: traffic, machineStatus: .ok)))
+        let window = ReportWindow(ReportSample(traffic: ReportTrafficSample(status: traffic)))
         var content = window.content(sample)
         content.peak = Rate(output: 655, total: 240_118.66)
         content.peakCost = 6120.2
@@ -112,7 +110,7 @@ import Testing
     }
 
     /// A response of an earlier window priced only now: its source and model are listed with the cost section so
-    /// every cost sum adds up, and left out without it (REPORTING 6.6.4, 6.6.5).
+    /// every cost sum adds up, and left out without it (REPORTING 6.6.3, 6.6.4).
     static func latePriced() -> (ReportWindowContent, ReportSample) {
         var (content, sample) = busySample()
         content.usage.add(ReportUsage(costMicroUsd: 2500), to: ReportModelKey(modelId: "gemini-3.1-pro", source: .gemini))
@@ -165,7 +163,7 @@ import Testing
         var idle = Self.envelope
         idle.activity = .idle
         idle.titleLevel = 0
-        let empty = ReportSample(traffic: ReportTrafficSample(status: .ok, includesTools: false, rate: nil, machineStatus: .unavailable))
+        let empty = ReportSample(traffic: ReportTrafficSample(status: .ok, includesTools: false, rate: nil))
         bodies.append(ReportBody.data(idle, ReportWindow(empty).content(empty), empty, Self.everything))
         let (late, lateSample) = Self.latePriced()
         for sections in [Set(ReportSection.allCases), [.sources, .models]] as [Set<ReportSection>] {

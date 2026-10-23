@@ -63,6 +63,12 @@ public static class HistoryAggregator
             output += day.Output;
             measuredOutput += day.MeasuredOutput;
             measuredMs += day.MeasuredMs;
+            // A day listed only for its traffic is not an active day (DESIGN 10).
+            if (!day.HasUsage)
+            {
+                continue;
+            }
+
             active++;
             if (busiest is null || day.Output > busiest.Output || (day.Output == busiest.Output && day.Day > busiest.Day))
             {

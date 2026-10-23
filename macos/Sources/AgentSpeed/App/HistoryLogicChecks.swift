@@ -306,6 +306,58 @@ enum HistoryLogicChecks {
         check("traffic: byte axis labels", HistoryText.axisBytes(2_500_000_000) == "2.5\u{00A0}GB"
               && HistoryText.axisBytes(-500_000_000) == "500\u{00A0}MB" && HistoryText.axisBytes(1_000_000_000) == "1\u{00A0}GB")
 
+        // Traffic without token usage (DESIGN 10): its days are history, the cards count tokens only.
+        let codexUsage = [usage("2026-10-20", .codex, output: 1000, ms: 10_000, peak: nil)]
+        let trafficOnly = HistoryContent.build(
+            usage: codexUsage, source: .claudeCode, rangeKind: .days7, customRange: nil, sort: HistorySort(), today: today,
+            l10n: l10n, traffic: traffic, now: noon
+        )
+        check("traffic only: a source with traffic but no tokens is not empty", !trafficOnly.isEmpty
+              && trafficOnly.rows.map(\.day) == [DayKey("2026-10-20")!] && trafficOnly.rows.first?.requests == 0
+              && trafficOnly.rows.first?.traffic?.shown == TrafficBytes(rx: 5_000_000, tx: 150_000))
+        check("traffic only: the chart opens on traffic", trafficOnly.showsOnlyTraffic && !trafficOnly.hasTokenUsage)
+        check("traffic only: the picker offers sources with traffic", trafficOnly.pickerSources == [.codex, .claudeCode])
+        check("traffic only: no active days, no busiest day",
+              trafficOnly.cards.first { $0.metric == .requests }?.secondary == "" && trafficOnly.cards.first { $0.metric == .output }?.secondary == "")
+        let allTraffic = HistoryContent.build(
+            usage: codexUsage, source: nil, rangeKind: .days7, customRange: nil, sort: HistorySort(), today: today,
+            l10n: l10n, traffic: traffic, now: noon
+        )
+        check("traffic only: all sources list token and traffic days, tokens decide active days",
+              allTraffic.rows.map(\.day) == [today, DayKey("2026-10-20")!] && allTraffic.hasTokenUsage && !allTraffic.showsOnlyTraffic
+              && HistoryAggregator.totals(allTraffic.days).activeDays == 1)
+        let machineOnly = HistoryTraffic(days: [trafficRows[0]], since: "2026-10-20", includeTools: true, bits: false)
+        check("traffic only: this computer's own traffic is not a day with data", HistoryContent.build(
+            usage: [], source: nil, rangeKind: .days7, customRange: nil, sort: HistorySort(), today: today, l10n: l10n,
+            traffic: machineOnly, now: noon
+        ).isEmpty)
+        let allRange = HistoryContent.build(
+            usage: [], source: .claudeCode, rangeKind: .all, customRange: nil, sort: HistorySort(), today: today, l10n: l10n,
+            traffic: traffic, now: noon
+        )
+        check("traffic only: 全部 reaches back to the first traffic day", allRange.range.start == DayKey("2026-10-20"))
+        let oneDay = HistoryBreakdown.build([], day: DayKey("2026-10-20")!, source: .claudeCode, metric: .traffic,
+                                            traffic: traffic.day(DayKey("2026-10-20")!, source: .claudeCode, today: today, now: noon,
+                                                                 calendar: HistoryDates.calendar))
+        check("traffic only: one source's day breaks down into its one bar", oneDay.kind == .bySource
+              && oneDay.items.map(\.subject) == [.source(.claudeCode)] && oneDay.items.first?.share == 1)
+
+        // Durations and spoken traffic (DESIGN 10, Accessibility): shared strings, never "today" for another day.
+        let zh = Localizer(preference: .zhHant)
+        let en = Localizer(preference: .en)
+        check("traffic: recorded time in whole minutes", HistoryText.duration(ms: 5_000, zh) == "1 分鐘"
+              && HistoryText.duration(ms: 45 * 60_000 + 59_000, en) == "45 min" && HistoryText.duration(ms: 3 * 3_600_000, en) == "3 hr"
+              && HistoryText.duration(ms: 3 * 3_600_000 + 20 * 60_000, zh) == "3 小時 20 分鐘")
+        let spokenRow = HistoryText.accessible(trafficOnly.rows[0], today: today, traffic: true, en)
+        check("traffic: a row reads its traffic without today", spokenRow.contains("5.00\u{00A0}MB downloaded and 150\u{00A0}KB uploaded")
+              && !spokenRow.contains("today"))
+        check("traffic: a chart day reads its traffic and notes",
+              HistoryText.accessibleTraffic(DayKey("2026-10-20")!, traffic: tuesday, today: today, en).contains("This computer")
+              && HistoryText.accessibleTraffic(DayKey("2026-10-19")!, traffic: nil, today: today, en).contains("wasn't recorded"))
+        check("traffic: the cell tooltip only adds notes", HistoryTable.trafficTooltip(
+            DayTraffic(own: TrafficBytes(rx: 1, tx: 1), tools: .zero, bySource: [:], machine: nil, recordedMs: 0, partial: false,
+                       includeTools: true), en) == nil)
+
         // Column layout never goes below the minimums and fills the width.
         let specs = HistoryColumn.allCases.map(HistoryColumnLayout.spec)
         let wide = HistoryColumnLayout.widths(specs, width: 1200)

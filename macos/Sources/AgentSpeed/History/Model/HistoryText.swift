@@ -77,15 +77,12 @@ enum HistoryText {
         return digits + compact[suffixStart...]
     }
 
-    /// A recorded duration: `3 小時 12 分` / `3 hr, 12 min`.
+    /// A recorded duration in whole minutes, at least one: `45 分鐘`, `3 小時 20 分鐘` / `3 hr 20 min` (DESIGN 10).
     static func duration(ms: Int64, _ l10n: Localizer) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = ms >= 3_600_000 ? [.hour, .minute] : [.minute]
-        formatter.unitsStyle = .short
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = l10n.locale
-        formatter.calendar = calendar
-        return formatter.string(from: TimeInterval(max(ms, 60_000)) / 1000) ?? ""
+        let minutes = Int(max(ms, 60_000) / 60_000)
+        guard minutes >= 60 else { return l10n("time.minutes", minutes) }
+        let rest = minutes % 60
+        return rest == 0 ? l10n("time.hours", minutes / 60) : l10n("time.hoursMinutes", minutes / 60, rest)
     }
 
     /// A byte axis value without trailing zeros: `500 MB`, `1 GB`, `2.5 GB` (METRICS 10.11 units).
@@ -207,12 +204,13 @@ enum HistoryText {
         parts.filter { !$0.isEmpty }.joined(separator: l10n("mac.history.a11y.join"))
     }
 
-    /// Everything a day holds, as one sentence for screen readers.
-    static func accessible(_ day: DaySummary, today: DayKey, money: HistoryMoney? = nil, _ l10n: Localizer) -> String {
+    /// Everything a day holds, as one sentence for screen readers; `traffic` when the table shows its column.
+    static func accessible(_ day: DaySummary, today: DayKey, money: HistoryMoney? = nil, traffic: Bool = false, _ l10n: Localizer) -> String {
         var parts = [
             labelled(l10n("history.table.output"), fullNumber(day.output, l10n), l10n),
             labelled(l10n("history.table.input"), fullNumber(day.input, l10n), l10n),
             money.map { labelled(l10n("history.table.cost"), spokenCost(day.cost, money: $0, l10n), l10n) } ?? "",
+            traffic ? labelled(l10n("history.table.traffic"), spokenTraffic(day.traffic, l10n), l10n) : "",
             labelled(l10n("history.table.requests"), fullNumber(day.requests, l10n), l10n),
             labelled(l10n("history.table.cacheHit"), percent(day.cacheHitRatio), l10n),
             labelled(l10n("history.table.speed"), speed(day.averageSpeed, l10n), l10n),
@@ -250,6 +248,7 @@ enum HistoryText {
         join([
             labelled(l10n("history.table.output"), fullNumber(item.output, l10n), l10n),
             money.map { labelled(l10n("history.table.cost"), spokenCost(item.cost, money: $0, l10n), l10n) } ?? "",
+            item.traffic.map { labelled(l10n("history.table.traffic"), TrafficText(l10n: l10n, bits: false).spokenPair($0), l10n) } ?? "",
             labelled(l10n("mac.history.breakdown.share"), percent(item.share), l10n),
             labelled(l10n("history.table.speed"), fullSpeed(item.averageSpeed, l10n), l10n),
             labelled(l10n("history.table.requests"), fullNumber(item.requests, l10n), l10n),
@@ -292,5 +291,28 @@ enum HistoryText {
     /// The day's long date, with `進行中` for today.
     static func dayTitle(_ day: DayKey, today: DayKey, _ l10n: Localizer) -> String {
         day == today ? "\(longDate(day, l10n)) \(l10n("history.inProgress"))" : longDate(day, l10n)
+    }
+
+    /// A day's traffic read aloud (`traffic.a11y.pair`; the day is named by its context), or that it was not recorded.
+    static func spokenTraffic(_ traffic: DayTraffic?, _ l10n: Localizer) -> String {
+        traffic.map { TrafficText(l10n: l10n, bits: false).spokenPair($0.shown) } ?? l10n("history.traffic.notRecorded")
+    }
+
+    /// The notes under a day's traffic: the tools' part when tools are included, this computer's total (with every
+    /// source) and the recorded time of a partial day.
+    static func trafficNotes(_ traffic: DayTraffic, machine: Bool = true, _ l10n: Localizer) -> [String] {
+        let text = TrafficText(l10n: l10n, bits: false)
+        var lines: [String] = []
+        if traffic.includeTools, !traffic.tools.isZero { lines.append(l10n("history.traffic.tools", text.pair(traffic.tools))) }
+        if machine, let computer = traffic.machine { lines.append(l10n("history.traffic.machine", text.pair(computer))) }
+        if traffic.partial { lines.append(l10n("history.traffic.partial", duration(ms: traffic.recordedMs, l10n))) }
+        return lines
+    }
+
+    /// A traffic chart day for screen readers: the date, its traffic and notes, or that it was not recorded.
+    static func accessibleTraffic(_ day: DayKey, traffic: DayTraffic?, today: DayKey, _ l10n: Localizer) -> String {
+        guard let traffic else { return labelled(dayTitle(day, today: today, l10n), l10n("history.traffic.notRecorded"), l10n) }
+        let parts = [labelled(l10n("history.table.traffic"), spokenTraffic(traffic, l10n), l10n)] + trafficNotes(traffic, l10n)
+        return labelled(dayTitle(day, today: today, l10n), join(parts, l10n), l10n)
     }
 }

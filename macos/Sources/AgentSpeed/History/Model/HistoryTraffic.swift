@@ -83,4 +83,26 @@ struct HistoryTraffic: Equatable, Sendable {
     func days(in range: DayRange) -> [DayKey] {
         rows.keys.filter(range.contains).sorted()
     }
+
+    /// Days with agent traffic of `source` (every source when nil) as displayed, tools per the setting, oldest first.
+    /// This computer's own total does not count (DESIGN 10, Traffic without token usage).
+    func agentDays(source: SourceKind?) -> [DayKey] {
+        rows.compactMap { day, keyed in
+            keyed.contains { key, row in
+                guard let kind = SourceKind(rawValue: key), source == nil || source == kind else { return false }
+                return !row.total(includeTools: includeTools).isZero
+            } ? day : nil
+        }.sorted()
+    }
+
+    /// Sources with agent traffic on any stored day, in `SourceKind` order.
+    var sourcesWithTraffic: [SourceKind] {
+        var found = Set<SourceKind>()
+        for keyed in rows.values {
+            for (key, row) in keyed {
+                if let kind = SourceKind(rawValue: key), !row.total(includeTools: includeTools).isZero { found.insert(kind) }
+            }
+        }
+        return SourceKind.allCases.filter(found.contains)
+    }
 }

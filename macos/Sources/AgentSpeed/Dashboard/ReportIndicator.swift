@@ -1,8 +1,8 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// The dashboard footer's quiet sign that live reporting is on (DESIGN 11, Dashboard footer): static, secondary,
-/// 40 % while paused, an amber dot when the user must act; a click opens Settings → 即時上報.
+/// The dashboard footer's quiet sign that live reporting is on — also while it is being set up (DESIGN 11, Dashboard
+/// footer): static, secondary, 40 % while paused, an amber dot when the user must act; a click opens Settings → API.
 struct ReportIndicator: View {
     let model: AppModel
 
@@ -14,7 +14,7 @@ struct ReportIndicator: View {
         let label = attention
             ? l10n("report.indicator.attention")
             : paused ? l10n("report.menu.paused")
-            : l10n("report.indicator", report.identity?.username ?? "", report.destinationHost ?? "")
+            : l10n("report.indicator", report.fieldUsername, report.destinationHost ?? "")
         Button {
             model.commands?.showSettings(.report)
         } label: {

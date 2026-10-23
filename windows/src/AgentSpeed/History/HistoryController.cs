@@ -62,7 +62,7 @@ internal sealed class HistoryController : IDisposable
         if (_window is null || _model is null)
         {
             var model = new HistoryViewModel(_hub, _loc, _cost, _dispatcher, SaveIncludeSubscriptions, Traffic,
-                () => _settings.Current.Traffic.IncludeTools);
+                () => _settings.Current.Traffic.IncludeTools, () => _settings.Current.EnabledSourceSet());
             model.SetSource(source);
             var window = new HistoryWindow(model, _theme.ReduceMotion, _theme.HighContrast)
             {
@@ -107,7 +107,7 @@ internal sealed class HistoryController : IDisposable
         _window.Activate();
     }
 
-    /// <summary>The include-tools setting changed: the window's traffic counts change with it.</summary>
+    /// <summary>The include-tools setting or the enabled sources changed: the window's traffic counts change with them.</summary>
     public void OnTrafficSettingsChanged() => _model?.RefreshTraffic();
 
     /// <summary>Developer option: publishes generated history as a short simulated analysis (about 3 s).</summary>

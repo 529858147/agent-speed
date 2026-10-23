@@ -66,7 +66,7 @@ struct ReportDeviceSection: View {
         switch report.forgetState {
         case .failed(let reason):
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                ReportInlineMessage(text: l10n("report.forget.failed", reason))
+                ReportInlineMessage(text: l10n("report.forget.failed", l10n(reason.key)))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                     Footnote(l10n("report.forget.localOnly.detail"))

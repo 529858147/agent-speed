@@ -53,6 +53,33 @@ struct ReportServiceCard: View {
     }
 }
 
+/// The service before its document is known (DESIGN 11, Service): a preset's own name and its host, or a custom URL's
+/// host — no links, nothing fetched.
+struct ReportServiceSummary: View {
+    let model: AppModel
+    let service: ReportServiceURL
+    let name: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let name {
+                Text(name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            Text(model.l10n("report.service.host", service.authority))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            if service.isLoopbackHTTP {
+                ReportLoopbackNote(model: model)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+    }
+}
+
 /// A borderless link that opens only `https` URLs, in the browser, on click (REPORTING 2.3).
 struct ReportLink: View {
     let title: String
@@ -92,7 +119,8 @@ struct ReportLoopbackNote: View {
     }
 }
 
-/// The service card's place while the document is fetched, failed or missing.
+/// The service card's companion while the document is fetched or could not be: one plain sentence and Try Again,
+/// never a status code (DESIGN 11, Service). While reporting is being set up the status line carries the sentence.
 struct ReportServiceState: View {
     let model: AppModel
 
@@ -107,12 +135,19 @@ struct ReportServiceState: View {
                     Text(l10n("report.service.checking"))
                 }
                 .foregroundStyle(.secondary)
-            case .failed(let reason):
-                Label(l10n("report.service.failed", reason), systemImage: "exclamationmark.triangle.fill")
-                    .symbolRenderingMode(.multicolor)
-            case .notSupported:
-                Label(l10n("report.service.notSupported"), systemImage: "xmark.octagon.fill")
-                    .symbolRenderingMode(.multicolor)
+            case .failed, .notSupported, .invalid:
+                if let issue = report.serviceIssue, !report.isSettingUp {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                        Label(l10n(issue.key), systemImage: issue.symbol)
+                            .symbolRenderingMode(.multicolor)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: Spacing.xs)
+                        Button(l10n("report.service.retry")) { report.retry() }
+                            .controlSize(.small)
+                            .fixedSize()
+                            .disabled(!model.settings.networkEnabled)
+                    }
+                }
             case .gone:
                 Label(l10n("report.status.gone"), systemImage: "xmark.octagon.fill")
                     .symbolRenderingMode(.multicolor)
@@ -122,5 +157,6 @@ struct ReportServiceState: View {
         }
         .font(.system(size: 11))
         .fixedSize(horizontal: false, vertical: true)
+        .transition(model.accessibility.reduceMotion ? .identity : .opacity)
     }
 }

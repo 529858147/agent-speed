@@ -1,3 +1,4 @@
+using AgentSpeed.Core;
 using AgentSpeed.Core.Traffic;
 using AgentSpeed.Presentation.History;
 
@@ -10,8 +11,9 @@ internal sealed partial class HistoryViewModel
 
     private TrafficHub? _trafficHub;
     private Func<bool> _includeTools = static () => true;
+    private Func<SourceSet> _enabledSources = static () => SourceSet.Everything;
     private HistoryTraffic _traffic = HistoryTraffic.None;
-    private (IReadOnlyList<TrafficDay> Days, string? Since, bool IncludeTools)? _trafficKey;
+    private (IReadOnlyList<TrafficDay> Days, string? Since, bool IncludeTools, SourceSet Enabled)? _trafficKey;
     private string _trafficTotal = string.Empty;
     private string _trafficSinceText = string.Empty;
 
@@ -56,7 +58,7 @@ internal sealed partial class HistoryViewModel
 
     public DayTraffic? TrafficAt(DateOnly day) => TrafficDays.GetValueOrDefault(day);
 
-    /// <summary>The include-tools setting changed: the shown bytes change with it.</summary>
+    /// <summary>The include-tools setting or the enabled sources changed: the shown bytes change with them.</summary>
     public void RefreshTraffic()
     {
         if (!_disposed)
@@ -65,10 +67,11 @@ internal sealed partial class HistoryViewModel
         }
     }
 
-    private void AttachTraffic(TrafficHub? hub, Func<bool>? includeTools)
+    private void AttachTraffic(TrafficHub? hub, Func<bool>? includeTools, Func<SourceSet>? enabledSources)
     {
         _trafficHub = hub;
         _includeTools = includeTools ?? (static () => true);
+        _enabledSources = enabledSources ?? (static () => SourceSet.Everything);
         if (hub is not null)
         {
             hub.DaysChanged += OnTrafficDaysChanged;
@@ -91,7 +94,10 @@ internal sealed partial class HistoryViewModel
         }
     }
 
-    /// <summary>Rebuilt only when the hub published new days or the include-tools setting changed.</summary>
+    /// <summary>
+    /// Rebuilt only when the hub published new days, the include-tools setting or the enabled sources changed; disabled
+    /// sources' rows are left out (METRICS 10.5, DESIGN 10), this computer's rows stay.
+    /// </summary>
     private HistoryTraffic CurrentTraffic()
     {
         if (_trafficHub is not { } hub)
@@ -99,11 +105,12 @@ internal sealed partial class HistoryViewModel
             return HistoryTraffic.None;
         }
 
-        var key = (hub.Days, hub.Since, _includeTools());
-        if (_trafficKey is not { } last || !ReferenceEquals(last.Days, key.Days) || last.Since != key.Since || last.IncludeTools != key.Item3)
+        var key = (hub.Days, hub.Since, IncludeTools: _includeTools(), Enabled: _enabledSources());
+        if (_trafficKey is not { } last || !ReferenceEquals(last.Days, key.Days) || last.Since != key.Since || last.IncludeTools != key.IncludeTools
+            || last.Enabled != key.Enabled)
         {
             _trafficKey = key;
-            _traffic = new HistoryTraffic(key.Days, key.Since, key.Item3);
+            _traffic = new HistoryTraffic(TrafficVisibility.Days(key.Days, key.Enabled), key.Since, key.IncludeTools);
         }
 
         return _traffic;

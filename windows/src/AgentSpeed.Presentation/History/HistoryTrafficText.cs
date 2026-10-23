@@ -10,11 +10,14 @@ public static class HistoryTrafficText
     /// <summary><c>↓ 48.2 MB · ↑ 3.10 MB</c>.</summary>
     public static string Pair(TrafficBytes bytes, Localizer loc) => new TrafficText(loc, bits: false).Pair(bytes);
 
-    /// <summary>The pair as read aloud, without arrows: <c>下載 48.2 MB，上傳 3.10 MB</c>.</summary>
+    /// <summary>
+    /// The pair as read aloud, without arrows and without a day, which its context names: <c>下載 48.2 MB，上傳 3.10 MB</c>
+    /// (<c>traffic.a11y.pair</c>).
+    /// </summary>
     public static string Spoken(TrafficBytes bytes, Localizer loc)
     {
         ArgumentNullException.ThrowIfNull(loc);
-        return loc.Format("win.traffic.spokenPair", TrafficFormat.Total(bytes.Rx), TrafficFormat.Total(bytes.Tx));
+        return loc.Format("traffic.a11y.pair", TrafficFormat.Total(bytes.Rx), TrafficFormat.Total(bytes.Tx));
     }
 
     /// <summary>A byte axis value without trailing zeros: <c>500 MB</c>, <c>1 GB</c>, <c>2.5 GB</c> (METRICS 10.11 units).</summary>
@@ -37,12 +40,12 @@ public static class HistoryTrafficText
         var minutes = Math.Max(ms, 60_000) / 60_000;
         if (minutes < 60)
         {
-            return loc.Format("win.duration.minutes", minutes);
+            return loc.Format("time.minutes", minutes);
         }
 
         var hours = minutes / 60;
         var rest = minutes % 60;
-        return rest == 0 ? loc.Format("win.duration.hours", hours) : loc.Format("win.duration.hoursMinutes", hours, rest);
+        return rest == 0 ? loc.Format("time.hours", hours) : loc.Format("time.hoursMinutes", hours, rest);
     }
 
     /// <summary>The traffic cell: the pair, or <c>–</c> before measuring began.</summary>

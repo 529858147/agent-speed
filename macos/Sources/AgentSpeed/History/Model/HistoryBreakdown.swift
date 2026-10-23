@@ -61,6 +61,11 @@ enum HistoryBreakdown {
                                 items: bySource(records, excluded: excluded, metric: metric, traffic: traffic?.bySource ?? [:]),
                                 metric: metric)
         }
+        // A day of one source with traffic but no token usage has no models: it shows the source's one bar (DESIGN 10).
+        if let source, metric == .traffic, records.isEmpty, let bytes = traffic?.bySource[source] {
+            return DayBreakdown(day: day, kind: .bySource, items: bySource([], excluded: excluded, metric: metric, traffic: [source: bytes]),
+                                metric: metric)
+        }
         return DayBreakdown(day: day, kind: .byModel, items: byModel(records, metric: metric), metric: metric)
     }
 

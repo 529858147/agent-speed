@@ -1,8 +1,9 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// Settings → 即時上報 (DESIGN 11): the master switch, the service, this device's username and API key, what is sent,
-/// the status line, this device and the other registered services. Everything applies at once.
+/// Settings → API (DESIGN 11): the master switch, the service, the username (always shown) and the API key, what is
+/// sent, the status line, this device and the other registered services. Everything applies at once; opening the pane
+/// never touches the network.
 struct ReportPane: View {
     let model: AppModel
 
@@ -12,11 +13,9 @@ struct ReportPane: View {
         Form {
             ReportMasterSection(model: model)
             ReportServiceSection(model: model)
-            if registered {
-                ReportUsernameSection(model: model)
-                if let mode = report.discovery?.apiKeyMode, mode != .none {
-                    ReportAPIKeySection(model: model, mode: mode)
-                }
+            ReportUsernameSection(model: model)
+            if report.identity != nil, let mode = report.discovery?.apiKeyMode, mode != .none {
+                ReportAPIKeySection(model: model, mode: mode)
             }
             ReportSectionsSection(model: model)
             ReportStatusSection(model: model)
@@ -29,6 +28,7 @@ struct ReportPane: View {
         }
         .settingsForm()
         .animation(model.accessibility.reduceMotion ? nil : .easeOut(duration: 0.2), value: registered)
+        .onDisappear { report.paneClosed() }
         .sheet(isPresented: Binding(get: { report.consent != nil }, set: { if !$0 { report.cancelConsent() } })) {
             ReportConsentSheet(model: model)
                 .appEnvironment(model)
@@ -93,11 +93,11 @@ private struct ReportServiceSection: View {
                             .disabled(!model.settings.networkEnabled)
                     }
                 }
-            } else if let service = report.selectedService, report.serviceState == .unknown {
-                Text(l10n("report.service.host", service.authority))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+            } else if let service = report.selectedService {
+                // Before the first fetch: only what the app itself knows (REPORTING 3.4).
+                ReportServiceSummary(model: model, service: service,
+                                     name: report.preferences.preset == .codexRadar ? ReportPreset.codexRadarName : nil)
+                    .transition(reduceMotion ? .identity : .opacity)
             }
             ReportServiceState(model: model)
         }

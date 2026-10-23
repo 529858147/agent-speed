@@ -6,7 +6,6 @@ public enum ReportSection: String, CaseIterable, Codable, Hashable, Sendable {
     case models
     case cost
     case traffic
-    case machineTraffic
 }
 
 /// `apiKey.mode` (REPORTING 5.6).
@@ -59,6 +58,14 @@ public enum ReportDiscoveryProblem: Error, Equatable, Sendable {
     case notJSON
     /// The first offending field, for logs only.
     case invalid(String)
+
+    /// Not an `agent-speed-report` document at all (a web page, other JSON), as opposed to one that breaks a rule.
+    public var isOtherDocument: Bool {
+        switch self {
+        case .tooLarge, .notJSON, .invalid("protocol"): true
+        case .invalid: false
+        }
+    }
 }
 
 /// A validated discovery document (REPORTING 3.2). Text is plain and capped, optional links are kept only when
@@ -168,6 +175,19 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
 
     private static func nonEmpty(_ text: String) -> String? {
         text.isEmpty ? nil : text
+    }
+
+    /// What the preview assumes before a service's document is known (DESIGN 11, Preview window): the API at the
+    /// service URL, every section and the protocol's defaults. Never stored or confirmed; the real document can only
+    /// list fewer sections.
+    public static func assumed(for service: ReportServiceURL, name: String) -> ReportDiscovery? {
+        let link = "https://\(service.host)/"
+        let document = ReportJSON.object([
+            "protocol": .string(protocolName), "versions": .array([.int(supportedVersion)]),
+            "service": .object(["name": .string(name), "terms": .string(link), "privacy": .string(link)]),
+            "api": .string(service.string),
+        ])
+        return try? parse(document.compactData, service: service).get()
     }
 }
 

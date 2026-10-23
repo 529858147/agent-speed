@@ -1,6 +1,7 @@
 using System.Windows.Media;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Localization;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.History;
@@ -58,6 +59,7 @@ internal sealed record LegendItem(string Name, Brush Brush);
 internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
 {
     private string _label = string.Empty;
+    private string _shortLabel = string.Empty;
     private string _value = string.Empty;
     private string _unit = string.Empty;
     private string _tooltip = string.Empty;
@@ -77,6 +79,12 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
     public SummaryMetric Metric { get; } = metric;
 
     public string Label { get => _label; private set => Set(ref _label, value); }
+
+    /// <summary>
+    /// What the title shows when <see cref="Label"/> does not fit the card (DESIGN 4b): its short form, or the title itself
+    /// when it has none (a cost title, or any title other than the metric's own).
+    /// </summary>
+    public string ShortLabel { get => _shortLabel; private set => Set(ref _shortLabel, value); }
 
     public string Value { get => _value; private set => Set(ref _value, value); }
 
@@ -122,6 +130,8 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
     public void Apply(SummaryCard card, Brush? sparkBrush, string tooltip, string accessibleName)
     {
         Label = card.Label;
+        var loc = LocalizationSource.Instance;
+        ShortLabel = ShortLabelKey(Metric) is { } key && card.Label == loc[HistorySummary.LabelKey(Metric)] ? loc[key] : card.Label;
         Value = card.Value;
         if (Set(ref _unit, card.Unit, nameof(Unit)))
         {
@@ -148,6 +158,8 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
         AccessibleName = accessibleName;
         HelpText = card.Note ?? string.Empty;
     }
+
+    private static string? ShortLabelKey(SummaryMetric metric) => metric == SummaryMetric.Input ? "history.summary.input.short" : null;
 }
 
 /// <summary>One bar of the single-day breakdown, updated in place so its bar can grow to the new length.</summary>

@@ -121,20 +121,6 @@
         "txBytes": { "$ref": "#/$defs/integer" }
       }
     },
-    "machineTraffic": {
-      "description": "Traffic of the whole computer (REPORTING 6.6). With status ok every value field is present; otherwise only status.",
-      "type": "object",
-      "required": ["status"],
-      "properties": {
-        "status": { "enum": ["ok", "off", "unavailable"] },
-        "rxBytesPerSecond": { "$ref": "#/$defs/bytesPerSecond" },
-        "txBytesPerSecond": { "$ref": "#/$defs/bytesPerSecond" },
-        "peakRxBytesPerSecond": { "$ref": "#/$defs/bytesPerSecond" },
-        "peakTxBytesPerSecond": { "$ref": "#/$defs/bytesPerSecond" },
-        "rxBytes": { "$ref": "#/$defs/integer" },
-        "txBytes": { "$ref": "#/$defs/integer" }
-      }
-    },
     "cost": {
       "type": "object",
       "required": ["liveMicroUsdPerSecond", "peakMicroUsdPerSecond", "knownShare", "deltaMicroUsd", "unpricedRequests", "priceVersion"],
@@ -182,7 +168,7 @@
       "required": ["id", "sources", "requests", "output", "measuredOutput", "measuredMs", "generating"],
       "properties": {
         "id": { "$ref": "#/$defs/modelId" },
-        "sources": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/source" } },
+        "sources": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/source" } },
         "requests": { "$ref": "#/$defs/integer" },
         "output": { "$ref": "#/$defs/integer" },
         "measuredOutput": { "$ref": "#/$defs/integer" },
@@ -242,8 +228,7 @@
         },
         "cost": { "$ref": "#/$defs/cost" },
         "traffic": { "$ref": "#/$defs/traffic" },
-        "machineTraffic": { "$ref": "#/$defs/machineTraffic" },
-        "sources": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/sourceEntry" } },
+        "sources": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/sourceEntry" } },
         "models": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/modelEntry" } }
       }
     },

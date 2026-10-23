@@ -26,6 +26,9 @@ enum HistoryPreviews {
         var metric: HistoryChartMetric = .output
         var marked: Set<SourceKind> = []
         var includeSubscriptions = false
+        /// DESIGN 10: a source whose token usage is left out (it only used the network), and sources turned off.
+        var tokenless: SourceKind?
+        var disabled: Set<SourceKind> = []
     }
 
     enum Days { case full, none, recent(Int) }
@@ -89,6 +92,11 @@ enum HistoryPreviews {
         Case(name: "traffic-min-ja", size: HistoryWindowController.minimumSize, language: .ja, metric: .traffic),
         Case(name: "traffic-breakdown", range: .yesterday, metric: .traffic),
         Case(name: "traffic-table", sort: .traffic, tall: true, metric: .traffic),
+        // A source that only used the network opens on traffic; one day of it is its one bar; a disabled source is gone.
+        Case(name: "traffic-only-en", source: .antigravity, language: .en, tokenless: .antigravity),
+        Case(name: "traffic-only-yesterday", source: .antigravity, range: .yesterday, tokenless: .antigravity),
+        Case(name: "traffic-only-table-ja", source: .antigravity, language: .ja, tall: true, tokenless: .antigravity),
+        Case(name: "traffic-disabled", metric: .traffic, disabled: [.claudeCode, .antigravity]),
     ]
 
     /// Deterministic rates for previews (the shape of an open.er-api.com response).
@@ -143,6 +151,7 @@ enum HistoryPreviews {
         model.l10n.apply(original)
         model.settings.currency = "USD"
         model.settings.subscriptionSources = []
+        model.settings.enabledSources = Set(SourceKind.allCases)
         model.settings.storage.removeObject(forKey: HistoryViewModel.includeSubscriptionsKey)
         model.rates.preview(rates: nil, currency: "USD")
         model.history.publish(state: .notLoaded, days: [])
@@ -155,12 +164,14 @@ enum HistoryPreviews {
         let all = PreviewHistory.days(endingAt: now, count: 160, calendar: calendar)
         model.settings.language = item.language
         model.l10n.apply(item.language)
-        let days: [DailyUsage] = switch item.days {
+        let stored: [DailyUsage] = switch item.days {
         case .full: all
         case .none: []
         case .recent(let count):
             all.filter { DayKey($0.day).map { $0 >= DayKey(now, calendar: calendar).adding(days: -count) } ?? false }
         }
+        let days = stored.filter { $0.source != item.tokenless && !item.disabled.contains($0.source) }
+        model.settings.enabledSources = Set(SourceKind.allCases).subtracting(item.disabled)
         let state: HistoryState = switch item.state {
         case .ready: .ready(updatedAt: now.addingTimeInterval(-240))
         case .analyzing(let progress, let done, let total): .analyzing(progress: progress, filesDone: done, filesTotal: total)

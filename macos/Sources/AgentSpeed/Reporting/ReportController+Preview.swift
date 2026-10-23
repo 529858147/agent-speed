@@ -10,9 +10,12 @@ extension ReportController {
         var headers: [(name: String, value: String)]
         /// Seconds until the next report is due; nil while quiet, paused or off.
         var nextIn: Int?
+        /// Built before the service's document is known (DESIGN 11, Preview window): the body only is meaningful.
+        var assumed = false
 
         static func == (lhs: Preview, rhs: Preview) -> Bool {
             lhs.body == rhs.body && lhs.requestLine == rhs.requestLine && lhs.nextIn == rhs.nextIn
+                && lhs.assumed == rhs.assumed
                 && lhs.headers.map(\.name) == rhs.headers.map(\.name) && lhs.headers.map(\.value) == rhs.headers.map(\.value)
         }
 
@@ -34,7 +37,8 @@ extension ReportController {
         if previewOpenings == 0 { previewWindow = nil }
     }
 
-    /// The next report for the consent sheet's `draft`, or for the selected identity.
+    /// The next report for the consent sheet's `draft`, or for the selected service: its identity and document, or,
+    /// before the document is known (the dashboard invitation), the protocol's defaults.
     func preview(draft: ConsentDraft? = nil) -> Preview? {
         let now = ReportClock.monotonicMs
         let sample = lastSample
@@ -42,15 +46,22 @@ extension ReportController {
         let deviceId: String
         let username: String
         var sections = preferences.sections
+        var assumed = false
         if let draft {
             document = draft.discovery
             deviceId = draft.deviceId
             username = ReportUsername.normalized(draft.username)
             sections = draft.sections
-        } else if let identity, let stored = discovery {
+        } else if let stored = discovery {
             document = stored
-            deviceId = identity.deviceId
-            username = identity.username ?? ReportUsername.random()
+            deviceId = identity?.deviceId ?? previewDeviceId
+            username = fieldUsername
+        } else if let service = selectedService,
+                  let guess = ReportDiscovery.assumed(for: service, name: serviceName ?? service.host) {
+            document = guess
+            deviceId = previewDeviceId
+            username = fieldUsername
+            assumed = true
         } else {
             return nil
         }
@@ -85,6 +96,6 @@ extension ReportController {
             nextIn = Int(max(0, (due - now + 999) / 1000))
         }
         return Preview(body: body, requestLine: "POST \(ReportURLs.requestPath(of: url)) HTTP/1.1", headers: headers,
-                       nextIn: nextIn)
+                       nextIn: nextIn, assumed: assumed)
     }
 }

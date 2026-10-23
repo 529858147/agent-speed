@@ -21,6 +21,11 @@ enum TrafficSurfacePreviews {
         dashboard(model, dark: true, to: directory.appendingPathComponent("dashboard-traffic-no-tools-bits-dark.png"))
         model.settings.trafficIncludeTools = true
         model.settings.trafficUnit = .bytes
+        // A disabled source shows no traffic (DESIGN 10); this computer's values stay.
+        let enabled = model.settings.enabledSources
+        model.settings.enabledSources = enabled.subtracting([.claudeCode])
+        dashboard(model, dark: false, to: directory.appendingPathComponent("dashboard-traffic-disabled-light.png"))
+        model.settings.enabledSources = enabled
         let language = model.settings.language
         model.settings.language = .en
         model.l10n.apply(.en)

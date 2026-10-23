@@ -49,8 +49,8 @@ EXAMPLES_DIR = SPEC / "fixtures" / "report-examples"
 
 SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
            "workbuddyAi")
-SECTIONS = ("sources", "models", "cost", "traffic", "machineTraffic")
-DEFAULT_SECTIONS = ("sources", "models", "cost", "traffic")  # DESIGN 11: machineTraffic is off by default
+SECTIONS = ("sources", "models", "cost", "traffic")
+DEFAULT_SECTIONS = SECTIONS  # DESIGN 11: every section switch is on by default
 LABEL = "AGENTSPEED-V1"
 SKEW_SECONDS = 300
 NONCE_TTL_SECONDS = 600
@@ -515,7 +515,7 @@ def heat(value: float, redline: float) -> float:
 
 
 def source_has_activity(entry: dict) -> bool:
-    """REPORTING 6.6.4: some number of the entry as sent, other than agents.active and the shares, is non-zero."""
+    """REPORTING 6.6.3: some number of the entry as sent, other than agents.active and the shares, is non-zero."""
     values = [entry["live"]["outputTokS"], entry["live"]["totalTokS"], entry["agents"]["generating"],
               entry["agents"]["tools"], *entry["delta"].values()]
     if "cost" in entry:
@@ -559,12 +559,12 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
         cost = report["cost"]
         if cost["peakMicroUsdPerSecond"] < cost["liveMicroUsdPerSecond"]:
             errors.append("cost.peakMicroUsdPerSecond: below the live value")
-    for key in ("traffic", "machineTraffic"):
+    for key in ("traffic",):
         block = report.get(key)
         if block is None:
             continue
         fields = ["rxBytesPerSecond", "txBytesPerSecond", "peakRxBytesPerSecond", "peakTxBytesPerSecond",
-                  "rxBytes", "txBytes"] + (["includesTools"] if key == "traffic" else [])
+                  "rxBytes", "txBytes", "includesTools"]
         present = [field for field in fields if field in block]
         if block["status"] == "ok" and len(present) != len(fields):
             errors.append(f"{key}: status ok needs {', '.join(sorted(set(fields) - set(present)))}")
@@ -1089,7 +1089,7 @@ class ReferenceService:
 
 def report_line(report: dict) -> str:
     cost = report.get("cost")
-    traffic = report.get("machineTraffic") or {}
+    traffic = report.get("traffic") or {}
     parts = [time.strftime("%H:%M:%S", time.gmtime(parse_instant(report["sentAt"]) / 1000)),
              f"{report['username']:<20}", f"{report['activity']:<7}", f"seq {report['run']['seq']:<5}",
              f"{report['live']['outputTokS']:>8.1f} tok/s", f"+{report['delta']['output']} out",
@@ -1804,9 +1804,9 @@ DISCOVERY_CASES = [
                 "limits": {"intervalSeconds": 300, "heartbeatSeconds": 300, "maxAgeSeconds": 10,
                            "maxBodyBytes": 65_536, "maxModels": 16},
                 "username": {"minLength": 1, "maxLength": 32, "charset": "unicode", "spaces": True}}},
-    {"name": "unknown fields and section names are ignored",
+    {"name": "unknown fields and section names are ignored (machineTraffic is no longer a section)",
      "fetchedFrom": HTTPS_DISCOVERY,
-     "document": _discovery(sections=["cost", "future", "sources"], extra={"x": 1}),
+     "document": _discovery(sections=["cost", "future", "machineTraffic", "sources"], extra={"x": 1}),
      "expect": {"sections": ["sources", "cost"]}},
 ]
 
@@ -2069,8 +2069,7 @@ def run_client(args) -> int:
     username = payload.get("username", username)
     run_id = str(uuid.uuid4())
     template = load_examples()["report-active"]
-    accepted = set(discovery["sections"]) & set(DEFAULT_SECTIONS + (("machineTraffic",)
-                                                                  if args.machine_traffic else ()))
+    accepted = set(discovery["sections"]) & set(DEFAULT_SECTIONS)
     for seq in range(1, args.reports + 1):
         report = copy.deepcopy(template)
         for section in SECTIONS:
@@ -2115,8 +2114,6 @@ def main() -> int:
     client.add_argument("--reports", type=int, default=3)
     client.add_argument("--fast", action="store_true", help="do not wait intervalSeconds between reports")
     client.add_argument("--leave", action="store_true", help="mark the last report as leaving")
-    client.add_argument("--machine-traffic", action="store_true",
-                        help="also send machineTraffic (off by default, as in the app)")
     client.add_argument("--rename", help="rename the device after reporting")
     client.add_argument("--rotate", action="store_true", help="rotate the device key after reporting")
     client.add_argument("--forget", action="store_true", help="delete the device at the end")

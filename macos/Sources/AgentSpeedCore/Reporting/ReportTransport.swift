@@ -24,7 +24,7 @@ public enum ReportTransportError: Error, Equatable, Sendable {
     case tls
     case other(Int)
 
-    /// A short reason for the status line (`report.status.retrying`, `report.service.failed`); nothing personal.
+    /// A short reason for the log only (REPORTING 2.3); the user sees `failure`'s words instead.
     public var reason: String {
         switch self {
         case .disallowedRedirect: "redirect"
@@ -35,6 +35,32 @@ public enum ReportTransportError: Error, Equatable, Sendable {
         case .other(let code): "URLError \(code)"
         }
     }
+
+    /// What the user is told (DESIGN 11, No internals).
+    public var failure: ReportFailure {
+        switch self {
+        case .disallowedRedirect, .tls: .insecure
+        case .tooLarge: .response
+        case .timeout, .offline, .other: .unreachable
+        }
+    }
+}
+
+/// Why a request failed, in the user's terms (DESIGN 11): every transport error and unexpected status maps to one
+/// of these, each a localized `report.error.*` sentence; status codes and error classes go to the log only.
+public enum ReportFailure: String, Equatable, Hashable, Sendable, Codable {
+    /// No connection, the host not found or refusing, a timeout.
+    case unreachable
+    /// A TLS failure, or a redirect to a non-`https` URL.
+    case insecure
+    /// The service answered with a status the client cannot act on (`5xx`, `429`, an unexpected `3xx` …).
+    case unavailable
+    /// The response could not be read (too large).
+    case response
+    /// The device key could not be created or used on this computer.
+    case key
+
+    public var key: String { "report.error.\(rawValue)" }
 }
 
 /// The network seam of live reporting; tests use a scripted transport or the reference server.

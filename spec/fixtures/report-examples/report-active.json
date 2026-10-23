@@ -63,15 +63,6 @@
     "rxBytes": 121550,
     "txBytes": 6440
   },
-  "machineTraffic": {
-    "status": "ok",
-    "rxBytesPerSecond": 1281000,
-    "txBytesPerSecond": 64020,
-    "peakRxBytesPerSecond": 2210400,
-    "peakTxBytesPerSecond": 98100,
-    "rxBytes": 6405000,
-    "txBytes": 320100
-  },
   "sources": [
     {
       "source": "codex",

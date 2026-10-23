@@ -22,6 +22,11 @@ struct DashboardView: View {
                     .padding(.bottom, DashboardLayout.sectionSpacing)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            if showsInvitation {
+                ReportInvitationCard(model: model)
+                    .padding(.bottom, DashboardLayout.sectionSpacing)
+                    .transition(model.accessibility.reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
             DashboardContent(model: model)
                 .dashboardFlexible()
             Hairline()
@@ -36,6 +41,15 @@ struct DashboardView: View {
         .frame(width: DashboardController.width, alignment: .top)
         .animation(model.dashboardMotion, value: model.isPreviewing)
         .animation(model.dashboardMotion, value: model.updates.justUpdatedTo)
+        .animation(model.dashboardMotion, value: showsInvitation)
+    }
+
+    /// The live reporting invitation (DESIGN 11): one card at a time, so it waits for the update and preview banners;
+    /// it stays for its done line after being accepted.
+    private var showsInvitation: Bool {
+        let report = model.report
+        if report.inviteJustAccepted { return true }
+        return report.invitationOffered && model.updates.justUpdatedTo == nil && !model.isPreviewing
     }
 }
 

@@ -106,7 +106,6 @@ final class TrafficEngine {
             }
             interfaces = current
             machineInterfaceCount = current.count
-            if !gap { reportTotals.machine += sum }
             ledger.modify(day) { totals in
                 totals.machine += sum
                 if let dt, dt <= Self.gapMs { totals.machineSampledMs += dt }

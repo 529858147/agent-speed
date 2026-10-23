@@ -38,7 +38,7 @@ struct ReportDiscoveryTests {
             "username": ["minLength": 2, "maxLength": 32, "charset": "unicode", "spaces": true] as [String: Any],
             "limits": ["intervalSeconds": 5, "heartbeatSeconds": 60, "maxAgeSeconds": 30, "maxBodyBytes": 16_384,
                        "maxModels": 16],
-            "sections": ["sources", "models", "cost", "traffic", "machineTraffic"],
+            "sections": ["sources", "models", "cost", "traffic"],
         ]
     }
 
@@ -138,7 +138,7 @@ struct ReportDiscoveryTests {
     }
 
     @Test func sectionOrderFollowsTheSpec() {
-        #expect(ReportSection.allCases.map(\.rawValue) == ["sources", "models", "cost", "traffic", "machineTraffic"])
+        #expect(ReportSection.allCases.map(\.rawValue) == ["sources", "models", "cost", "traffic"])
     }
 
     @Test func unknownFieldsAreIgnored() throws {
@@ -445,7 +445,7 @@ struct ReportDiscoveryTests {
         #expect(pin.name == "Example Leaderboard")
         #expect(pin.terms == "https://example.com/terms" && pin.privacy == "https://example.com/privacy")
         #expect(pin.api == "https://api.example.com/agent-speed")
-        #expect(pin.sections == ["cost", "machineTraffic", "models", "sources", "traffic"])
+        #expect(pin.sections == ["cost", "models", "sources", "traffic"])
         #expect(pin.retentionDays == 30 && pin.apiKeyMode == .optional)
         let decoded = try JSONDecoder().decode(ReportConsentPin.self, from: JSONEncoder().encode(pin))
         #expect(decoded == pin)

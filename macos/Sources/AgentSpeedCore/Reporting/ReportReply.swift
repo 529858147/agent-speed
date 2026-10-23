@@ -129,7 +129,7 @@ public enum ReportReaction: Equatable, Sendable {
 
 /// What needs the user (DESIGN 11, the red statuses).
 public enum ReportProblem: String, Equatable, Codable, Sendable {
-    case apiKey, usernameTaken, keyMismatch, rejected, upgrade, gone, forbidden
+    case apiKey, usernameTaken, usernameRejected, keyMismatch, rejected, upgrade, gone, forbidden
 }
 
 public enum ReportOutcome {

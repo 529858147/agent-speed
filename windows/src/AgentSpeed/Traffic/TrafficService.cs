@@ -21,6 +21,9 @@ internal sealed class TrafficService : IDisposable
     private TrafficMonitor? _monitor;
     private bool _demand;
     private bool _disposed;
+    private TrafficSnapshot? _visibleFrom;
+    private SourceSet _visibleFor;
+    private TrafficSnapshot _visible = TrafficSnapshot.Off;
 
     public TrafficService(Dispatcher dispatcher, SettingsService settings)
     {
@@ -30,7 +33,26 @@ internal sealed class TrafficService : IDisposable
 
     public TrafficHub Hub { get; }
 
-    public TrafficSnapshot Snapshot => Hub.Snapshot;
+    /// <summary>
+    /// The live traffic as every surface shows it: sources turned off in Settings → Data Sources left out (METRICS 10.5,
+    /// DESIGN 10). Recomputed only when the hub's snapshot or the enabled sources change.
+    /// </summary>
+    public TrafficSnapshot Snapshot
+    {
+        get
+        {
+            var raw = Hub.Snapshot;
+            var enabled = _settings.Current.EnabledSourceSet();
+            if (!ReferenceEquals(raw, _visibleFrom) || enabled != _visibleFor)
+            {
+                _visibleFrom = raw;
+                _visibleFor = enabled;
+                _visible = TrafficVisibility.Snapshot(raw, enabled);
+            }
+
+            return _visible;
+        }
+    }
 
     /// <summary>Installs and removes the helper service; null where it does not apply.</summary>
     public ITrafficHelperHost? Helper { get; set; }

@@ -124,7 +124,7 @@ extension PriceTable {
     }
 }
 
-/// The reserved model ids of REPORTING 6.6.5.
+/// The reserved model ids of REPORTING 6.6.4.
 public enum ReportModelIds {
     public static let local = "local"
     public static let unknown = "unknown"

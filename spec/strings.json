@@ -1614,6 +1614,24 @@
     "en": "%dm ago",
     "ja": "%d 分前"
   },
+  "time.minutes": {
+    "zh-Hant": "%d 分鐘",
+    "zh-Hans": "%d 分钟",
+    "en": "%d min",
+    "ja": "%d 分"
+  },
+  "time.hours": {
+    "zh-Hant": "%d 小時",
+    "zh-Hans": "%d 小时",
+    "en": "%d hr",
+    "ja": "%d 時間"
+  },
+  "time.hoursMinutes": {
+    "zh-Hant": "%d 小時 %d 分鐘",
+    "zh-Hans": "%d 小时 %d 分钟",
+    "en": "%d hr %d min",
+    "ja": "%d 時間 %d 分"
+  },
   "a11y.orb": {
     "zh-Hant": "每秒 %@ 個 token，%@",
     "zh-Hans": "每秒 %@ 个 token，%@",
@@ -3576,6 +3594,12 @@
     "en": "%@ downloaded and %@ uploaded today",
     "ja": "今日のダウンロード %@、アップロード %@"
   },
+  "traffic.a11y.pair": {
+    "zh-Hant": "下載 %@，上傳 %@",
+    "zh-Hans": "下载 %@，上传 %@",
+    "en": "%@ downloaded and %@ uploaded",
+    "ja": "ダウンロード %@、アップロード %@"
+  },
   "a11y.orb.traffic": {
     "zh-Hant": "下載每秒 %@，上傳每秒 %@",
     "zh-Hans": "下载每秒 %@，上传每秒 %@",
@@ -3793,22 +3817,22 @@
     "ja": "通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数えます。内容・アドレス・接続先は一切読まず、どこにも送信しません。"
   },
   "settings.report": {
-    "zh-Hant": "即時上報",
-    "zh-Hans": "实时上报",
-    "en": "Live Reporting",
-    "ja": "ライブ送信"
+    "zh-Hant": "API",
+    "zh-Hans": "API",
+    "en": "API",
+    "ja": "API"
   },
   "report.enabled": {
-    "zh-Hant": "即時上報到排行榜",
-    "zh-Hans": "实时上报到排行榜",
-    "en": "Report Live Stats",
-    "ja": "ライブ統計を送信"
+    "zh-Hant": "即時上報到 API",
+    "zh-Hans": "实时上报到 API",
+    "en": "Live reporting to an API",
+    "ja": "API へのライブ送信"
   },
   "report.enabled.hint": {
-    "zh-Hant": "開啟後，agent 工作時每隔幾秒，把即時速度和 token 用量等數字傳送到你選擇的服務，例如排行榜。不會傳送對話內容、檔案或專案名稱，也不會傳送歷史紀錄。",
-    "zh-Hans": "开启后，agent 工作时每隔几秒，把实时速度和 token 用量等数字发送到你选择的服务，例如排行榜。不会发送对话内容、文件或项目名称，也不会发送历史记录。",
-    "en": "While your agents work, sends live speed, token usage and similar numbers every few seconds to a service you choose, such as a leaderboard. Never sends conversation content, file or project names, or history.",
-    "ja": "agent の作業中、現在の速度や token 使用量などの数値を数秒ごとに、選んだサービス（ランキングなど）へ送信します。会話の内容、ファイル名やプロジェクト名、履歴は送信しません。"
+    "zh-Hant": "開啟後，agent 工作時每隔幾秒，把即時速度和 token 用量等數字傳送到你選擇的 API（例如排行榜服務）。不會傳送對話內容、檔案或專案名稱，也不會傳送歷史紀錄。",
+    "zh-Hans": "开启后，agent 工作时每隔几秒，把实时速度和 token 用量等数字发送到你选择的 API（例如排行榜服务）。不会发送对话内容、文件或项目名称，也不会发送历史记录。",
+    "en": "While your agents work, sends live speed, token usage and similar numbers every few seconds to the API you choose (for example a leaderboard service). Never sends conversation content, file or project names, or history.",
+    "ja": "agent の作業中、現在の速度や token 使用量などの数値を数秒ごとに、選んだ API（ランキングサービスなど）へ送信します。会話の内容、ファイル名やプロジェクト名、履歴は送信しません。"
   },
   "report.service": {
     "zh-Hant": "上報到",
@@ -3858,17 +3882,41 @@
     "en": "Checking the service…",
     "ja": "サービス情報を確認しています…"
   },
-  "report.service.failed": {
-    "zh-Hant": "無法讀取服務資訊（%@）",
-    "zh-Hans": "无法读取服务信息（%@）",
-    "en": "Couldn't reach the service (%@)",
-    "ja": "サービスに接続できません（%@）"
-  },
   "report.service.notSupported": {
-    "zh-Hant": "這個網址不支援 Agent Speed 即時上報",
-    "zh-Hans": "该网址不支持 Agent Speed 实时上报",
-    "en": "This URL doesn't support Agent Speed live reporting",
-    "ja": "この URL は Agent Speed のライブ送信に対応していません"
+    "zh-Hant": "這個服務目前不支援 Agent Speed 即時上報",
+    "zh-Hans": "这个服务目前不支持 Agent Speed 实时上报",
+    "en": "This service doesn't support Agent Speed live reporting",
+    "ja": "このサービスは現在 Agent Speed のライブ送信に対応していません"
+  },
+  "report.service.invalid": {
+    "zh-Hant": "這個服務提供的設定資料有誤，暫時無法上報",
+    "zh-Hans": "这个服务提供的配置信息有误，暂时无法上报",
+    "en": "This service's setup information has errors, so reporting can't start for now",
+    "ja": "このサービスの設定情報に誤りがあるため、今は送信できません"
+  },
+  "report.service.unreachable": {
+    "zh-Hant": "無法連上這個服務，請確認網路連線後再試一次",
+    "zh-Hans": "无法连接这个服务，请检查网络连接后再试一次",
+    "en": "Can't reach this service. Check your internet connection and try again.",
+    "ja": "このサービスに接続できません。インターネット接続を確認して、もう一度お試しください"
+  },
+  "report.service.insecure": {
+    "zh-Hant": "無法和這個服務建立安全連線",
+    "zh-Hans": "无法与这个服务建立安全连接",
+    "en": "Couldn't connect to this service securely",
+    "ja": "このサービスと安全に接続できませんでした"
+  },
+  "report.service.unavailable": {
+    "zh-Hant": "這個服務暫時沒有回應，請稍後再試",
+    "zh-Hans": "这个服务暂时没有响应，请稍后再试",
+    "en": "This service isn't responding right now. Try again later.",
+    "ja": "このサービスは現在応答していません。しばらくしてからお試しください"
+  },
+  "report.service.retry": {
+    "zh-Hant": "再試一次",
+    "zh-Hans": "再试一次",
+    "en": "Try Again",
+    "ja": "再試行"
   },
   "report.service.host": {
     "zh-Hant": "資料會傳送到 %@",
@@ -3919,10 +3967,10 @@
     "ja": "ユーザー名"
   },
   "report.username.public": {
-    "zh-Hant": "會公開顯示在排行榜上。預設是這台電腦的名稱，其中可能包含你的名字。",
-    "zh-Hans": "会公开显示在排行榜上。默认是这台电脑的名称，其中可能包含你的名字。",
-    "en": "Shown publicly on the leaderboard. It starts as this computer's name, which may include your real name.",
-    "ja": "ランキングで公開されます。初期値はこのコンピューターの名前で、本名が含まれることがあります。"
+    "zh-Hant": "服務可能會公開顯示這個名稱（例如在排行榜上）。預設是這台電腦的名稱，其中可能包含你的名字。",
+    "zh-Hans": "服务可能会公开显示这个名称（例如在排行榜上）。默认是这台电脑的名称，其中可能包含你的名字。",
+    "en": "The service may show it publicly, for example on a leaderboard. It starts as this computer's name, which may include your real name.",
+    "ja": "サービス上で公開されることがあります（ランキングなど）。初期値はこのコンピューターの名前で、本名が含まれることがあります。"
   },
   "report.username.random": {
     "zh-Hant": "使用隨機名稱",
@@ -4027,10 +4075,10 @@
     "ja": "送信する内容"
   },
   "report.sections.hint": {
-    "zh-Hant": "一律傳送：即時速度、與上次上報之間的 token 用量、agent 數量和速度稱號等級。下列項目可以個別開啟或關閉；「這台電腦的網路速度」預設關閉。",
-    "zh-Hans": "始终发送：实时速度、与上次上报之间的 token 用量、agent 数量和速度称号等级。以下项目可分别开启或关闭；“这台电脑的网络速度”默认关闭。",
-    "en": "Always sent: live speed, token usage since the previous report, agent counts and the speed title level. Each item below can be turned on or off; this computer's network speed is off by default.",
-    "ja": "常に送信：現在の速度、前回の送信以降の token 使用量、agent の数、速度称号のレベル。下の項目は個別にオン・オフできます。「このコンピューターの通信速度」は初期設定でオフです。"
+    "zh-Hant": "一律傳送：即時速度、與上次上報之間的 token 用量、agent 數量和速度稱號等級。下列項目可以個別開啟或關閉。",
+    "zh-Hans": "始终发送：实时速度、与上次上报之间的 token 用量、agent 数量和速度称号等级。以下项目可分别开启或关闭。",
+    "en": "Always sent: live speed, token usage since the previous report, agent counts and the speed title level. Each item below can be turned on or off.",
+    "ja": "常に送信：現在の速度、前回の送信以降の token 使用量、agent の数、速度称号のレベル。下の項目は個別にオン・オフできます。"
   },
   "report.section.sources": {
     "zh-Hant": "各來源明細",
@@ -4055,18 +4103,6 @@
     "zh-Hans": "agent 的网络流量",
     "en": "Agents' network traffic",
     "ja": "agent の通信量"
-  },
-  "report.section.machineTraffic": {
-    "zh-Hant": "這台電腦的網路速度",
-    "zh-Hans": "这台电脑的网络速度",
-    "en": "This computer's network speed",
-    "ja": "このコンピューターの通信速度"
-  },
-  "report.section.machineTraffic.hint": {
-    "zh-Hant": "包含其他 App 的流量",
-    "zh-Hans": "包含其他应用的流量",
-    "en": "Includes other apps' traffic",
-    "ja": "他のアプリの通信も含みます"
   },
   "report.section.notAccepted": {
     "zh-Hant": "這個服務不使用",
@@ -4097,6 +4133,12 @@
     "zh-Hans": "这就是实际发送的完整内容，每秒更新。签名在发送时才加上。",
     "en": "This is exactly what is sent, updated every second. The signature is added when it's sent.",
     "ja": "実際に送信される内容そのものです。毎秒更新されます。署名は送信時に付けられます。"
+  },
+  "report.preview.assumed": {
+    "zh-Hant": "開啟後會先向服務確認；服務不使用的項目不會傳送。每秒更新，簽章在送出時才加上。",
+    "zh-Hans": "开启后会先向服务确认；服务不使用的项目不会发送。每秒更新，签名在发送时才加上。",
+    "en": "Checked with the service once you turn it on; items it doesn't use are left out. Updated every second; the signature is added when it's sent.",
+    "ja": "オンにするとまずサービスに確認し、サービスが使わない項目は送信しません。毎秒更新され、署名は送信時に付けられます。"
   },
   "report.preview.copy": {
     "zh-Hant": "複製 JSON",
@@ -4201,10 +4243,58 @@
     "ja": "一時停止中"
   },
   "report.status.retrying": {
-    "zh-Hant": "上報失敗，稍後自動重試（%@）",
-    "zh-Hans": "上报失败，稍后自动重试（%@）",
-    "en": "Couldn't report — retrying shortly (%@)",
-    "ja": "送信に失敗しました。まもなく再試行します（%@）"
+    "zh-Hant": "上報失敗，稍後會自動重試",
+    "zh-Hans": "上报失败，稍后会自动重试",
+    "en": "Couldn't report — retrying shortly",
+    "ja": "送信に失敗しました。まもなく再試行します"
+  },
+  "report.status.registerFailed": {
+    "zh-Hant": "無法註冊這台裝置，稍後會再試",
+    "zh-Hans": "无法注册这台设备，稍后会再试",
+    "en": "Couldn't register this device — will try again later",
+    "ja": "このデバイスを登録できませんでした。あとで再試行します"
+  },
+  "report.status.review": {
+    "zh-Hant": "還需要你確認這個服務的資訊，才能開始上報",
+    "zh-Hans": "还需要你确认这个服务的信息，才能开始上报",
+    "en": "Review this service's details to start reporting",
+    "ja": "送信を始めるには、このサービスの情報を確認してください"
+  },
+  "report.status.usernameRejected": {
+    "zh-Hant": "這個服務不接受這個使用者名稱，請換一個",
+    "zh-Hans": "这个服务不接受这个用户名，请换一个",
+    "en": "This service doesn't accept this username — choose another",
+    "ja": "このサービスではこのユーザー名を使えません。別の名前にしてください"
+  },
+  "report.error.unreachable": {
+    "zh-Hant": "無法連上服務",
+    "zh-Hans": "无法连接服务",
+    "en": "Can't reach the service",
+    "ja": "サービスに接続できません"
+  },
+  "report.error.insecure": {
+    "zh-Hant": "無法建立安全連線",
+    "zh-Hans": "无法建立安全连接",
+    "en": "Couldn't connect securely",
+    "ja": "安全に接続できません"
+  },
+  "report.error.unavailable": {
+    "zh-Hant": "服務暫時沒有回應",
+    "zh-Hans": "服务暂时没有响应",
+    "en": "The service isn't responding",
+    "ja": "サービスが応答していません"
+  },
+  "report.error.response": {
+    "zh-Hant": "服務的回應無法辨識",
+    "zh-Hans": "服务的响应无法识别",
+    "en": "The service's response couldn't be read",
+    "ja": "サービスの応答を読み取れません"
+  },
+  "report.error.key": {
+    "zh-Hant": "無法使用這台電腦上的裝置金鑰",
+    "zh-Hans": "无法使用这台电脑上的设备密钥",
+    "en": "Couldn't use the device key on this computer",
+    "ja": "このコンピューターのデバイス鍵を使えません"
   },
   "report.status.rateLimited": {
     "zh-Hant": "服務要求放慢，%@ 繼續",
@@ -4339,10 +4429,10 @@
     "ja": "サービスがこのデバイスとそのデータを削除しました"
   },
   "report.forget.failed": {
-    "zh-Hant": "無法連上服務（%@），尚未刪除任何資料。",
-    "zh-Hans": "无法连接服务（%@），尚未删除任何数据。",
-    "en": "Couldn't reach the service (%@). Nothing was deleted yet.",
-    "ja": "サービスに接続できません（%@）。まだ何も削除されていません。"
+    "zh-Hant": "%@，尚未刪除任何資料。",
+    "zh-Hans": "%@，尚未删除任何数据。",
+    "en": "%@. Nothing was deleted yet.",
+    "ja": "%@。まだ何も削除されていません。"
   },
   "report.forget.localOnly": {
     "zh-Hant": "只刪除本機金鑰",
@@ -4445,5 +4535,47 @@
     "zh-Hans": "这个名称属于你账号下的另一台设备。移过来后，那台设备会被删除，不能再用这个名称上报。",
     "en": "This name belongs to another device of your account. After the move that device is removed and can no longer report under it.",
     "ja": "この名前はあなたのアカウントの別のデバイスが使っています。移すとそのデバイスは削除され、この名前では送信できなくなります。"
+  },
+  "report.invite.title": {
+    "zh-Hant": "要開啟即時上報嗎？",
+    "zh-Hans": "要开启实时上报吗？",
+    "en": "Turn on live reporting?",
+    "ja": "ライブ送信をオンにしますか？"
+  },
+  "report.invite.body": {
+    "zh-Hant": "agent 工作時，每隔幾秒把即時速度和 token 用量傳送到 %@（%@）。不會傳送對話內容或檔案名稱。",
+    "zh-Hans": "agent 工作时，每隔几秒把实时速度和 token 用量发送到 %@（%@）。不会发送对话内容或文件名称。",
+    "en": "While your agents work, sends live speed and token usage to %@ (%@) every few seconds — never conversation content or file names.",
+    "ja": "agent の作業中、現在の速度と token 使用量を数秒ごとに %@（%@）へ送信します。会話の内容やファイル名は送信しません。"
+  },
+  "report.invite.username": {
+    "zh-Hant": "公開顯示為「%@」，可在設定中修改",
+    "zh-Hans": "公开显示为“%@”，可在设置中修改",
+    "en": "Public name “%@” · change it in Settings",
+    "ja": "公開名「%@」・設定で変更できます"
+  },
+  "report.invite.preview": {
+    "zh-Hant": "預覽",
+    "zh-Hans": "预览",
+    "en": "Preview",
+    "ja": "プレビュー"
+  },
+  "report.invite.accept": {
+    "zh-Hant": "開啟",
+    "zh-Hans": "开启",
+    "en": "Turn On",
+    "ja": "オンにする"
+  },
+  "report.invite.decline": {
+    "zh-Hant": "不用了",
+    "zh-Hans": "不用了",
+    "en": "No Thanks",
+    "ja": "今はしない"
+  },
+  "report.invite.done": {
+    "zh-Hant": "已開啟即時上報，隨時可以在設定中關閉",
+    "zh-Hans": "已开启实时上报，随时可以在设置中关闭",
+    "en": "Live reporting is on — turn it off anytime in Settings",
+    "ja": "ライブ送信をオンにしました。設定からいつでもオフにできます"
   }
 }

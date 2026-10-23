@@ -235,7 +235,7 @@ struct ReportConsentSheet: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else if let failure = draft.failure {
-                ReportInlineMessage(text: l10n("report.service.failed", failure))
+                ReportInlineMessage(text: l10n(failure))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer(minLength: Spacing.xs)

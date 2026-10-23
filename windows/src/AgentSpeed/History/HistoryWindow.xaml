@@ -139,6 +139,24 @@
             </Setter>
         </Style>
 
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <Style x:Key="PrivacyIcon" TargetType="TextBlock" BasedOn="{StaticResource SymbolIcon}">
+            <Setter Property="Text" Value="&#xE72E;" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,1,6,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+        </Style>
+
+        <Style x:Key="PrivacyText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+
         <!-- Three or five cards in a row: the sparkline spans the card under the value; two in a row: it sits beside the value. -->
         <DataTemplate x:Key="SummaryCardTemplate" DataType="{x:Type history:SummaryCardView}">
             <Border Style="{StaticResource Card}" Margin="6" Padding="16,13,16,14"
@@ -159,8 +177,14 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.ColumnSpan="2" Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <!-- The title, else its short form when it does not fit (DESIGN 4b), shrinking a little rather than being cut;
+                         the card's tooltip and name keep the full title. -->
+                    <controls:FirstFitPanel Grid.ColumnSpan="2" AutomationProperties.Name="{Binding Label}">
+                        <TextBlock Text="{Binding Label}" Style="{StaticResource CardTitle}" />
+                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ShortLabel}" Style="{StaticResource CardTitle}" />
+                        </Viewbox>
+                    </controls:FirstFitPanel>
                     <!-- A long amount shrinks to the card instead of being clipped; the line keeps its height, so cards stay aligned. -->
                     <Grid Grid.Row="1" Margin="0,4,0,0" Height="32">
                         <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Bottom">
@@ -692,8 +716,8 @@
 
         <!-- Footer: analysis state and the unknown-price notice on the left; the rate note and privacy on the right -->
         <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="24,9,24,10">
-            <DockPanel LastChildFill="True">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+            <history:FooterLinePanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
                             Visibility="{Binding HasMessage, Converter={StaticResource Hidden}}">
                     <TextBlock Text="{Binding StateText}" FontSize="12" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
@@ -706,7 +730,7 @@
                     <Button Style="{StaticResource LinkButton}" Height="22" Margin="6,0,0,0" FontSize="12" Command="{Binding RetryCommand}"
                             Content="{loc:Loc update.retry}" Visibility="{Binding IsFailed, Converter={StaticResource Visible}}" />
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
                             Visibility="{Binding HasMessage, Converter={StaticResource Visible}}">
                     <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE783;" FontSize="12" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                     <TextBlock Text="{Binding Message}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"
@@ -714,7 +738,7 @@
                 </StackPanel>
 
                 <!-- 網路流量自 10/22 開始記錄 (DESIGN 10): the range starts before traffic was measured. -->
-                <DockPanel DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0"
+                <DockPanel VerticalAlignment="Center" Margin="0,0,16,0"
                            Visibility="{Binding HasTrafficSince, Converter={StaticResource Visible}}">
                     <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE839;" FontSize="12" Margin="0,1,6,0"
                                Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
@@ -724,7 +748,7 @@
                 </DockPanel>
 
                 <!-- 1,234 筆請求的模型價格未知，未計入費用 · 查看 (DESIGN 9): the text trims before the link does. -->
-                <DockPanel x:Name="UnpricedNotice" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0"
+                <DockPanel x:Name="UnpricedNotice" VerticalAlignment="Center" Margin="0,0,16,0"
                            Visibility="{Binding HasUnpriced, Converter={StaticResource Visible}}">
                     <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE946;" FontSize="12" Margin="0,1,6,0"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -737,23 +761,32 @@
                                ToolTip="{Binding UnpricedText}" />
                 </DockPanel>
 
-                <!-- The rate note keeps its room before the privacy line does; both trim rather than clip. -->
-                <DockPanel HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <DockPanel DockPanel.Dock="Left" VerticalAlignment="Center" Visibility="{Binding HasRateNote, Converter={StaticResource Visible}}">
-                        <Ellipse DockPanel.Dock="Right" Width="3" Height="3" Margin="8,1,8,0" VerticalAlignment="Center"
-                                 Fill="{DynamicResource TextFillColorTertiaryBrush}" />
-                        <TextBlock Text="{Binding RateNote}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                   Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   ToolTip="{Binding RateNote}" />
-                    </DockPanel>
-                    <DockPanel ToolTip="{loc:Loc history.privacy}">
-                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE72E;" FontSize="11" Margin="0,1,6,0"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                        <TextBlock Text="{loc:Loc history.privacy}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                    </DockPanel>
+                <!-- The rate note sits at the right, before the privacy note, and keeps its room before the privacy note does. -->
+                <DockPanel history:FooterLinePanel.IsTrailing="True" VerticalAlignment="Center"
+                           Visibility="{Binding HasRateNote, Converter={StaticResource Visible}}">
+                    <Ellipse DockPanel.Dock="Right" Width="3" Height="3" Margin="8,1,8,0" VerticalAlignment="Center"
+                             Fill="{DynamicResource TextFillColorTertiaryBrush}" />
+                    <TextBlock Text="{Binding RateNote}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               ToolTip="{Binding RateNote}" />
                 </DockPanel>
-            </DockPanel>
+
+                <!-- The privacy note gets only the room every other note leaves, so it gives way first (DESIGN 4b): its full
+                     text, its short form, then the lock alone, whose room is kept, so it is never cut; the full text stays its
+                     tooltip and name. -->
+                <controls:FirstFitPanel Background="Transparent" VerticalAlignment="Center" ToolTip="{loc:Loc history.privacy}"
+                                        AutomationProperties.Name="{loc:Loc history.privacy}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource PrivacyIcon}" />
+                        <TextBlock Text="{loc:Loc history.privacy}" Style="{StaticResource PrivacyText}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource PrivacyIcon}" />
+                        <TextBlock Text="{loc:Loc history.privacy.short}" Style="{StaticResource PrivacyText}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource PrivacyIcon}" Margin="0,1,0,0" />
+                </controls:FirstFitPanel>
+            </history:FooterLinePanel>
         </Border>
 
         <!-- The models behind the unknown-price notice: name, requests and source; closes with Escape or a click elsewhere. -->

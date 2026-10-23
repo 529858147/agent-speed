@@ -5,6 +5,12 @@ import Foundation
 extension ReportController {
     enum PreviewState {
         case off, reporting, paused, attention, consent
+        /// The dashboard invitation, offered; and its done line right after `report.invite.accept`.
+        case invite, inviteDone
+        /// Accepted, but the preset does not serve its document (the pane and the footer's attention dot).
+        case setupFailed
+        /// Accepted, but the document needs the consent sheet (REPORTING 3.3).
+        case review
     }
 
     /// The spec's example service (spec/fixtures/report-examples/discovery.json), which takes an optional API key and
@@ -20,7 +26,7 @@ extension ReportController {
          "api":"https://api.example.com/agent-speed","apiKey":{"mode":"optional","url":"https://example.com/account/keys"},
          "username":{"minLength":2,"maxLength":24,"charset":"unicode","spaces":true},
          "limits":{"intervalSeconds":5,"heartbeatSeconds":60,"maxAgeSeconds":30,"maxBodyBytes":16384,"maxModels":16},
-         "sections":["sources","models","cost","traffic","machineTraffic"]}
+         "sections":["sources","models","cost","traffic"]}
         """
         return try! ReportDiscovery.parse(Data(document.utf8), service: previewService).get()
     }
@@ -28,11 +34,17 @@ extension ReportController {
     func preview(_ state: PreviewState, username: String) {
         let now = Date()
         var preferences = ReportPreferences()
-        preferences.preset = .custom
+        let onPreset: Set<PreviewState> = [.off, .invite, .inviteDone, .setupFailed, .review]
+        let settingUp: Set<PreviewState> = [.inviteDone, .setupFailed, .review]
+        preferences.preset = onPreset.contains(state) ? .codexRadar : .custom
         preferences.customURL = Self.previewService.string
+        preferences.username = username
         let discovery = Self.previewDiscovery
         let deviceId = "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b"
-        if state != .off && state != .consent {
+        if settingUp.contains(state) {
+            preferences.enabled = true
+            preferences.invite = .accepted
+        } else if !onPreset.contains(state) && state != .consent {
             preferences.enabled = true
             preferences.identities = [ReportIdentity(
                 service: Self.previewService, deviceId: deviceId, username: username,
@@ -41,10 +53,20 @@ extension ReportController {
         }
         if state == .paused { preferences.pausedUntil = now.addingTimeInterval(3600) }
         self.preferences = preferences
-        serviceState = state == .off ? .unknown : .ready(discovery)
-        signer = state == .off || state == .consent ? nil : SoftwareReportSigner()
-        apiKey = state == .off || state == .consent ? nil : "sk-preview-7Qd2"
+        let registered = !onPreset.contains(state) && state != .consent
+        serviceState = switch state {
+        case .off, .invite: .unknown
+        case .inviteDone: .checking
+        case .setupFailed: .notSupported
+        default: .ready(discovery)
+        }
+        signer = registered ? SoftwareReportSigner() : nil
+        apiKey = registered ? "sk-preview-7Qd2" : nil
         problem = state == .attention ? .keyMismatch : nil
+        inviteGap = state == .review ? .apiHost : nil
+        inviteJustAccepted = state == .inviteDone
+        registrationFailure = nil
+        renameState = .idle
         lastDeliveryAt = state == .reporting ? now.addingTimeInterval(-3) : nil
         rank = state == .reporting ? 12 : nil
         mode = state == .reporting ? .active : .idle
@@ -86,7 +108,6 @@ extension ReportController {
             traffic: ReportTrafficSample(
                 status: .ok, includesTools: true, rate: TrafficRate(rx: 24_310, tx: 1288),
                 sourceRates: [.codex: TrafficRate(rx: 4200, tx: 288), .claudeCode: TrafficRate(rx: 20_110, tx: 1000)],
-                machineStatus: .ok, machineRate: TrafficRate(rx: 1_281_000, tx: 64_020),
                 totals: TrafficReportTotals(sources: [.codex: TrafficSplit(own: TrafficBytes(rx: 21_000, tx: 1440)),
                                                       .claudeCode: TrafficSplit(own: TrafficBytes(rx: 100_550, tx: 5000))])))
     }

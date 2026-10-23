@@ -30,6 +30,11 @@ struct TrafficText {
         l10n("traffic.a11y.totals", TrafficFormat.total(bytes.rx), TrafficFormat.total(bytes.tx))
     }
 
+    /// `下載 48.2 MB，上傳 3.10 MB` (`traffic.a11y.pair`): a day's or range's bytes read aloud, where the context names it.
+    func spokenPair(_ bytes: TrafficBytes) -> String {
+        l10n("traffic.a11y.pair", TrafficFormat.total(bytes.rx), TrafficFormat.total(bytes.tx))
+    }
+
     /// `下載每秒 12.4 MB，上傳每秒 186 KB` (`a11y.orb.traffic`): rates read as words, units as written.
     func spokenRates(_ rate: TrafficRate) -> String {
         l10n("a11y.orb.traffic", Self.spoken(self.rate(rate.rx)), Self.spoken(self.rate(rate.tx)))

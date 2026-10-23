@@ -49,6 +49,15 @@ struct DaySummary: Identifiable, Equatable, Sendable {
     /// The day's network traffic (METRICS 10.9); nil before measuring began.
     var traffic: DayTraffic?
 
+    /// A day with agent traffic but no token usage (DESIGN 10): listed, every token figure 0.
+    static func trafficOnly(_ day: DayKey) -> DaySummary {
+        DaySummary(day: day, requests: 0, input: 0, cachedInput: 0, cacheWriteInput: 0, output: 0, reasoning: 0, measuredOutput: 0,
+                   measuredMs: 0, unfinalized: 0, agents: 0, peak: nil, models: [], sources: [])
+    }
+
+    /// The day has token usage (as `HistoryAggregator.hasUsage` for a stored record); a traffic-only day has none.
+    var hasUsage: Bool { requests > 0 || output > 0 || input > 0 }
+
     /// Output tok/s over the day's measured responses.
     var averageSpeed: Double? {
         measuredMs > 0 && measuredOutput > 0 ? Double(measuredOutput) / (Double(measuredMs) / 1000) : nil

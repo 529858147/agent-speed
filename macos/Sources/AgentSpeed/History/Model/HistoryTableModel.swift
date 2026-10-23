@@ -101,14 +101,12 @@ enum HistoryTable {
         }
     }
 
-    /// The traffic cell's tooltip: not recorded before measuring began, the recorded time on partial days, the tools' part.
+    /// The traffic cell's tooltip: not recorded before measuring began; else the tools' part and the recorded time of a
+    /// partial day; nil when there is nothing to add (as on Windows).
     static func trafficTooltip(_ traffic: DayTraffic?, _ l10n: Localizer) -> String? {
         guard let traffic else { return l10n("history.traffic.notRecorded") }
-        let text = TrafficText(l10n: l10n, bits: false)
-        var lines = [text.spokenTotals(traffic.shown)]
-        if traffic.includeTools, !traffic.tools.isZero { lines.append(l10n("history.traffic.tools", text.pair(traffic.tools))) }
-        if traffic.partial { lines.append(l10n("history.traffic.partial", HistoryText.duration(ms: traffic.recordedMs, l10n))) }
-        return lines.joined(separator: "\n")
+        let lines = HistoryText.trafficNotes(traffic, machine: false, l10n)
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     /// The cost cell's tooltip: the amount with US dollars beside another currency, and why a value is partial or

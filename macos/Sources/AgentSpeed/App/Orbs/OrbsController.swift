@@ -108,7 +108,7 @@ final class OrbsController {
         })
         loops.append(ObservationLoop { [weak self] in
             guard let self, let model = self.model else { return }
-            let snapshot = model.traffic.snapshot
+            let snapshot = model.visibleTraffic
             let settings = model.settings
             _ = (settings.trafficEnabled, settings.trafficIncludeTools, settings.trafficUnit, self.document.orbs)
             let now = Clock.now

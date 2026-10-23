@@ -3,6 +3,7 @@ import Foundation
 
 /// The user's side (DESIGN 11): turning reporting on and off, the service, the consent sheet and registration,
 /// sections, pausing, the username, the API key, forgetting and resetting this device, and the discovery refresh.
+/// The dashboard invitation's setup is in `ReportController+Setup`.
 extension ReportController {
     // MARK: - Master switch, service, sections, pause
 
@@ -24,6 +25,7 @@ extension ReportController {
             post(.stop)
             updatePreferences { $0.enabled = false }
             if consent != nil { cancelConsent() }
+            endSetup()
         }
     }
 
@@ -48,6 +50,9 @@ extension ReportController {
         if run != nil { post(.stop) }
         endRun()
         if consent != nil { cancelConsent() }
+        discardUnregisteredIdentity()
+        clearSetupMessages()
+        consentWanted = false
         updatePreferences(change)
         serviceState = .unknown
         problem = nil
@@ -141,7 +146,10 @@ extension ReportController {
     func scheduleRefresh(after seconds: TimeInterval) {
         refreshTimer?.invalidate()
         let timer = Timer(timeInterval: max(60, seconds), repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshDiscoveryIfDue(force: false) }
+            MainActor.assumeIsolated {
+                self?.refreshDiscoveryIfDue(force: false)
+                self?.continueSetup()
+            }
         }
         timer.tolerance = 60
         RunLoop.main.add(timer, forMode: .common)
@@ -162,21 +170,24 @@ extension ReportController {
             run?.scheduler.update(limits: document.limits)
             if !document.supportsThisClient, identity?.isRegistered == true { problem = .upgrade }
             scheduleRefresh(after: Self.refreshInterval)
+            confirmInvitedIfCovered(document, service: service)
         case .notModified:
             if let document = identity?.discovery { serviceState = .ready(document) }
             updateIdentity(service.origin) { $0.discoveryFetchedAt = Date() }
             scheduleRefresh(after: Self.refreshInterval)
-        case .notSupported:
-            serviceState = .notSupported
+        case .notSupported, .invalid:
+            serviceState = outcome == .invalid ? .invalid : .notSupported
+            if isSettingUp { scheduleRefresh(after: Self.refreshInterval) }
         case .gone:
             serviceState = .gone
-            if identity?.isRegistered == true {
+            if identity?.isRegistered == true || isSettingUp {
                 problem = .gone
                 updatePreferences { $0.enabled = false }
                 endRun()
+                endSetup()
             }
-        case .failed(let reason):
-            serviceState = .failed(reason)
+        case .failed(let failure):
+            serviceState = .failed(failure)
             scheduleRefresh(after: 3600)
         }
     }
@@ -186,13 +197,12 @@ extension ReportController {
     /// Opens the consent sheet once the service's document is known; nothing else is requested.
     func beginConsent(review: Bool) {
         guard settings.networkEnabled, let service = selectedService else { return }
+        consentWanted = true
         let open: @MainActor (ReportDiscovery) -> Void = { [weak self] document in
-            guard let self, self.selectedService == service else { return }
+            guard let self, self.selectedService == service, self.consentWanted else { return }
+            self.consentWanted = false
             let identity = self.identity
-            let rules = document.usernameRules
-            let username = identity?.username
-                ?? ReportComputerName.current.flatMap { ReportUsername.fit(computerName: $0, rules: rules) }
-                ?? ReportUsername.random()
+            let username = identity?.username ?? self.nextUsername(rules: document.usernameRules)
             self.consent = ConsentDraft(
                 service: service, discovery: document, deviceId: identity?.deviceId ?? ReportCanonical.newUUID(),
                 username: username, apiKey: "", sections: self.preferences.sections,
@@ -213,8 +223,13 @@ extension ReportController {
             keyStore.deleteAll(deviceId: draft.deviceId)
         }
         draftSigner = nil
-        // A cancelled review keeps reporting paused on `report.service.changed` (REPORTING 3.3).
-        if identity?.isRegistered != true { updatePreferences { $0.enabled = false } }
+        consentWanted = false
+        // A cancelled review keeps reporting paused on `report.service.changed` (REPORTING 3.3); a cancelled first
+        // consent — after the invitation too — turns reporting off and leaves nothing behind.
+        if identity?.isRegistered != true {
+            updatePreferences { $0.enabled = false }
+            endSetup()
+        }
     }
 
     /// `report.start`: confirms a review, or creates the key (first time only) and registers (REPORTING 4.1).
@@ -240,7 +255,7 @@ extension ReportController {
             draftSigner = key
             if !draft.apiKey.isEmpty { try keyStore.saveAPIKey(draft.apiKey, deviceId: draft.deviceId) }
         } catch {
-            draft.failure = "key"
+            draft.failure = ReportFailure.key.key
             consent = draft
             return
         }
@@ -266,13 +281,13 @@ extension ReportController {
         guard var draft = consent, draft.deviceId == deviceId else { return }
         draft.isStarting = false
         guard case .reply(let result) = attempt else {
-            draft.failure = "key"
+            draft.failure = ReportFailure.key.key
             consent = draft
             return
         }
         switch result {
         case .failure(let error):
-            draft.failure = error.reason
+            draft.failure = error.failure.key
         case .success(let reply) where reply.result == "created" || reply.result == "exists":
             confirm(draft, reply: reply)
             return
@@ -290,9 +305,9 @@ extension ReportController {
                 draft.apiKeyError = "report.status.apiKey"
             case "gone":
                 serviceState = .gone
-                draft.failure = "HTTP \(reply.status)"
+                draft.failure = "report.status.gone"
             default:
-                draft.failure = "HTTP \(reply.status)"
+                draft.failure = ReportFailure.unavailable.key
             }
         }
         consent = draft
@@ -318,11 +333,14 @@ extension ReportController {
             dropped = preferences.upsert(identity)
             preferences.sections = draft.sections
             preferences.enabled = true
+            // Turning reporting on in Settings answers the dashboard invitation too.
+            if preferences.invite == nil { preferences.invite = .accepted }
         }
         for deviceId in dropped { keyStore.deleteAll(deviceId: deviceId) }
         consent = nil
         draftSigner = nil
         problem = nil
+        clearSetupMessages()
         strikes = 0
         serviceState = .ready(draft.discovery)
         endRun()
@@ -332,22 +350,38 @@ extension ReportController {
 
     // MARK: - Username
 
-    /// The pane's username field, committed: renames when registered (REPORTING 4.4).
+    /// The pane's username field, committed: renames when registered (REPORTING 4.4); otherwise keeps the name for the
+    /// next registration (DESIGN 11, Username).
     func commitUsername(_ text: String) {
-        guard let identity, let rules = identity.discovery?.usernameRules else { return }
         let name = ReportUsername.normalized(text)
+        guard let identity, identity.isRegistered, let rules = identity.discovery?.usernameRules else {
+            storeNextUsername(name)
+            return
+        }
         guard name.unicodeScalars.elementsEqual((identity.username ?? "").unicodeScalars) == false else { return }
         if let problem = ReportUsername.validate(name, rules: rules) {
             renameState = .failed(Self.usernameKey(problem, name: name, rules: rules))
             return
         }
         clearRejection()
-        if identity.isRegistered {
-            rename(to: name, automatic: false)
-        } else {
-            updateIdentity(identity.id) { $0.username = nil }
-            reRegister(recheck: false, username: name)
+        rename(to: name, automatic: false)
+    }
+
+    /// Not registered yet: the name waits locally for the next registration — no request — and a setup that waits
+    /// for a new name continues with it.
+    func storeNextUsername(_ name: String) {
+        let rules = usernameRules
+        if let problem = ReportUsername.validate(name, rules: rules) {
+            renameState = .failed(Self.usernameKey(problem, name: name, rules: rules))
+            return
         }
+        renameState = .idle
+        let typed: String? = name == defaultUsername(rules: rules) ? nil : name
+        updatePreferences { $0.username = typed }
+        guard isSettingUp else { return }
+        if problem == .usernameTaken || problem == .usernameRejected { problem = nil }
+        if case .username = inviteGap { inviteGap = nil }
+        continueSetup()
     }
 
     func rename(to name: String, automatic: Bool) {
@@ -367,7 +401,11 @@ extension ReportController {
 
     private func finishRename(_ attempt: Attempt, name: String, origin: String) {
         guard case .reply(.success(let reply)) = attempt else {
-            if case .reply(.failure(let error)) = attempt { renameState = .failed(error.reason) }
+            switch attempt {
+            case .reply(.failure(let error)): renameState = .failed(error.failure.key)
+            case .signingFailed: renameState = .failed(ReportFailure.key.key)
+            case .reply(.success): break
+            }
             return
         }
         if reply.result == "updated" || reply.result == "unchanged" {
@@ -390,7 +428,7 @@ extension ReportController {
             renameState = .failed(Self.usernameKey(ReportUsernameProblem(rawValue: reply.reason ?? "") ?? .characters,
                                                    name: name, rules: rules))
         default:
-            renameState = .failed("HTTP \(reply.status)")
+            renameState = .failed(ReportFailure.unavailable.key)
         }
     }
 
@@ -427,19 +465,49 @@ extension ReportController {
 
     private func finishReRegister(_ attempt: Attempt, name: String, origin: String) {
         registering = false
-        guard case .reply(.success(let reply)) = attempt else { return }
+        // Only a device that is not registered yet waits on this answer; its passing failures are retried hourly.
+        let settingUp = preferences.identities.first { $0.id == origin }?.isRegistered == false
+        let reply: ReportReply
+        switch attempt {
+        case .signingFailed:
+            if settingUp { registrationFailure = .key }
+            return
+        case .reply(.failure(let error)):
+            if settingUp {
+                registrationFailure = error.failure
+                scheduleSetupRetry()
+            }
+            return
+        case .reply(.success(let value)):
+            reply = value
+        }
         switch reply.result ?? reply.code {
         case "created", "exists":
-            updateIdentity(origin) { $0.username = reply.username ?? name }
-            if problem == .usernameTaken || problem == .keyMismatch { problem = nil }
+            updateIdentity(origin) {
+                $0.username = reply.username ?? name
+                if let profile = reply.profileURL { $0.profileURL = profile }
+            }
+            registrationFailure = nil
+            if let problem, [.usernameTaken, .usernameRejected, .keyMismatch, .apiKey].contains(problem) { self.problem = nil }
         case "username_taken":
             problem = .usernameTaken
+        case "username_invalid":
+            problem = .usernameRejected
         case "device_conflict":
             problem = .keyMismatch
         case "api_key_required", "api_key_invalid":
             problem = .apiKey
+        case "forbidden":
+            problem = .forbidden
+        case "gone":
+            problem = .gone
+            updatePreferences { $0.enabled = false }
+            endRun()
         default:
-            break
+            if settingUp {
+                registrationFailure = .unavailable
+                scheduleSetupRetry()
+            }
         }
     }
 
@@ -459,6 +527,7 @@ extension ReportController {
         updateIdentity(identity.id) { $0.hasAPIKey = true }
         if problem == .apiKey { problem = nil }
         clearRejection()
+        continueSetup()
         return true
     }
 
@@ -476,7 +545,7 @@ extension ReportController {
         guard let target = preferences.identities.first(where: { $0.id == (origin ?? identity?.id) }),
               let document = target.discovery, settings.networkEnabled,
               let key = target.id == identity?.id ? signer : keyStore.loadKey(deviceId: target.deviceId) else {
-            forgetState = .failed("key")
+            forgetState = .failed(settings.networkEnabled ? .key : .unreachable)
             return
         }
         if target.id == identity?.id { endRun() }
@@ -501,12 +570,12 @@ extension ReportController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
                 if self?.forgetState == .done { self?.forgetState = .idle }
             }
-        case .reply(.success(let reply)):
-            forgetState = .failed("HTTP \(reply.status)")
+        case .reply(.success):
+            forgetState = .failed(.unavailable)
         case .reply(.failure(let error)):
-            forgetState = .failed(error.reason)
+            forgetState = .failed(error.failure)
         case .signingFailed:
-            forgetState = .failed("key")
+            forgetState = .failed(.key)
         }
     }
 

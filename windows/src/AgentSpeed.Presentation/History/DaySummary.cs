@@ -46,6 +46,12 @@ public sealed record DaySummary(
 
     private static IReadOnlyDictionary<string, ModelCost> EmptyModelCosts { get; } = new Dictionary<string, ModelCost>(StringComparer.Ordinal);
 
+    /// <summary>The day has token usage (as a stored record with usage); a day listed only for its traffic has none.</summary>
+    public bool HasUsage => Requests > 0 || Output > 0 || Input > 0;
+
+    /// <summary>A day with agent traffic but no token usage (DESIGN 10): listed, every token figure 0.</summary>
+    public static DaySummary TrafficOnly(DateOnly day) => new(day, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, [], []);
+
     /// <summary>Output tok/s over the day's measured responses.</summary>
     public double? AverageSpeed => MeasuredMs > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
 

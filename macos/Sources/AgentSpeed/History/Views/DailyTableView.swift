@@ -118,7 +118,7 @@ struct DailyTableRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(HistoryText.dayTitle(row.day, today: today, l10n))
-        .accessibilityValue(HistoryText.accessible(row, today: today, money: money, l10n))
+        .accessibilityValue(HistoryText.accessible(row, today: today, money: money, traffic: columns.contains(.traffic), l10n))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
         .accessibilityAction { onSelect(row.day) }
     }

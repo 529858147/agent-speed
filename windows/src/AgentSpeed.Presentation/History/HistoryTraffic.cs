@@ -122,6 +122,47 @@ public sealed class HistoryTraffic
         return new DayTraffic(own, tools, bySource, machineBytes, Math.Max(0, recorded), partial, IncludeTools);
     }
 
+    /// <summary>
+    /// Days with agent traffic of <paramref name="source"/> (every source when null) as displayed, tools per the setting,
+    /// oldest first. This computer's own total does not count (DESIGN 10, Traffic without token usage).
+    /// </summary>
+    public IReadOnlyList<DateOnly> AgentDays(SourceKind? source)
+    {
+        var days = new List<DateOnly>();
+        foreach (var (day, keyed) in _rows)
+        {
+            foreach (var row in keyed.Values)
+            {
+                if (row.Source is { } kind && (source is null || source == kind) && !row.Total(IncludeTools).IsZero)
+                {
+                    days.Add(day);
+                    break;
+                }
+            }
+        }
+
+        days.Sort();
+        return days;
+    }
+
+    /// <summary>Sources with agent traffic on any stored day, in <see cref="SourceKind"/> order.</summary>
+    public IReadOnlySet<SourceKind> SourcesWithTraffic()
+    {
+        var found = new HashSet<SourceKind>();
+        foreach (var keyed in _rows.Values)
+        {
+            foreach (var row in keyed.Values)
+            {
+                if (row.Source is { } kind && !row.Total(IncludeTools).IsZero)
+                {
+                    found.Add(kind);
+                }
+            }
+        }
+
+        return found;
+    }
+
     /// <summary>Every day of <paramref name="range"/> with its traffic (days before measuring began left out).</summary>
     public IReadOnlyDictionary<DateOnly, DayTraffic> Days(DayRange range, SourceKind? source, DateOnly today, DateTimeOffset now,
         TimeZoneInfo? zone = null)

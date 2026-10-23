@@ -13,7 +13,7 @@ struct TrafficSection: View {
 
     var body: some View {
         let l10n = model.l10n
-        let snapshot = model.traffic.snapshot
+        let snapshot = model.visibleTraffic
         let text = TrafficText(model: model)
         let includeTools = model.settings.trafficIncludeTools
         let rows = Self.rows(snapshot, includeTools: includeTools)

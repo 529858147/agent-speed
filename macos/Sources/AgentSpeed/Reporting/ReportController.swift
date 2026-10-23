@@ -4,8 +4,9 @@ import Observation
 
 /// Live reporting (DESIGN 11, METRICS 11, REPORTING): the user's settings and service identities, the discovery
 /// document, the consent sheet, the report scheduler fed by every live engine tick, delivery, and the account actions
-/// (rename, API key, forget, reset). Nothing is requested before the user confirmed a service, and nothing at all
-/// while the network master switch is off.
+/// (rename, API key, forget, reset), and the dashboard invitation. Nothing is requested before the user confirmed a
+/// service — in the consent sheet or by accepting the invitation — and nothing at all while the network master switch
+/// is off.
 @MainActor
 @Observable
 final class ReportController {
@@ -13,8 +14,9 @@ final class ReportController {
         case unknown
         case checking
         case ready(ReportDiscovery)
-        case failed(String)
+        case failed(ReportFailure)
         case notSupported
+        case invalid
         case gone
     }
 
@@ -31,17 +33,19 @@ final class ReportController {
         var isStarting = false
         var usernameError: String?
         var apiKeyError: String?
+        /// A localization key (`report.error.*`, `report.status.gone`); never a status code.
         var failure: String?
         /// `username_taken` with an API key set: offer `report.username.transfer`.
         var offersTransfer = false
     }
 
     enum RenameState: Equatable {
+        /// `failed` holds a localization key.
         case idle, working, updated, failed(String)
     }
 
     enum ForgetState: Equatable {
-        case idle, working, done, failed(String)
+        case idle, working, done, failed(ReportFailure)
     }
 
     var preferences: ReportPreferences
@@ -50,9 +54,15 @@ final class ReportController {
     var lastDeliveryAt: Date?
     var rank: Int?
     var problem: ReportProblem?
-    var retryReason: String?
+    var retryReason: ReportFailure?
     var rateLimitedUntil: Date?
     var registering = false
+    /// Setting up after the invitation: the last registration attempt failed for a passing reason.
+    var registrationFailure: ReportFailure?
+    /// Setting up after the invitation: what the invitation did not cover, so the consent sheet must finish it.
+    var inviteGap: ReportInvite.Gap?
+    /// The invitation card shows `report.invite.done` for a moment after it was accepted.
+    var inviteJustAccepted = false
     var mode: ReportScheduler.Mode = .quiet
     var renameState: RenameState = .idle
     var forgetState: ForgetState = .idle
@@ -94,6 +104,13 @@ final class ReportController {
     @ObservationIgnored var previewStartedAt: Int64?
     @ObservationIgnored var previewOpenings = 0
     @ObservationIgnored let previewRunId = ReportCanonical.newUUID()
+    /// The preview's device id before this device exists for a service (it is created only on consent).
+    @ObservationIgnored let previewDeviceId = ReportCanonical.newUUID()
+    /// The user asked to turn reporting on in Settings and the consent sheet waits for the document.
+    @ObservationIgnored var consentWanted = false
+    @ObservationIgnored var setupTimer: Timer?
+    /// Used when the computer name leaves nothing valid; stable for the session.
+    @ObservationIgnored let fallbackUsername = ReportUsername.random()
 
     static let rotationAge: TimeInterval = 365 * 86_400
     static let refreshInterval: TimeInterval = 86_400
@@ -174,10 +191,52 @@ final class ReportController {
         return preferences.sections.intersection(discovery.sections)
     }
 
-    /// A traffic section is actually reported (the Network Traffic pane's note).
+    /// The traffic section is actually reported (the Network Traffic pane's note).
     var reportsTraffic: Bool {
-        isOn && !effectiveSections.isDisjoint(with: [.traffic, .machineTraffic])
+        isOn && effectiveSections.contains(.traffic)
     }
+
+    /// The failed fetch of the selected service, as the pane says it (DESIGN 11, Service).
+    var serviceIssue: ReportServiceIssue? {
+        switch serviceState {
+        case .failed(let failure): ReportServiceIssue(failure)
+        case .notSupported: .notSupported
+        case .invalid: .invalid
+        case .unknown, .checking, .ready, .gone: nil
+        }
+    }
+
+    /// Reporting is on but this device is not registered yet: the invitation's setup, or a registration to redo.
+    var isSettingUp: Bool { preferences.enabled && identity?.isRegistered != true }
+
+    /// The rules a username is checked against: the known document's, else the protocol grammar with the default
+    /// lengths (REPORTING 4.3) — a service's narrower rules cannot be known before its document is.
+    var usernameRules: ReportUsernameRules { discovery?.usernameRules ?? .standard }
+
+    /// The computer name fitted to `rules` (DESIGN 11, Default username), else a random name.
+    func defaultUsername(rules: ReportUsernameRules) -> String {
+        ReportComputerName.current.flatMap { ReportUsername.fit(computerName: $0, rules: rules) } ?? fallbackUsername
+    }
+
+    /// The name the next registration uses: the user's own, else the default.
+    func nextUsername(rules: ReportUsernameRules) -> String {
+        preferences.username ?? defaultUsername(rules: rules)
+    }
+
+    /// What the always-visible username field shows: the registered name, else the next registration's.
+    var fieldUsername: String { identity?.username ?? nextUsername(rules: usernameRules) }
+
+    /// The dashboard invitation is offered (DESIGN 11, Dashboard invitation); the dashboard also waits for the
+    /// update banner.
+    var invitationOffered: Bool {
+        ReportInvite.isOffered(.init(
+            answer: preferences.invite, reportingEnabled: preferences.enabled, networkEnabled: settings.networkEnabled,
+            presetSelected: preferences.preset == .codexRadar, hasRegisteredIdentity: preferences.hasRegisteredIdentity))
+    }
+
+    /// The dashboard footer's indicator: whenever reporting is on, also while it is being set up; it appears once
+    /// the invitation card has made way.
+    var indicatorShown: Bool { preferences.enabled && !inviteJustAccepted }
 
     var status: ReportStatus {
         if problem == .gone { return .problem(.gone) }
@@ -189,7 +248,14 @@ final class ReportController {
             return until == .distantFuture ? .pausedIndefinitely : .paused(until: until)
         }
         if registering { return .registering }
-        if identity?.isRegistered != true { return consent == nil ? .off : .connecting }
+        if identity?.isRegistered != true {
+            if consent != nil { return .connecting }
+            if inviteGap != nil { return .review }
+            if let registrationFailure { return .registerFailed(registrationFailure) }
+            if let serviceIssue { return .service(serviceIssue) }
+            if serviceState == .gone { return .problem(.gone) }
+            return .connecting
+        }
         if let until = rateLimitedUntil, until > Date() { return .rateLimited(until: until) }
         if let retryReason { return .retrying(reason: retryReason) }
         if isDiscoveryStale { return .connecting }
@@ -222,10 +288,14 @@ final class ReportController {
             guard enabled != self.networkWasEnabled else { return }
             self.networkWasEnabled = enabled
             self.post(enabled ? .networkOn : .networkOff)
-            if enabled { self.refreshDiscoveryIfDue(force: true) }
+            if enabled {
+                self.refreshDiscoveryIfDue(force: true)
+                self.continueSetup()
+            }
         })
         schedulePauseEnd()
         refreshDiscoveryIfDue(force: true)
+        continueSetup()
     }
 
     func shutdown() {
@@ -236,6 +306,7 @@ final class ReportController {
         refreshTask?.cancel()
         refreshTimer?.invalidate()
         pauseTimer?.invalidate()
+        setupTimer?.invalidate()
         active = false
     }
 

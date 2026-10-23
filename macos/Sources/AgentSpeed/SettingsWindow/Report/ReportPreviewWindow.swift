@@ -10,6 +10,7 @@ enum ReportPreviewWindow {
     private static var closeObserver: NSObjectProtocol?
 
     static func show(model: AppModel) {
+        NSApp.activate()
         if let panel {
             panel.makeKeyAndOrderFront(nil)
             return

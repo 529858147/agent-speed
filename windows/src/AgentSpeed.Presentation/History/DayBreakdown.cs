@@ -61,7 +61,15 @@ public sealed record DayBreakdown(BreakdownKind Kind, DateOnly Day, long Output,
             return null;
         }
 
-        return source is { } only ? ByModel(usage, range.Start, only, metric) : BySource(usage, range.Start, metric, excluded, traffic);
+        if (source is not { } only)
+        {
+            return BySource(usage, range.Start, metric, excluded, traffic);
+        }
+
+        // A day of one source with traffic but no token usage has no models: it shows the source's one bar (DESIGN 10).
+        return metric == HistoryChartMetric.Traffic && traffic?.BySource.ContainsKey(only) == true && !OfDay(usage, range.Start, only).Any()
+            ? BySource([], range.Start, metric, excluded, traffic)
+            : ByModel(usage, range.Start, only, metric);
     }
 
     /// <summary>Every source with usage on <paramref name="day"/> (and, with traffic, every source with traffic).</summary>
