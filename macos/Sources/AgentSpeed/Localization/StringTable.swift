@@ -17,6 +17,7 @@ enum StringTable {
     }
 
     static let entries: [String: Entry] = [
+        "a11y.bar.money": Entry("每秒 %@，今日 %@", "每秒 %@，今日 %@", "%@ per second, %@ today", "毎秒 %@、今日 %@"),
         "a11y.orb": Entry("每秒 %@ 個 token，%@", "每秒 %@ 个 token，%@", "%@ tokens per second, %@", "毎秒 %@ トークン、%@"),
         "a11y.orb.cost": Entry("每秒 %@ %@（API 等值），%@", "每秒 %@ %@（API 等值），%@", "%@ %@ per second (API-equivalent), %@", "毎秒 %@ %@（API 換算）、%@"),
         "a11y.orb.costAtLeast": Entry("至少 %@", "至少 %@", "at least %@", "%@ 以上"),
@@ -41,6 +42,8 @@ enum StringTable {
         "appearance.auto": Entry("自動", "自动", "Auto", "自動"),
         "appearance.dark": Entry("深色", "深色", "Dark", "ダーク"),
         "appearance.light": Entry("淺色", "浅色", "Light", "ライト"),
+        "bar.money.now": Entry("即時", "实时", "now", "現在"),
+        "bar.money.today": Entry("今日", "今日", "today", "今日"),
         "chart.estimated": Entry("估算中", "估算中", "Estimating", "推定中"),
         "cost.apiEquivalent": Entry("API 等值", "API 等值", "API-equivalent", "API 換算"),
         "cost.apiEquivalent.hint": Entry("以各模型官方 API 牌價乘上 token 數估算，不是你的實際帳單；訂閱方案、免費額度與折扣都不計入。", "按各模型官方 API 标价乘以 token 数估算，并非你的实际账单；订阅方案、免费额度和折扣均不计入。", "Estimated from each model's official API list prices × tokens. It is not your actual bill: subscriptions, free tiers and discounts are not included.", "各モデルの公式 API 定価 × トークン数で見積もった金額で、実際の請求額ではありません。サブスクリプション、無料枠、割引は含みません。"),

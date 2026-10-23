@@ -178,7 +178,7 @@ enum CostPreviews {
         }
     }
 
-    /// The second value per locale: tok/s with the money rate after it (DESIGN 3), then money alone for comparison.
+    /// The money block per locale: tok/s with the live rate and today's total after it (DESIGN 3), then money alone.
     static func renderMenuBarSecondary(model: AppModel, into directory: URL) {
         let redline = model.settings.redline
         model.settings.barSecondary = true

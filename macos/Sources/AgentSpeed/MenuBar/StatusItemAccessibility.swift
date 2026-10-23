@@ -19,7 +19,7 @@ final class StatusItemAccessibility {
             guard let self else { return }
             _ = (self.model.gauge.readoutValue, self.model.gauge.title, self.model.l10n.language)
             _ = (self.model.settings.liveUnit, self.model.snapshot.liveCost, self.model.cost.currency)
-            _ = self.model.settings.barSecondary
+            if self.model.settings.barSecondary { _ = self.model.snapshot.sources }
             if self.model.settings.barTraffic != .off { _ = self.model.traffic.snapshot.timestamp }
             self.schedule()
         }

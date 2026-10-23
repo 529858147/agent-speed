@@ -45,7 +45,7 @@ final class AppSettings {
     var trafficUnit: TrafficUnit { didSet { store(trafficUnit.rawValue, .trafficUnit) } }
     /// The menu bar traffic block (DESIGN 10): off (default), this computer or the agents.
     var barTraffic: BarTraffic { didSet { store(barTraffic.rawValue, .barTraffic) } }
-    /// The menu bar's second value (DESIGN 3): the other live unit after the main one.
+    /// The menu bar money block (DESIGN 3): the live money rate and today's total after a tok/s value.
     var barSecondary: Bool { didSet { store(barSecondary, .barSecondary) } }
 
     /// Dashboard agents list: every agent instead of the first rows (DESIGN section 4.4).

@@ -22,7 +22,7 @@ struct StatusItemLayout: Equatable {
     let valueWidth: CGFloat
     let unitWidth: CGFloat
     let height: CGFloat
-    /// The second value's width (gap included); 0 without it.
+    /// The money block's width (gap included); 0 without it.
     var secondaryWidth: CGFloat = 0
     /// The traffic block's width (gap included); 0 without it.
     var trafficWidth: CGFloat = 0
@@ -69,7 +69,7 @@ struct StatusItemLayout: Equatable {
         return width + secondaryWidth + trafficWidth
     }
 
-    /// Left edge of the second value (its gap starts here).
+    /// Left edge of the money block (its gap starts here).
     var secondaryX: CGFloat { length - Self.padding - trafficWidth - secondaryWidth }
 
     /// Left edge of the traffic block (its gap starts here).

@@ -1135,13 +1135,16 @@ Glanceable and calm; it must never jitter in width.
 - Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting). With `settings.liveUnit` set to money the value
   is the live cost rate and the unit `US$/s` (section 9).
 - Display modes (setting): glyph + value (default), value only, glyph only.
-- Second value (optional, default off): the live money rate (section 9, billable sources) right after a tok/s value,
-  as `0.0042 US$/s` in an 11 pt tabular number plus the 9 pt unit in the secondary color, 8 pt after the unit; the
-  number's room grows at once and shrinks only after 6 s (the value's width governor), so the item never jitters
-  while the numbers change; `≥` and `–` follow section 9; hidden in glyph-only mode; read after the value by
-  accessibility and in the tooltip. In 選單列 / 工作列 the live value control has three choices — `settings.liveUnit.tokens`,
-  `settings.liveUnit.cost` and `settings.liveUnit.both` (tok/s with the money rate after it; tok/s alone stays the default) —
-  so showing both is one visible choice rather than a separate switch.
+- Money block (optional, default off): right after a tok/s value, two lines in the traffic block's 9 pt medium tabular
+  text and 10 pt pitch, centered on the bar — `bar.money.now` with the live money rate (section 9, billable sources,
+  `0.43 CN¥/s`) over `bar.money.today` with today's billable total (the dashboard's 今日費用, `128.40 CN¥`). Labels sit
+  left-aligned in a column, numbers right-aligned in one shared cell, units left-aligned after them; labels and units
+  take the secondary color, numbers the label color at 85 % (secondary when `–` or zero). The number cell grows at once
+  and shrinks only after 6 s (the value's width governor), so the item never jitters while the numbers change; `≥`
+  and `–` follow section 9; 8 pt before the block; hidden in glyph-only mode; read after the value by accessibility
+  and in the tooltip as `a11y.bar.money`. In 選單列 / 工作列 the live value control has three choices —
+  `settings.liveUnit.tokens`, `settings.liveUnit.cost` and `settings.liveUnit.both` (tok/s with the money block after
+  it; tok/s alone stays the default) — so showing both is one visible choice rather than a separate switch.
 - Network speed (optional, `settings.bar.traffic`, default off): a fixed-width two-line `↓` / `↑` block after the value
   (section 10).
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.

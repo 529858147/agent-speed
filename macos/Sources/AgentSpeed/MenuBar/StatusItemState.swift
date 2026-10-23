@@ -13,7 +13,7 @@ struct StatusItemState: Equatable {
     var value: String
     var idle: Bool
     var increasedContrast: Bool
-    /// The second value (DESIGN 3), when shown.
+    /// The money block (DESIGN 3), when shown.
     var secondary: StatusItemSecondary?
     /// The traffic block (DESIGN 10), when shown.
     var traffic: StatusItemTraffic?

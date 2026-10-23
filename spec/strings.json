@@ -2730,6 +2730,24 @@
     "en": "tok/s + cost",
     "ja": "tok/s＋金額"
   },
+  "bar.money.now": {
+    "zh-Hant": "即時",
+    "zh-Hans": "实时",
+    "en": "now",
+    "ja": "現在"
+  },
+  "bar.money.today": {
+    "zh-Hant": "今日",
+    "zh-Hans": "今日",
+    "en": "today",
+    "ja": "今日"
+  },
+  "a11y.bar.money": {
+    "zh-Hant": "每秒 %@，今日 %@",
+    "zh-Hans": "每秒 %@，今日 %@",
+    "en": "%@ per second, %@ today",
+    "ja": "毎秒 %@、今日 %@"
+  },
   "settings.liveUnit.hint": {
     "zh-Hant": "用於選單列或工作列和面板；每個懸浮窗可各自選擇單位。",
     "zh-Hans": "用于菜单栏或任务栏和面板；每个悬浮窗可以单独选择单位。",

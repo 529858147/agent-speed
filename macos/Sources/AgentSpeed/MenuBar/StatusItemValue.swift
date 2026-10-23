@@ -19,7 +19,7 @@ enum StatusItemValue {
         return liveMoney(model)
     }
 
-    /// The billable live cost rate, whatever the live unit (the second value uses it next to tok/s).
+    /// The billable live cost rate, whatever the live unit (the money block uses it next to tok/s).
     static func liveMoney(_ model: AppModel) -> LiveMoney {
         let snapshot = model.snapshot
         return model.cost.live(OrbSubset.cost(snapshot, sources: nil, billable: model.cost.billable),
