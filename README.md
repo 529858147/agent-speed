@@ -120,7 +120,7 @@ install.sh  install.ps1
 
 ## Friends
 
-- [LINUX DO community](https://linux.do/)
+[Codex Radar](https://codexradar.com/)
 
 ## License
 

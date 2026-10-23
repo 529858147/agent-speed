@@ -105,7 +105,7 @@ dotnet test windows/tests/AgentSpeed.Presentation.Tests
 
 ## 友情連結
 
-- [LINUX DO 社區](https://linux.do/)
+[Codex Radar](https://codexradar.com/)
 
 ## 授權
 

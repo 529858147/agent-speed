@@ -105,7 +105,7 @@ dotnet test windows/tests/AgentSpeed.Presentation.Tests
 
 ## リンク
 
-- [LINUX DO コミュニティ](https://linux.do/)
+[Codex Radar](https://codexradar.com/)
 
 ## ライセンス
 
