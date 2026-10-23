@@ -122,7 +122,7 @@ extension SourceKind {
 
 enum SettingsLimits {
     /// Output-speed redline range; kept for callers that predate per-metric redlines.
-    static let redline: ClosedRange<Double> = 100...2000
+    static let redline: ClosedRange<Double> = 50...2000
     static let redlineStep: Double = 50
     static let redlineTotal: ClosedRange<Double> = 20_000...2_000_000
 

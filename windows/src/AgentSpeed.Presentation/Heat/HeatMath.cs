@@ -25,7 +25,7 @@ public static class HeatMath
 
     /// <summary>The total-throughput default before version 2 of the settings.</summary>
     public const double ReferenceRedlineTotal = 200_000;
-    public const double MinRedline = 100;
+    public const double MinRedline = 50;
     public const double MaxRedline = 2000;
     public const double RedlineStep = 50;
     public const double CruiseThreshold = 0.5;
@@ -54,7 +54,7 @@ public static class HeatMath
 
     public static double MaxRedlineFor(SpeedMetric metric) => metric == SpeedMetric.Total ? MaxRedlineTotal : MaxRedline;
 
-    /// <summary>Each metric has its own redline: output 100–2000 in steps of 50, total 20k–2M (two significant digits).</summary>
+    /// <summary>Each metric has its own redline: output 50–2000 in steps of 50, total 20k–2M (two significant digits).</summary>
     public static double ClampRedline(SpeedMetric metric, double redline) =>
         metric == SpeedMetric.Total ? ClampRedlineTotal(redline) : ClampRedline(redline);
 
