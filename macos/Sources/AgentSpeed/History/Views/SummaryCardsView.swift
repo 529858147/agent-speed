@@ -37,12 +37,9 @@ private struct SummaryCardView: View {
     var body: some View {
         let dark = colorScheme == .dark
         let title = l10n(card.titleKey ?? card.metric.titleKey)
+        let shortTitle = card.titleKey == nil ? card.metric.shortTitleKey.map { l10n($0) } : nil
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(HistoryFont.cardLabel)
-                .foregroundStyle(.historySecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            titleLabel(title, short: shortTitle)
             if compact {
                 HStack(alignment: .bottom, spacing: Spacing.m) {
                     value
@@ -76,6 +73,29 @@ private struct SummaryCardView: View {
     }
 
     private var spoken: String { card.spokenValue ?? card.fullValue }
+
+    /// The full title, or its short form when the full one would not fit; never truncated.
+    @ViewBuilder
+    private func titleLabel(_ title: String, short: String?) -> some View {
+        if let short {
+            ViewThatFits(in: .horizontal) {
+                label(title)
+                label(short)
+                    .minimumScaleFactor(0.8)
+                    .help(title)
+            }
+        } else {
+            label(title)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(HistoryFont.cardLabel)
+            .foregroundStyle(.historySecondary)
+            .lineLimit(1)
+    }
 
     private var value: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {

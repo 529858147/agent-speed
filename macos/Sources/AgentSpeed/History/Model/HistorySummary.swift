@@ -15,6 +15,9 @@ enum SummaryMetric: String, CaseIterable, Identifiable, Sendable {
         case .cost: "history.summary.cost"
         }
     }
+
+    /// The title a card falls back to when the full one does not fit (DESIGN 4b).
+    var shortTitleKey: String? { self == .input ? "history.summary.input.short" : nil }
 }
 
 struct SummaryCard: Identifiable, Equatable, Sendable {

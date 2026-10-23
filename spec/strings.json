@@ -2034,6 +2034,12 @@
     "en": "Input tokens (incl. cache)",
     "ja": "入力トークン（キャッシュ含む）"
   },
+  "history.summary.input.short": {
+    "zh-Hant": "輸入 token",
+    "zh-Hans": "输入 token",
+    "en": "Input tokens",
+    "ja": "入力トークン"
+  },
   "history.summary.requests": {
     "zh-Hant": "請求",
     "zh-Hans": "请求",
@@ -2207,6 +2213,12 @@
     "zh-Hans": "只保存每日汇总数字，不含任何请求或对话内容。",
     "en": "Only daily totals are kept — never requests or conversation content.",
     "ja": "保存するのは日別の集計だけで、リクエストや会話の内容は含みません。"
+  },
+  "history.privacy.short": {
+    "zh-Hant": "只保存每日彙總",
+    "zh-Hans": "只保存每日汇总",
+    "en": "Daily totals only",
+    "ja": "日別の集計のみ保存"
   },
   "history.clear": {
     "zh-Hant": "清除歷史統計…",

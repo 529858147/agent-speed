@@ -38,15 +38,14 @@ struct HistoryFooter: View {
                 Text(verbatim: "·")
                     .accessibilityHidden(true)
             }
-            HStack(spacing: 5) {
-                Image(systemName: "lock.shield")
-                    .imageScale(.small)
-                    .accessibilityHidden(true)
-                Text(l10n("history.privacy"))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            ViewThatFits(in: .horizontal) {
+                privacy(l10n("history.privacy"))
+                privacy(l10n("history.privacy.short"))
+                privacyIcon
             }
             .help(l10n("history.privacy"))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(l10n("history.privacy"))
             .layoutPriority(-1)
         }
         .font(HistoryFont.footer)
@@ -57,6 +56,21 @@ struct HistoryFooter: View {
         .background(.bar)
         .overlay(alignment: .top) { Hairline() }
         .accessibilityElement(children: .contain)
+    }
+
+    /// The privacy note gives way first when the footer is crowded: full text, short text, then the icon (DESIGN 4b).
+    private func privacy(_ text: String) -> some View {
+        HStack(spacing: 5) {
+            privacyIcon
+            Text(text)
+                .lineLimit(1)
+        }
+        .fixedSize()
+    }
+
+    private var privacyIcon: some View {
+        Image(systemName: "lock.shield")
+            .imageScale(.small)
     }
 
     @ViewBuilder

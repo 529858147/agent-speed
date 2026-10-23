@@ -1233,7 +1233,10 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
 2. **Summary** — four cards in a row (two rows when narrow; a fifth, 費用, in section 9): 輸出 token, 輸入 token（含快取）, 請求, 平均速度 (Σ measured
    output ÷ Σ measured time over the range, never an average of daily averages). Each card: large tabular value,
    a secondary line (活躍 N 天 / 單日最高 date / 比前一段期間 +12%, colored green/red only for the delta), and a tiny
-   sparkline of the range. Values use the compact formatter (METRICS 7) with full numbers in the tooltip.
+   sparkline of the range. Values use the compact formatter (METRICS 7) with full numbers in the tooltip. A card
+   title never truncates: one that does not fit its card uses its short form (`history.summary.input.short` for
+   輸入 token（含快取）, e.g. five cards in a row at the default width in Japanese), with the full title in its tooltip
+   and for accessibility.
 3. **Chart** (height ≈ 260) — one bar per day of output tokens; with 全部來源 the bars stack by source in source
    colors (largest at the bottom), otherwise a single bar in the source color with a soft vertical gradient. An
    average-speed line on a secondary axis (right) in the label color with small dots on days with measurements,
@@ -1251,7 +1254,9 @@ Layout, top to bottom, 24 pt outer padding, 20 pt section spacing:
    Days without data inside the range are not listed (the chart shows the gap).
 5. **Footer** (secondary text) — left: analysis state: `history.analyzing` with a thin progress bar and
    `history.analyzingFiles` while the background analysis runs (the window is usable and updates live as days come
-   in), otherwise `history.updated`; right: `history.privacy`.
+   in), otherwise `history.updated`; right: `history.privacy`, the first to give way when notes crowd the footer: it
+   switches to `history.privacy.short`, then to its lock icon alone (the full text in the tooltip and for
+   accessibility), never cut mid-sentence.
 
 Empty state: centered muted gauge glyph, `history.empty` and `history.empty.hint`. First launch after upgrading:
 the window opens instantly with whatever is cached and fills in as the analysis progresses — never a blocking
