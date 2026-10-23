@@ -86,15 +86,16 @@ public sealed class ModelResolver
         return result;
     }
 
+    /// <summary>Step 1 of METRICS 9.2: a local runtime's provider with a model that does not run in its cloud.</summary>
+    public bool IsLocalProvider(string? model, string? provider) =>
+        provider is not null && Contains(_normalize.FreeProviders, Lower(Strip(provider)))
+        && !(model is not null && EndsWithAny(Lower(Strip(model)), _normalize.CloudSuffixes));
+
     private ModelResolution Compute(string? model, string? provider)
     {
-        if (provider is not null && Contains(_normalize.FreeProviders, Lower(Strip(provider))))
+        if (IsLocalProvider(model, provider))
         {
-            var remote = model is not null && EndsWithAny(Lower(Strip(model)), _normalize.CloudSuffixes);
-            if (!remote)
-            {
-                return ModelResolution.Free();
-            }
+            return ModelResolution.Free();
         }
 
         if (model is null || Strip(model).Length == 0)

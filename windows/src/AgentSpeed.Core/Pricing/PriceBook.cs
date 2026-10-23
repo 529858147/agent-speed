@@ -251,6 +251,16 @@ public sealed class PriceBook
         return version == current.Version ? null : current.Cost(model, provider, tokens, endMs, fast);
     }
 
+    /// <summary>
+    /// <c>cost.priceVersion</c> (METRICS 11.2): the table bound to the local date of <paramref name="ms"/>, else the current one.
+    /// Reading it never binds a date.
+    /// </summary>
+    public int ReportPriceVersion(long ms, TimeZoneInfo? zone = null)
+    {
+        var local = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(ms), zone ?? TimeZoneInfo.Local);
+        return BoundVersion(local.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)) ?? CurrentVersion;
+    }
+
     /// <summary>Bindings made since the last call, for the history store.</summary>
     public IReadOnlyDictionary<string, int> TakeNewBindings()
     {

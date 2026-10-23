@@ -47,6 +47,7 @@
                     <pages:EffectsPage x:Name="EffectsPage" />
                     <pages:CostPage x:Name="CostPage" DataContext="{Binding Cost}" />
                     <pages:TrafficPage x:Name="TrafficPage" DataContext="{Binding Traffic}" />
+                    <pages:ReportPage x:Name="ReportPage" DataContext="{Binding Report}" />
                     <pages:SourcesPage x:Name="SourcesPage" />
                     <pages:AboutPage x:Name="AboutPage" />
                 </Grid>

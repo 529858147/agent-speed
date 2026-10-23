@@ -19,8 +19,9 @@
                         <TextBlock Text="{Binding VersionText}" Style="{StaticResource CaptionText}" Margin="0,2,0,0" />
                     </StackPanel>
                 </StackPanel>
-                <TextBlock Text="{loc:Loc privacy.statement}" Style="{StaticResource BodyText}" Margin="0,16,0,0" />
-                <TextBlock Text="{loc:Loc privacy.traffic}" Style="{StaticResource BodyText}" Margin="0,8,0,0" />
+                <TextBlock Text="{Binding PrivacyStatement}" Style="{StaticResource BodyText}" Margin="0,16,0,0" />
+                <TextBlock Text="{Binding PrivacyTraffic}" Style="{StaticResource BodyText}" Margin="0,8,0,0" />
+                <TextBlock Text="{Binding PrivacyReport}" Style="{StaticResource BodyText}" Margin="0,8,0,0" />
                 <TextBlock Text="{loc:Loc settings.about.update}" Style="{StaticResource CaptionText}" Margin="0,8,0,0" />
                 <StackPanel Orientation="Horizontal" Margin="-4,12,0,0">
                     <Button Style="{StaticResource LinkButton}" Command="{Binding OpenRepositoryCommand}" Content="{loc:Loc settings.about.github}" />
@@ -31,9 +32,9 @@
         </Border>
 
         <!-- Network: the master switch for the update check, the price table and the exchange rates (NETWORK 1) -->
-        <controls:SettingsCard Header="{loc:Loc settings.network}" Icon="&#xE774;" Description="{loc:Loc settings.network.hint}" Margin="0,12,0,4">
+        <controls:SettingsCard Header="{loc:Loc settings.network}" Icon="&#xE774;" Description="{Binding NetworkHint}" Margin="0,12,0,4">
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding NetworkEnabled, Mode=TwoWay}"
-                      AutomationProperties.Name="{loc:Loc settings.network}" AutomationProperties.HelpText="{loc:Loc settings.network.hint}" />
+                      AutomationProperties.Name="{loc:Loc settings.network}" AutomationProperties.HelpText="{Binding NetworkHint}" />
         </controls:SettingsCard>
 
         <TextBlock Text="{loc:Loc win.settings.about.updates}" Style="{StaticResource SectionHeaderText}" Margin="2,20,0,8"

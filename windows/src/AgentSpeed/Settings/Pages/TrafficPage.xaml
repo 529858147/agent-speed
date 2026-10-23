@@ -8,6 +8,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
         <controls:HelperDotBrushConverter x:Key="DotBrush" />
+        <controls:TextToVisibilityConverter x:Key="HasText" />
 
         <Style x:Key="GroupCard" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -30,6 +31,10 @@
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Enabled, Mode=TwoWay}"
                       AutomationProperties.Name="{loc:Loc settings.traffic.enabled}" AutomationProperties.HelpText="{loc:Loc settings.traffic.enabled.hint}" />
         </controls:SettingsCard>
+        <StackPanel Orientation="Horizontal" Margin="16,2,16,8" Visibility="{Binding ReportNote, Converter={StaticResource HasText}}">
+            <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xEC05;" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="{Binding ReportNote}" Style="{StaticResource CaptionText}" Margin="8,0,0,0" />
+        </StackPanel>
         <controls:SettingsCard Header="{loc:Loc settings.traffic.includeTools}" Icon="&#xE90F;" Description="{loc:Loc settings.traffic.includeTools.hint}"
                                IsEnabled="{Binding Enabled}">
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding IncludeTools, Mode=TwoWay}"

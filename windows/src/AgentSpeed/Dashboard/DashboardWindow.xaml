@@ -149,6 +149,9 @@
         <ScrollViewer x:Name="Scroller" Style="{StaticResource OverlayScrollViewer}">
             <StackPanel x:Name="Sections" Margin="20,20,20,12">
 
+                <!-- The one-time live reporting invitation (DESIGN 11), above the hero -->
+                <dash:ReportInvitationCard x:Name="Invitation" Visibility="Collapsed" />
+
                 <!-- Hero -->
                 <Grid Height="112">
                     <Grid.ColumnDefinitions>
@@ -584,6 +587,15 @@
                         <Button x:Name="InfoButton" Style="{StaticResource SubtleButton}" Click="OnInfo"
                                 ToolTip="{loc:Loc win.dashboard.metricInfo}" AutomationProperties.Name="{loc:Loc win.dashboard.metricInfo}">
                             <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE946;" />
+                        </Button>
+                        <!-- Live reporting is on (DESIGN 11, Dashboard footer): static, dimmed while paused, a dot when it needs the user -->
+                        <Button x:Name="ReportIndicator" Style="{StaticResource SubtleButton}" Click="OnReportIndicator" Margin="2,0,0,0" Visibility="Collapsed">
+                            <Grid>
+                                <TextBlock x:Name="ReportGlyph" Style="{StaticResource SymbolIcon}" Text="&#xEC05;"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Ellipse x:Name="ReportAttention" Width="5" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-1,-2,0"
+                                         Fill="{DynamicResource SystemFillColorCautionBrush}" Visibility="Collapsed" />
+                            </Grid>
                         </Button>
                         <Button Style="{StaticResource SubtleButton}" Click="OnSettings" Margin="2,0,0,0"
                                 ToolTip="{loc:Loc settings.title}" AutomationProperties.Name="{loc:Loc settings.title}">

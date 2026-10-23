@@ -104,6 +104,20 @@ internal sealed class TrafficPaneViewModel : ObservableObject
         }
     }
 
+    private string? _reportHost;
+
+    /// <summary><c>report.traffic.note</c> while a traffic section is being reported (DESIGN 11), naming the destination.</summary>
+    public string? ReportNote => _reportHost is { } host ? _loc.Format("report.traffic.note", host) : null;
+
+    public void SetReporting(string? host)
+    {
+        if (_reportHost != host)
+        {
+            _reportHost = host;
+            OnPropertyChanged(nameof(ReportNote));
+        }
+    }
+
     public string DetailsLink => DetailsUrl;
 
     /// <summary>The helper section applies (Windows builds with the service support).</summary>

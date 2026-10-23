@@ -108,6 +108,15 @@ internal static class MenuBuilder
             case MenuAction.OpenOrbSettings a:
                 commands.OpenOrbSettings(a.OrbId);
                 break;
+            case MenuAction.PauseReporting a:
+                commands.PauseReporting(a.Indefinitely);
+                break;
+            case MenuAction.ResumeReporting:
+                commands.ResumeReporting();
+                break;
+            case MenuAction.OpenLeaderboard:
+                commands.OpenReportLeaderboard();
+                break;
         }
     }
 
@@ -174,8 +183,23 @@ internal static class MenuBuilder
         MenuIcon.Glyph glyph => GlyphIcon(glyph.Kind),
         MenuIcon.Dots dots => new MenuDots(dots.Sources),
         MenuIcon.AccentDot => AccentDot(),
+        MenuIcon.StatusDot status => StatusDot(status.Tone),
         _ => null,
     };
+
+    /// <summary>A 7 DIP dot in the status color; the row's text always says what it means.</summary>
+    private static Ellipse StatusDot(MenuStatusTone tone)
+    {
+        var dot = new Ellipse { Width = 7, Height = 7, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        dot.SetResourceReference(Shape.FillProperty, tone switch
+        {
+            MenuStatusTone.Green => "SystemFillColorSuccessBrush",
+            MenuStatusTone.Amber => "SystemFillColorCautionBrush",
+            MenuStatusTone.Red => "SystemFillColorCriticalBrush",
+            _ => "TextFillColorTertiaryBrush",
+        });
+        return dot;
+    }
 
     private static TextBlock GlyphIcon(MenuGlyph glyph)
     {

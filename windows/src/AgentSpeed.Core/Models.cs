@@ -181,6 +181,9 @@ public sealed record SpeedSnapshot(
     /// <summary>Today's cost of every source (METRICS 9.6).</summary>
     public CostTally TodayCost { get; init; }
 
+    /// <summary>Live reporting's agent counts and cumulative ledger (METRICS 11.2, 11.4).</summary>
+    public Reporting.ReportLiveFacts Report { get; init; } = Reporting.ReportLiveFacts.Empty;
+
     public static SpeedSnapshot Empty { get; } = new(
         DateTimeOffset.MinValue,
         MonitorState.Starting(0),

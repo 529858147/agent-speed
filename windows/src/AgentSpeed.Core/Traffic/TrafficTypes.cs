@@ -38,6 +38,16 @@ public readonly record struct TrafficSplit(TrafficBytes Self, TrafficBytes Tools
     public static TrafficSplit operator +(TrafficSplit a, TrafficSplit b) => a.Add(b);
 }
 
+/// <summary>
+/// Bytes counted since the traffic engine started, without the deltas of gap samples (METRICS 11.4): each source's own and
+/// tool processes (the machine series is never reported). Live reporting takes differences of it; a new engine has a new
+/// <see cref="Epoch"/>, so a difference never spans two of them.
+/// </summary>
+public sealed record TrafficReportTotals(long Epoch, IReadOnlyDictionary<SourceKind, TrafficSplit> Sources)
+{
+    public static TrafficReportTotals Zero { get; } = new(0, new Dictionary<SourceKind, TrafficSplit>());
+}
+
 /// <summary>One source's traffic (METRICS 10.7, 10.8).</summary>
 /// <param name="Unassigned">The part of today's bytes (self and tools) not attributed to an agent tree (METRICS 10.6).</param>
 /// <param name="LiveWithTools">Live rate with tools; null before two samples exist (METRICS 10.7).</param>
@@ -159,6 +169,9 @@ public sealed record TrafficSnapshot
 
     /// <summary>Local midnight at which "today" starts.</summary>
     public DateTimeOffset DayStart { get; init; } = DateTimeOffset.MinValue;
+
+    /// <summary>Live reporting's cumulative bytes (METRICS 11.4).</summary>
+    public TrafficReportTotals ReportTotals { get; init; } = TrafficReportTotals.Zero;
 
     /// <summary>
     /// The summed live rate of <paramref name="sources"/> (all sources when null); null when per-process data is

@@ -68,4 +68,12 @@ public abstract record MenuAction
     public sealed record RemoveOrb(string OrbId) : MenuAction;
 
     public sealed record OpenOrbSettings(string OrbId) : MenuAction;
+
+    /// <summary>Pauses live reporting for an hour, or (<paramref name="Indefinitely"/>) until the user resumes (DESIGN 11).</summary>
+    public sealed record PauseReporting(bool Indefinitely) : MenuAction;
+
+    public sealed record ResumeReporting : MenuAction;
+
+    /// <summary>Opens the reporting service's leaderboard in the browser (an <c>https</c> link only).</summary>
+    public sealed record OpenLeaderboard : MenuAction;
 }

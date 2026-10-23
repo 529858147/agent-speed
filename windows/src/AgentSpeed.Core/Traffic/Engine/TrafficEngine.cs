@@ -44,6 +44,9 @@ internal sealed class TrafficEngine
     private long _streamStartUs;
     private bool _awaitingFirstSample;
     private long? _previousCounterT;
+    private static long _epochs;
+    private readonly Dictionary<SourceKind, TrafficSplit> _reportTotals = new();
+    private TrafficReportTotals? _reportSnapshot;
 
     public TrafficEngine(TrafficPlatform platform, TimeZoneInfo? zone = null)
     {
@@ -76,6 +79,12 @@ internal sealed class TrafficEngine
     public Dictionary<ProcessIdentity, (TrafficSplit Split, Dictionary<string, TrafficSplit> Assigned)> RootTotals { get; } = new();
 
     public TrafficRate? MachineRate => MachineSeries.Rate;
+
+    /// <summary>This engine's identity for live reporting's differences (METRICS 11.4).</summary>
+    public long Epoch { get; } = Interlocked.Increment(ref _epochs);
+
+    /// <summary>Bytes for live reporting since the engine started, without gap samples (METRICS 11.4); copied only after a change.</summary>
+    public TrafficReportTotals ReportTotals => _reportSnapshot ??= new TrafficReportTotals(Epoch, new Dictionary<SourceKind, TrafficSplit>(_reportTotals));
 
     public void SetAgents(IEnumerable<TrafficAgent> agents)
     {
@@ -222,6 +231,12 @@ internal sealed class TrafficEngine
         foreach (var (root, (source, split)) in _perRoot)
         {
             _sourceTotals[source] = _sourceTotals.GetValueOrDefault(source) + split;
+            if (!gap)
+            {
+                _reportTotals[source] = _reportTotals.GetValueOrDefault(source) + split;
+                _reportSnapshot = null;
+            }
+
             var candidates = Trees.Candidates(source, startMs, wallMs, Platform,
                 () => OpenFiles(root, inspector, t),
                 () => Table.WorkingDirectory(root, inspector));

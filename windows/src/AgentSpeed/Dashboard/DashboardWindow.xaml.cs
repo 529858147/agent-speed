@@ -156,6 +156,27 @@ internal sealed partial class DashboardWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(UpdatePill, text ?? string.Empty);
     }
 
+    /// <summary>The live reporting indicator was clicked: Settings → API.</summary>
+    public event EventHandler? ReportSettingsRequested;
+
+    /// <summary>The one-time live reporting invitation above the hero (DESIGN 11).</summary>
+    public ReportInvitationCard ReportInvitation => Invitation;
+
+    /// <summary>
+    /// The footer's live reporting glyph (DESIGN 11, Dashboard footer): shown while reporting is on, at 40 % while paused, with a
+    /// 5 DIP amber dot and <c>report.indicator.attention</c> when the status needs the user.
+    /// </summary>
+    public void SetReportIndicator(bool shown, bool paused, bool attention, string label)
+    {
+        ReportIndicator.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        ReportGlyph.Opacity = paused ? 0.4 : 1;
+        ReportAttention.Visibility = attention ? Visibility.Visible : Visibility.Collapsed;
+        ReportIndicator.ToolTip = label;
+        System.Windows.Automation.AutomationProperties.SetName(ReportIndicator, label);
+    }
+
+    private void OnReportIndicator(object sender, RoutedEventArgs e) => ReportSettingsRequested?.Invoke(this, EventArgs.Empty);
+
     /// <summary>The one-time <c>update.done</c> line after an update; null hides it.</summary>
     public void SetUpdateDone(string? text)
     {

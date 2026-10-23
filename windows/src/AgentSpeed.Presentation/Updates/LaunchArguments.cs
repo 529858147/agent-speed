@@ -29,6 +29,7 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
     public const string ThemeFlag = "--theme";
     public const string EffectsFlag = "--effects";
     public const string CaptureDirFlag = "--capture-dir";
+    public const string ReportE2EFlag = "--report-e2e";
     private const int MaxDemoSpeeds = 32;
 
     /// <summary>Development flag: fill the Usage History window with generated days instead of the real history.</summary>
@@ -91,6 +92,13 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
     /// </summary>
     public string? CaptureDir { get; init; }
 
+    /// <summary>
+    /// Development flag <c>--report-e2e &lt;url&gt;</c>: drives live reporting end to end against a local reference server
+    /// (<c>spec/tools/report_server.py</c>) with a synthetic engine feed, prints one line per check and quits. Only a loopback
+    /// URL is accepted; null when not given.
+    /// </summary>
+    public string? ReportE2E { get; init; }
+
     /// <summary>Any orb development flag: the session's settings are kept in memory only.</summary>
     public bool EphemeralSettings => OrbDemo is not null || OrbStyle is not null || OrbCount is not null || OrbSize is not null
         || Theme is not null || Effects is not null;
@@ -146,6 +154,7 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
         string? theme = null;
         string? effects = null;
         string? captureDir = null;
+        string? reportE2E = null;
         for (var i = 0; i < args.Count; i++)
         {
             var arg = args[i];
@@ -254,6 +263,15 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
                     i++;
                 }
             }
+            else if (string.Equals(arg, ReportE2EFlag, StringComparison.OrdinalIgnoreCase))
+            {
+                if (value is not null && Uri.TryCreate(value, UriKind.Absolute, out var url) && url.Scheme is "http" or "https"
+                    && url.Host is "127.0.0.1" or "localhost" or "[::1]" or "::1" && url.UserInfo.Length == 0)
+                {
+                    reportE2E = value;
+                    i++;
+                }
+            }
             else if (string.Equals(arg, EffectsFlag, StringComparison.OrdinalIgnoreCase))
             {
                 if (value is "off" or "soft" or "standard" or "max")
@@ -289,6 +307,7 @@ public sealed record LaunchArguments(bool AfterUpdate, string? PreviousVersion, 
             Theme = theme,
             Effects = effects,
             CaptureDir = captureDir,
+            ReportE2E = reportE2E,
         };
     }
 

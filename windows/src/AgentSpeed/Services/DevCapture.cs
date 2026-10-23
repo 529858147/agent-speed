@@ -98,7 +98,7 @@ internal sealed partial class DevCapture
                 case "settings":
                     CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020");
                     break;
-                case "dashboard" or "history":
+                case "dashboard" or "history" or "report-consent" or "report-preview" or "report-invite":
                     CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020", parts[0]);
                     break;
                 case "taskbar" when Taskbar?.Invoke() is { } bar:

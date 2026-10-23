@@ -265,6 +265,23 @@ public sealed class PriceTable
     internal long? Cost(ParsedResponse response) =>
         Cost(response.Model, response.Provider, response.Tokens, response.EndMs, response.Fast);
 
+    /// <summary>
+    /// The id a response's model is reported as (METRICS 11.3): a hit on a table entry (priced or free) is that entry's id, a
+    /// local runtime (<c>freeProviders</c>) is <c>local</c>, everything else is <c>unknown</c>. Raw names never leave the app.
+    /// </summary>
+    public string ReportModelId(string? model, string? provider)
+    {
+        var resolution = Resolver.Resolve(model, provider);
+        string? id = resolution.Kind switch
+        {
+            ResolutionKind.Priced => Models[resolution.Index].Id,
+            ResolutionKind.Free when resolution.Index >= 0 => Models[resolution.Index].Id,
+            ResolutionKind.Free when Resolver.IsLocalProvider(model, provider) => Reporting.ReportModelIds.Local,
+            _ => null,
+        };
+        return id is not null && Reporting.ReportModelIds.IsValid(id) ? id : Reporting.ReportModelIds.Unknown;
+    }
+
     /// <summary><c>Resolution.label</c> of <c>prices.py</c>: the model id (with <c> fast</c>), <c>free</c> or <c>unknown</c>.</summary>
     public string Label(ModelResolution resolution) => resolution.Kind switch
     {

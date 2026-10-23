@@ -37,7 +37,23 @@ public abstract record MenuIcon
 
     /// <summary>The accent dot of an available update.</summary>
     public sealed record AccentDot : MenuIcon;
+
+    /// <summary>Live reporting's small status dot (DESIGN 11, Menu); its meaning is always in the row's text.</summary>
+    public sealed record StatusDot(MenuStatusTone Tone) : MenuIcon;
 }
+
+/// <summary>The color of a status dot: reporting, quiet, in progress, needs the user.</summary>
+public enum MenuStatusTone
+{
+    Green,
+    Gray,
+    Amber,
+    Red,
+}
+
+/// <summary>What the quick menu shows of live reporting while it is on and registered (DESIGN 11, Menu).</summary>
+/// <param name="ServiceName">The service's name, else its host.</param>
+public sealed record ReportMenuState(string ServiceName, bool Paused, bool HasLeaderboard, MenuStatusTone Tone);
 
 /// <summary>A row or a separator of a menu level.</summary>
 public abstract record MenuEntry;

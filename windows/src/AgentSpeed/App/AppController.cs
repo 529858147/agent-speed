@@ -35,7 +35,7 @@ using AgentSpeed.Updates;
 namespace AgentSpeed.App;
 
 /// <summary>Composition root: owns every service and surface, and wires data, settings and theme to them.</summary>
-internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
+internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposable
 {
     private const double HeroDiameter = 112;
 
@@ -141,6 +141,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
                 _historyService?.ObserveLive(snapshot);
             }
         };
+        CreateReporting();
         _speed = new SpeedModel(_hub, _ui);
         _speed.Configure(Settings.Metric, Settings.Redline);
         _preview = new PreviewService(_hub, _ui);
@@ -216,6 +217,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             StartUpdates();
             _cost.Start();
             _traffic.Start();
+            StartReporting();
             if (_launch.DemoSpeedValues is { Count: > 0 } speeds)
             {
                 HeroStats.Enabled = true;
@@ -275,6 +277,11 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
                         return _dashboard is { IsShown: true } shown ? shown.Content as FrameworkElement : null;
                     }
 
+                    if (ReportCaptureTarget(target) is { } reportTarget)
+                    {
+                        return reportTarget;
+                    }
+
                     if (target == "history")
                     {
                         // An open window is captured as the ops left it (op history-all, op history-<source>).
@@ -324,7 +331,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             {
                 StartHistoryPreview();
             }
-            else
+            else if (_launch.ReportE2E is null || Environment.GetEnvironmentVariable("AGENT_SPEED_REPORT_E2E_HISTORY") == "1")
             {
                 ScheduleHistoryStart();
             }
@@ -374,6 +381,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         {
             _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
                 _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory, _cost) { TitleService = _titles };
+            _settingsModel.Report ??= CreateReportPane();
             _settingsModel.Traffic ??= new TrafficPaneViewModel(_settings, _traffic, _traffic.Helper, _loc,
                 () => _settingsWindow is { } window ? new System.Windows.Interop.WindowInteropHelper(window).Handle : 0,
                 ConfirmRemoveHelper);
@@ -420,6 +428,17 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _quitting = true;
         AppLog.Info("Quitting.");
+        // One leaving report when it can be sent within a second (REPORTING 7.1), then the app exits.
+        if (_report is { } report)
+        {
+            report.PrepareToQuit(() =>
+            {
+                Shutdown();
+                _app.Shutdown();
+            });
+            return;
+        }
+
         Shutdown();
         _app.Shutdown();
     }
@@ -446,6 +465,9 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         Try(() => _historyStartFallback?.Stop());
         Try(() => _history?.Dispose());
         Try(() => _historyService?.Dispose());
+        Try(() => _report?.Dispose());
+        Try(() => _consentDialog?.CloseFromController());
+        Try(() => _previewWindow?.Close());
         Try(() => _traffic?.Dispose());
         Try(() => _cost.Dispose());
         Try(() => _settings.Flush());
@@ -482,6 +504,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
     private void StartMonitor()
     {
+        if (_launch.ReportE2E is not null)
+        {
+            AppLog.Info("--report-e2e: the live monitor stays off; a synthetic engine feed drives live reporting.");
+            return;
+        }
+
         try
         {
             _monitor = new LiveMonitor(_hub, Settings.ToMonitorConfiguration(), _cost.Book);
@@ -812,7 +840,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         HideTooltip();
-        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable));
+        _menu.Show(AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable,
+            ReportMenuState()));
     }
 
     private void ToggleDashboard(POINT anchor)
@@ -859,6 +888,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             _dashboard.UnitToggleRequested += (_, _) => ToggleLiveUnit();
             _dashboard.TrafficHistoryRequested += (_, source) => ShowHistory(source, traffic: true);
             _dashboard.TrafficSettingsRequested += (_, _) => OpenSettings("traffic");
+            AttachReporting(_dashboard);
             _dashboard.IsVisibleChanged += (_, _) =>
             {
                 if (_dashboard?.IsVisible != true)
@@ -880,6 +910,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         _dashboard.SetUpdate(UpdatePillText());
         _dashboard.SetUpdateDone(_updateDoneText);
         _updateDoneShown = _updateDoneText is not null;
+        ShowReportInvitation();
+        RefreshReportSurfaces();
         _dashboard.ApplyBackground();
         RefreshDashboard();
         _dashboard.ShowNear(anchor, _theme.ReduceMotion);
@@ -982,6 +1014,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             return;
         }
 
+        if (previous with { Report = current.Report } == current)
+        {
+            // Live reporting's own state (DESIGN 11, Storage); its surfaces follow ReportController.Changed.
+            return;
+        }
+
         if (previous.Appearance != current.Appearance)
         {
             _theme.Mode = current.Appearance;
@@ -1047,7 +1085,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     /// <summary>
     /// Developer capture operations for the title themes (only with <c>--capture-dir</c>): <c>page-&lt;key&gt;</c>,
     /// <c>theme-&lt;preset id in lowercase&gt;</c>, <c>theme-custom</c> (a sample custom set), <c>lang-&lt;code&gt;</c>,
-    /// <c>appearance-&lt;auto|light|dark&gt;</c>, <c>dashboard</c>.
+    /// <c>appearance-&lt;auto|light|dark&gt;</c>, <c>dashboard</c>, and live reporting's <c>report-enable</c>, <c>report-start</c>,
+    /// <c>report-preview</c>, <c>report-cancel</c>.
     /// </summary>
     private void RunTitleCaptureOperation(string op)
     {
@@ -1093,6 +1132,23 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         else if (op == "dashboard")
         {
             ShowDashboard(CursorAnchor());
+        }
+        else if (op == "report-enable")
+        {
+            _report?.SetEnabled(true);
+        }
+        else if (op == "report-start")
+        {
+            _report?.StartReporting();
+        }
+        else if (op == "report-preview")
+        {
+            OpenReportPreview();
+        }
+        else if (op == "report-cancel")
+        {
+            _report?.CancelConsent();
+            _previewWindow?.Close();
         }
         else if (op == "history-all")
         {
@@ -1155,6 +1211,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         UpdateTaskbar();
         _tray?.Update(TrayState());
         _dashboard?.ApplyBackground();
+        _dashboard?.ReportInvitation.SetAppearance(_theme.IsDark, _theme.HighContrast, _theme.ReduceMotion);
         _history?.OnThemeChanged();
         if (_settingsModel is not null)
         {
@@ -1176,6 +1233,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         _settingsModel?.Relocalize(_loc);
+        _settingsModel?.Report?.SetLocalizer(_loc);
+        RefreshReportSurfaces();
         _orbs?.Relocalize(_loc);
         _updateWindowModel?.Relocalize(_loc);
         _history?.OnLanguageChanged();
@@ -1318,7 +1377,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         var menu = kind == "menu-orb" && Settings.Orbs.Orbs.FirstOrDefault() is { } orb
             ? OrbMenu.Build(this, orb.Id, Settings, SourceAvailability.From(_speed.Snapshot.Sources), _loc, SourceTrafficAvailable)
-            : AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable);
+            : AppMenu.Build(this, Settings, _loc, _updates.Available, SourceAvailability.From(_speed.Snapshot.Sources), SourceTrafficAvailable,
+                ReportMenuState());
         if (menu is null)
         {
             return null;

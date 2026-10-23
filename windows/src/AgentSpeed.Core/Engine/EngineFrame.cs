@@ -42,4 +42,7 @@ internal sealed record EngineFrame(
 
     /// <summary>Each source's models with unpriced responses today, most unpriced first, then by name.</summary>
     public IReadOnlyList<string>[] SourceUnpricedModels { get; init; } = [];
+
+    /// <summary>Live reporting's view of this instant (METRICS 11.2, 11.4).</summary>
+    public Reporting.ReportLiveFacts Report { get; init; } = Reporting.ReportLiveFacts.Empty;
 }

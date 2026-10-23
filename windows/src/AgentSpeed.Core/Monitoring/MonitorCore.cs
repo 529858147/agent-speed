@@ -125,6 +125,9 @@ internal sealed class MonitorCore : IDisposable
 
     public int PendingReadCount => _wholeReads.Count;
 
+    /// <summary>The live clock for live reporting's counting rule (METRICS 11.4); tests replace it.</summary>
+    internal Func<long> Clock { get; set; } = static () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     /// <summary>Transcript roots (file families).</summary>
     public IReadOnlyList<SourceRoot> Roots => _roots;
 
@@ -545,6 +548,7 @@ internal sealed class MonitorCore : IDisposable
             DayStart = DateTimeOffset.FromUnixTimeMilliseconds(todayStartMs),
             LiveCost = frame.LiveCost,
             TodayCost = frame.TodayCost,
+            Report = frame.Report,
         };
         return (snapshot, frame.Events);
     }
@@ -786,12 +790,13 @@ internal sealed class MonitorCore : IDisposable
         }
 
         PushAgent(tracked);
+        long? liveNowMs = seeded ? null : Clock();
         foreach (var (response, isCompletion) in _collector.Items)
         {
             _responsesSeen++;
             if (_enabled.Contains(response.Source))
             {
-                _engine.Upsert(response, isCompletion, seeded);
+                _engine.Upsert(response, isCompletion, seeded, liveNowMs);
             }
 
             _observer?.OnResponse(response, isCompletion, seeded);
@@ -952,10 +957,11 @@ internal sealed class MonitorCore : IDisposable
             PushOpenCodeAgent(state);
         }
 
+        long? liveNowMs = seeded ? null : Clock();
         foreach (var (response, isCompletion) in update.Responses)
         {
             _responsesSeen++;
-            _engine.Upsert(response, isCompletion, seeded);
+            _engine.Upsert(response, isCompletion, seeded, liveNowMs);
             _observer?.OnResponse(response, isCompletion, seeded);
         }
 

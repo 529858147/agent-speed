@@ -25,6 +25,9 @@ public sealed class SpeedHub
 
     public event EventHandler? PreviewChanged;
 
+    /// <summary>Every live snapshot, on the UI context, also while a preview is displayed (live reporting, METRICS 11).</summary>
+    public event EventHandler<SpeedSnapshot>? LivePublished;
+
     /// <summary>Called by <see cref="LiveMonitor"/> from any thread.</summary>
     public void PublishLive(SpeedSnapshot snapshot, IReadOnlyList<SpeedEvent>? events = null)
     {
@@ -35,6 +38,7 @@ public sealed class SpeedHub
 
         Post(() =>
         {
+            LivePublished?.Invoke(this, snapshot);
             if (IsPreviewing)
             {
                 return;

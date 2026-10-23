@@ -1,6 +1,7 @@
 using AgentSpeed.Core.History;
 using AgentSpeed.Core.Parsing;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.Reporting;
 
 namespace AgentSpeed.Core.Engine;
 
@@ -46,6 +47,15 @@ internal sealed class SpeedEngine
     private long? _liveMaxOutputAtMs;
     private double? _previousPeakOutput;
     private long? _lastPeakEventMs;
+    private static long _epochs;
+
+    /// <summary>What live reporting counts (METRICS 11.4); fed whatever reporting does, so nothing depends on its settings.</summary>
+    private readonly ReportLedger _reportLedger = new();
+
+    /// <summary>The provider of each agent's latest response, for the model id of a generating agent (METRICS 11.2).</summary>
+    private readonly Dictionary<string, string> _agentProviders = new(StringComparer.Ordinal);
+    private ReportCounters _reportCounters = ReportCounters.Zero;
+    private long _reportCountersVersion = -1;
 
     public SpeedEngine(long todayStartMs, PriceBook? pricing = null, TimeZoneInfo? zone = null)
     {
@@ -56,6 +66,9 @@ internal sealed class SpeedEngine
     }
 
     public long TodayStartMs => _today.StartMs;
+
+    /// <summary>This engine's identity for live reporting's differences: a new session counts from zero.</summary>
+    public long ReportEpoch { get; } = Interlocked.Increment(ref _epochs);
 
     /// <summary>Sources with measured output today.</summary>
     public SourceSet MeasuredSourcesToday => _today.MeasuredSources;
@@ -73,7 +86,8 @@ internal sealed class SpeedEngine
     }
 
     /// <summary>Adds or replaces a response (METRICS 4.3). Seeded responses never produce events.</summary>
-    public void Upsert(ParsedResponse response, bool isCompletion, bool seeded)
+    /// <param name="liveNowMs">The live clock at the upsert; null (seeding, tests) never counts the response for reporting.</param>
+    public void Upsert(ParsedResponse response, bool isCompletion, bool seeded, long? liveNowMs = null)
     {
         if (_pricing is not null)
         {
@@ -81,6 +95,20 @@ internal sealed class SpeedEngine
         }
 
         _responses[response.Key] = new Stored(response);
+        if (response.Provider is { } provider)
+        {
+            _agentProviders[response.AgentId] = provider;
+        }
+
+        if (isCompletion && !seeded && liveNowMs is { } now && response.EndMs >= now - CompletionEventWindowMs)
+        {
+            _reportLedger.Count(response, ReportModelId(response.Model, response.Provider));
+        }
+        else if (_reportLedger.IsCounted(response.Key))
+        {
+            _reportLedger.Grow(response, ReportModelId(response.Model, response.Provider));
+        }
+
         _today.Upsert(response);
         if (isCompletion && !seeded)
         {
@@ -266,7 +294,51 @@ internal sealed class SpeedEngine
             TodayCost = _today.Cost,
             SourceTodayCost = sourceTodayCost,
             SourceUnpricedModels = sourceUnpriced,
+            Report = ReportFacts(nowMs),
         };
+    }
+
+    /// <summary>The table that names models for live reporting: the current one (METRICS 11.3).</summary>
+    private string ReportModelId(string? model, string? provider) =>
+        (_pricing?.Current ?? PriceBook.Bundled).ReportModelId(model, provider);
+
+    /// <summary>Agents of the 6.7 base set per source, generating agents per model, and the report ledger (METRICS 11.2).</summary>
+    private ReportLiveFacts ReportFacts(long nowMs)
+    {
+        var agents = new Dictionary<SourceKind, ReportAgentCounts>();
+        var generating = new Dictionary<ReportModelKey, int>();
+        foreach (var agent in _agents.Values)
+        {
+            var phase = AgentList.PhaseAt(agent, nowMs);
+            var recent = agent.LastLineMs is { } last && nowMs - last <= AgentListWindowMs;
+            if (!recent && phase != AgentPhase.Generating)
+            {
+                continue;
+            }
+
+            var counts = agents.GetValueOrDefault(agent.Source);
+            counts = counts with { Active = counts.Active + 1 };
+            if (phase == AgentPhase.Generating)
+            {
+                counts = counts with { Generating = counts.Generating + 1 };
+                var key = new ReportModelKey(ReportModelId(agent.Model, _agentProviders.GetValueOrDefault(agent.Id)), agent.Source);
+                generating[key] = generating.GetValueOrDefault(key) + 1;
+            }
+            else if (phase == AgentPhase.Tools)
+            {
+                counts = counts with { Tools = counts.Tools + 1 };
+            }
+
+            agents[agent.Source] = counts;
+        }
+
+        if (_reportLedger.Counters.Version != _reportCountersVersion)
+        {
+            _reportCounters = _reportLedger.Counters.Copy();
+            _reportCountersVersion = _reportLedger.Counters.Version;
+        }
+
+        return new ReportLiveFacts(agents, generating, _reportCounters, ReportEpoch);
     }
 
     /// <summary>
@@ -318,6 +390,11 @@ internal sealed class SpeedEngine
                 _responses[priced.Key] = new Stored(priced);
             }
 
+            if (_reportLedger.IsCounted(priced.Key))
+            {
+                _reportLedger.Grow(priced, ReportModelId(priced.Model, priced.Provider));
+            }
+
             _today.Upsert(priced);
             if (_last is not null && string.Equals(_last.Key, priced.Key, StringComparison.Ordinal))
             {
@@ -365,6 +442,12 @@ internal sealed class SpeedEngine
         foreach (var key in expired)
         {
             _responses.Remove(key);
+        }
+
+        _reportLedger.Prune(cutoffMs);
+        foreach (var agentId in _agentProviders.Keys.Where(id => !_agents.ContainsKey(id)).ToArray())
+        {
+            _agentProviders.Remove(agentId);
         }
     }
 

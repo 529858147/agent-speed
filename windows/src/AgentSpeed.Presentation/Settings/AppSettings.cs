@@ -228,6 +228,9 @@ public sealed record AppSettings
     /// <summary>Network traffic measuring and display (DESIGN 10).</summary>
     public TrafficSettings Traffic { get; init; } = TrafficSettings.Default;
 
+    /// <summary>Live reporting (DESIGN 11, Storage): settings and service identities, never keys.</summary>
+    public ReportPreferences Report { get; init; } = ReportPreferences.Default;
+
     public bool IsSourceEnabled(SourceKind kind) => kind switch
     {
         SourceKind.Codex => CodexEnabled,
@@ -336,6 +339,7 @@ public sealed record AppSettings
         NotifiedVersion = CleanTag(NotifiedVersion),
         Cost = (Cost ?? CostSettings.Default).Validated(),
         Traffic = (Traffic ?? TrafficSettings.Default).Validated(),
+        Report = (Report ?? ReportPreferences.Default).Validated(),
     };
 
     internal static string? CleanTag(string? tag) =>
@@ -360,7 +364,11 @@ public sealed record AppSettings
             }
         }
 
-        return builder.ToImmutable();
+        // Unchanged anchors keep their instance, so equal settings stay equal (SettingsService skips no-op updates).
+        return ReferenceEquals(anchors.KeyComparer, builder.KeyComparer) && builder.Count == anchors.Count
+            && builder.All(kv => anchors.TryGetValue(kv.Key, out var old) && old == kv.Value)
+            ? anchors
+            : builder.ToImmutable();
     }
 
     internal static string? CleanPath(string? path)

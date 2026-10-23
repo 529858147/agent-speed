@@ -57,6 +57,7 @@ internal static class TrafficSnapshotBuilder
             Sources = sources,
             Agents = agents,
             DayStart = engine.Ledger.Labeler.DayStart(wallMs),
+            ReportTotals = engine.ReportTotals,
         };
     }
 }

@@ -161,6 +161,8 @@ public static class SettingsSerializer
             w.WriteBoolean("enabled", s.NetworkEnabled);
             w.WriteEndObject();
 
+            ReportSettingsJson.Write(w, s.Report);
+
             w.WriteStartObject("updates");
             w.WriteBoolean("autoCheck", s.AutoCheckUpdates);
             WriteNullableString(w, "lastCheck", s.LastUpdateCheck?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
@@ -202,6 +204,7 @@ public static class SettingsSerializer
         var cost = Child(root, "cost");
         var network = Child(root, "network");
         var traffic = Child(root, "traffic");
+        var report = Child(root, "report");
 
         var settings = new AppSettings
         {
@@ -264,6 +267,7 @@ public static class SettingsSerializer
                 Unit = ReadString(traffic, "unit") == "bits" ? TrafficUnit.Bits : TrafficUnit.Bytes,
                 Bar = TrafficSettings.ParseBar(ReadString(traffic, "bar")),
             },
+            Report = ReportSettingsJson.Read(report),
         };
 
         var fileVersion = ReadDouble(root, "version", 1);

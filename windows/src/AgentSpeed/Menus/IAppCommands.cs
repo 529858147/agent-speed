@@ -88,6 +88,20 @@ internal interface IAppCommands
     {
     }
 
+    /// <summary>Pauses live reporting for an hour, or until the user resumes (DESIGN 11, Menu).</summary>
+    void PauseReporting(bool indefinitely)
+    {
+    }
+
+    void ResumeReporting()
+    {
+    }
+
+    /// <summary>Opens the reporting service's leaderboard in the browser.</summary>
+    void OpenReportLeaderboard()
+    {
+    }
+
     /// <summary>Opens Settings → floating orbs with this orb selected.</summary>
     void OpenOrbSettings(string orbId) => OpenSettings("orb");
 

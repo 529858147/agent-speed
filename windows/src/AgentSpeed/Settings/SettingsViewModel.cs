@@ -121,6 +121,7 @@ internal sealed class SettingsViewModel : ObservableObject
         Pages.Add(new NavItem("effects", "", "settings.effects"));
         Pages.Add(new NavItem("cost", "", "settings.cost"));
         Pages.Add(new NavItem("traffic", "", "settings.traffic"));
+        Pages.Add(new NavItem("report", "\uEC05", "settings.report"));
         Pages.Add(new NavItem("sources", "", "settings.sources"));
         Pages.Add(new NavItem("about", "", "settings.about"));
         _selected = Pages[0];
@@ -208,6 +209,15 @@ internal sealed class SettingsViewModel : ObservableObject
     }
 
     private TrafficPaneViewModel? _traffic;
+
+    /// <summary>Settings → API (DESIGN 11); set by the app.</summary>
+    public ReportPaneViewModel? Report
+    {
+        get => _report;
+        set => Set(ref _report, value);
+    }
+
+    private ReportPaneViewModel? _report;
 
     /// <summary>The speed titles that scale with the redline, climbing (DESIGN section 5, General).</summary>
     public ObservableCollection<TitleLadderRow> TitleLadder { get; } = new();
@@ -577,6 +587,33 @@ internal sealed class SettingsViewModel : ObservableObject
         : _updates.Available;
 
     public string WindowTitle => $"{_loc["app.name"]} · {_loc["settings.title"]}";
+
+    private string? _reportHost;
+
+    /// <summary>
+    /// About while live reporting is on (DESIGN 11, Menu, dashboard and About): the statements that would claim nothing is sent
+    /// are replaced, and <c>privacy.report</c> follows them. <paramref name="host"/> is the destination; null while off.
+    /// </summary>
+    public void SetReporting(string? host)
+    {
+        if (_reportHost == host)
+        {
+            return;
+        }
+
+        _reportHost = host;
+        OnPropertyChanged(nameof(PrivacyStatement));
+        OnPropertyChanged(nameof(PrivacyTraffic));
+        OnPropertyChanged(nameof(NetworkHint));
+    }
+
+    public string PrivacyStatement => _reportHost is { } host ? _loc.Format("privacy.statement.report", host) : _loc["privacy.statement"];
+
+    public string PrivacyTraffic => _loc[_reportHost is null ? "privacy.traffic" : "privacy.traffic.report"];
+
+    public string PrivacyReport => _loc["privacy.report"];
+
+    public string NetworkHint => _loc[_reportHost is null ? "settings.network.hint" : "settings.network.hint.report"];
 
     public void Relocalize(Localizer localizer)
     {
