@@ -20,6 +20,9 @@ enum TranscriptNames: Sendable {
     case ompSession
     /// `<uuid>.db` directly in a `conversations` folder (Antigravity).
     case antigravityDatabase
+    /// `*.jsonl` not starting with `.`, only at `<slug>/<file>` and `<slug>/<dir>/subagents/<file>`; `<slug>` and
+    /// `<dir>` do not start with `.` and `<slug>` is not `cloud` (WorkBuddy).
+    case workbuddySession
 
     func matches(_ name: String) -> Bool {
         switch self {
@@ -29,7 +32,7 @@ enum TranscriptNames: Sendable {
             return name.hasSuffix(".jsonl") || name.hasSuffix(".jsonl.zst")
         case .geminiSession:
             return name.hasSuffix(".jsonl") || name.hasSuffix(".json")
-        case .ompSession:
+        case .ompSession, .workbuddySession:
             return name.hasSuffix(".jsonl") && !name.hasPrefix(".")
         case .antigravityDatabase:
             return Self.isConversationDatabase(name)
@@ -50,6 +53,7 @@ enum TranscriptNames: Sendable {
         case .geminiSession: depth == 2 || depth == 3
         case .ompSession: depth >= 1
         case .antigravityDatabase: depth == 0
+        case .workbuddySession: depth == 1 || depth == 3
         case .jsonl, .codexSession, .dshSession: true
         }
     }
@@ -67,6 +71,13 @@ enum TranscriptNames: Sendable {
             return !name.hasPrefix(".")
         case .antigravityDatabase:
             return false
+        case .workbuddySession:
+            switch depth {
+            case 0: return !name.hasPrefix(".") && name != "cloud"
+            case 1: return !name.hasPrefix(".")
+            case 2: return name == "subagents"
+            default: return false
+            }
         case .jsonl, .codexSession, .dshSession:
             return true
         }
@@ -83,6 +94,11 @@ enum TranscriptNames: Sendable {
                 && !components.contains { $0.hasPrefix(".") }
         case .antigravityDatabase:
             return components.count == 1
+        case .workbuddySession:
+            let slug = components[0]
+            guard !slug.hasPrefix("."), slug != "cloud" else { return false }
+            return components.count == 2
+                || (components.count == 4 && components[2] == "subagents" && !components[1].hasPrefix("."))
         case .jsonl, .codexSession, .dshSession:
             return components.count <= TranscriptDiscovery.maxDepth + 1
         }

@@ -7,14 +7,16 @@ struct HistoryTests {
     static let utc = TimeZone(identifier: "UTC")!
 
     /// The fixtures folder as every source's data; `omp` plays `~/.omp` and `antigravity` plays `~/.gemini`, so their
-    /// automatic roots (every profile, the three stores) are used.
+    /// automatic roots (every profile, the three stores) are used; `workbuddy` plays `~` of both WorkBuddy editions.
     static func configuration(fixtures root: URL) -> MonitorConfiguration {
         var configuration = MonitorConfiguration(
             codexRoot: root.appendingPathComponent("codex/sessions", isDirectory: true),
             claudeRoot: root.appendingPathComponent("claude/projects", isDirectory: true),
             dshRoot: root.appendingPathComponent("dsh/sessions", isDirectory: true),
             opencodeRoot: root.appendingPathComponent("opencode/opencode.db"),
-            geminiRoot: root.appendingPathComponent("gemini/tmp", isDirectory: true)
+            geminiRoot: root.appendingPathComponent("gemini/tmp", isDirectory: true),
+            workbuddyRoot: root.appendingPathComponent("workbuddy/.workbuddy", isDirectory: true),
+            workbuddyAiRoot: root.appendingPathComponent("workbuddy/.workbuddy-ai", isDirectory: true)
         )
         configuration.automaticRoots = [
             .omp: TranscriptLocations.ompRoots(environment: ["PI_CONFIG_DIR": "omp"], home: root),

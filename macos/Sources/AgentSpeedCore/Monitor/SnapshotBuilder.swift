@@ -26,7 +26,7 @@ struct SnapshotContext: Sendable {
             let enabled = session.enabledSources.contains(kind)
             if let family = TranscriptFamily(kind) {
                 let root = session.root(for: family)
-                sources[kind] = SourceInfo(enabled: enabled, rootPath: root.path, available: root.available, sessionCount: counts[kind] ?? 0)
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: root.path, available: root.detected, sessionCount: counts[kind] ?? 0)
             } else if kind == .opencode {
                 let location = session.opencodeLocation
                 sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)

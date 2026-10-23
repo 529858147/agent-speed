@@ -73,6 +73,10 @@ final class AppSettings {
     var ompRoot: URL? { didSet { store(ompRoot?.path, .ompRoot) } }
     /// One Antigravity store folder (or its `conversations` folder), replacing the three default stores.
     var antigravityRoot: URL? { didSet { store(antigravityRoot?.path, .antigravityRoot) } }
+    /// WorkBuddy's data folder (or its `projects` folder), replacing `~/.workbuddy`.
+    var workbuddyRoot: URL? { didSet { store(workbuddyRoot?.path, .workbuddyRoot) } }
+    /// WorkBuddy AI's data folder (or its `projects` folder), replacing `~/.workbuddy-ai`.
+    var workbuddyAiRoot: URL? { didSet { store(workbuddyAiRoot?.path, .workbuddyAiRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -148,6 +152,8 @@ final class AppSettings {
         geminiRoot = Self.url(defaults.string(forKey: Key.geminiRoot.rawValue))
         ompRoot = Self.url(defaults.string(forKey: Key.ompRoot.rawValue))
         antigravityRoot = Self.url(defaults.string(forKey: Key.antigravityRoot.rawValue))
+        workbuddyRoot = Self.url(defaults.string(forKey: Key.workbuddyRoot.rawValue))
+        workbuddyAiRoot = Self.url(defaults.string(forKey: Key.workbuddyAiRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
         networkEnabled = defaults.object(forKey: Key.networkEnabled.rawValue) as? Bool ?? true
         syncPrices = defaults.object(forKey: Key.syncPrices.rawValue) as? Bool ?? true
@@ -174,7 +180,9 @@ final class AppSettings {
             opencodeRoot: opencodeRoot,
             geminiRoot: geminiRoot,
             ompRoot: ompRoot,
-            antigravityRoot: antigravityRoot
+            antigravityRoot: antigravityRoot,
+            workbuddyRoot: workbuddyRoot,
+            workbuddyAiRoot: workbuddyAiRoot
         )
     }
 
@@ -238,7 +246,7 @@ final class AppSettings {
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources
-        case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot
+        case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot, workbuddyRoot, workbuddyAiRoot
         case autoCheckUpdates
         case networkEnabled, syncPrices, currency, liveUnit, subscriptionSources, includeSubscriptions
         case heroLastTitle

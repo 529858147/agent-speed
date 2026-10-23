@@ -93,6 +93,21 @@ public final class LiveMonitor {
         TranscriptLocations.defaultAntigravityStores
     }
 
+    /// WorkBuddy's data folder (`~/.workbuddy`, China edition); its `projects` folder holds the sessions.
+    public nonisolated static var defaultWorkBuddyDataFolder: URL {
+        TranscriptLocations.defaultWorkBuddyDataFolder
+    }
+
+    /// WorkBuddy AI's data folder (`~/.workbuddy-ai`, international edition).
+    public nonisolated static var defaultWorkBuddyAiDataFolder: URL {
+        TranscriptLocations.defaultWorkBuddyAiDataFolder
+    }
+
+    /// The `projects` folder a WorkBuddy folder setting reads: the folder itself when it is called `projects`.
+    public nonisolated static func workbuddyProjectsFolder(_ folder: URL) -> URL {
+        TranscriptLocations.workbuddyProjects(folder)
+    }
+
     /// False for a `*-backup` store (or its `conversations` folder), which is never read.
     public nonisolated static func isReadableAntigravityStore(_ folder: URL) -> Bool {
         TranscriptLocations.isReadableAntigravityRoot(TranscriptLocations.antigravityConversations(folder).path)

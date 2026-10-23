@@ -170,6 +170,8 @@ enum HistoryLogicChecks {
         let sourceIDs = SourceKind.allCases.map { HistoryCSV.sourceID($0) }
         check("csv source ids are distinct", Set(sourceIDs).count == sourceIDs.count && !sourceIDs.contains("all"))
         check("csv source ids of omp and Antigravity", HistoryCSV.sourceID(.omp) == "omp" && HistoryCSV.sourceID(.antigravity) == "antigravity")
+        check("csv source ids of both WorkBuddy editions",
+              HistoryCSV.sourceID(.workbuddy) == "workbuddy" && HistoryCSV.sourceID(.workbuddyAi) == "workbuddy-ai")
         let risky = DaySummary(
             day: today, requests: 0, input: 0, cachedInput: 0, cacheWriteInput: 0, output: 0, reasoning: 0,
             measuredOutput: 0, measuredMs: 0, unfinalized: 0, agents: 0, peak: nil,

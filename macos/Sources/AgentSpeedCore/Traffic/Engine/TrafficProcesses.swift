@@ -24,6 +24,8 @@ struct ProcessEntry: Equatable, Sendable {
 protocol ProcessInspector: AnyObject {
     func executablePath(of entry: ProcessEntry) -> String?
     func arguments(of entry: ProcessEntry) -> [String]?
+    /// macOS: `CFBundleIdentifier` of the app whose `Contents/MacOS` holds `executable`; nil outside an app bundle.
+    func bundleIdentifier(of entry: ProcessEntry, executable: String) -> String?
     func workingDirectory(of entry: ProcessEntry) -> String?
     /// Open file paths; implementations cache them (macOS: refreshed every 10 s).
     func openFiles(of entry: ProcessEntry, nowMs: Int64) -> [String]

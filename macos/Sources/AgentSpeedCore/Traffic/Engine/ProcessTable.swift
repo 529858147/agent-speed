@@ -129,11 +129,14 @@ final class ProcessTable {
         let nearest = ancestors.lazy.compactMap { self.records[$0.identity]?.processClass }.first { $0.isAgentMember }
         let executable = record.executable
         let ancestorExecutables = ancestors.map { records[$0.identity]?.executable ?? "" }
+        let bundle = { inspector.bundleIdentifier(of: entry, executable: executable) }
         let source = rules.source(
             executable: executable,
             arguments: {
-                rules.needsArguments(executable: executable) ? arguments(of: identity, inspector: inspector) : nil
+                rules.needsArguments(executable: executable, bundleIdentifier: bundle)
+                    ? arguments(of: identity, inspector: inspector) : nil
             },
+            bundleIdentifier: bundle,
             ancestorExecutables: ancestorExecutables)
         let processClass: ProcessClass?
         if let source, nearest?.source != source {

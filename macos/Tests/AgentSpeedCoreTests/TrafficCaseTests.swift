@@ -52,6 +52,10 @@ final class FixtureInspector: ProcessInspector {
 
     func workingDirectory(of entry: ProcessEntry) -> String? { processes[entry.identity]?.string("cwd") }
 
+    func bundleIdentifier(of entry: ProcessEntry, executable: String) -> String? {
+        processes[entry.identity]?.string("bundle")
+    }
+
     func openFiles(of entry: ProcessEntry, nowMs: Int64) -> [String] {
         processes[entry.identity]?["openFiles"] as? [String] ?? []
     }

@@ -13,6 +13,8 @@ struct ParserFixtureTests {
         if relative.hasPrefix("codex/") { return .codex }
         if relative.hasPrefix("gemini/") { return .gemini }
         if relative.hasPrefix("omp/") { return .omp }
+        if relative.hasPrefix("workbuddy/.workbuddy-ai/") { return .workbuddyAi }
+        if relative.hasPrefix("workbuddy/.workbuddy/") { return .workbuddy }
         return relative.hasPrefix("dsh/") ? .dsh : .claude
     }
 
@@ -21,11 +23,14 @@ struct ParserFixtureTests {
         TranscriptLocations.ompRoots(environment: ["PI_CONFIG_DIR": "omp"], home: Fixtures.root).map(\.path)
     }
 
-    /// The root an omp fixture was found under; nil for other families.
+    /// The root an omp or WorkBuddy fixture was found under; nil for other families.
     static func root(of relative: String) -> String? {
-        guard family(of: relative) == .omp else { return nil }
         let path = Fixtures.root.appendingPathComponent(relative).path
-        return ompRoots.first { path.hasPrefix($0 + "/") }
+        switch family(of: relative) {
+        case .omp: return ompRoots.first { path.hasPrefix($0 + "/") }
+        case .workbuddy, .workbuddyAi: return WorkBuddyTests.fixtureRoots.map(\.1).first { path.hasPrefix($0 + "/") }
+        default: return nil
+        }
     }
 
     static func parser(for relative: String, fileID: FileID) -> TranscriptParser {

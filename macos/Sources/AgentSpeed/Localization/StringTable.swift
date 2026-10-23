@@ -244,6 +244,8 @@ enum StringTable {
         "mac.settings.sources.chooseOmp": Entry("選擇 omp 的 sessions 資料夾", "选择 omp 的 sessions 文件夹", "Choose the omp sessions folder", "omp の sessions フォルダを選択"),
         "mac.settings.sources.chooseOpencode": Entry("選擇內含 opencode.db 的 OpenCode 資料夾", "选择包含 opencode.db 的 OpenCode 文件夹", "Choose the OpenCode folder that contains opencode.db", "opencode.db を含む OpenCode のフォルダを選択"),
         "mac.settings.sources.choosePrompt": Entry("選擇", "选择", "Choose", "選択"),
+        "mac.settings.sources.chooseWorkbuddy": Entry("選擇 WorkBuddy 的資料夾（或其中的 projects 資料夾）", "选择 WorkBuddy 的文件夹（或其中的 projects 文件夹）", "Choose the WorkBuddy folder (or its projects folder)", "WorkBuddy のフォルダ（またはその中の projects フォルダ）を選択"),
+        "mac.settings.sources.chooseWorkbuddyAi": Entry("選擇 WorkBuddy AI 的資料夾（或其中的 projects 資料夾）", "选择 WorkBuddy AI 的文件夹（或其中的 projects 文件夹）", "Choose the WorkBuddy AI folder (or its projects folder)", "WorkBuddy AI のフォルダ（またはその中の projects フォルダ）を選択"),
         "mac.settings.sources.custom": Entry("自訂位置", "自定位置", "Custom location", "カスタムの場所"),
         "mac.settings.sources.default": Entry("預設位置", "默认位置", "Default location", "デフォルトの場所"),
         "mac.settings.sources.folder": Entry("資料夾", "文件夹", "Folder", "フォルダ"),

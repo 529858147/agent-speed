@@ -99,6 +99,9 @@ enum PreviewRenderer {
                 )
             }
         }
+        if wants("sources") {
+            SourcePreviews.render(model: model, into: directory)
+        }
         if wants("cost") {
             CostPreviews.render(model: model, into: directory)
         }

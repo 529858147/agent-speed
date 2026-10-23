@@ -31,7 +31,7 @@ struct ProbeArguments {
         usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS
                                 | --traffic SECONDS [--traffic-interval 0|1|5] [--no-live] [--history-store PATH])
                                [--prices PATH] [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH]
-                               [--gemini PATH] [--omp PATH] [--antigravity PATH]
+                               [--gemini PATH] [--omp PATH] [--antigravity PATH] [--workbuddy PATH] [--workbuddy-ai PATH]
                AgentSpeedProbe --sync-prices DIR | --sync-rates DIR CURRENCY
         """
 
@@ -96,6 +96,14 @@ struct ProbeArguments {
                 // One Antigravity store folder or its `conversations` folder; it replaces the three default stores.
                 guard let path = iterator.next() else { return nil }
                 configuration.antigravityRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--workbuddy":
+                // WorkBuddy's data folder or its `projects` folder.
+                guard let path = iterator.next() else { return nil }
+                configuration.workbuddyRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--workbuddy-ai":
+                // WorkBuddy AI's data folder or its `projects` folder.
+                guard let path = iterator.next() else { return nil }
+                configuration.workbuddyAiRoot = URL(fileURLWithPath: path, isDirectory: true)
             case "--opencode":
                 // The database file (as in reference.py) or the folder that contains it.
                 guard let path = iterator.next() else { return nil }

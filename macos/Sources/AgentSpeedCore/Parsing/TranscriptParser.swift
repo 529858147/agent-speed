@@ -13,6 +13,9 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
     case omp
     /// Antigravity: one SQLite database per conversation, read as a whole unit per change (METRICS 4.8, 5.4).
     case antigravity
+    /// WorkBuddy (China edition) and WorkBuddy AI (international edition): one format, one root each (METRICS 4.9).
+    case workbuddy
+    case workbuddyAi
 
     /// Nil for sources that are not read from transcript files: OpenCode is a database (`OpencodeSource`).
     init?(_ source: SourceKind) {
@@ -23,6 +26,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .gemini: self = .gemini
         case .omp: self = .omp
         case .antigravity: self = .antigravity
+        case .workbuddy: self = .workbuddy
+        case .workbuddyAi: self = .workbuddyAi
         case .opencode: return nil
         }
     }
@@ -36,11 +41,13 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .gemini: [.gemini]
         case .omp: [.omp]
         case .antigravity: [.antigravity]
+        case .workbuddy: [.workbuddy]
+        case .workbuddyAi: [.workbuddyAi]
         }
     }
 
-    /// File names (and for Gemini CLI, omp and Antigravity, folder layout) of this family's transcripts
-    /// (METRICS 2, 4.6 – 4.8).
+    /// File names (and for Gemini CLI, omp, Antigravity and WorkBuddy, folder layout) of this family's transcripts
+    /// (METRICS 2, 4.6 – 4.9).
     var names: TranscriptNames {
         switch self {
         case .codex: .codexSession
@@ -49,11 +56,15 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .gemini: .geminiSession
         case .omp: .ompSession
         case .antigravity: .antigravityDatabase
+        case .workbuddy, .workbuddyAi: .workbuddySession
         }
     }
 
     /// An Antigravity database is one SQLite file plus its `-wal`; every other family is a single file.
     var isDatabase: Bool { self == .antigravity }
+
+    /// The two WorkBuddy editions.
+    var isWorkBuddy: Bool { self == .workbuddy || self == .workbuddyAi }
 
     /// The stat that identifies one transcript of this family; nil unless it is a regular file.
     func stat(_ path: String) -> FileStat? {
@@ -75,6 +86,7 @@ enum DecodedLine: Sendable {
     case dsh(LineExtraction<DshLine>)
     case gemini(LineExtraction<GeminiLine>)
     case omp(LineExtraction<OmpLine>)
+    case workbuddy(LineExtraction<WorkBuddyLine>)
 }
 
 /// Lines decoded ahead of time (off the state-machine thread) so seeding can extract in parallel. An Antigravity read
@@ -86,6 +98,7 @@ enum DecodedLines: Sendable {
     case gemini([LineExtraction<GeminiLine>])
     case omp([LineExtraction<OmpLine>])
     case antigravity(AntigravityBatch?)
+    case workbuddy([LineExtraction<WorkBuddyLine>])
 }
 
 /// A family-agnostic per-file parser. Exactly one of the machines is set.
@@ -97,8 +110,10 @@ struct TranscriptParser: Sendable {
     private var gemini: GeminiParser?
     private var omp: OmpParser?
     private var antigravity: AntigravityParser?
+    private var workbuddy: WorkBuddyParser?
 
-    /// `root` is the root folder the file was discovered under (omp derives `isSubagent` from it, METRICS 4.7).
+    /// `root` is the root folder the file was discovered under (omp and WorkBuddy derive `isSubagent` from it,
+    /// METRICS 4.7, 4.9).
     init(family: TranscriptFamily, agentId: String, fileID: FileID, root: String? = nil) {
         self.family = family
         switch family {
@@ -108,11 +123,13 @@ struct TranscriptParser: Sendable {
         case .gemini: gemini = GeminiParser(agentId: agentId, fileID: fileID)
         case .omp: omp = OmpParser(agentId: agentId, fileID: fileID, root: root)
         case .antigravity: antigravity = AntigravityParser(agentId: agentId, fileID: fileID)
+        case .workbuddy, .workbuddyAi:
+            workbuddy = WorkBuddyParser(source: family.sources[0], agentId: agentId, fileID: fileID, root: root)
         }
     }
 
     var state: AgentState {
-        codex?.state ?? claude?.state ?? dsh?.state ?? gemini?.state ?? omp?.state ?? antigravity!.state
+        codex?.state ?? claude?.state ?? dsh?.state ?? gemini?.state ?? omp?.state ?? workbuddy?.state ?? antigravity!.state
     }
 
     /// An Antigravity database without the expected tables (`unsupportedFormat`).
@@ -128,6 +145,7 @@ struct TranscriptParser: Sendable {
         case .gemini:
             .gemini(gemini?.isDocument == true ? GeminiLineExtractor.extractDocument(bytes) : GeminiLineExtractor.extract(bytes))
         case .omp: .omp(OmpLineExtractor.extract(bytes))
+        case .workbuddy, .workbuddyAi: .workbuddy(WorkBuddyLineExtractor.extract(bytes))
         case .antigravity: nil
         }
     }
@@ -140,6 +158,7 @@ struct TranscriptParser: Sendable {
         gemini?.noteMalformedLine()
         omp?.noteMalformedLine()
         antigravity?.noteMalformedLine()
+        workbuddy?.noteMalformedLine()
     }
 
     mutating func consume(_ line: DecodedLine, deduper: inout Deduper, emit: (ResponseUpsert) -> Void) {
@@ -149,6 +168,7 @@ struct TranscriptParser: Sendable {
         case .dsh(let extraction): dsh?.consume(extraction, deduper: &deduper, emit: emit)
         case .gemini(let extraction): gemini?.consume(extraction, deduper: &deduper, emit: emit)
         case .omp(let extraction): omp?.consume(extraction, deduper: &deduper, emit: emit)
+        case .workbuddy(let extraction): workbuddy?.consume(extraction, deduper: &deduper, emit: emit)
         }
     }
 
@@ -171,6 +191,8 @@ struct TranscriptParser: Sendable {
             for extraction in extractions { omp?.consume(extraction, deduper: &deduper, emit: emit) }
         case .antigravity(let batch):
             if let batch { antigravity?.consume(batch, deduper: &deduper, emit: emit) }
+        case .workbuddy(let extractions):
+            for extraction in extractions { workbuddy?.consume(extraction, deduper: &deduper, emit: emit) }
         }
     }
 }
@@ -198,6 +220,9 @@ enum TranscriptDecoder {
         case .antigravity:
             let (batch, read) = reader.readDatabase()
             return (.antigravity(batch), read)
+        case .workbuddy, .workbuddyAi:
+            let (lines, read) = extract(WorkBuddyLineExtractor.extract, reader: &reader)
+            return (.workbuddy(lines), read)
         }
     }
 

@@ -324,6 +324,18 @@
     "en": "Choose the Antigravity folder that contains conversations",
     "ja": "conversations を含む Antigravity のフォルダを選択"
   },
+  "mac.settings.sources.chooseWorkbuddy": {
+    "zh-Hant": "選擇 WorkBuddy 的資料夾（或其中的 projects 資料夾）",
+    "zh-Hans": "选择 WorkBuddy 的文件夹（或其中的 projects 文件夹）",
+    "en": "Choose the WorkBuddy folder (or its projects folder)",
+    "ja": "WorkBuddy のフォルダ（またはその中の projects フォルダ）を選択"
+  },
+  "mac.settings.sources.chooseWorkbuddyAi": {
+    "zh-Hant": "選擇 WorkBuddy AI 的資料夾（或其中的 projects 資料夾）",
+    "zh-Hans": "选择 WorkBuddy AI 的文件夹（或其中的 projects 文件夹）",
+    "en": "Choose the WorkBuddy AI folder (or its projects folder)",
+    "ja": "WorkBuddy AI のフォルダ（またはその中の projects フォルダ）を選択"
+  },
   "mac.history.days": {
     "zh-Hant": "%d 天",
     "zh-Hans": "%d 天",

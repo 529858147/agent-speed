@@ -42,6 +42,8 @@ enum PreviewData {
             source(.gemini, speed * 0.04, TokenTotals(requests: 22, input: 700_000, output: 24_000), 1),
             source(.omp, 0, TokenTotals(requests: 64, input: 2_400_000, output: 58_000), 0),
             source(.antigravity, speed * 0.05, TokenTotals(requests: 41, input: 1_600_000, output: 46_000), 1),
+            source(.workbuddy, speed * 0.05, TokenTotals(requests: 58, input: 2_000_000, output: 52_000), 1),
+            source(.workbuddyAi, 0, TokenTotals(requests: 19, input: 640_000, output: 21_000), 0),
         ]
         var liveCost = LiveCost.zero
         var todayCost = CostTally()
@@ -98,7 +100,7 @@ enum PreviewData {
             agent("nova-sub", .claudeCode, "nova", "claude-sonnet-5-5", .generating, true, speed * 0.05, now, parent: "nova"),
             agent("meridian", .omp, "meridian", "claude-opus-5-5", .generating, false, speed * 0.08, now),
             agent("atlas", .codex, "atlas-web", "gpt-6.1-sol", .generating, false, speed * 0.07, now),
-            agent("vega", .deepseek, "vega", "deepseek-v4-flash", .generating, false, speed * 0.05, now),
+            agent("vega", .workbuddy, "vega", "glm-5.3", .generating, false, speed * 0.05, now),
             agent("lumen", .claudeCode, "lumen", "claude-haiku-5", .tools, false, 0, now.addingTimeInterval(-9)),
             agent("pulse", .claudeDesktop, "pulse", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-95)),
             agent("ember", .codex, "ember", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-240)),
@@ -109,7 +111,7 @@ enum PreviewData {
             agent("prism", .claudeDesktop, "prism", "claude-opus-5-5", .idle, false, 0, now.addingTimeInterval(-600)),
             agent("zenith", .claudeCode, "zenith", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-660)),
             agent("cobalt", .codex, "cobalt", "gpt-6.1-sol-mini", .idle, false, 0, now.addingTimeInterval(-720)),
-            agent("aurora", .deepseek, "aurora", "deepseek-v4-flash", .idle, false, 0, now.addingTimeInterval(-780)),
+            agent("aurora", .workbuddyAi, "aurora", "kimi-k3", .idle, false, 0, now.addingTimeInterval(-780)),
             agent("ion", .claudeCode, "ion", "claude-haiku-5", .idle, false, 0, now.addingTimeInterval(-840)),
             agent("tide", .claudeDesktop, "tide", "claude-sonnet-5-5", .idle, false, 0, now.addingTimeInterval(-900)),
         ]
@@ -155,7 +157,7 @@ enum PreviewData {
             switch source.kind {
             case .deepseek: source.available = false
             case .claudeDesktop: source.enabled = false
-            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity: return source
+            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity, .workbuddy, .workbuddyAi: return source
             }
             source.sessionCount = 0
             source.live = .zero
@@ -199,6 +201,8 @@ enum PreviewData {
         case .gemini: 23
         case .omp: 17
         case .antigravity: 9
+        case .workbuddy: 12
+        case .workbuddyAi: 5
         }
     }
 }

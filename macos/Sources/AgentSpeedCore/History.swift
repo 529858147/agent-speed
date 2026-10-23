@@ -143,6 +143,8 @@ public enum PreviewHistory {
             (.gemini, 40_000, 120, ["gemini-3-pro"], 0),
             (.omp, 70_000, 95, ["claude-opus-5-5", "gpt-5.5"], 45),
             (.antigravity, 50_000, 135, ["gemini-3.1-pro", "gemini-3.1-flash"], 30),
+            (.workbuddy, 55_000, 80, ["glm-5.3", "deepseek-v4-pro"], 25),
+            (.workbuddyAi, 35_000, 110, ["gpt-5.5", "kimi-k3"], 12),
         ]
         var result: [DailyUsage] = []
         for offset in stride(from: count - 1, through: 0, by: -1) {

@@ -16,16 +16,14 @@ enum Fixtures {
     }
 }
 
-/// Splits a buffer into lines the way the tailer does (newline-terminated, last fragment included).
+/// Splits a buffer into lines the way the tailer does: newline-terminated lines only, an incomplete last line waits for
+/// its newline (METRICS 5), as `reference.py` reads them.
 func forEachLine(in data: Data, _ body: (UnsafeRawBufferPointer) -> Void) {
     data.withUnsafeBytes { buffer in
         var start = 0
         for index in 0..<buffer.count where buffer[index] == 0x0A {
             body(UnsafeRawBufferPointer(rebasing: buffer[start..<index]))
             start = index + 1
-        }
-        if start < buffer.count {
-            body(UnsafeRawBufferPointer(rebasing: buffer[start..<buffer.count]))
         }
     }
 }

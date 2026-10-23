@@ -17,6 +17,10 @@ final class ProcessReader: ProcessInspector {
 
     private var known: [Int32: ProcessEntry] = [:]
     private var fullReadMs: Int64?
+    /// Bundle ids by app path, read once per app (METRICS 10.5).
+    private var bundleIds: [String: String?] = [:]
+    static let maxBundleIds = 512
+    static let maxInfoPlistBytes: Int64 = 1 << 20
 
     /// The current user's processes.
     func list(nowMs: Int64) -> [ProcessEntry] {
@@ -97,6 +101,34 @@ final class ProcessReader: ProcessInspector {
             index += 1
         }
         return arguments
+    }
+
+    func bundleIdentifier(of entry: ProcessEntry, executable: String) -> String? {
+        guard let app = Self.appBundle(containing: executable) else { return nil }
+        if let known = bundleIds[app] { return known }
+        if bundleIds.count >= Self.maxBundleIds { bundleIds.removeAll(keepingCapacity: true) }
+        let identifier = Self.readBundleIdentifier(app: app)
+        bundleIds[app] = .some(identifier)
+        return identifier
+    }
+
+    /// `<app>.app` when the executable lies directly in its `Contents/MacOS`.
+    static func appBundle(containing executable: String) -> String? {
+        let macOS = (executable as NSString).deletingLastPathComponent
+        guard (macOS as NSString).lastPathComponent == "MacOS" else { return nil }
+        let contents = (macOS as NSString).deletingLastPathComponent
+        guard (contents as NSString).lastPathComponent == "Contents" else { return nil }
+        let app = (contents as NSString).deletingLastPathComponent
+        return app.hasSuffix(".app") ? app : nil
+    }
+
+    private static func readBundleIdentifier(app: String) -> String? {
+        let path = app + "/Contents/Info.plist"
+        guard let stat = FileStat.stat(path), stat.isRegularFile, stat.size <= maxInfoPlistBytes,
+              let data = FileManager.default.contents(atPath: path),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        return plist["CFBundleIdentifier"] as? String
     }
 
     func workingDirectory(of entry: ProcessEntry) -> String? {

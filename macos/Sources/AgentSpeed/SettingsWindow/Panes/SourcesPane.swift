@@ -62,6 +62,8 @@ extension SourceKind {
         case .gemini: .gemini
         case .omp: .omp
         case .antigravity: .antigravity
+        case .workbuddy: .workbuddy
+        case .workbuddyAi: .workbuddyAi
         }
     }
 }

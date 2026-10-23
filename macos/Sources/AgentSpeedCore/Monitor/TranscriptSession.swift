@@ -57,6 +57,10 @@ final class TranscriptSession {
         var available: Bool
         /// False for roots that are never read (an Antigravity `*-backup` store).
         var readable = true
+        /// A folder whose existence alone detects the source (WorkBuddy: the data folder that holds `projects`).
+        var detectionPath: String?
+        /// The root is available, or its detection folder exists (METRICS 2).
+        var detected = false
     }
 
     static let startupLookbackMs: Int64 = 15 * 60_000
@@ -111,7 +115,8 @@ final class TranscriptSession {
         roots = TranscriptFamily.allCases.flatMap { family in
             configuration.resolvedRoots(for: family).map { path in
                 Root(family: family, path: path, canonicalPath: path, enabled: configuration.reads(family), available: false,
-                     readable: MonitorConfiguration.isReadable(root: path, family: family))
+                     readable: MonitorConfiguration.isReadable(root: path, family: family),
+                     detectionPath: family.isWorkBuddy ? TranscriptLocations.workbuddyDataFolder(ofRoot: path) : nil)
             }
         }
         opencodeRoot = configuration.resolvedOpencodeRoot
@@ -121,7 +126,7 @@ final class TranscriptSession {
 
     // MARK: - Roots
 
-    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.available } || opencode?.isReady == true }
+    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.detected } || opencode?.isReady == true }
 
     var watchedPaths: [String] {
         var paths = roots.filter { $0.enabled && $0.available }.map(\.canonicalPath)
@@ -146,8 +151,10 @@ final class TranscriptSession {
         }
         for index in roots.indices {
             let available = roots[index].readable && TranscriptDiscovery.isAvailable(root: roots[index].path)
-            if available != roots[index].available { changed = true }
+            let detected = available || roots[index].detectionPath.map(TranscriptDiscovery.isAvailable(root:)) == true
+            if available != roots[index].available || detected != roots[index].detected { changed = true }
             roots[index].available = available
+            roots[index].detected = detected
             if available, let resolved = realpath(roots[index].path, nil) {
                 roots[index].canonicalPath = String(cString: resolved)
                 free(resolved)
@@ -156,9 +163,9 @@ final class TranscriptSession {
         return changed
     }
 
-    /// The family's first available root, else its first root (Gemini CLI, omp and Antigravity can have several).
+    /// The family's first detected root, else its first root (Gemini CLI, omp and Antigravity can have several).
     func root(for family: TranscriptFamily) -> Root {
-        roots.first { $0.family == family && $0.available } ?? roots.first { $0.family == family }!
+        roots.first { $0.family == family && $0.detected } ?? roots.first { $0.family == family }!
     }
 
     // MARK: - Seeding
@@ -553,12 +560,13 @@ final class TranscriptSession {
         return sources
     }
 
-    /// Agents of each source with at least one line today.
+    /// Agents of each source with at least one line today; WorkBuddy counts main sessions only (DESIGN 5).
     func sessionCounts(todayStartMs: Int64) -> [SourceKind: Int] {
         var counts: [SourceKind: Int] = [:]
         for file in files.values {
             let state = file.parser.state
             guard let last = state.lastLineMs, last >= todayStartMs, enabledSources.contains(state.source) else { continue }
+            if file.family.isWorkBuddy, state.isSubagent { continue }
             counts[state.source, default: 0] += 1
         }
         if let opencode, enabledSources.contains(.opencode) {

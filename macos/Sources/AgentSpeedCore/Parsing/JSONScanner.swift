@@ -255,7 +255,7 @@ struct JSONScanner {
     }
 
     /// `str.isspace()` of Python: Unicode White_Space plus the separators U+001C–U+001F. Surrogates count as text.
-    private static func isPythonWhitespace(_ value: UInt32) -> Bool {
+    static func isPythonWhitespace(_ value: UInt32) -> Bool {
         if (0x09...0x0D).contains(value) || (0x1C...0x20).contains(value) { return true }
         guard value >= 0x80, let scalar = Unicode.Scalar(value) else { return false }
         return scalar.properties.isWhitespace

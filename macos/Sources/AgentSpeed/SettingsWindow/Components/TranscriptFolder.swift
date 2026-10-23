@@ -3,7 +3,8 @@ import AppKit
 
 /// A data folder the user can relocate. Claude Code and Claude Desktop share the Claude root; OpenCode's folder is the
 /// one that contains `opencode.db`; Gemini CLI reads one `tmp` folder, or by default two (an override replaces both);
-/// omp reads its default `sessions` root and one per named profile, Antigravity three stores (an override replaces all).
+/// omp reads its default `sessions` root and one per named profile, Antigravity three stores (an override replaces all);
+/// each WorkBuddy edition reads the `projects` folder of its data folder, which the row names.
 enum TranscriptFolder: CaseIterable {
     case codex
     case claude
@@ -12,6 +13,8 @@ enum TranscriptFolder: CaseIterable {
     case gemini
     case omp
     case antigravity
+    case workbuddy
+    case workbuddyAi
 
     /// Every default location, in reading order.
     var defaultURLs: [URL] {
@@ -23,6 +26,8 @@ enum TranscriptFolder: CaseIterable {
         case .gemini: LiveMonitor.defaultGeminiRoots
         case .omp: LiveMonitor.defaultOmpRoots
         case .antigravity: LiveMonitor.defaultAntigravityStores
+        case .workbuddy: [LiveMonitor.defaultWorkBuddyDataFolder]
+        case .workbuddyAi: [LiveMonitor.defaultWorkBuddyAiDataFolder]
         }
     }
 
@@ -37,6 +42,8 @@ enum TranscriptFolder: CaseIterable {
         case .gemini: "mac.settings.sources.chooseGemini"
         case .omp: "mac.settings.sources.chooseOmp"
         case .antigravity: "mac.settings.sources.chooseAntigravity"
+        case .workbuddy: "mac.settings.sources.chooseWorkbuddy"
+        case .workbuddyAi: "mac.settings.sources.chooseWorkbuddyAi"
         }
     }
 
@@ -50,6 +57,8 @@ enum TranscriptFolder: CaseIterable {
         case .gemini: "settings.sources.geminiHint"
         case .omp: "settings.sources.ompHint"
         case .antigravity: "settings.sources.antigravityHint"
+        case .workbuddy: "settings.sources.workbuddyHint"
+        case .workbuddyAi: "settings.sources.workbuddyAiHint"
         }
     }
 
@@ -63,6 +72,8 @@ enum TranscriptFolder: CaseIterable {
         case .gemini: settings.geminiRoot
         case .omp: settings.ompRoot
         case .antigravity: settings.antigravityRoot
+        case .workbuddy: settings.workbuddyRoot
+        case .workbuddyAi: settings.workbuddyAiRoot
         }
     }
 
@@ -88,7 +99,7 @@ enum TranscriptFolder: CaseIterable {
         case .antigravity:
             let found = defaultURLs.filter(isReadable)
             return found.isEmpty ? defaultURLs : found
-        case .codex, .claude, .dsh, .opencode, .gemini:
+        case .codex, .claude, .dsh, .opencode, .gemini, .workbuddy, .workbuddyAi:
             return defaultURLs
         }
     }
@@ -99,10 +110,11 @@ enum TranscriptFolder: CaseIterable {
     }
 
     /// Stores a custom folder; nil clears the override. Choosing the (first) default location clears it too, except
-    /// for omp and Antigravity, where one chosen folder is narrower than the automatic set.
+    /// for omp and Antigravity, where one chosen folder is narrower than the automatic set. A WorkBuddy data folder and
+    /// its `projects` folder are the same location.
     @MainActor
     func setURL(_ url: URL?, in settings: AppSettings) {
-        let value = url.flatMap { replacesAutomaticSet || !Self.isSameFolder($0, defaultURL) ? $0 : nil }
+        let value = url.flatMap { replacesAutomaticSet || !isDefaultLocation($0) ? $0 : nil }
         switch self {
         case .codex: settings.codexRoot = value
         case .claude: settings.claudeRoot = value
@@ -111,10 +123,21 @@ enum TranscriptFolder: CaseIterable {
         case .gemini: settings.geminiRoot = value
         case .omp: settings.ompRoot = value
         case .antigravity: settings.antigravityRoot = value
+        case .workbuddy: settings.workbuddyRoot = value
+        case .workbuddyAi: settings.workbuddyAiRoot = value
         }
     }
 
     private var replacesAutomaticSet: Bool { self == .omp || self == .antigravity }
+
+    private func isDefaultLocation(_ url: URL) -> Bool {
+        switch self {
+        case .workbuddy, .workbuddyAi:
+            Self.isSameFolder(LiveMonitor.workbuddyProjectsFolder(url), LiveMonitor.workbuddyProjectsFolder(defaultURL))
+        case .codex, .claude, .dsh, .opencode, .gemini, .omp, .antigravity:
+            Self.isSameFolder(url, defaultURL)
+        }
+    }
 
     static func isSameFolder(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.standardizedFileURL.path == rhs.standardizedFileURL.path

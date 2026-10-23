@@ -31,12 +31,26 @@ struct AgentProcessRules: Sendable {
         platform.isWindows ? [] : ["/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"]
     }
 
-    /// The rules read a process's arguments only for script hosts and for `claude` executables (the Chrome bridge
-    /// check); everything else is decided by the path.
-    func needsArguments(executable: String) -> Bool {
+    /// WorkBuddy runs its embedded CLI on the app's own executable: macOS by the app's bundle id, Windows by name.
+    private static let workbuddyBundles: [String: SourceKind] = [
+        "com.tencent.workbuddy.mac": .workbuddy, "com.workbuddy.workbuddy-ai": .workbuddyAi,
+    ]
+    private static let workbuddyExecutables: [String: SourceKind] = ["WorkBuddy": .workbuddy, "WorkBuddyAI": .workbuddyAi]
+    private static let workbuddyCLI = "/app.asar.unpacked/cli/"
+
+    /// The rules read a process's arguments only for script hosts, `claude` executables (the Chrome bridge check) and
+    /// WorkBuddy's executables; everything else is decided by the path.
+    func needsArguments(executable: String, bundleIdentifier: () -> String?) -> Bool {
         let name = platform.name(executable)
         return Self.scriptHosts.contains(name.lowercased()) || name == "claude"
             || platform.isUnder(executable, ["~/.local/share/claude/versions"])
+            || workbuddyEdition(executable: executable, bundleIdentifier: bundleIdentifier) != nil
+    }
+
+    /// The WorkBuddy edition whose executable this is.
+    func workbuddyEdition(executable: String, bundleIdentifier: () -> String?) -> SourceKind? {
+        if platform.isWindows { return Self.workbuddyExecutables[platform.name(executable)] }
+        return bundleIdentifier().flatMap { Self.workbuddyBundles[$0] }
     }
 
     func isScriptHost(_ executable: String) -> Bool {
@@ -65,7 +79,12 @@ struct AgentProcessRules: Sendable {
     }
 
     /// The source whose row matches; `ancestorExecutables` are the process's ancestors, nearest first.
-    func source(executable: String, arguments: () -> [String]?, ancestorExecutables: [String]) -> SourceKind? {
+    func source(
+        executable: String,
+        arguments: () -> [String]?,
+        bundleIdentifier: () -> String? = { nil },
+        ancestorExecutables: [String]
+    ) -> SourceKind? {
         if isDesktopApp(executable) { return nil }
         let name = platform.name(executable)
         if name == "claude" {
@@ -94,6 +113,11 @@ struct AgentProcessRules: Sendable {
         if script.contains("/@google/gemini-cli/") || name == "gemini" { return .gemini }
         if name == "omp" || script.contains("/@oh-my-pi/") || script.contains("/oh-my-pi/") { return .omp }
         if name == "agy" || name.hasPrefix("language_server_") { return .antigravity }
+        // Only the embedded CodeBuddy Code CLI is the agent; the app, its helpers and its daemon are not.
+        if let edition = workbuddyEdition(executable: executable, bundleIdentifier: bundleIdentifier),
+           (arguments() ?? []).dropFirst().contains(where: { platform.normalize($0).contains(Self.workbuddyCLI) }) {
+            return edition
+        }
         return nil
     }
 

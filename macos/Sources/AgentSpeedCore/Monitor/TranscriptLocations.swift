@@ -107,6 +107,24 @@ enum TranscriptLocations {
         return !(store as NSString).lastPathComponent.hasSuffix("-backup")
     }
 
+    /// WorkBuddy's data folders (METRICS 2, 4.9). `WORKBUDDY_CONFIG_DIR` and `CODEBUDDY_CONFIG_DIR` are not honoured.
+    static var defaultWorkBuddyDataFolder: URL { home.appendingPathComponent(".workbuddy", isDirectory: true) }
+    static var defaultWorkBuddyAiDataFolder: URL { home.appendingPathComponent(".workbuddy-ai", isDirectory: true) }
+
+    /// The `projects` folder of a WorkBuddy data folder; a folder that is itself called `projects` is used directly.
+    static func workbuddyProjects(_ folder: URL) -> URL {
+        var path = folder.path
+        while path.count > 1, path.hasSuffix("/") || path.hasSuffix("\\") { path.removeLast() }
+        let normalized = URL(fileURLWithPath: path, isDirectory: true)
+        if normalized.lastPathComponent == "projects" { return normalized }
+        return normalized.appendingPathComponent("projects", isDirectory: true)
+    }
+
+    /// The data folder whose `projects` folder is `root`: a WorkBuddy source is detected when it exists.
+    static func workbuddyDataFolder(ofRoot root: String) -> String {
+        (TranscriptDiscovery.normalizedRoot(root) as NSString).deletingLastPathComponent
+    }
+
     /// Default roots of a family; Gemini CLI has two, omp one per profile, Antigravity one per store.
     static func defaultRoots(for family: TranscriptFamily) -> [URL] {
         switch family {
@@ -116,6 +134,8 @@ enum TranscriptLocations {
         case .gemini: defaultGeminiRoots
         case .omp: defaultOmpRoots
         case .antigravity: defaultAntigravityStores.map(antigravityConversations)
+        case .workbuddy: [workbuddyProjects(defaultWorkBuddyDataFolder)]
+        case .workbuddyAi: [workbuddyProjects(defaultWorkBuddyAiDataFolder)]
         }
     }
 
@@ -147,13 +167,19 @@ extension MonitorConfiguration {
         case .gemini: geminiRoot
         case .omp: ompRoot
         case .antigravity: antigravityRoot.map(TranscriptLocations.antigravityConversations)
+        case .workbuddy: workbuddyRoot.map(TranscriptLocations.workbuddyProjects)
+        case .workbuddyAi: workbuddyAiRoot.map(TranscriptLocations.workbuddyProjects)
         }
     }
 
     /// Every root of a family: the configured one, else the defaults.
     func resolvedRoots(for family: TranscriptFamily) -> [String] {
         let automatic = automaticRoots[family].map { urls in
-            family == .antigravity ? urls.map(TranscriptLocations.antigravityConversations) : urls
+            switch family {
+            case .antigravity: urls.map(TranscriptLocations.antigravityConversations)
+            case .workbuddy, .workbuddyAi: urls.map(TranscriptLocations.workbuddyProjects)
+            default: urls
+            }
         }
         let urls = configuredRoot(for: family).map { [$0] } ?? automatic ?? TranscriptLocations.defaultRoots(for: family)
         var roots: [String] = []

@@ -28,6 +28,7 @@ enum AgentParents {
     static func resolve(_ members: [Member]) -> [String: String] {
         var ids = Set<String>()
         var ompIds = Set<String>()
+        var workbuddyIds: [TranscriptFamily: Set<String>] = [:]
         // Codex threads and DeepSeek sessions, each by family: the earliest created file names a thread.
         var threads: [TranscriptFamily: [String: (createdMs: Int64, id: String)]] = [:]
         let geminiMains = geminiMainSessions(members)
@@ -35,6 +36,7 @@ enum AgentParents {
         for member in members {
             ids.insert(member.id)
             if member.family == .omp { ompIds.insert(member.id) }
+            if member.family.isWorkBuddy { workbuddyIds[member.family, default: []].insert(member.id) }
             guard member.family == .codex || member.family == .dsh,
                   let thread = member.thread, let threadId = thread.id else { continue }
             if let earliest = threads[member.family]?[threadId],
@@ -59,6 +61,9 @@ enum AgentParents {
                 parent = member.thread?.parentId.flatMap { ompIds.contains($0) ? $0 : nil }
             case .antigravity:
                 parent = antigravityParent(of: member, in: conversations)
+            case .workbuddy, .workbuddyAi:
+                // As Claude, within the same edition: nested sub-agents are stored flat under the main session.
+                parent = claudeParentPath(of: member.id).flatMap { workbuddyIds[member.family]?.contains($0) == true ? $0 : nil }
             }
             if let parent, parent != member.id { parents[member.id] = parent }
         }

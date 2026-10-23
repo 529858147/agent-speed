@@ -11,6 +11,10 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case omp
     /// Google Antigravity (CLI, desktop app, IDE).
     case antigravity
+    /// Tencent WorkBuddy, China edition (desktop app).
+    case workbuddy
+    /// WorkBuddy AI, international edition (desktop app).
+    case workbuddyAi
 
     public var id: String { rawValue }
 }
@@ -137,7 +141,7 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
     public var kind: SourceKind
     public var enabled: Bool
     public var rootPath: String
-    /// The root folder exists and is readable.
+    /// The source is detected: its root folder (WorkBuddy: the data folder) exists and is readable (METRICS 2).
     public var available: Bool
     public var sessionCount: Int
     public var live: Rate
@@ -347,8 +351,12 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var ompRoot: URL?
     /// One Antigravity store folder (or its `conversations` folder); nil reads the three default stores (METRICS 4.8).
     public var antigravityRoot: URL?
+    /// WorkBuddy's data folder (or its `projects` folder); nil reads `~/.workbuddy` (METRICS 4.9).
+    public var workbuddyRoot: URL?
+    /// WorkBuddy AI's data folder (or its `projects` folder); nil reads `~/.workbuddy-ai` (METRICS 4.9).
+    public var workbuddyAiRoot: URL?
     /// Tests: replaces the automatic roots of a family that are otherwise derived from the environment and the home
-    /// folder (omp `sessions` roots, Antigravity store folders).
+    /// folder (omp `sessions` roots, Antigravity store folders, WorkBuddy data folders).
     var automaticRoots: [TranscriptFamily: [URL]] = [:]
 
     public init(
@@ -359,7 +367,9 @@ public struct MonitorConfiguration: Equatable, Sendable {
         opencodeRoot: URL? = nil,
         geminiRoot: URL? = nil,
         ompRoot: URL? = nil,
-        antigravityRoot: URL? = nil
+        antigravityRoot: URL? = nil,
+        workbuddyRoot: URL? = nil,
+        workbuddyAiRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
@@ -369,5 +379,7 @@ public struct MonitorConfiguration: Equatable, Sendable {
         self.geminiRoot = geminiRoot
         self.ompRoot = ompRoot
         self.antigravityRoot = antigravityRoot
+        self.workbuddyRoot = workbuddyRoot
+        self.workbuddyAiRoot = workbuddyAiRoot
     }
 }
