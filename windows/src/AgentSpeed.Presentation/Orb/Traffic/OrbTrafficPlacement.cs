@@ -50,9 +50,9 @@ public sealed record OrbTrafficPlacement(double NearestBaseline, bool Below, dou
 
     /// <summary>
     /// <c>needle</c>: while the readout is enabled and fits, <c>tok/s</c> leaves the hub for the dial face above it
-    /// (baseline c − 0.262 S, max(7 pt, 0.046 S), weight 500, secondary at 75 %, tracking +0.4).
+    /// (baseline c − 0.254 S, max(7 pt, 0.046 S), weight 500, secondary at 75 %, tracking +0.4).
     /// </summary>
-    public const double NeedleDialUnitBaseline = -0.262;
+    public const double NeedleDialUnitBaseline = -0.254;
 
     public const double NeedleDialUnitSize = 0.046;
 

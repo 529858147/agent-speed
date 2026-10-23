@@ -15,7 +15,7 @@ final class NeedleStyle: OrbStyleRenderer {
     )
     /// While the traffic readout is on and fits, the unit leaves the hub for the dial face (DESIGN 10): the hub draws
     /// no unit, and the layout names the dial position so the unit's click target follows it.
-    private static let dialUnitBaseline: CGFloat = -0.262
+    private static let dialUnitBaseline: CGFloat = -0.254
     private static let dialUnitSize: CGFloat = 0.046
     private static let hubWithoutUnit: OrbReadoutLayout = {
         var layout = hubLayout

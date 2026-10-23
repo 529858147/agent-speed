@@ -2114,7 +2114,8 @@ bottom edge (pretty but unreadable without hovering).
   (computed per size with the platform font, never truncated or shrunk below 7 pt); below that, and in thumbnails, it
   is not drawn.
 - **`needle`**: while the readout is enabled and fits, the unit `tok/s` leaves the hub and is printed on the dial face
-  above it — baseline c − 0.262 S, max(7 pt, 0.046 S), weight 500, the secondary token at 75 %, tracking +0.4 —
+  above it — baseline c − 0.254 S (centred between the shift lamps and the hub rim), max(7 pt, 0.046 S), weight 500,
+  the secondary token at 75 %, tracking +0.4 —
   drawn under the graduations and the needle like the legend of a real tachometer. It stays there while the readout is
   quiet, so nothing moves when traffic comes and goes.
 - **Colors**: number = the value token at 80 % (dark white 78 %, light `#0B0D12` 76 %); arrow and unit = the unit /
