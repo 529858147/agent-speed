@@ -15,11 +15,11 @@ struct OrbTrafficPlacement: Equatable {
     /// `reactor` and `needle` keep their readout in a fixed window or hub.
     var recenters = false
 
-    static let led = OrbTrafficPlacement(nearestBaseline: -0.190, below: false, size: 0.050, fit: 0.44, recenters: true)
+    static let led = OrbTrafficPlacement(nearestBaseline: -0.222, below: false, size: 0.050, fit: 0.44, recenters: true)
     static let liquid = led
-    static let reactor = OrbTrafficPlacement(nearestBaseline: -0.148, below: false, size: 0.046, fit: 0.32)
+    static let reactor = OrbTrafficPlacement(nearestBaseline: -0.165, below: false, size: 0.046, fit: 0.32)
     static let needle = OrbTrafficPlacement(nearestBaseline: 0.108, below: true, size: 0.046, fit: 0.285)
-    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.185, below: false, size: 0.054, fit: 0.50, recenters: true)
+    static let minimal = OrbTrafficPlacement(nearestBaseline: -0.205, below: false, size: 0.054, fit: 0.50, recenters: true)
 
     static func of(_ style: OrbStyleKind) -> OrbTrafficPlacement {
         switch style {
