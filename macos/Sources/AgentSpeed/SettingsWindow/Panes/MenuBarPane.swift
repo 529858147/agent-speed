@@ -31,6 +31,11 @@ struct MenuBarPane: View {
 
             Section {
                 LiveUnitPicker(model: model)
+                SettingToggle(
+                    title: l10n(settings.liveUnit == .cost ? "settings.bar.alsoTokens" : "settings.bar.alsoMoney"),
+                    isOn: $settings.barSecondary
+                )
+                .disabled(!settings.barMode.showsValue)
             } footer: {
                 SectionFootnote(l10n("settings.liveUnit.hint"))
             }

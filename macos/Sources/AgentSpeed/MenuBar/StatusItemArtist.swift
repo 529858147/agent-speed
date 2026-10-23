@@ -48,6 +48,7 @@ enum StatusItemArtist {
         let layout = state.layout
         if layout.showsGlyph { drawGauge(state, palette: palette, layout: layout, in: context) }
         if layout.showsValue { drawText(state, palette: palette, layout: layout) }
+        state.secondary?.draw(at: layout.secondaryX, baseline: layout.baseline, palette: palette)
         state.traffic?.draw(at: layout.trafficX, height: layout.height, palette: palette)
     }
 

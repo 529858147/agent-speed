@@ -19,6 +19,7 @@ final class StatusItemAccessibility {
             guard let self else { return }
             _ = (self.model.gauge.readoutValue, self.model.gauge.title, self.model.l10n.language)
             _ = (self.model.settings.liveUnit, self.model.snapshot.liveCost, self.model.cost.currency)
+            _ = self.model.settings.barSecondary
             if self.model.settings.barTraffic != .off { _ = self.model.traffic.snapshot.timestamp }
             self.schedule()
         }
@@ -64,7 +65,10 @@ final class StatusItemAccessibility {
             return l10n("a11y.orb.traffic", TrafficText.spoken(rx), TrafficText.spoken(tx))
         }
         let separator = l10n.language == .ja ? "、" : l10n.language.usesLatinCase ? ", " : "，"
-        func withTraffic(_ text: String) -> String { traffic.map { text + separator + $0 } ?? text }
+        let secondary = StatusItemSecondary(model: model)?.spoken
+        func withTraffic(_ text: String) -> String {
+            [text, secondary, traffic].compactMap { $0 }.joined(separator: separator)
+        }
         if let money = StatusItemValue.money(model) {
             // The money unit reads the amount with the currency's name (DESIGN 9, Accessibility).
             let amount = money.atLeast ? l10n("a11y.orb.costAtLeast", money.number) : money.number

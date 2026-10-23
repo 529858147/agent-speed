@@ -13,6 +13,8 @@ struct StatusItemState: Equatable {
     var value: String
     var idle: Bool
     var increasedContrast: Bool
+    /// The second value (DESIGN 3), when shown.
+    var secondary: StatusItemSecondary?
     /// The traffic block (DESIGN 10), when shown.
     var traffic: StatusItemTraffic?
 
@@ -23,7 +25,7 @@ struct StatusItemState: Equatable {
 
     /// `valueWidth` is the room the governor reserves for the value (nil: exactly the current text).
     @MainActor
-    init(model: AppModel, time: TimeInterval, valueWidth: CGFloat? = nil) {
+    init(model: AppModel, time: TimeInterval, valueWidth: CGFloat? = nil, secondaryWidth: CGFloat? = nil) {
         let gauge = model.gauge
         let h = gauge.heat(at: time)
         let (text, unit) = StatusItemValue.current(model)
@@ -36,6 +38,9 @@ struct StatusItemState: Equatable {
         value = text
         idle = gauge.tier == .idle
         increasedContrast = model.accessibility.increaseContrast
+        secondary = StatusItemSecondary(model: model)
+        if let secondaryWidth, let width = secondary?.numberWidth { secondary?.cell = max(secondaryWidth, width) }
+        layout.secondaryWidth = secondary?.width ?? 0
         traffic = StatusItemTraffic(model: model)
         layout.trafficWidth = traffic?.width ?? 0
     }

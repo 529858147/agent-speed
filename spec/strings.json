@@ -2724,6 +2724,18 @@
     "en": "Cost (%@/s)",
     "ja": "金額（%@/s）"
   },
+  "settings.bar.alsoMoney": {
+    "zh-Hant": "同時顯示每秒金額",
+    "zh-Hans": "同时显示每秒金额",
+    "en": "Also show cost per second",
+    "ja": "毎秒の金額も表示"
+  },
+  "settings.bar.alsoTokens": {
+    "zh-Hant": "同時顯示 tok/s",
+    "zh-Hans": "同时显示 tok/s",
+    "en": "Also show tok/s",
+    "ja": "tok/s も表示"
+  },
   "settings.liveUnit.hint": {
     "zh-Hant": "用於選單列或工作列和面板；每個懸浮窗可各自選擇單位。",
     "zh-Hans": "用于菜单栏或任务栏和面板；每个悬浮窗可以单独选择单位。",

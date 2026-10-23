@@ -53,6 +53,7 @@ enum CostPreviews {
             renderSwitch(model: model, dark: dark, to: directory.appendingPathComponent("cost-orb-switch-\(scheme).png"))
         }
         renderMenuBar(model: model, into: directory)
+        renderMenuBarSecondary(model: model, into: directory)
         renderDashboards(model: model, into: directory)
         renderSettings(model: model, into: directory)
     }
@@ -177,9 +178,38 @@ enum CostPreviews {
         }
     }
 
-    private static func menuBarImage(model: AppModel, dark: Bool) -> NSImage {
+    /// The second value per locale: tok/s with money after it, then money with tok/s after it (DESIGN 3).
+    static func renderMenuBarSecondary(model: AppModel, into directory: URL) {
+        let redline = model.settings.redline
+        model.settings.barSecondary = true
+        defer {
+            model.settings.barSecondary = false
+            model.settings.liveUnit = .tokens
+        }
+        for dark in [false, true] {
+            var images: [NSImage] = []
+            for locale in locales {
+                apply(model, language: locale.language, currency: locale.currency)
+                for unit in [LiveUnit.tokens, .cost] {
+                    model.settings.liveUnit = unit
+                    var snapshot = PreviewData.snapshot(speed: redline * 0.2, redline: redline)
+                    snapshot.sources = snapshot.sources.map { source in
+                        var source = source
+                        source.liveCost = LiveCost(microUsdPerSecond: source.live.output * 21, knownOutput: source.live.output)
+                        return source
+                    }
+                    model.store.publishLive(snapshot)
+                    PreviewRenderer.snapGauge(model, to: redline * 0.2, now: Clock.now - 3)
+                    images.append(menuBarImage(model: model, dark: dark, width: 230))
+                }
+            }
+            SurfacePreviews.writeColumn(images, to: directory.appendingPathComponent("cost-menubar-secondary-\(dark ? "dark" : "light").png"))
+        }
+    }
+
+    private static func menuBarImage(model: AppModel, dark: Bool, width: CGFloat = 150) -> NSImage {
         let state = StatusItemState(model: model, time: Clock.now)
-        let size = CGSize(width: 150, height: state.layout.height)
+        let size = CGSize(width: width, height: state.layout.height)
         let image = NSImage(size: size, flipped: true) { rect in
             (dark ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
             rect.fill()

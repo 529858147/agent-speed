@@ -10,6 +10,7 @@ final class StatusItemRenderer {
     private let model: AppModel
     private let item: NSStatusItem
     private var widthGovernor = StatusItemWidthGovernor()
+    private var secondaryGovernor = StatusItemWidthGovernor()
     private var shrinkTimer: Timer?
     private var scheduledShrink: TimeInterval?
     private var loop: ObservationLoop?
@@ -27,7 +28,8 @@ final class StatusItemRenderer {
             _ = (gauge.revision, gauge.tier, gauge.readoutValue)
             _ = (settings.barMode, settings.barShowsUnit, settings.barColoredGlyph, settings.effects)
             _ = (self.model.l10n.language, self.model.accessibility.increaseContrast, self.model.accessibility.reduceMotion)
-            if settings.liveUnit == .cost {
+            _ = settings.barSecondary
+            if settings.liveUnit == .cost || settings.barSecondary {
                 // The money value follows the snapshot, the currency, the rates and the marks (DESIGN 9).
                 _ = (self.model.snapshot.sources, self.model.cost.currency, self.model.cost.rate, settings.billableSources)
             }
@@ -81,11 +83,13 @@ final class StatusItemRenderer {
     private func state(at time: TimeInterval) -> StatusItemState {
         let needed = StatusItemLayout.valueWidth(of: StatusItemValue.current(model).text)
         _ = widthGovernor.update(needed: needed, now: time)
-        return StatusItemState(model: model, time: time, valueWidth: widthGovernor.width)
+        _ = secondaryGovernor.update(needed: StatusItemSecondary(model: model)?.numberWidth ?? 0, now: time)
+        return StatusItemState(model: model, time: time, valueWidth: widthGovernor.width,
+                               secondaryWidth: secondaryGovernor.width)
     }
 
     private func scheduleShrink() {
-        let deadline = widthGovernor.shrinkDeadline
+        let deadline = [widthGovernor.shrinkDeadline, secondaryGovernor.shrinkDeadline].compactMap { $0 }.min()
         guard deadline != scheduledShrink else { return }
         scheduledShrink = deadline
         shrinkTimer?.invalidate()

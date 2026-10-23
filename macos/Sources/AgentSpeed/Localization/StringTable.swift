@@ -373,6 +373,8 @@ enum StringTable {
         "settings.about.version": Entry("版本 %@", "版本 %@", "Version %@", "バージョン %@"),
         "settings.appearance": Entry("外觀", "外观", "Appearance", "外観"),
         "settings.bar": Entry("選單列", "菜单栏", "Menu Bar", "メニューバー"),
+        "settings.bar.alsoMoney": Entry("同時顯示每秒金額", "同时显示每秒金额", "Also show cost per second", "毎秒の金額も表示"),
+        "settings.bar.alsoTokens": Entry("同時顯示 tok/s", "同时显示 tok/s", "Also show tok/s", "tok/s も表示"),
         "settings.bar.colored": Entry("彩色圖示", "彩色图标", "Colored gauge", "カラーゲージ"),
         "settings.bar.mode": Entry("顯示內容", "显示内容", "Show", "表示内容"),
         "settings.bar.mode.glyph": Entry("只有圖示", "只有图标", "Gauge only", "ゲージのみ"),
