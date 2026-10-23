@@ -116,6 +116,16 @@ public static class OrbsJson
         WriteNullable(writer, "redlineOutput", orb.RedlineOutput);
         WriteNullable(writer, "redlineTotal", orb.RedlineTotal);
         WriteNullable(writer, "showName", orb.ShowName);
+        if (orb.TitleTheme is { } theme)
+        {
+            writer.WriteString("titleTheme", theme);
+        }
+        else
+        {
+            writer.WriteNull("titleTheme");
+        }
+
+        writer.WriteString("unit", OrbUnits.Key(orb.Unit));
         writer.WriteEndObject();
     }
 
@@ -142,6 +152,8 @@ public static class OrbsJson
             RedlineOutput = ReadNumber(element, "redlineOutput"),
             RedlineTotal = ReadNumber(element, "redlineTotal"),
             ShowName = ReadNullableBool(element, "showName"),
+            TitleTheme = ReadString(element, "titleTheme", OrbDefinition.MaxIdLength),
+            Unit = OrbUnits.Parse(ReadString(element, "unit", 32)),
         }.Validated();
     }
 

@@ -13,6 +13,9 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     private string _myAgentPath = RootAgentPath;
     private string? _metaThreadId;
     private string? _parentThreadId;
+
+    /// <summary><c>model_provider</c> of the first <c>session_meta</c> (METRICS 3.2).</summary>
+    private string? _provider;
     private long? _pendingStartMs;
     private bool _streaming;
     private bool _sawModernUsage;
@@ -41,6 +44,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         _myAgentPath = RootAgentPath;
         _metaThreadId = null;
         _parentThreadId = null;
+        _provider = null;
         _pendingStartMs = null;
         _streaming = false;
         _sawModernUsage = false;
@@ -108,6 +112,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         _myAgentPath = line.AgentPath ?? RootAgentPath;
         _metaThreadId = line.Id ?? _metaThreadId;
         _parentThreadId = line.ParentThreadId ?? line.SpawnParentThreadId;
+        _provider = line.ModelProvider;
         MarkChanged();
         SetSubagent(IsSubagent || line.ThreadSourceIsSubagent || line.SourceHasSubagent);
     }
@@ -220,7 +225,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
 
     private void Emit(string key, TokenCounts tokens, long ts, IResponseSink sink)
     {
-        sink.OnResponse(new ParsedResponse(key, SourceKind.Codex, AgentId, Model, _pendingStartMs, ts, tokens), true);
+        sink.OnResponse(new ParsedResponse(key, SourceKind.Codex, AgentId, Model, _pendingStartMs, ts, tokens, Provider: _provider), true);
         AfterUsage(ts);
     }
 

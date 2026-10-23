@@ -40,9 +40,14 @@
                             <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center" Fill="{Binding Dot}"
                                      Visibility="{Binding HasDot, Converter={StaticResource Visible}}" />
                             <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
+                                       Visibility="{Binding IsValue, Converter={StaticResource Visible}}" />
                             <TextBlock Grid.Column="2" Text="{Binding Value}" FontSize="12" Margin="16,0,0,0" FontWeight="{Binding Weight}"
-                                       Typography.NumeralAlignment="Tabular" VerticalAlignment="Center" />
+                                       Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"
+                                       Visibility="{Binding IsValue, Converter={StaticResource Visible}}" />
+                            <TextBlock Grid.ColumnSpan="3" Text="{Binding Label}" FontSize="11" TextWrapping="Wrap"
+                                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                       Visibility="{Binding IsNote, Converter={StaticResource Visible}}" />
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -64,6 +69,7 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="1" Text="{Binding Speed}" FontSize="12" Margin="12,0,0,0"
@@ -71,6 +77,9 @@
                                                Visibility="{Binding HasSpeed, Converter={StaticResource Visible}}" />
                                     <TextBlock Grid.Column="2" Text="{Binding Percent}" FontSize="12" Margin="12,0,0,0"
                                                Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Cost}" FontSize="12" Margin="10,0,0,0"
+                                               Typography.NumeralAlignment="Tabular"
+                                               Visibility="{Binding HasCost, Converter={StaticResource Visible}}" />
                                 </Grid>
                                 <history:ShareBar Height="4" Margin="0,4,0,0" Value="{Binding Share}"
                                                   Fill="{DynamicResource AccentFillColorDefaultBrush}"

@@ -30,7 +30,7 @@ public sealed class NeedlePalette
         Pin = dark ? white.WithAlpha(0.32) : black.WithAlpha(0.28);
         LampHousing = dark ? white.WithAlpha(0.08) : black.WithAlpha(0.09);
         LampFlash = dark ? OkLab.Mix(HeatPalette.Sample(0.97), StyleColors.WhiteHot, 0.55) : Rgba.FromHex("#F59E0B");
-        NeedleIdle = dark ? Rgba.FromHex("#9EA8BA") : StyleColors.Label(0.05, false);
+        NeedleIdle = Rgba.FromHex("#9EA8BA");
         NeedleShadow = black.WithAlpha(0.22);
         Spine = dark ? StyleColors.WhiteHot : white;
         SpineOpacity = dark ? 0.75 : 0.55;

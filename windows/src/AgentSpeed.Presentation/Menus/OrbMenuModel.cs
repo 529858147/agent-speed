@@ -44,6 +44,7 @@ public static class OrbMenuModel
             MenuSeparator.Instance,
             StyleMenu(orb, localizer),
             SourcesMenu(orb, sources, localizer),
+            UnitMenu(orb, settings, localizer),
             ShowNameToggle(orb, settings, localizer),
             SizeMenu(orb, localizer),
             EffectsMenu(settings.Effects, localizer),
@@ -79,6 +80,20 @@ public static class OrbMenuModel
         }
 
         return best >= 0 && Math.Abs(presets[best] - size) < PresetTolerance ? best : -1;
+    }
+
+    /// <summary>
+    /// <c>orbs.unit</c> ▸ <c>orbs.unit.tokens</c> / <c>orbs.unit.cost</c> (<c>US$/s · API 等值</c>), a check on the current
+    /// one (DESIGN 9 Orb, Switching 2); the quick menu's per-orb submenu has the same item.
+    /// </summary>
+    internal static MenuRow UnitMenu(OrbDefinition orb, AppSettings settings, Localizer localizer)
+    {
+        var symbol = Core.Money.CurrencyTable.Bundled.CurrencyOrUsd(settings.Cost.Currency).SymbolFor(localizer.LanguageCode);
+        return Submenu(localizer["orbs.unit"],
+        [
+            Toggle(localizer["orbs.unit.tokens"], orb.Unit == OrbUnit.Tokens, new MenuAction.SetOrbUnit(orb.Id, OrbUnit.Tokens)),
+            Toggle(localizer.Format("orbs.unit.cost", symbol), orb.Unit == OrbUnit.Cost, new MenuAction.SetOrbUnit(orb.Id, OrbUnit.Cost)),
+        ]);
     }
 
     private static MenuRow StyleMenu(OrbDefinition orb, Localizer localizer) =>

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using AgentSpeed.Core;
+using AgentSpeed.Core.Money;
 
 namespace AgentSpeed.Presentation.History;
 
@@ -14,8 +15,12 @@ public static class HistoryCsv
     [
         "date", "source", "requests", "input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens",
         "reasoning_tokens", "cache_hit_percent", "measured_output_tokens", "measured_ms", "avg_speed_tok_s", "peak_tok_s",
-        "agents", "unfinalized", "models",
+        "agents", "unfinalized", "models", "cost_usd", "unpriced_requests", "price_version",
     ];
+
+    /// <summary>The header: <see cref="Columns"/>, then <c>cost_&lt;code&gt;</c> (lower-case) for a non-USD display currency (DESIGN 9).</summary>
+    public static IReadOnlyList<string> Header(HistoryMoney? money) =>
+        money?.CsvColumn is { } column ? [.. Columns, column] : Columns;
 
     /// <summary>Stable identifier of a source (or <c>all</c>) for the <c>source</c> column and file names.</summary>
     public static string SourceId(SourceKind? source) => source switch
@@ -32,11 +37,17 @@ public static class HistoryCsv
         _ => "unknown",
     };
 
-    public static string Build(IEnumerable<DaySummary> rows, SourceKind? source)
+    /// <summary>
+    /// The rows as CSV. Costs are every source's (subscription exclusion does not apply to the CSV): <c>cost_usd</c> exact
+    /// with 6 decimals, empty for a day without cost data; <c>cost_&lt;code&gt;</c> with the currency's digits + 2 at the rate
+    /// in use (<paramref name="money"/> null or USD: no such column).
+    /// </summary>
+    public static string Build(IEnumerable<DaySummary> rows, SourceKind? source, HistoryMoney? money = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
+        var converted = money is { IsUsd: false } ? money : null;
         var builder = new StringBuilder();
-        builder.AppendJoin(',', Columns).Append("\r\n");
+        builder.AppendJoin(',', Header(converted)).Append("\r\n");
         var id = SourceId(source);
         foreach (var row in rows)
         {
@@ -56,6 +67,15 @@ public static class HistoryCsv
             Field(builder, Integer(row.Agents));
             Field(builder, Integer(row.Unfinalized));
             Field(builder, string.Join("; ", row.Models.Select(m => m.Model)));
+            var cost = row.TotalCost;
+            Field(builder, cost is { } usd ? MoneyFormat.CsvUsd(usd.CostMicroUsd) : string.Empty);
+            Field(builder, cost is { } unpriced ? Integer(unpriced.UnpricedRequests) : string.Empty);
+            Field(builder, row.PriceVersion is { } version ? Integer(version) : string.Empty);
+            if (converted is not null)
+            {
+                Field(builder, cost is { } local ? converted.CsvAmount(local.CostMicroUsd) : string.Empty);
+            }
+
             builder.Append("\r\n");
         }
 

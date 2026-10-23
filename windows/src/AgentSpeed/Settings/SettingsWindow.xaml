@@ -45,6 +45,7 @@
                     <pages:TaskbarPage x:Name="TaskbarPage" />
                     <pages:OrbPage x:Name="OrbPage" />
                     <pages:EffectsPage x:Name="EffectsPage" />
+                    <pages:CostPage x:Name="CostPage" DataContext="{Binding Cost}" />
                     <pages:SourcesPage x:Name="SourcesPage" />
                     <pages:AboutPage x:Name="AboutPage" />
                 </Grid>

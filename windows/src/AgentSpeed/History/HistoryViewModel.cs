@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Colors;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.History;
 using AgentSpeed.Presentation.Localization;
@@ -21,15 +22,18 @@ internal enum HistoryUpdate
 }
 
 /// <summary>
-/// State of the Usage History window (DESIGN 4b): the filter, the range and everything derived from the hub's days.
-/// Live updates from the hub are coalesced to at most four recomputations per second; today shown on its own is
-/// re-read quietly every 30 seconds while the window is on screen.
+/// State of the Usage History window (DESIGN 4b, DESIGN 9): the filter, the range, the chart metric, how subscriptions
+/// count, and everything derived from the hub's days in the display currency. Live updates from the hub (and changes of
+/// currency, rates or subscription marks) are coalesced to at most four recomputations per second; today shown on its
+/// own is re-read quietly every 30 seconds while the window is on screen.
 /// </summary>
 internal sealed class HistoryViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan CoalesceInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly HistoryHub _hub;
+    private readonly CostDisplay _cost;
+    private readonly Action<bool>? _includeChanged;
     private readonly DispatcherTimer _pending;
     private readonly DispatcherTimer _clock;
     private readonly DispatcherTimer _messageTimer;
@@ -56,14 +60,30 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     private bool _isInProgress;
     private string _chartTitle = string.Empty;
     private bool _hasBreakdown;
+    private HistoryChartMetric _metric = HistoryChartMetric.Output;
+    private bool _includeSubscriptions;
+    private bool _offersSubscriptions;
+    private string _breakdownTitle = string.Empty;
+    private string _chartName = string.Empty;
+    private bool _showsSpeedKey = true;
+    private IReadOnlyList<UnpricedModelView> _unpricedModels = [];
+    private string _unpricedText = string.Empty;
+    private string _rateNote = string.Empty;
+    private (string Currency, decimal Rate, long RateDate, SourceSet Marked, string Language) _costKey;
     private bool _shown;
     private DateTimeOffset? _quietSince;
     private bool _disposed;
 
-    public HistoryViewModel(HistoryHub hub, Localizer loc, Dispatcher dispatcher)
+    /// <param name="includeChanged">Persists the window's own include-subscriptions choice.</param>
+    public HistoryViewModel(HistoryHub hub, Localizer loc, CostDisplay cost, Dispatcher dispatcher, Action<bool>? includeChanged = null)
     {
         _hub = hub;
         _loc = loc;
+        _cost = cost;
+        _includeChanged = includeChanged;
+        Money = new HistoryMoney(cost);
+        _includeSubscriptions = cost.Settings.HistoryIncludeSubscriptions ?? cost.Settings.IncludeSubscriptions;
+        _costKey = CostKey();
         _pending = new DispatcherTimer(CoalesceInterval, DispatcherPriority.Background, (_, _) =>
         {
             _pending!.Stop();
@@ -86,6 +106,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
             _hub.Refresh();
         });
         _hub.Changed += OnHubChanged;
+        _cost.Changed += OnCostChanged;
         Recompute(HistoryUpdate.Filter);
     }
 
@@ -112,6 +133,9 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     public IReadOnlyList<DaySummary> Rows { get; private set; } = [];
 
     public HistoryBars Bars { get; private set; } = HistoryBars.Empty(DayRange.Single(DateOnly.FromDateTime(DateTime.Now)));
+
+    /// <summary>The display currency and its rate in use (METRICS 9.8).</summary>
+    public HistoryMoney Money { get; }
 
     public HistoryColumn SortColumn => _sortColumn;
 
@@ -163,6 +187,70 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
     /// <summary>The single day has bars to show (a day with input but no output has none).</summary>
     public bool HasBreakdown { get => _hasBreakdown; private set => Set(ref _hasBreakdown, value); }
+
+    /// <summary>What the chart and the breakdown measure (DESIGN 9: <c>history.chart.output</c> | <c>history.chart.cost</c>).</summary>
+    public HistoryChartMetric Metric => _metric;
+
+    /// <summary><c>來源分布</c> / <c>模型分布</c> beside the metric control for one day; empty for several days.</summary>
+    public string BreakdownTitle { get => _breakdownTitle; private set => Set(ref _breakdownTitle, value); }
+
+    /// <summary>The chart's accessible name: the metric it draws.</summary>
+    public string ChartName { get => _chartName; private set => Set(ref _chartName, value); }
+
+    /// <summary>The speed line's key: only for the daily output chart (the cost chart has no speed line).</summary>
+    public bool ShowsSpeedKey { get => _showsSpeedKey; private set => Set(ref _showsSpeedKey, value); }
+
+    /// <summary>At least one source is marked as a subscription: the toolbar offers <c>history.includeSubscriptions</c>.</summary>
+    public bool OffersSubscriptions { get => _offersSubscriptions; private set => Set(ref _offersSubscriptions, value); }
+
+    /// <summary>Subscription sources count at their API-equivalent cost in this window; the window remembers the choice.</summary>
+    public bool IncludeSubscriptions
+    {
+        get => _includeSubscriptions;
+        set
+        {
+            if (!Set(ref _includeSubscriptions, value))
+            {
+                return;
+            }
+
+            Recompute(HistoryUpdate.Filter);
+            _includeChanged?.Invoke(value);
+        }
+    }
+
+    /// <summary>Models of the range without a known price, most unpriced requests first.</summary>
+    public IReadOnlyList<UnpricedModelView> UnpricedModels
+    {
+        get => _unpricedModels;
+        private set
+        {
+            if (Set(ref _unpricedModels, value))
+            {
+                OnPropertyChanged(nameof(HasUnpriced));
+            }
+        }
+    }
+
+    public bool HasUnpriced => _unpricedModels.Count > 0;
+
+    /// <summary><c>1,234 筆請求的模型價格未知，未計入費用</c>.</summary>
+    public string UnpricedText { get => _unpricedText; private set => Set(ref _unpricedText, value); }
+
+    /// <summary><c>以 2026/10/22 的匯率換算</c> for a non-USD currency, else empty.</summary>
+    public string RateNote
+    {
+        get => _rateNote;
+        private set
+        {
+            if (Set(ref _rateNote, value))
+            {
+                OnPropertyChanged(nameof(HasRateNote));
+            }
+        }
+    }
+
+    public bool HasRateNote => !string.IsNullOrEmpty(_rateNote);
 
     public bool IsAnalyzing { get => _isAnalyzing; private set => Set(ref _isAnalyzing, value); }
 
@@ -253,6 +341,17 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         RefreshLiveDay();
     }
 
+    public void SetMetric(HistoryChartMetric metric)
+    {
+        if (metric == _metric)
+        {
+            return;
+        }
+
+        _metric = metric;
+        Recompute(HistoryUpdate.Filter);
+    }
+
     public void SortBy(HistoryColumn column)
     {
         if (column == _sortColumn)
@@ -277,7 +376,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
     /// <summary>The rows as they are shown, as CSV bytes for Excel, with a suggested file name.</summary>
     public (string FileName, byte[] Bytes) ExportCsv() =>
-        (HistoryCsv.FileName(Range, _source), HistoryCsv.Encode(HistoryCsv.Build(Rows, _source)));
+        (HistoryCsv.FileName(Range, _source), HistoryCsv.Encode(HistoryCsv.Build(Rows, _source, Money)));
 
     public void ShowMessage(string text)
     {
@@ -328,6 +427,7 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
 
         _disposed = true;
         _hub.Changed -= OnHubChanged;
+        _cost.Changed -= OnCostChanged;
         _pending.Stop();
         _clock.Stop();
         _messageTimer.Stop();
@@ -341,6 +441,22 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
             ScheduleRecompute();
         }
     }
+
+    /// <summary>Only what the window shows counts: the currency, its rate and date, the subscription marks and the language.</summary>
+    private void OnCostChanged(object? sender, EventArgs e)
+    {
+        var key = CostKey();
+        if (_disposed || key == _costKey)
+        {
+            return;
+        }
+
+        _costKey = key;
+        ScheduleRecompute();
+    }
+
+    private (string, decimal, long, SourceSet, string) CostKey() =>
+        (_cost.Currency.Code, _cost.Rate, _cost.Rates.DateMs, _cost.Settings.Subscriptions, _cost.Language);
 
     private void ScheduleRecompute()
     {
@@ -372,28 +488,38 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
         _lastRecompute = Environment.TickCount64;
         Today = DateOnly.FromDateTime(DateTime.Now);
         var usage = _hub.Days;
+        var options = new HistoryCostOptions(_cost.Settings.Subscriptions, _includeSubscriptions, _metric);
+        var excluded = options.Excluded(_source);
         DataBounds = HistoryAggregator.Bounds(usage, _source) ?? HistoryAggregator.Bounds(usage);
         Range = HistoryRanges.Resolve(_rangeKind, Today, DataBounds?.Start, _custom);
-        Days = WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range));
-        var previous = HistoryAggregator.Daily(usage, _source, HistoryRanges.Previous(Range));
-        Bars = HistoryBars.From(Days, Range, _source);
+        Days = WithoutSourcePeaks(HistoryAggregator.Daily(usage, _source, Range, excluded));
+        var previous = HistoryAggregator.Daily(usage, _source, HistoryRanges.Previous(Range), excluded);
+        Bars = HistoryBars.From(Days, Range, _source, _metric, Money);
         Rows = HistoryTable.Sort(Days, _sortColumn, _sortDescending);
         IsEmpty = Days.Count == 0;
         Subtitle = HistoryText.RangeSubtitle(Range, Today, _loc);
         IsSingleDay = Range.IsSingleDay;
         IsInProgress = Range.IsSingleDay && Range.Start == Today;
-        UpdateBreakdown(DayBreakdown.For(usage, Range, _source), rebuild: kind == HistoryUpdate.Filter);
+        OffersSubscriptions = options.OffersSubscriptionToggle;
+        ShowsSpeedKey = !Range.IsSingleDay && _metric == HistoryChartMetric.Output;
+        ChartName = _loc[HistoryChartMetrics.TitleKey(_metric)];
+        UpdateBreakdown(DayBreakdown.For(usage, Range, _source, _metric, excluded), rebuild: kind == HistoryUpdate.Filter);
 
         var sparkBrush = _source is { } one ? HeatPalette.SourceColor(one).ToBrush() : null;
-        var sparkDays = Range.IsSingleDay ? HistoryAggregator.Daily(usage, _source, HistoryRanges.SparkRange(Range)) : null;
-        var cards = HistorySummary.Build(Days, previous, Range, Today, _loc, sparkDays);
+        var sparkDays = Range.IsSingleDay ? HistoryAggregator.Daily(usage, _source, HistoryRanges.SparkRange(Range), excluded) : null;
+        var cards = HistorySummary.Build(Days, previous, Range, Today, _loc, Money, options.CostLabelKey(_source), sparkDays);
         for (var i = 0; i < Cards.Count && i < cards.Count; i++)
         {
             var card = cards[i];
-            var value = string.IsNullOrEmpty(card.Unit) ? card.Value : $"{card.Value} {card.Unit}";
+            var value = card.Spoken ?? (string.IsNullOrEmpty(card.Unit) ? card.Value : $"{card.Value} {card.Unit}");
             var accessible = HistoryText.JoinParts([HistoryText.Labelled(card.Label, value, _loc), card.Secondary], _loc);
-            Cards[i].Apply(card, sparkBrush, HistoryText.Labelled(card.Label, card.FullValue, _loc), accessible);
+            var tooltip = HistoryText.Labelled(card.Label, card.FullValue, _loc);
+            Cards[i].Apply(card, sparkBrush, card.Note is { } note ? tooltip + Environment.NewLine + Environment.NewLine + note : tooltip,
+                accessible);
         }
+
+        UpdateUnpriced(HistoryAggregator.UnpricedModels(usage, _source, Range, excluded));
+        RateNote = _cost.HistoryNote ?? string.Empty;
 
         Legend = Bars.Order.Count == 0 && _source is { } empty
             ? [new LegendItem(_loc[DisplayText.SourceKey(empty)], HeatPalette.SourceColor(empty).ToBrush())]
@@ -415,7 +541,8 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
     /// </summary>
     private void UpdateBreakdown(DayBreakdown? breakdown, bool rebuild)
     {
-        ChartTitle = _loc[breakdown?.TitleKey ?? "history.chart.output"];
+        ChartTitle = _loc[breakdown?.TitleKey ?? HistoryChartMetrics.TitleKey(_metric)];
+        BreakdownTitle = breakdown is null ? string.Empty : _loc[breakdown.TitleKey];
         HasBreakdown = breakdown is { Rows.Count: > 0 };
         if (rebuild || breakdown is null)
         {
@@ -442,12 +569,34 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
                 Breakdown.Move(at, i);
             }
 
-            view.Apply(row, breakdown.Kind, inProgress, _loc);
+            view.Apply(row, breakdown.Kind, inProgress, _loc, Money);
         }
 
         foreach (var stale in existing.Values)
         {
             Breakdown.Remove(stale);
+        }
+    }
+
+    /// <summary>The footer's unknown-price notice and its list (models without a name gathered as other models).</summary>
+    private void UpdateUnpriced(IReadOnlyList<UnpricedModel> models)
+    {
+        var requests = models.Sum(m => m.Requests);
+        UnpricedText = requests > 0 ? _loc.Format("history.unpricedNotice", requests) : string.Empty;
+        var label = _loc["history.table.requests"];
+        var views = models
+            .Select(m =>
+            {
+                var name = string.IsNullOrEmpty(m.Model) ? _loc["win.history.breakdown.otherModels"] : m.Model;
+                var count = HistoryText.FullNumber(m.Requests, _loc);
+                var source = _loc[DisplayText.SourceKey(m.Source)];
+                var accessible = HistoryText.JoinParts([name, source, HistoryText.Labelled(label, count, _loc)], _loc);
+                return new UnpricedModelView(name, count, m.Source, source, accessible);
+            })
+            .ToArray();
+        if (!views.SequenceEqual(_unpricedModels))
+        {
+            UnpricedModels = views;
         }
     }
 
@@ -478,10 +627,14 @@ internal sealed class HistoryViewModel : ObservableObject, IDisposable
             var allColors = (withHistory.Count > 0 ? withHistory : Enum.GetValues<SourceKind>())
                 .Select(k => HeatPalette.SourceColor(k).ToColor())
                 .ToArray();
+            var marked = _cost.Settings.Subscriptions;
+            var tag = _loc["cost.subscription.tag"];
             foreach (var option in SourceOptions)
             {
                 option.Name = option.Kind is { } k ? _loc[DisplayText.SourceKey(k)] : _loc["history.allSources"];
                 option.Colors = option.Kind is { } c ? [HeatPalette.SourceColor(c).ToColor()] : allColors;
+                option.Tag = option.Kind is { } s && marked.Contains(s) ? tag : string.Empty;
+                option.AccessibleName = option.HasTag ? HistoryText.JoinParts([option.Name, option.Tag], _loc) : option.Name;
             }
         }
         finally

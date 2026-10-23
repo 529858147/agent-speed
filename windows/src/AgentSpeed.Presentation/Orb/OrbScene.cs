@@ -12,6 +12,14 @@ public readonly record struct TierTransition(SpeedTier From, SpeedTier To, doubl
 
 public readonly record struct TitleTransition(SpeedTitle From, SpeedTitle To, double Progress);
 
+/// <summary>
+/// A unit switch of the readout (DESIGN 9 Orb, Transition): the old value and unit leave upward while the new ones
+/// arrive from below (0.3 s, the new value already in the new unit); Reduce Motion: a 0.15 s crossfade.
+/// </summary>
+/// <param name="FromValue">The value text that leaves (with its <c>≥</c>, see <paramref name="FromAtLeast"/>).</param>
+/// <param name="FromUnit">The unit text that leaves; null when the renderer's configured unit was shown.</param>
+public readonly record struct UnitSwitch(string FromValue, bool FromAtLeast, string? FromUnit, double Progress);
+
 public enum FrameDemand
 {
     None,
@@ -85,6 +93,14 @@ public sealed class OrbScene
     private double _sparkRate;
     private double _emberRate;
     private double _signOfLifeStart = double.NegativeInfinity;
+    private Cost.LiveMoney? _money;
+    private double _unitSwitchStart = double.NegativeInfinity;
+    private string _switchFromValue = "0";
+    private bool _switchFromAtLeast;
+    private string? _switchFromUnit;
+    private bool _unitHovered;
+    private double _unitHoverFrom;
+    private double _unitHoverStart = double.NegativeInfinity;
 
     public OrbScene(int? seed = null)
     {
@@ -123,6 +139,95 @@ public sealed class OrbScene
 
     /// <summary>The value odometer of the floating orb styles (DESIGN 2a).</summary>
     public OdometerText Odometer { get; } = new();
+
+    /// <summary>Length of a unit switch (DESIGN 9 Orb, Transition); Reduce Motion uses <see cref="UnitSwitchFade"/>.</summary>
+    public const double UnitSwitchDuration = 0.3;
+
+    public const double UnitSwitchFade = 0.15;
+
+    /// <summary>The money readout while the orb shows the money unit (DESIGN 9); null for tok/s.</summary>
+    public Cost.LiveMoney? Money => _money;
+
+    /// <summary>
+    /// The unit line's text in money mode (<c>US$/s</c>); null keeps the configured unit (tok/s). Renderers draw this
+    /// instead of their configured unit text when it is set.
+    /// </summary>
+    public string? UnitText => _money?.Unit;
+
+    /// <summary>
+    /// A small <c>≥</c> before the value (60 % of its size, secondary color, baseline-aligned, part of the value's width)
+    /// when part of the live money value has no known price.
+    /// </summary>
+    public bool ValueAtLeast => _money?.AtLeast ?? false;
+
+    /// <summary>Nothing is priced: the value (<c>–</c>) reads in the idle value color without glow.</summary>
+    public bool ValueMuted => _money?.Unknown ?? false;
+
+    /// <summary>The running unit switch, or null.</summary>
+    public UnitSwitch? UnitSwitch
+    {
+        get
+        {
+            var duration = Effects.ReduceMotion || Effects.Level == Settings.EffectsIntensity.Off ? UnitSwitchFade : UnitSwitchDuration;
+            var progress = (_now - _unitSwitchStart) / duration;
+            return progress is >= 0 and < 1 ? new UnitSwitch(_switchFromValue, _switchFromAtLeast, _switchFromUnit, progress) : null;
+        }
+    }
+
+    /// <summary>Length of the unit's hover affordance (55 % → 85 % with a 0.5 DIP underline at 40 %, DESIGN 9).</summary>
+    public const double UnitHoverDuration = 0.15;
+
+    /// <summary>The unit's hover envelope 0..1: renderers raise the unit text from 55 % to 85 % opacity and draw its underline at 40 % × this.</summary>
+    public double UnitHoverAmount
+    {
+        get
+        {
+            var target = _unitHovered ? 1.0 : 0.0;
+            var progress = Math.Clamp((_now - _unitHoverStart) / UnitHoverDuration, 0, 1);
+            return _unitHoverFrom + (target - _unitHoverFrom) * Easing.OutCubic(progress);
+        }
+    }
+
+    /// <summary>The pointer is over the unit's hit area (see <see cref="OrbUnitToggle"/>).</summary>
+    public void SetUnitHover(bool hovering)
+    {
+        if (hovering == _unitHovered)
+        {
+            return;
+        }
+
+        _unitHoverFrom = UnitHoverAmount;
+        _unitHovered = hovering;
+        _unitHoverStart = _now;
+    }
+
+    /// <summary>
+    /// Shows the money unit (<paramref name="money"/> non-null) or tok/s (null). Heat, tiers, titles, sparks and peaks
+    /// keep following the token value of <see cref="SetTarget(double, SpeedTier)"/>. Switching the unit starts a
+    /// <see cref="UnitSwitch"/> and shows the new text at once, without rolling digits.
+    /// </summary>
+    public void SetMoney(Cost.LiveMoney? money)
+    {
+        var switching = (money is null) != (_money is null);
+        if (switching && !double.IsNaN(_lastUpdate))
+        {
+            _unitSwitchStart = _now;
+            _switchFromValue = Readout.Current;
+            _switchFromAtLeast = _money?.AtLeast ?? false;
+            _switchFromUnit = _money?.Unit;
+        }
+
+        _money = money;
+        _pendingText = money?.Number ?? SpeedFormat.Speed(_targetValue);
+        _pendingValue = money?.Value ?? _targetValue;
+        if (switching)
+        {
+            Readout.Set(_pendingText, 1, _now, animate: false);
+            Odometer.Set(_pendingText, true, _now, animate: false);
+            _shownValue = _pendingValue;
+            _lastTextChange = _now;
+        }
+    }
 
     /// <summary>The live value the springs move toward (tok/s).</summary>
     public double TargetValue => _targetValue;
@@ -182,6 +287,7 @@ public sealed class OrbScene
             || Flash > 0
             || Odometer.IsAnimating(_now)
             || _pendingText != Odometer.Current
+            || UnitSwitch is not null
             || !_hover.IsSettled(_hovering ? 1 : 0) || !_hoverBlend.IsSettled(_hovering ? 1 : 0)
             || !_skew.IsSettled(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * HeatRaw : 0, 0.01))
         {
@@ -276,6 +382,13 @@ public sealed class OrbScene
 
     public int PulseCount => _pulses.Count;
 
+    /// <summary>The pulse at <paramref name="index"/> (0 ≤ index &lt; <see cref="PulseCount"/>) without allocating.</summary>
+    public Shockwave PulseAt(int index)
+    {
+        var p = _pulses[index];
+        return new Shockwave(Math.Clamp((_now - p.Start) / PulseDuration, 0, 1), p.Strength, p.Heat);
+    }
+
     /// <summary>New-peak ray burst progress 0..1, or null when inactive.</summary>
     public double? PeakRays
     {
@@ -349,8 +462,8 @@ public sealed class OrbScene
     public void SetTarget(double value, SpeedTier tier)
     {
         _targetValue = double.IsFinite(value) && value > 0 ? value : 0;
-        _pendingValue = _targetValue;
-        _pendingText = SpeedFormat.Speed(_targetValue);
+        _pendingValue = _money?.Value ?? _targetValue;
+        _pendingText = _money?.Number ?? SpeedFormat.Speed(_targetValue);
 
         if (tier != _tier)
         {
@@ -511,6 +624,8 @@ public sealed class OrbScene
                 || Flash > 0
                 || Readout.IsAnimating(_now)
                 || _pendingText != Readout.Current
+                || UnitSwitch is not null
+                || _now - _unitHoverStart < UnitHoverDuration
                 || !_hover.IsSettled(_hovering ? 1 : 0) || !_hoverBlend.IsSettled(_hovering ? 1 : 0)
                 || _redlineAmount.Value > 0.001 && Effects.AuraBreathing
                 || !_redlineAmount.IsSettled(_tier == SpeedTier.Redline ? 1 : 0)
@@ -605,7 +720,13 @@ public sealed class OrbScene
 
     private void UpdatePulses()
     {
-        _pulses.RemoveAll(p => _now - p.Start >= PulseDuration);
+        for (var i = _pulses.Count - 1; i >= 0; i--)
+        {
+            if (_now - _pulses[i].Start >= PulseDuration)
+            {
+                _pulses.RemoveAt(i);
+            }
+        }
     }
 
     private void UpdateIdleSweep()

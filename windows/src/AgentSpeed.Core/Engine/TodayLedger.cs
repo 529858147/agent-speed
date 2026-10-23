@@ -7,12 +7,18 @@ internal sealed class TodayLedger
 {
     private const int IndexCapacity = 65_536;
 
+    /// <summary>Today's unpriced responses kept for re-pricing with a newer table (METRICS 9.7).</summary>
+    public const int UnpricedCapacity = 10_000;
+
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly Queue<string> _order = new();
     private readonly SecondSeries _output = new();
     private readonly SecondSeries _total = new();
     private readonly SourceSeconds _sourceOutput = new();
     private readonly TokenTotals[] _perSource = new TokenTotals[Enum.GetValues<SourceKind>().Length];
+    private readonly CostTally[] _costPerSource = new CostTally[Enum.GetValues<SourceKind>().Length];
+    private readonly Dictionary<(SourceKind Source, string Model), CostTally> _costPerModel = [];
+    private readonly Dictionary<string, ParsedResponse> _unpriced = new(StringComparer.Ordinal);
     private double _validOutput;
     private double _validSeconds;
     private long _validCount;
@@ -34,6 +40,35 @@ internal sealed class TodayLedger
     public int UnfinalizedCount => Math.Max(0, _unfinalized);
 
     public TokenTotals ForSource(SourceKind source) => _perSource[(int)source];
+
+    /// <summary>Today's cost (METRICS 9.6).</summary>
+    public CostTally Cost { get; private set; }
+
+    public CostTally CostForSource(SourceKind source) => _costPerSource[(int)source];
+
+    /// <summary>Today's unpriced responses (at most <see cref="UnpricedCapacity"/>), for re-pricing.</summary>
+    public IReadOnlyCollection<ParsedResponse> UnpricedResponses => _unpriced.Values;
+
+    /// <summary>A source's models with unpriced responses today, most unpriced first, then by name.</summary>
+    public IReadOnlyList<string> UnpricedModels(SourceKind source)
+    {
+        List<(string Model, long Count)>? models = null;
+        foreach (var ((kind, model), tally) in _costPerModel)
+        {
+            if (kind == source && tally.UnpricedRequests > 0 && model.Length > 0)
+            {
+                (models ??= []).Add((model, tally.UnpricedRequests));
+            }
+        }
+
+        if (models is null)
+        {
+            return [];
+        }
+
+        models.Sort(static (a, b) => a.Count != b.Count ? b.Count.CompareTo(a.Count) : string.CompareOrdinal(a.Model, b.Model));
+        return models.ConvertAll(m => m.Model);
+    }
 
     /// <summary>Sources with measured buckets today (METRICS 6.6).</summary>
     public SourceSet MeasuredSources => _sourceOutput.Allocated;
@@ -60,6 +95,10 @@ internal sealed class TodayLedger
         _total.Clear();
         _sourceOutput.Clear();
         Array.Clear(_perSource);
+        Array.Clear(_costPerSource);
+        _costPerModel.Clear();
+        _unpriced.Clear();
+        Cost = default;
         Totals = default;
         _validOutput = 0;
         _validSeconds = 0;
@@ -76,6 +115,7 @@ internal sealed class TodayLedger
             if (!belongs)
             {
                 _entries.Remove(response.Key);
+                _unpriced.Remove(response.Key);
                 return;
             }
         }
@@ -88,6 +128,7 @@ internal sealed class TodayLedger
             if (_order.Count >= IndexCapacity && _order.TryDequeue(out var oldest))
             {
                 _entries.Remove(oldest);
+                _unpriced.Remove(oldest);
             }
 
             _order.Enqueue(response.Key);
@@ -97,15 +138,38 @@ internal sealed class TodayLedger
             response.Source,
             response.Tokens,
             response.Final,
-            response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval) ? interval : null);
+            response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval) ? interval : null,
+            response.Model ?? string.Empty,
+            response.CostMicroUsd);
         Apply(entry, 1);
         _entries[response.Key] = entry;
+        if (response.CostMicroUsd is not null)
+        {
+            _unpriced.Remove(response.Key);
+        }
+        else if (_unpriced.Count < UnpricedCapacity || _unpriced.ContainsKey(response.Key))
+        {
+            _unpriced[response.Key] = response;
+        }
     }
 
     private void Apply(in Entry entry, int sign)
     {
         Totals = Add(Totals, entry.Tokens, sign);
         _perSource[(int)entry.Source] = Add(_perSource[(int)entry.Source], entry.Tokens, sign);
+        Cost = Cost.Add(entry.Cost, sign);
+        _costPerSource[(int)entry.Source] = _costPerSource[(int)entry.Source].Add(entry.Cost, sign);
+        var modelKey = (entry.Source, entry.Model);
+        var modelCost = _costPerModel.GetValueOrDefault(modelKey).Add(entry.Cost, sign);
+        if (modelCost == default)
+        {
+            _costPerModel.Remove(modelKey);
+        }
+        else
+        {
+            _costPerModel[modelKey] = modelCost;
+        }
+
         if (!entry.Final)
         {
             _unfinalized += sign;
@@ -133,5 +197,5 @@ internal sealed class TodayLedger
         totals.Reasoning + sign * tokens.Reasoning);
 
     /// <param name="Measured">The speed interval when the response is final and valid (METRICS 3.3).</param>
-    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured);
+    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured, string Model, long? Cost);
 }

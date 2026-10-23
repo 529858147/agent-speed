@@ -92,52 +92,117 @@
             </Setter>
         </Style>
 
+        <!-- A subscription source carries the cost.subscription.tag pill (DESIGN 9); the name trims before the pill does. -->
         <DataTemplate x:Key="SourceOptionTemplate" DataType="{x:Type history:SourceOption}">
-            <StackPanel Orientation="Horizontal" AutomationProperties.Name="{Binding Name}">
-                <history:SourceDot Width="10" Height="10" VerticalAlignment="Center" Colors="{Binding Colors}" />
+            <DockPanel LastChildFill="True" AutomationProperties.Name="{Binding AccessibleName}">
+                <history:SourceDot DockPanel.Dock="Left" Width="10" Height="10" VerticalAlignment="Center" Colors="{Binding Colors}" />
+                <Border DockPanel.Dock="Right" Margin="8,0,0,0" Padding="6,0,6,1" CornerRadius="8" VerticalAlignment="Center"
+                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                        Visibility="{Binding HasTag, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding Tag}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </Border>
                 <TextBlock Text="{Binding Name}" Margin="9,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
+            </DockPanel>
         </DataTemplate>
 
+        <!-- The compact include-subscriptions toggle: an icon chip, raised while on; the label is its tooltip and name. -->
+        <Style x:Key="IconToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
+                            <Border x:Name="Chip" CornerRadius="4" Background="Transparent" BorderThickness="1" BorderBrush="Transparent" />
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Three or five cards in a row: the sparkline spans the card under the value; two in a row: it sits beside the value. -->
         <DataTemplate x:Key="SummaryCardTemplate" DataType="{x:Type history:SummaryCardView}">
-            <Border Style="{StaticResource Card}" Margin="6" Padding="16,13,16,14" ToolTip="{Binding Tooltip}"
-                    AutomationProperties.Name="{Binding AccessibleName}">
-                <Grid>
+            <Border Style="{StaticResource Card}" Margin="6" Padding="16,13,16,14"
+                    AutomationProperties.Name="{Binding AccessibleName}" AutomationProperties.HelpText="{Binding HelpText}">
+                <Border.ToolTip>
+                    <ToolTip>
+                        <TextBlock Text="{Binding Tooltip}" TextWrapping="Wrap" MaxWidth="360" Typography.NumeralAlignment="Tabular" />
+                    </ToolTip>
+                </Border.ToolTip>
+                <Grid VerticalAlignment="Top">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.ColumnSpan="2" Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                    <Grid Grid.Row="1" Margin="0,4,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
-                            <TextBlock Text="{Binding Value}" FontSize="26" FontWeight="SemiBold" FontFamily="{DynamicResource AppDisplayFontFamily}"
-                                       Typography.NumeralAlignment="Tabular" LineHeight="32" LineStackingStrategy="BlockLineHeight" />
-                            <TextBlock Text="{Binding Unit}" FontSize="12" Margin="5,0,0,5" VerticalAlignment="Bottom"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Visibility="{Binding HasUnit, Converter={StaticResource Visible}}" />
-                        </StackPanel>
-                        <history:Sparkline Grid.Column="1" Width="76" Height="28" Margin="10,0,0,3" VerticalAlignment="Bottom"
-                                           Values="{Binding Spark}" Highlight="{Binding SparkHighlight}">
-                            <history:Sparkline.Style>
-                                <Style TargetType="history:Sparkline">
-                                    <Setter Property="Stroke" Value="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasSparkBrush}" Value="True">
-                                            <Setter Property="Stroke" Value="{Binding SparkBrush}" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </history:Sparkline.Style>
-                        </history:Sparkline>
+                    <!-- A long amount shrinks to the card instead of being clipped; the line keeps its height, so cards stay aligned. -->
+                    <Grid Grid.Row="1" Margin="0,4,0,0" Height="32">
+                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Bottom">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Value}" FontSize="26" FontWeight="SemiBold" FontFamily="{DynamicResource AppDisplayFontFamily}"
+                                           Typography.NumeralAlignment="Tabular" LineHeight="32" LineStackingStrategy="BlockLineHeight" />
+                                <TextBlock Text="{Binding Unit}" FontSize="12" Margin="5,0,0,5" VerticalAlignment="Bottom"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Visibility="{Binding HasUnit, Converter={StaticResource Visible}}" />
+                            </StackPanel>
+                        </Viewbox>
                     </Grid>
-                    <TextBlock Grid.Row="2" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" MinHeight="16">
+                    <history:Sparkline Values="{Binding Spark}" Highlight="{Binding SparkHighlight}">
+                        <history:Sparkline.Style>
+                            <Style TargetType="history:Sparkline">
+                                <Setter Property="Stroke" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Setter Property="Grid.Row" Value="2" />
+                                <Setter Property="Grid.Column" Value="0" />
+                                <Setter Property="Grid.ColumnSpan" Value="2" />
+                                <Setter Property="Height" Value="24" />
+                                <Setter Property="Margin" Value="0,10,0,0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSparkBrush}" Value="True">
+                                        <Setter Property="Stroke" Value="{Binding SparkBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SideBySide}" Value="True">
+                                        <Setter Property="Grid.Row" Value="1" />
+                                        <Setter Property="Grid.Column" Value="1" />
+                                        <Setter Property="Grid.ColumnSpan" Value="1" />
+                                        <Setter Property="Width" Value="76" />
+                                        <Setter Property="Height" Value="28" />
+                                        <Setter Property="Margin" Value="10,0,0,3" />
+                                        <Setter Property="VerticalAlignment" Value="Bottom" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </history:Sparkline.Style>
+                    </history:Sparkline>
+                    <!-- Up to two lines, so a narrow card keeps the whole comparison. -->
+                    <TextBlock Grid.Row="3" Grid.ColumnSpan="2" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                               LineHeight="16" LineStackingStrategy="BlockLineHeight" MinHeight="16" MaxHeight="32"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
                         <Run Text="{Binding SecondaryLead, Mode=OneWay}" /><Run Text="{Binding SecondaryChange, Mode=OneWay}" FontWeight="SemiBold">
                             <Run.Style>
                                 <Style TargetType="Run">
@@ -188,6 +253,7 @@
                                 <ColumnDefinition Width="{x:Static history:BreakdownColumns.Name}" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="{x:Static history:BreakdownColumns.Output}" />
+                                <ColumnDefinition Width="{x:Static history:BreakdownColumns.Cost}" />
                                 <ColumnDefinition Width="{x:Static history:BreakdownColumns.Share}" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
@@ -201,13 +267,90 @@
                                                   Track="{DynamicResource SubtleFillColorTertiaryBrush}" />
                             <TextBlock Grid.Column="2" Text="{Binding OutputText}" FontSize="13" FontWeight="SemiBold" TextAlignment="Right"
                                        VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
-                            <TextBlock Grid.Column="3" Text="{Binding ShareText}" FontSize="12" TextAlignment="Right" VerticalAlignment="Center"
+                            <!-- ≥ small and secondary in front of the amount; – and the subscription tag stay quiet (DESIGN 9). -->
+                            <TextBlock Grid.Column="3" TextAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Typography.NumeralAlignment="Tabular" Background="Transparent" ToolTip="{Binding CostToolTip}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CostQuiet}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <Setter Property="FontSize" Value="12" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                                <Run Text="{Binding CostPrefix, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" /><Run
+                                    Text="{Binding CostText, Mode=OneWay}" />
+                            </TextBlock>
+                            <TextBlock Grid.Column="4" Text="{Binding ShareText}" FontSize="12" TextAlignment="Right" VerticalAlignment="Center"
                                        Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Grid.Column="4" Text="{Binding SpeedText}" FontSize="12" TextAlignment="Right" VerticalAlignment="Center"
+                            <TextBlock Grid.Column="5" Text="{Binding SpeedText}" FontSize="12" TextAlignment="Right" VerticalAlignment="Center"
                                        Width="{x:Static history:BreakdownColumns.SpeedWidth}" TextTrimming="CharacterEllipsis"
                                        Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </Grid>
                     </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The unknown-price models: a keyboard list that scrolls inside the flyout, rows without a selection chip -->
+        <Style x:Key="UnpricedListStyle" TargetType="ListBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="KeyboardNavigation.TabNavigation" Value="Once" />
+            <Setter Property="KeyboardNavigation.DirectionalNavigation" Value="Contained" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      CanContentScroll="False" PanningMode="VerticalOnly">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemTemplate">
+                <Setter.Value>
+                    <DataTemplate DataType="{x:Type history:UnpricedModelView}">
+                        <DockPanel Height="26" Background="Transparent" ToolTip="{Binding SourceName}">
+                            <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Dot}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Requests}" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="UnpricedItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Chip" CornerRadius="4" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
@@ -265,10 +408,41 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <ComboBox x:Name="SourcePicker" MinWidth="{x:Static layout:HistoryToolbar.PickerMinWidth}"
-                      MaxWidth="{x:Static layout:HistoryToolbar.PickerMaxWidth}" VerticalAlignment="Center"
-                      ItemsSource="{Binding SourceOptions}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
-                      ItemTemplate="{StaticResource SourceOptionTemplate}" AutomationProperties.Name="{loc:Loc dashboard.sources}" />
+            <StackPanel x:Name="SourceGroup" Orientation="Horizontal" VerticalAlignment="Center">
+                <ComboBox x:Name="SourcePicker" MinWidth="{x:Static layout:HistoryToolbar.PickerMinWidth}"
+                          MaxWidth="{x:Static layout:HistoryToolbar.PickerMaxWidth}" VerticalAlignment="Center"
+                          ItemsSource="{Binding SourceOptions}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          ItemTemplate="{StaticResource SourceOptionTemplate}" AutomationProperties.Name="{loc:Loc dashboard.sources}" />
+                <!-- Shown while a source is marked as a subscription (DESIGN 9); an icon toggle once the toolbar narrows. -->
+                <Grid x:Name="SubscriptionsGroup" Margin="{x:Static history:HistoryWindow.SubscriptionsMargin}" VerticalAlignment="Center"
+                      Visibility="{Binding OffersSubscriptions, Converter={StaticResource Visible}}">
+                    <CheckBox x:Name="SubscriptionsCheck" MinWidth="0" VerticalAlignment="Center" IsChecked="{Binding IncludeSubscriptions, Mode=TwoWay}"
+                              AutomationProperties.Name="{loc:Loc history.includeSubscriptions}"
+                              AutomationProperties.HelpText="{loc:Loc cost.apiEquivalent.hint}">
+                        <CheckBox.ToolTip>
+                            <ToolTip>
+                                <TextBlock Text="{loc:Loc cost.apiEquivalent.hint}" TextWrapping="Wrap" MaxWidth="360" />
+                            </ToolTip>
+                        </CheckBox.ToolTip>
+                        <TextBlock x:Name="SubscriptionsLabel" Text="{loc:Loc history.includeSubscriptions}" FontSize="13" Margin="2,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </CheckBox>
+                    <ToggleButton x:Name="SubscriptionsToggle" Style="{StaticResource IconToggle}" Visibility="Collapsed"
+                                  IsChecked="{Binding IncludeSubscriptions, Mode=TwoWay}"
+                                  AutomationProperties.Name="{loc:Loc history.includeSubscriptions}"
+                                  AutomationProperties.HelpText="{loc:Loc cost.apiEquivalent.hint}">
+                        <ToggleButton.ToolTip>
+                            <ToolTip>
+                                <StackPanel MaxWidth="360">
+                                    <TextBlock Text="{loc:Loc history.includeSubscriptions}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{loc:Loc cost.apiEquivalent.hint}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ToolTip>
+                        </ToggleButton.ToolTip>
+                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE8C7;" FontSize="16" />
+                    </ToggleButton>
+                </Grid>
+            </StackPanel>
 
             <Border x:Name="RangeGroup" Grid.Column="1" Style="{StaticResource SegmentedContainer}" HorizontalAlignment="Center"
                     VerticalAlignment="Center" Margin="12,0" AutomationProperties.Name="{loc:Loc win.history.range}"
@@ -347,7 +521,7 @@
                                   Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <UniformGrid Rows="0" Columns="{Binding CardColumns, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                <history:SummaryCardsPanel Rows="{Binding CardRows, RelativeSource={RelativeSource AncestorType=Window}}" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
@@ -366,8 +540,29 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding ChartTitle}" Style="{StaticResource BodyStrongText}" FontSize="13"
-                                               VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level2" />
+                                    <!-- 每日輸出 | 費用 (DESIGN 9): what the bars, or one day's breakdown, measure. -->
+                                    <Border x:Name="MetricGroup" Style="{StaticResource SegmentedContainer}" VerticalAlignment="Center"
+                                            KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle">
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="MetricOutput" Style="{StaticResource SegmentedItem}" GroupName="HistoryMetric"
+                                                         Tag="Output" Content="{loc:Loc history.chart.output}" Checked="OnMetricChecked" />
+                                            <RadioButton x:Name="MetricCost" Style="{StaticResource SegmentedItem}" GroupName="HistoryMetric"
+                                                         Tag="Cost" Content="{loc:Loc history.chart.cost}" Checked="OnMetricChecked"
+                                                         AutomationProperties.HelpText="{loc:Loc cost.apiEquivalent}">
+                                                <RadioButton.ToolTip>
+                                                    <ToolTip>
+                                                        <StackPanel MaxWidth="360">
+                                                            <TextBlock Text="{loc:Loc cost.apiEquivalent}" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{loc:Loc cost.apiEquivalent.hint}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </RadioButton.ToolTip>
+                                            </RadioButton>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="{Binding BreakdownTitle}" Style="{StaticResource BodyStrongText}" FontSize="13" Margin="12,0,0,0"
+                                               VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level2"
+                                               Visibility="{Binding IsSingleDay, Converter={StaticResource Visible}}" />
                                     <Border Margin="10,0,0,0" Padding="7,1,7,2" CornerRadius="9" VerticalAlignment="Center"
                                             Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                                             Visibility="{Binding IsInProgress, Converter={StaticResource Visible}}">
@@ -393,7 +588,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
-                                            Visibility="{Binding IsSingleDay, Converter={StaticResource Hidden}}">
+                                            Visibility="{Binding ShowsSpeedKey, Converter={StaticResource Visible}}">
                                     <Grid Width="18" Height="10" VerticalAlignment="Center">
                                         <Rectangle Height="1.5" VerticalAlignment="Center" Fill="{DynamicResource TextFillColorPrimaryBrush}" Opacity="0.85" />
                                         <Ellipse Width="5" Height="5" Fill="{DynamicResource TextFillColorPrimaryBrush}" Opacity="0.85" />
@@ -412,7 +607,7 @@
                                                   LineBrush="{DynamicResource TextFillColorPrimaryBrush}"
                                                   HighlightBrush="{DynamicResource SubtleFillColorSecondaryBrush}"
                                                   FocusBrush="{DynamicResource KeyboardFocusBorderColorBrush}"
-                                                  AutomationProperties.Name="{loc:Loc history.chart.output}" />
+                                                  AutomationProperties.Name="{Binding ChartName}" />
 
                             <!-- One day: a bar per source (all sources) or per model (one source), largest first -->
                             <Grid x:Name="BreakdownPanel" Grid.Row="1" Margin="0,12,0,6"
@@ -426,12 +621,14 @@
                                         <ColumnDefinition Width="{x:Static history:BreakdownColumns.Name}" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="{x:Static history:BreakdownColumns.Output}" />
+                                        <ColumnDefinition Width="{x:Static history:BreakdownColumns.Cost}" />
                                         <ColumnDefinition Width="{x:Static history:BreakdownColumns.Share}" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="2" Text="{loc:Loc history.table.output}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="3" Text="{loc:Loc win.history.share}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="4" Text="{loc:Loc history.table.speed}" TextAlignment="Right" TextTrimming="CharacterEllipsis"
+                                    <TextBlock Grid.Column="3" Text="{loc:Loc history.table.cost}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="4" Text="{loc:Loc win.history.share}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="5" Text="{loc:Loc history.table.speed}" TextAlignment="Right" TextTrimming="CharacterEllipsis"
                                                Width="{x:Static history:BreakdownColumns.SpeedWidth}" />
                                 </Grid>
                                 <ListBox x:Name="BreakdownList" Grid.Row="1" Margin="-8,0" ItemsSource="{Binding Breakdown}"
@@ -486,14 +683,10 @@
         <Rectangle x:Name="ScrollDivider" Grid.Row="2" Style="{StaticResource Hairline}" VerticalAlignment="Top" Margin="0,14,0,0"
                    Opacity="0" IsHitTestVisible="False" />
 
-        <!-- Footer -->
+        <!-- Footer: analysis state and the unknown-price notice on the left; the rate note and privacy on the right -->
         <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="24,9,24,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
                             Visibility="{Binding HasMessage, Converter={StaticResource Hidden}}">
                     <TextBlock Text="{Binding StateText}" FontSize="12" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
@@ -506,19 +699,68 @@
                     <Button Style="{StaticResource LinkButton}" Height="22" Margin="6,0,0,0" FontSize="12" Command="{Binding RetryCommand}"
                             Content="{loc:Loc update.retry}" Visibility="{Binding IsFailed, Converter={StaticResource Visible}}" />
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0"
                             Visibility="{Binding HasMessage, Converter={StaticResource Visible}}">
                     <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE783;" FontSize="12" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                     <TextBlock Text="{Binding Message}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Assertive" />
                 </StackPanel>
-                <DockPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{loc:Loc history.privacy}">
-                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE72E;" FontSize="11" Margin="0,1,6,0"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    <TextBlock Text="{loc:Loc history.privacy}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+
+                <!-- 1,234 筆請求的模型價格未知，未計入費用 · 查看 (DESIGN 9): the text trims before the link does. -->
+                <DockPanel x:Name="UnpricedNotice" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0"
+                           Visibility="{Binding HasUnpriced, Converter={StaticResource Visible}}">
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE946;" FontSize="12" Margin="0,1,6,0"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Button x:Name="UnpricedButton" DockPanel.Dock="Right" Style="{StaticResource LinkButton}" Height="22" Margin="2,0,0,0"
+                            FontSize="12" Content="{loc:Loc history.unpricedNotice.show}" Click="OnShowUnpriced"
+                            AutomationProperties.Name="{loc:Loc history.unpricedNotice.show}"
+                            AutomationProperties.HelpText="{Binding UnpricedText}" />
+                    <TextBlock Text="{Binding UnpricedText}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="300"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               ToolTip="{Binding UnpricedText}" />
                 </DockPanel>
-            </Grid>
+
+                <!-- The rate note keeps its room before the privacy line does; both trim rather than clip. -->
+                <DockPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <DockPanel DockPanel.Dock="Left" VerticalAlignment="Center" Visibility="{Binding HasRateNote, Converter={StaticResource Visible}}">
+                        <Ellipse DockPanel.Dock="Right" Width="3" Height="3" Margin="8,1,8,0" VerticalAlignment="Center"
+                                 Fill="{DynamicResource TextFillColorTertiaryBrush}" />
+                        <TextBlock Text="{Binding RateNote}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   ToolTip="{Binding RateNote}" />
+                    </DockPanel>
+                    <DockPanel ToolTip="{loc:Loc history.privacy}">
+                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource SymbolIcon}" Text="&#xE72E;" FontSize="11" Margin="0,1,6,0"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                        <TextBlock Text="{loc:Loc history.privacy}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </DockPanel>
+                </DockPanel>
+            </DockPanel>
         </Border>
+
+        <!-- The models behind the unknown-price notice: name, requests and source; closes with Escape or a click elsewhere. -->
+        <!-- Offsets take back the card's 12 DIP shadow margin: the card starts at the notice's icon, 4 DIP above it. -->
+        <Popup x:Name="UnpricedFlyout" Grid.Row="3" PlacementTarget="{Binding ElementName=UnpricedNotice}" Placement="Top" StaysOpen="False"
+               AllowsTransparency="True" PopupAnimation="Fade" HorizontalOffset="-12" VerticalOffset="8" Closed="OnUnpricedClosed"
+               KeyDown="OnUnpricedKeyDown">
+            <Border Margin="12" Width="300" Padding="16,14,16,14" CornerRadius="8" BorderThickness="1"
+                    Background="{DynamicResource FlyoutBackground}" BorderBrush="{DynamicResource FlyoutBorderBrush}"
+                    TextElement.FontFamily="{DynamicResource AppFontFamily}"
+                    TextElement.Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.2" />
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc cost.unknown}" FontSize="13" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2" />
+                    <ListBox x:Name="UnpricedList" Margin="-8,8,-8,0" MaxHeight="220" ItemsSource="{Binding UnpricedModels}"
+                             Style="{StaticResource UnpricedListStyle}" ItemContainerStyle="{StaticResource UnpricedItemStyle}"
+                             AutomationProperties.Name="{loc:Loc cost.unknown}" />
+                    <Rectangle Style="{StaticResource Hairline}" Margin="0,10,0,8" />
+                    <TextBlock Text="{loc:Loc history.unpricedModels.hint}" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </Window>

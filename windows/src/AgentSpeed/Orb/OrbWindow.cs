@@ -1,7 +1,9 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using AgentSpeed.Interop;
@@ -15,11 +17,12 @@ namespace AgentSpeed.Orb;
 internal readonly record struct OrbWindowOptions(bool AlwaysOnTop, bool ClickThrough, bool FadeWhenIdle, bool Dimmed, bool ReduceMotion);
 
 /// <summary>
-/// One floating orb window: borderless, per-pixel transparent, never activated. Outside the disc it lets clicks through
-/// (WS_EX_TRANSPARENT toggled by cursor position). Dragging asks the owner for the assisted target (edges, other orbs,
-/// alignment) and follows it through a critically damped spring; positions are physical pixels of the disc center.
+/// One floating orb window drawn by WPF, the fallback when Direct3D 11 is unavailable (<see cref="Gpu.GpuOrbWindow"/> is the
+/// default): borderless, per-pixel transparent, never activated. Outside the disc it lets clicks through (WS_EX_TRANSPARENT
+/// toggled by cursor position). Dragging asks the owner for the assisted target (edges, other orbs, alignment) and follows it
+/// through a critically damped spring; positions are physical pixels of the disc center.
 /// </summary>
-internal sealed class OrbWindow : Window
+internal sealed class OrbWindow : Window, IOrbWindow
 {
     private const double DragSlop = 3;
     private const double DragSettle = 0.12;
@@ -122,6 +125,59 @@ internal sealed class OrbWindow : Window
     public string OrbId { get; }
 
     public OrbSurface Surface { get; }
+
+    IOrbSurface IOrbWindow.Surface => Surface;
+
+    /// <summary>Name plates bind to the window's Opacity property directly.</summary>
+    event EventHandler? IOrbWindow.OpacityChanged
+    {
+        add
+        {
+        }
+
+        remove
+        {
+        }
+    }
+
+    public void SetLanguage(XmlLanguage language) => Language = language;
+
+    /// <summary>The WPF fallback has no click target on the unit (the menu, the taskbar and Settings switch it).</summary>
+    public void SetUnitHint(string hint)
+    {
+    }
+
+    event EventHandler? IOrbWindow.UnitToggleRequested
+    {
+        add
+        {
+        }
+
+        remove
+        {
+        }
+    }
+
+    public void Announce(string text) =>
+        System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(Surface)?.RaiseNotificationEvent(
+            System.Windows.Automation.AutomationNotificationKind.ActionCompleted,
+            System.Windows.Automation.AutomationNotificationProcessing.MostRecent, text, "unitChanged");
+
+    public void OwnPlate(Window plate) => plate.Owner = this;
+
+    public BitmapSource? Snapshot()
+    {
+        if (_hwnd == 0 || !User32.GetWindowRect(_hwnd, out var rect) || Surface.ActualWidth <= 0)
+        {
+            return null;
+        }
+
+        var scale = rect.Width / Surface.ActualWidth;
+        var bitmap = new RenderTargetBitmap(rect.Width, rect.Height, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(Surface);
+        bitmap.Freeze();
+        return bitmap;
+    }
 
     public nint Handle => _hwnd;
 

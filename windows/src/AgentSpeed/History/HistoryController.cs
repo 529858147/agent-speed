@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Services;
 using AgentSpeed.Theme;
@@ -8,8 +9,9 @@ using AgentSpeed.Theme;
 namespace AgentSpeed.History;
 
 /// <summary>
-/// Owns the single Usage History window: opens or focuses it with a filter, remembers its frame, follows the theme
-/// and language, and (developer option <c>--preview-history</c>) fills the hub with generated days.
+/// Owns the single Usage History window: opens or focuses it with a filter, remembers its frame and its own
+/// include-subscriptions choice, follows the theme and language, and (developer option <c>--preview-history</c>) fills
+/// the hub with generated days.
 /// </summary>
 internal sealed class HistoryController : IDisposable
 {
@@ -20,18 +22,20 @@ internal sealed class HistoryController : IDisposable
     private readonly SettingsService _settings;
     private readonly ThemeService _theme;
     private readonly Localizer _loc;
+    private readonly CostDisplay _cost;
     private readonly Dispatcher _dispatcher;
     private HistoryWindow? _window;
     private HistoryViewModel? _model;
     private DispatcherTimer? _preview;
     private bool _disposed;
 
-    public HistoryController(HistoryHub hub, SettingsService settings, ThemeService theme, Localizer loc)
+    public HistoryController(HistoryHub hub, SettingsService settings, ThemeService theme, Localizer loc, CostDisplay cost)
     {
         _hub = hub;
         _settings = settings;
         _theme = theme;
         _loc = loc;
+        _cost = cost;
         _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
@@ -47,7 +51,7 @@ internal sealed class HistoryController : IDisposable
 
         if (_window is null || _model is null)
         {
-            var model = new HistoryViewModel(_hub, _loc, _dispatcher);
+            var model = new HistoryViewModel(_hub, _loc, _cost, _dispatcher, SaveIncludeSubscriptions);
             model.SetSource(source);
             var window = new HistoryWindow(model, _theme.ReduceMotion, _theme.HighContrast)
             {
@@ -144,6 +148,10 @@ internal sealed class HistoryController : IDisposable
         _preview?.Stop();
         _preview = null;
     }
+
+    /// <summary>The window remembers its own <c>history.includeSubscriptions</c> choice (DESIGN 9).</summary>
+    private void SaveIncludeSubscriptions(bool include) =>
+        _settings.Update(s => s with { Cost = s.Cost with { HistoryIncludeSubscriptions = include } });
 
     private void SaveFrame(HistoryWindow window)
     {

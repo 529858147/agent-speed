@@ -78,9 +78,12 @@ internal sealed class UpdateService : IDisposable
         Reschedule();
     }
 
+    /// <summary>NETWORK 1: with the master switch off nothing is requested, automatic or manual.</summary>
+    public bool NetworkEnabled => _settings.Current.NetworkEnabled;
+
     public void OnSettingsChanged(AppSettings previous, AppSettings current)
     {
-        if (previous.AutoCheckUpdates != current.AutoCheckUpdates)
+        if (previous.AutoCheckUpdates != current.AutoCheckUpdates || previous.NetworkEnabled != current.NetworkEnabled)
         {
             Reschedule();
         }
@@ -92,7 +95,7 @@ internal sealed class UpdateService : IDisposable
     /// </summary>
     public async Task CheckAsync(bool manual)
     {
-        if (_disposed || _installing)
+        if (_disposed || _installing || !NetworkEnabled)
         {
             return;
         }
@@ -143,7 +146,7 @@ internal sealed class UpdateService : IDisposable
     {
         var release = Status.Phase is UpdatePhase.Available or UpdatePhase.InstallFailed ? Status.Release : null;
         release ??= Available;
-        if (_disposed || _installing || release is null)
+        if (_disposed || _installing || release is null || !NetworkEnabled)
         {
             return;
         }
@@ -312,7 +315,8 @@ internal sealed class UpdateService : IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool AutomaticChecksAllowed => !_disposed && UpdateSchedule.AutomaticChecksAllowed(_settings.Current.AutoCheckUpdates, _current);
+    private bool AutomaticChecksAllowed =>
+        !_disposed && NetworkEnabled && UpdateSchedule.AutomaticChecksAllowed(_settings.Current.AutoCheckUpdates, _current);
 
     private void Reschedule()
     {

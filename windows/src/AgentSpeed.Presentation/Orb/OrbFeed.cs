@@ -1,5 +1,7 @@
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Settings.Orbs;
 
 namespace AgentSpeed.Presentation.Orb;
 
@@ -33,6 +35,21 @@ public sealed class OrbFeed
     public SubsetReading Reading { get; private set; } = OrbSubset.Reading(SpeedSnapshot.Empty, null);
 
     public double Value { get; private set; }
+
+    /// <summary>tok/s or the money unit (DESIGN 9); heat, tiers and titles always follow tokens.</summary>
+    public OrbUnit Unit { get; set; } = OrbUnit.Tokens;
+
+    /// <summary>The money readout while <see cref="Unit"/> is money and a <see cref="CostDisplay"/> is attached; else null.</summary>
+    public LiveMoney? Money { get; private set; }
+
+    /// <summary>Formats the money unit (the orb's sources without subscription sources unless included, METRICS 9.4).</summary>
+    public CostDisplay? Cost { get; set; }
+
+    /// <summary>The effects preview has no prices: a money orb shows the demo's output at this nominal price (µUSD per token).</summary>
+    public const double PreviewMicroUsdPerToken = 15;
+
+    /// <summary>The effects preview drives the snapshots (see <see cref="PreviewMicroUsdPerToken"/>).</summary>
+    public bool Previewing { get; set; }
 
     public SpeedTier Tier => _tier.Displayed;
 
@@ -72,6 +89,9 @@ public sealed class OrbFeed
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         Reading = OrbSubset.Reading(snapshot, Sources);
+        Money = Unit == OrbUnit.Cost && Cost is { } cost
+            ? cost.Live(Previewing ? PreviewReading(Reading.Live.Output) : OrbSubset.Cost(snapshot, Sources, cost.Billable), Reading.Agents.Count)
+            : null;
         var value = Reading.Live.ValueFor(Metric);
         Value = double.IsFinite(value) && value > 0 ? value : 0;
         _tier.Update(Value, Redline, nowSeconds);
@@ -92,6 +112,12 @@ public sealed class OrbFeed
         var dayStart = snapshot.DayStart == DateTimeOffset.MinValue ? 0 : snapshot.DayStart.ToUnixTimeMilliseconds();
         return _peak.Update(Reading.Live.Output, Reading.MeasuredPeakOutput, dayStart, nowMs);
     }
+
+    private static CostReading PreviewReading(double output) => CostReading.Zero with
+    {
+        MicroUsdPerSecond = output * PreviewMicroUsdPerToken,
+        LiveOutput = output,
+    };
 
     /// <summary>Advances the hold timers without new data; true when the tier or title changed.</summary>
     public bool Tick(double nowSeconds)

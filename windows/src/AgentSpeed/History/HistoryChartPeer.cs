@@ -17,7 +17,7 @@ internal sealed class HistoryChartPeer(HistoryChart owner) : FrameworkElementAut
             return;
         }
 
-        if (Chart.Range.DayCount > index && index >= 0 && Chart.Bars.Total(index) > 0)
+        if (Chart.Range.DayCount > index && index >= 0 && Chart.Bars.HasData(index))
         {
             Day(index).RaiseAutomationEvent(AutomationEvents.AutomationFocusChanged);
         }

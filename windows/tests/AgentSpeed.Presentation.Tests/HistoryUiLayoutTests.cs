@@ -5,14 +5,32 @@ namespace AgentSpeed.Presentation.Tests;
 public class HistoryUiLayoutTests
 {
     [Theory]
-    [InlineData(672, 2)]
-    [InlineData(819.9, 2)]
-    [InlineData(820, 4)]
-    [InlineData(1400, 4)]
-    [InlineData(double.NaN, 4)]
-    public void CardsWrapWhenNarrow(double width, int columns)
+    [InlineData(836, new[] { 5 })]
+    [InlineData(1400, new[] { 5 })]
+    [InlineData(835.9, new[] { 3, 2 })]
+    [InlineData(672, new[] { 3, 2 })]
+    [InlineData(0, new[] { 3, 2 })]
+    [InlineData(double.NaN, new[] { 5 })]
+    [InlineData(double.PositiveInfinity, new[] { 5 })]
+    public void FiveCardsShareOneRowOrWrapThreeAndTwo(double width, int[] rows)
     {
-        Assert.Equal(columns, HistoryLayout.CardColumns(width));
+        Assert.Equal(rows, HistoryLayout.CardRows(5, width));
+    }
+
+    [Fact]
+    public void TheDefaultWindowKeepsFiveCardsInOneRow()
+    {
+        // 920 DIP less the frame (16) and the page margins (48), with or without a 17 DIP scroll bar.
+        Assert.Equal([5], HistoryLayout.CardRows(5, 920 - 16 - 48));
+        Assert.Equal([5], HistoryLayout.CardRows(5, 920 - 16 - 48 - 17));
+        Assert.Equal(836, HistoryLayout.FiveCardsMinWidth);
+    }
+
+    [Fact]
+    public void NoCardsNeedNoRows()
+    {
+        Assert.Empty(HistoryLayout.CardRows(0, 900));
+        Assert.Empty(HistoryLayout.CardRows(-1, 600));
     }
 
     [Fact]

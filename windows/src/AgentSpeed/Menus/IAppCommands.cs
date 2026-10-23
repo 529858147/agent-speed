@@ -35,6 +35,9 @@ internal interface IAppCommands
     /// <summary>Changes an orb's style; its size is clamped to the style's range.</summary>
     void SetOrbStyle(string orbId, OrbStyle style) => UpdateOrbs(d => OrbEditing.SetStyle(d, orbId, style));
 
+    /// <summary>tok/s or the money unit of one orb (DESIGN 9 Orb, Switching).</summary>
+    void SetOrbUnit(string orbId, OrbUnit unit) => UpdateOrbs(d => OrbEditing.SetUnit(d, orbId, unit));
+
     /// <summary>The orb tracks every source again.</summary>
     void SetOrbAllSources(string orbId) => UpdateOrbs(d => OrbEditing.SetAllSources(d, orbId));
 

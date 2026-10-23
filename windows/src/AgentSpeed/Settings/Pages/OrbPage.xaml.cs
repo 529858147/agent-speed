@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -11,6 +12,7 @@ internal partial class OrbPage : UserControl
 {
     private Point _dragStart;
     private OrbRowViewModel? _dragRow;
+    private OrbsPaneViewModel? _attached;
 
     public OrbPage()
     {
@@ -18,11 +20,86 @@ internal partial class OrbPage : UserControl
         IsVisibleChanged += (_, _) => Highlight(IsVisible ? Model?.SelectedRow : null);
         OrbList.SelectionChanged += (_, _) => Highlight(Model?.SelectedRow);
         OrbList.GotKeyboardFocus += (_, _) => Highlight(Model?.SelectedRow);
+        Loaded += (_, _) => AttachModel();
+        DataContextChanged += (_, _) => AttachModel();
+        Unloaded += (_, _) => DetachModel();
     }
 
     private OrbsPaneViewModel? Model => (DataContext as SettingsViewModel)?.Orbs;
 
     private System.Windows.Controls.Primitives.UniformGrid? _cardsPanel;
+
+    private void AttachModel()
+    {
+        var model = Model;
+        if (ReferenceEquals(model, _attached))
+        {
+            return;
+        }
+
+        if (_attached is not null)
+        {
+            _attached.PropertyChanged -= OnModelPropertyChanged;
+        }
+
+        _attached = model;
+        if (model is not null)
+        {
+            model.PropertyChanged += OnModelPropertyChanged;
+        }
+
+        BuildThemeChoices();
+    }
+
+    /// <summary>The view model outlives the settings window.</summary>
+    private void DetachModel()
+    {
+        if (_attached is not null)
+        {
+            _attached.PropertyChanged -= OnModelPropertyChanged;
+            _attached = null;
+        }
+    }
+
+    private void OnModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(OrbsPaneViewModel.TitleThemeChoices))
+        {
+            BuildThemeChoices();
+        }
+    }
+
+    /// <summary>
+    /// The Advanced <c>titles.theme</c> popup (General, presets, custom sets with separators between them). The items are
+    /// built here so they keep the Fluent item style while the separators stay unselectable.
+    /// </summary>
+    private void BuildThemeChoices()
+    {
+        ThemeCombo.Items.Clear();
+        foreach (var choice in _attached?.TitleThemeChoices ?? [])
+        {
+            ThemeCombo.Items.Add(choice.IsSeparator
+                ? new ComboBoxItem
+                {
+                    IsEnabled = false,
+                    Focusable = false,
+                    IsHitTestVisible = false,
+                    MinHeight = 0,
+                    Padding = new Thickness(0),
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Content = new Separator { Margin = new Thickness(0, 3, 0, 3) },
+                }
+                : new ComboBoxItem { Content = choice.Text });
+        }
+
+        // Clearing the items dropped the selection, and an index bound while the list was empty stays coerced to -1 even when
+        // the same index arrives again: set it and coerce it anew (the binding stays in place).
+        if (_attached is { } model)
+        {
+            ThemeCombo.SetCurrentValue(Selector.SelectedIndexProperty, model.TitleThemeIndex);
+            ThemeCombo.CoerceValue(Selector.SelectedIndexProperty);
+        }
+    }
 
     private void OnCardsPanelLoaded(object sender, RoutedEventArgs e)
     {

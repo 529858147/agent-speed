@@ -9,11 +9,13 @@ using AgentSpeed.Theme;
 
 namespace AgentSpeed.History;
 
-/// <summary>An entry of the source picker: all sources (null) or one source.</summary>
+/// <summary>An entry of the source picker: all sources (null) or one source; a subscription source carries its tag (DESIGN 9).</summary>
 internal sealed class SourceOption(SourceKind? kind) : ObservableObject
 {
     private string _name = string.Empty;
     private IReadOnlyList<Color> _colors = [];
+    private string _tag = string.Empty;
+    private string _accessibleName = string.Empty;
 
     public SourceKind? Kind { get; } = kind;
 
@@ -21,7 +23,32 @@ internal sealed class SourceOption(SourceKind? kind) : ObservableObject
 
     public IReadOnlyList<Color> Colors { get => _colors; set => Set(ref _colors, value); }
 
-    public override string ToString() => Name;
+    /// <summary><c>cost.subscription.tag</c> for a source marked as a subscription, else empty.</summary>
+    public string Tag
+    {
+        get => _tag;
+        set
+        {
+            if (Set(ref _tag, value))
+            {
+                OnPropertyChanged(nameof(HasTag));
+            }
+        }
+    }
+
+    public bool HasTag => !string.IsNullOrEmpty(_tag);
+
+    /// <summary>The name, with the tag when there is one.</summary>
+    public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
+
+    /// <summary>The picker's automation text: the name, with the tag of a subscription source.</summary>
+    public override string ToString() => string.IsNullOrEmpty(_accessibleName) ? Name : _accessibleName;
+}
+
+/// <summary>A model of the range with unknown prices, for the footer's list (<c>history.unpricedNotice.show</c>).</summary>
+internal sealed record UnpricedModelView(string Name, string Requests, SourceKind Source, string SourceName, string AccessibleName)
+{
+    public Brush Dot => HeatPalette.SourceColor(Source).ToBrush();
 }
 
 /// <summary>A legend chip of the chart: a source, or the single filtered source.</summary>
@@ -44,6 +71,8 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
     private int _sparkHighlight = -1;
     private Brush? _sparkBrush;
     private string _accessibleName = string.Empty;
+    private string _helpText = string.Empty;
+    private bool _sideBySide;
 
     public SummaryMetric Metric { get; } = metric;
 
@@ -84,6 +113,12 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
 
     public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
 
+    /// <summary>What a screen reader adds after the name (<c>history.costFrozen</c> on the cost card).</summary>
+    public string HelpText { get => _helpText; private set => Set(ref _helpText, value); }
+
+    /// <summary>The card shares its row with one other: the sparkline sits beside the value instead of under it.</summary>
+    public bool SideBySide { get => _sideBySide; set => Set(ref _sideBySide, value); }
+
     public void Apply(SummaryCard card, Brush? sparkBrush, string tooltip, string accessibleName)
     {
         Label = card.Label;
@@ -100,8 +135,9 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
         SecondaryLead = at >= 0 ? card.Secondary[..at] : card.Secondary;
         SecondaryChange = at >= 0 ? change : string.Empty;
         SecondaryTail = at >= 0 ? card.Secondary[(at + change.Length)..] : string.Empty;
-        IsUp = card.Change is > 0.0005;
-        IsDown = card.Change is < -0.0005;
+        // Money is never green or red (DESIGN 9): the cost card's change keeps the secondary color.
+        IsUp = !card.NeutralChange && card.Change is > 0.0005;
+        IsDown = !card.NeutralChange && card.Change is < -0.0005;
         Spark = card.Spark;
         SparkHighlight = card.Highlight ?? -1;
         if (Set(ref _sparkBrush, sparkBrush, nameof(SparkBrush)))
@@ -110,6 +146,7 @@ internal sealed class SummaryCardView(SummaryMetric metric) : ObservableObject
         }
 
         AccessibleName = accessibleName;
+        HelpText = card.Note ?? string.Empty;
     }
 }
 
@@ -124,6 +161,10 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
     private bool _hatched;
     private double _fraction;
     private string _outputText = string.Empty;
+    private string _costPrefix = string.Empty;
+    private string _costText = string.Empty;
+    private bool _costQuiet;
+    private string _costToolTip = string.Empty;
     private string _shareText = string.Empty;
     private string _speedText = string.Empty;
     private string _toolTip = string.Empty;
@@ -151,6 +192,17 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
 
     public string OutputText { get => _outputText; private set => Set(ref _outputText, value); }
 
+    /// <summary><c>≥</c> when part of the cost is unpriced, drawn small in front of <see cref="CostText"/>.</summary>
+    public string CostPrefix { get => _costPrefix; private set => Set(ref _costPrefix, value); }
+
+    /// <summary>The amount, <c>–</c> or <c>cost.subscription.tag</c>.</summary>
+    public string CostText { get => _costText; private set => Set(ref _costText, value); }
+
+    /// <summary>Nothing priced to show (<c>–</c> or the tag): drawn in the secondary color.</summary>
+    public bool CostQuiet { get => _costQuiet; private set => Set(ref _costQuiet, value); }
+
+    public string CostToolTip { get => _costToolTip; private set => Set(ref _costToolTip, value); }
+
     public string ShareText { get => _shareText; private set => Set(ref _shareText, value); }
 
     /// <summary><c>42 tok/s</c>, or <c>history.noSpeed</c> when nothing was measured.</summary>
@@ -163,7 +215,7 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
 
     public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
 
-    public void Apply(BreakdownRow row, BreakdownKind kind, bool inProgress, Localizer loc)
+    public void Apply(BreakdownRow row, BreakdownKind kind, bool inProgress, Localizer loc, HistoryMoney money)
     {
         var color = (row.OtherModels ? HeatPalette.Neutral : HeatPalette.SourceColor(row.Source)).ToColor();
         Source = row.Source;
@@ -178,11 +230,18 @@ internal sealed class BreakdownRowView(string key) : ObservableObject
         Hatched = inProgress;
         Fraction = row.Fraction;
         OutputText = SpeedFormat.Tokens(row.Output);
+        var cost = money.Text(row.Cost, loc["cost.subscription.tag"]);
+        var partial = row.Cost.IsPartial;
+        CostPrefix = partial ? cost[..1] : string.Empty;
+        CostText = partial ? cost[1..] : cost;
+        CostQuiet = row.Cost.SortValue is null;
+        CostToolTip = HistoryTable.CostTooltip(row.Cost, money, loc) ?? cost;
         ShareText = HistoryText.Percent(row.Share);
         SpeedText = HistoryText.Speed(row.Speed, loc);
         var value = HistoryText.BreakdownValue(row, loc);
-        HelpText = IsSource ? loc["win.history.breakdown.sourceHint"] : string.Empty;
-        ToolTip = IsSource ? $"{value}{Environment.NewLine}{HelpText}" : value;
-        AccessibleName = HistoryText.Accessible(row, loc);
+        var hint = IsSource ? loc["win.history.breakdown.sourceHint"] : string.Empty;
+        HelpText = HistoryText.JoinParts([HistoryText.CostNote(row.Cost, loc) ?? string.Empty, hint], loc);
+        ToolTip = IsSource ? $"{value}{Environment.NewLine}{hint}" : value;
+        AccessibleName = HistoryText.Accessible(row, loc, money);
     }
 }

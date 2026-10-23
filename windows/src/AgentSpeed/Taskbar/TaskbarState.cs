@@ -1,3 +1,4 @@
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Settings;
 
@@ -16,7 +17,10 @@ internal sealed record TaskbarState(
     bool HighContrast,
     bool ReduceMotion,
     string UnitText,
-    string AccessibleText)
+    string AccessibleText,
+    string? ValueText = null,
+    bool ValueMuted = false,
+    BarSecondary? Secondary = null)
 {
     public static TaskbarState Initial { get; } = new(
         false, 0, SpeedTier.Idle, HeatMath.DefaultRedline, BarDisplayMode.GlyphAndValue, true, true, true, false, false,
@@ -24,7 +28,9 @@ internal sealed record TaskbarState(
 
     /// <summary>True when a change affects the widget's size or layout (not just its content).</summary>
     public bool LayoutDiffers(TaskbarState other) =>
-        Mode != other.Mode || ShowUnit != other.ShowUnit || UnitText != other.UnitText || Enabled != other.Enabled;
+        Mode != other.Mode || ShowUnit != other.ShowUnit || UnitText != other.UnitText || Enabled != other.Enabled
+        || (Secondary is null) != (other.Secondary is null) || Secondary?.Live.Unit != other.Secondary?.Live.Unit
+        || Secondary?.Today.Unit != other.Secondary?.Today.Unit || Secondary?.Live.Label != other.Secondary?.Live.Label;
 }
 
 internal enum TaskbarPresence

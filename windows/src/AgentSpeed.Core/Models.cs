@@ -67,7 +67,11 @@ public sealed record AgentStatus(
     Rate Live,
     double? RecentSpeed,
     DateTimeOffset LastActivity,
-    string? ParentId = null);
+    string? ParentId = null)
+{
+    /// <summary>The agent's live cost rate (METRICS 9.5).</summary>
+    public LiveCost LiveCost { get; init; }
+}
 
 /// <param name="Available">The root folder exists and is readable.</param>
 /// <param name="LiveEstimated">The estimated part of <paramref name="Live"/> (METRICS 6.3), for subset shares (6.8).</param>
@@ -80,7 +84,17 @@ public sealed record SourceStatus(
     Rate Live,
     TokenTotals Today,
     int ActiveAgents,
-    Rate LiveEstimated = default);
+    Rate LiveEstimated = default)
+{
+    /// <summary>The live cost rate (METRICS 9.5).</summary>
+    public LiveCost LiveCost { get; init; }
+
+    /// <summary>Today's cost (METRICS 9.6).</summary>
+    public CostTally TodayCost { get; init; }
+
+    /// <summary>Models of today's responses without a known price, most unpriced requests first.</summary>
+    public IReadOnlyList<string> UnpricedModels { get; init; } = [];
+}
 
 /// <param name="Duration">Null when the request start is unknown.</param>
 /// <param name="Speed">Output tok/s, null when the duration is unknown.</param>
@@ -154,6 +168,12 @@ public sealed record SpeedSnapshot(
 
     /// <summary>Local midnight at which this snapshot's "today" starts; <see cref="DateTimeOffset.MinValue"/> when unknown.</summary>
     public DateTimeOffset DayStart { get; init; } = DateTimeOffset.MinValue;
+
+    /// <summary>The live cost rate of every source (METRICS 9.5); subscription marks apply in the UI (9.4).</summary>
+    public LiveCost LiveCost { get; init; }
+
+    /// <summary>Today's cost of every source (METRICS 9.6).</summary>
+    public CostTally TodayCost { get; init; }
 
     public static SpeedSnapshot Empty { get; } = new(
         DateTimeOffset.MinValue,

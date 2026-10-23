@@ -9,6 +9,9 @@ internal static class BreakdownColumns
 
     public static GridLength Output { get; } = new(76);
 
+    /// <summary>Wide enough for <c>≥NT$12,345</c> beside the output.</summary>
+    public static GridLength Cost { get; } = new(88);
+
     public static GridLength Share { get; } = new(56);
 
     public static double SpeedWidth => 104;

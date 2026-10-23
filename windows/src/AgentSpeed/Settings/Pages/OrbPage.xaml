@@ -5,6 +5,7 @@
              xmlns:loc="clr-namespace:AgentSpeed.Localization"
              xmlns:controls="clr-namespace:AgentSpeed.Controls"
              xmlns:pane="clr-namespace:AgentSpeed.Settings.OrbsPane"
+             xmlns:tt="clr-namespace:AgentSpeed.Settings.TitleThemes"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
@@ -257,6 +258,7 @@
                                     <StackPanel>
                                         <pane:OrbPreview Diameter="64" Card="True" CardIndex="{Binding Index}" StyleKind="{Binding Style}"
                                                          HorizontalAlignment="Center" Margin="0,4,0,8"
+                                                         Labels="{Binding DataContext.OrbTitleLabels, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                          Dark="{Binding DataContext.DarkTheme, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                          ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
                                         <TextBlock Text="{Binding Name}" FontSize="12" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -272,6 +274,22 @@
                         <Run Text="{Binding SelectedStyleDescription, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>
+            </Border>
+
+            <!-- Unit (DESIGN 9 Orb, Switching 3): tok/s or the money unit, directly under the style cards -->
+            <Border Style="{StaticResource GroupBorder}" Margin="0,16,0,0" Padding="16,4,16,4">
+                <DockPanel MinHeight="48">
+                    <TextBlock Text="{loc:Loc orbs.unit}" VerticalAlignment="Center" FontSize="13" />
+                    <Border Style="{StaticResource SegmentedContainer}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            AutomationProperties.Name="{loc:Loc orbs.unit}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Style="{StaticResource SegmentedItem}" GroupName="OrbUnit" Content="{loc:Loc settings.liveUnit.tokens}"
+                                         IsChecked="{Binding UnitTokens, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc orbs.unit.tokens}" />
+                            <RadioButton Style="{StaticResource SegmentedItem}" GroupName="OrbUnit" Content="{Binding UnitCostLabel}"
+                                         IsChecked="{Binding UnitCost, Mode=TwoWay}" Typography.NumeralAlignment="Tabular" />
+                        </StackPanel>
+                    </Border>
+                </DockPanel>
             </Border>
 
             <!-- Size and opacity -->
@@ -371,6 +389,11 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </Grid>
+                        <!-- This orb's title theme (DESIGN 2b titleTheme; sets are edited in General) -->
+                        <TextBlock Text="{loc:Loc titles.theme}" FontSize="13" Margin="0,16,0,6" />
+                        <ComboBox x:Name="ThemeCombo" MinWidth="240" HorizontalAlignment="Left" SelectedIndex="{Binding TitleThemeIndex, Mode=TwoWay}"
+                                  AutomationProperties.Name="{loc:Loc titles.theme}" AutomationProperties.HelpText="{Binding TitleThemeHint}" />
+                        <TextBlock Text="{Binding TitleThemeHint}" Style="{StaticResource CaptionText}" Margin="0,6,0,0" />
                         <TextBlock Text="{loc:Loc settings.redline}" FontSize="13" Margin="0,16,0,6" />
                         <Border Style="{StaticResource SegmentedContainer}" HorizontalAlignment="Left">
                             <StackPanel Orientation="Horizontal">
@@ -386,6 +409,10 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Slider Minimum="100" Maximum="2000" TickFrequency="50" IsSnapToTickEnabled="True" SmallChange="50" LargeChange="200"
                                         Value="{Binding RedlineOutputValue, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.redline}"
                                         Visibility="{Binding IsOutputMetric, Converter={StaticResource BoolToVisibility}}" VerticalAlignment="Center" />
@@ -394,8 +421,13 @@
                                         Visibility="{Binding IsTotalMetric, Converter={StaticResource BoolToVisibility}}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="{Binding RedlineText}" MinWidth="96" TextAlignment="Right" VerticalAlignment="Center"
                                            Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <controls:HeatStrip Grid.Row="1" Grid.Column="0" Margin="10,4,10,0" Ticks="{Binding TitleTicks}"
+                                                    TickBrush="{DynamicResource TextFillColorTertiaryBrush}" HighlightBrush="{DynamicResource TextFillColorPrimaryBrush}"
+                                                    HighlightIndex="{Binding HighlightIndex, ElementName=OrbLadder}" />
                             </Grid>
                             <TextBlock Text="{Binding RedlineHint}" Style="{StaticResource CaptionText}" Margin="0,8,0,0" />
+                            <!-- The titles at this redline, in this orb's theme -->
+                            <tt:TitleLadderList x:Name="OrbLadder" Rows="{Binding TitleLadder}" Margin="0,12,0,0" HeadingLevel="Level4" />
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>

@@ -3,6 +3,7 @@ using System.Globalization;
 using AgentSpeed.Core.History;
 using AgentSpeed.Core.IO.Sqlite;
 using AgentSpeed.Core.Monitoring;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core;
 
@@ -37,15 +38,22 @@ public sealed class HistoryService : IDisposable
     private CancellationTokenSource? _run;
     private bool _refreshRequested;
     private bool _clearRequested;
+    private bool _bindingSaveRequested;
     private bool _disposed;
 
-    public HistoryService(HistoryHub hub, MonitorConfiguration configuration, string? storePath = null)
-        : this(hub, configuration, storePath, zone: null, options: null)
+    /// <param name="pricing">Shared with the live engine (METRICS 9.7); null uses the bundled table.</param>
+    public HistoryService(HistoryHub hub, MonitorConfiguration configuration, string? storePath = null, PriceBook? pricing = null)
+        : this(hub, configuration, storePath, zone: null, options: null, pricing)
     {
     }
 
     internal HistoryService(
-        HistoryHub hub, MonitorConfiguration configuration, string? storePath, TimeZoneInfo? zone, HistoryOptions? options)
+        HistoryHub hub,
+        MonitorConfiguration configuration,
+        string? storePath,
+        TimeZoneInfo? zone,
+        HistoryOptions? options,
+        PriceBook? pricing = null)
     {
         ArgumentNullException.ThrowIfNull(hub);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -54,6 +62,22 @@ public sealed class HistoryService : IDisposable
         _storePath = string.IsNullOrWhiteSpace(storePath) ? DefaultStorePath : Path.GetFullPath(storePath);
         _zone = zone;
         _options = options ?? new HistoryOptions();
+        Pricing = pricing ?? new PriceBook();
+    }
+
+    /// <summary>Shared with the live engine (METRICS 9.7).</summary>
+    public PriceBook Pricing { get; }
+
+    /// <summary>
+    /// Loads the day bindings and table copies of the store into <paramref name="book"/> (a quick read that never changes
+    /// the store), before the live engine prices anything (METRICS 9.7). Returns the dates whose binding was repaired.
+    /// </summary>
+    public static IReadOnlyList<string> RestorePricing(PriceBook book, string? storePath = null)
+    {
+        ArgumentNullException.ThrowIfNull(book);
+        var (bindings, tables) = HistoryStore.StoredPricing(
+            string.IsNullOrWhiteSpace(storePath) ? DefaultStorePath : Path.GetFullPath(storePath));
+        return book.Restore(bindings, tables);
     }
 
     /// <summary><c>%LOCALAPPDATA%\AgentSpeed\history.sqlite</c>.</summary>
@@ -76,6 +100,7 @@ public sealed class HistoryService : IDisposable
             _stop = stop;
             _hub.RefreshHandler = Refresh;
             _hub.ClearHandler = Clear;
+            Pricing.Bound += RequestBindingSave;
             _thread = new Thread(() => Run(stop.Token))
             {
                 IsBackground = true,
@@ -96,6 +121,7 @@ public sealed class HistoryService : IDisposable
             stop = _stop;
             _thread = null;
             _stop = null;
+            Pricing.Bound -= RequestBindingSave;
             CancelRun();
             if (_hub.RefreshHandler == Refresh)
             {
@@ -206,6 +232,22 @@ public sealed class HistoryService : IDisposable
         Signal();
     }
 
+    /// <summary>Saves new day bindings (the live engine binds today) soon, once per burst.</summary>
+    private void RequestBindingSave()
+    {
+        lock (_gate)
+        {
+            if (_bindingSaveRequested)
+            {
+                return;
+            }
+
+            _bindingSaveRequested = true;
+        }
+
+        Signal();
+    }
+
     private void CancelRun()
     {
         try
@@ -255,6 +297,7 @@ public sealed class HistoryService : IDisposable
                         store?.Dispose();
                         store = null;
                         analyzer = null;
+                        Pricing.ClearBindings();
                         HistoryStore.Delete(_storePath);
                         lock (_livePeaks)
                         {
@@ -267,7 +310,7 @@ public sealed class HistoryService : IDisposable
                     if (analyzer is null)
                     {
                         store = HistoryStore.Open(_storePath);
-                        analyzer = new HistoryAnalyzer(store, _options);
+                        analyzer = new HistoryAnalyzer(store, _options, Pricing);
                     }
 
                     var completed = Analyze(analyzer, configuration, first, stopToken);
@@ -291,7 +334,8 @@ public sealed class HistoryService : IDisposable
                     nextDelay = RetryDelay;
                 }
 
-                WaitForNextRun(nextDelay, stopToken);
+                var current = analyzer;
+                WaitForNextRun(nextDelay, stopToken, () => SaveBindings(current));
             }
         }
         finally
@@ -403,12 +447,35 @@ public sealed class HistoryService : IDisposable
         }
     }
 
-    private void WaitForNextRun(TimeSpan interval, CancellationToken stopToken)
+    private void SaveBindings(HistoryAnalyzer? analyzer)
+    {
+        lock (_gate)
+        {
+            if (!_bindingSaveRequested)
+            {
+                return;
+            }
+
+            _bindingSaveRequested = false;
+        }
+
+        try
+        {
+            analyzer?.SaveBindings();
+        }
+        catch (SqliteException)
+        {
+            // Kept in memory; the next analysis run saves them again.
+        }
+    }
+
+    private void WaitForNextRun(TimeSpan interval, CancellationToken stopToken, Action onWake)
     {
         var zone = _zone ?? TimeZoneInfo.Local;
         var due = Stopwatch.GetTimestamp();
         while (!stopToken.IsCancellationRequested)
         {
+            onWake();
             lock (_gate)
             {
                 if (_refreshRequested || _clearRequested)

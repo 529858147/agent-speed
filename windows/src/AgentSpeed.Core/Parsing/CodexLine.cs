@@ -86,6 +86,9 @@ internal struct CodexLine
     public string? SpawnParentThreadId;
     public string? ThreadId;
     public string? ResponseId;
+
+    /// <summary><c>payload.model_provider</c> of a <c>session_meta</c> (METRICS 3.2).</summary>
+    public string? ModelProvider;
     public TokenCounts Usage;
     public CodexUsage Total;
     public CodexUsage Last;
@@ -207,6 +210,11 @@ internal static class CodexLineReader
             {
                 reader.Read();
                 result.Model = JsonScan.ReadString(ref reader);
+            }
+            else if (hints.Meta && reader.ValueTextEquals("model_provider"u8))
+            {
+                reader.Read();
+                result.ModelProvider = JsonScan.ReadString(ref reader);
             }
             else if (hints.Meta && reader.ValueTextEquals("agent_path"u8))
             {

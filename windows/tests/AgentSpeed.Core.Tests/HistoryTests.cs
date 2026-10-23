@@ -32,12 +32,18 @@ public sealed class HistoryTests : IDisposable
             [Path.Combine(copy, "gemini", "tmp")],
             Omp.OmpPaths.Roots(name => name == "PI_CONFIG_DIR" ? "omp" : null, macOS: false, copy),
             Antigravity.AntigravityPaths.Stores(Path.Combine(copy, "antigravity"), null));
+        var document = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureLocator.FixturesDirectory, "history-expected.json")))!;
+        var pricing = document["prices"]!;
+        var tables = pricing["tables"]!.AsArray()
+            .Select(t => Pricing.PriceTable.Load(File.ReadAllBytes(FixtureLocator.PathOf(t!.GetValue<string>()))).Table!)
+            .ToList();
+        var bindings = pricing["bindings"]!.AsObject().ToDictionary(b => b.Key, b => b.Value!.GetValue<int>());
         using var store = HistoryStore.Open(StorePath);
-        var analyzer = new HistoryAnalyzer(store);
+        var analyzer = new HistoryAnalyzer(store, pricing: new Pricing.PriceBook(tables, bindings));
 
         var report = analyzer.Run(locations, All, TimeZoneInfo.Utc, CancellationToken.None);
 
-        var expected = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureLocator.FixturesDirectory, "history-expected.json")))!["days"]!;
+        var expected = document["days"]!;
         var actual = new JsonArray([.. analyzer.Days().Select(HistoryJson.Row)]);
         Assert.True(JsonNode.DeepEquals(expected, actual), $"expected {expected.ToJsonString()}\nactual   {actual.ToJsonString()}");
         Assert.Equal((false, 0), (report.Cancelled, report.FilesUnreadable));
@@ -245,6 +251,8 @@ internal static class HistoryJson
                 ["output"] = model.Output,
                 ["measuredOutput"] = model.MeasuredOutput,
                 ["measuredMs"] = model.MeasuredMs,
+                ["costMicroUsd"] = model.Cost?.CostMicroUsd,
+                ["unpricedRequests"] = model.Cost?.UnpricedRequests,
             };
         }
 
@@ -261,6 +269,9 @@ internal static class HistoryJson
             ["measuredOutput"] = day.MeasuredOutput,
             ["measuredMs"] = day.MeasuredMs,
             ["unfinalized"] = day.Unfinalized,
+            ["costMicroUsd"] = day.Cost?.CostMicroUsd,
+            ["unpricedRequests"] = day.Cost?.UnpricedRequests,
+            ["priceVersion"] = day.PriceVersion,
             ["agents"] = day.Agents,
             ["models"] = models,
         };

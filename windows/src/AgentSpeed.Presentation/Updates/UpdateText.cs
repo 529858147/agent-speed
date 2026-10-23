@@ -69,7 +69,7 @@ public static class UpdateText
         return localizer.Format("update.lastChecked", RelativeTime(last, now, localizer, zone ?? TimeZoneInfo.Local));
     }
 
-    private static string RelativeTime(DateTimeOffset last, DateTimeOffset now, Localizer localizer, TimeZoneInfo zone)
+    internal static string RelativeTime(DateTimeOffset last, DateTimeOffset now, Localizer localizer, TimeZoneInfo zone)
     {
         var elapsed = now - last;
         if (elapsed < TimeSpan.FromMinutes(1))

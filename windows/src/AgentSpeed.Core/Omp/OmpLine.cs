@@ -49,6 +49,9 @@ internal struct OmpCall
 {
     public bool Guarded;
     public string? Model;
+
+    /// <summary>The <c>provider</c> string; null when it is empty (METRICS 3.2).</summary>
+    public string? Provider;
     public TokenCounts Tokens;
 
     /// <summary>One of <c>input</c>, <c>output</c>, <c>cacheRead</c>, <c>cacheWrite</c> is above 0.</summary>

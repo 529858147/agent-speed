@@ -1,6 +1,7 @@
 using System.Windows.Media;
 using System.Windows.Threading;
 using AgentSpeed.Interop;
+using AgentSpeed.Orb.Gpu;
 using AgentSpeed.Presentation.Orb;
 
 namespace AgentSpeed.Orb.Render;
@@ -27,10 +28,11 @@ internal interface IOrbFrameClient
 }
 
 /// <summary>
-/// One frame clock for every orb (DESIGN 2a, Frame policy): a single <see cref="CompositionTarget.Rendering"/>
-/// subscription while anything animates, each client rendering on every k-th display tick for its frame class (72 fps
-/// and 28.8 fps on a 144 Hz display), a single wake-up timer for scheduled changes, and nothing at all when every orb is
-/// static. Four or more orbs in the 60 fps class drop to 30 fps except the focused one.
+/// One frame clock for every orb (DESIGN 2a, Frame policy): one tick source while anything animates — the compositor clock
+/// thread of the Direct3D orbs (<see cref="CompositorTicker"/>), or a single <see cref="CompositionTarget.Rendering"/>
+/// subscription when the WPF renderer is in use — each client rendering on every k-th display tick for its frame class
+/// (72 fps and 28.8 fps on a 144 Hz display), a single wake-up timer for scheduled changes, and nothing at all when every orb
+/// is static. Four or more orbs in the 60 fps class drop to 30 fps except the focused one.
 /// </summary>
 internal sealed class OrbClock
 {
@@ -50,6 +52,8 @@ internal sealed class OrbClock
     private int _intervalCount;
     private int _intervalIndex;
     private TimeSpan _previousTick;
+    private CompositorTicker? _ticker;
+    private long _lastTick = -1;
 
     public OrbClock(Dispatcher dispatcher, Func<double> now)
     {
@@ -76,6 +80,9 @@ internal sealed class OrbClock
     /// <summary>The app's clock (set once at start-up), for orb previews hosted in other windows.</summary>
     public static OrbClock? Current { get; set; }
 
+    /// <summary>The shared clock (seconds).</summary>
+    public double Now => _now();
+
     /// <summary>Display refresh rate used for the frame divisors.</summary>
     public double RefreshHz => _refreshHz;
 
@@ -84,6 +91,30 @@ internal sealed class OrbClock
 
     /// <summary>Display ticks seen since start, for the benchmark harness.</summary>
     public long Ticks => _tick;
+
+    /// <summary>What paces the frames (for the log).</summary>
+    public string Source => _ticker?.Source ?? "WPF rendering";
+
+    /// <summary>
+    /// Paces the orbs by the compositor clock thread instead of WPF's render loop (the Direct3D orbs draw outside WPF, so
+    /// hooking <see cref="CompositionTarget.Rendering"/> would only keep WPF composing for nothing).
+    /// </summary>
+    public void UseCompositorTicker()
+    {
+        if (_ticker is not null)
+        {
+            return;
+        }
+
+        var hooked = _hooked;
+        Unhook();
+        _ticker = new CompositorTicker(OnTicker) { RefreshHz = _monitorHz };
+        _refreshHz = _monitorHz;
+        if (hooked)
+        {
+            Hook();
+        }
+    }
 
     public void Register(IOrbFrameClient client)
     {
@@ -112,6 +143,7 @@ internal sealed class OrbClock
 
         _kicked.Add(client);
         Hook();
+        _ticker?.Wake();
     }
 
     /// <summary>Re-reads the refresh rate of the primary display (after a display change).</summary>
@@ -122,6 +154,10 @@ internal sealed class OrbClock
             _monitorHz = hz;
             _refreshHz = hz;
             _intervalCount = 0;
+            if (_ticker is not null)
+            {
+                _ticker.RefreshHz = hz;
+            }
         }
     }
 
@@ -135,6 +171,7 @@ internal sealed class OrbClock
 
         var needsTicks = _kicked.Count > 0;
         double? wake = null;
+        var divisors = 0UL;
         foreach (var client in _clients)
         {
             if (!client.IsActive)
@@ -142,9 +179,11 @@ internal sealed class OrbClock
                 continue;
             }
 
-            if (Effective(client) != FrameClass.None)
+            var effective = Effective(client);
+            if (effective != FrameClass.None)
             {
                 needsTicks = true;
+                divisors |= 1UL << Math.Clamp(FramePolicy.Divisor(effective, _refreshHz), 1, 63);
             }
             else if (client.NextWake is { } at && (wake is null || at < wake))
             {
@@ -152,6 +191,8 @@ internal sealed class OrbClock
             }
         }
 
+        // The clock thread wakes the UI only on ticks some orb is due on (28.8 of 144 per second while cruising).
+        _ticker?.SetDivisors(divisors);
         if (needsTicks)
         {
             Hook();
@@ -229,6 +270,12 @@ internal sealed class OrbClock
         _hooked = true;
         _wake.Stop();
         _previousTick = TimeSpan.Zero;
+        if (_ticker is not null)
+        {
+            _ticker.Start();
+            return;
+        }
+
         CompositionTarget.Rendering += OnRendering;
     }
 
@@ -240,6 +287,12 @@ internal sealed class OrbClock
         }
 
         _hooked = false;
+        if (_ticker is not null)
+        {
+            _ticker.Stop();
+            return;
+        }
+
         CompositionTarget.Rendering -= OnRendering;
     }
 
@@ -256,7 +309,21 @@ internal sealed class OrbClock
             _lastRenderingTime = args.RenderingTime;
         }
 
-        _tick++;
+        Tick(_tick + 1);
+    }
+
+    private void OnTicker(long count)
+    {
+        if (_hooked)
+        {
+            Tick(Math.Max(count, _tick + 1));
+        }
+    }
+
+    private void Tick(long tick)
+    {
+        _lastTick = _tick;
+        _tick = tick;
         var now = _now();
         var sixty = SixtyCount();
         _rendering = true;
@@ -273,7 +340,7 @@ internal sealed class OrbClock
 
                 var frameClass = FramePolicy.Crowded(Capped(client, client.Demand), sixty, client.IsPreferred);
                 var divisor = FramePolicy.Divisor(frameClass, _refreshHz);
-                var due = _kicked.Remove(client) || (divisor > 0 && _tick % divisor == 0);
+                var due = _kicked.Remove(client) || (divisor > 0 && _tick / divisor != _lastTick / divisor);
                 if (!due)
                 {
                     continue;

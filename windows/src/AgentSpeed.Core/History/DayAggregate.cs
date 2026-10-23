@@ -2,16 +2,50 @@ using System.Globalization;
 using AgentSpeed.Core.Engine;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.History;
 
 internal readonly record struct DayKey(string Day, SourceKind Source);
 
 /// <summary>One model's sums within a day aggregate (METRICS 8).</summary>
-internal readonly record struct ModelTotals(long Requests, long Output, long MeasuredOutput, long MeasuredMs)
+/// <param name="Cost">Null when the contribution was stored before costs existed (METRICS 8, 9.7).</param>
+internal readonly record struct ModelTotals(long Requests, long Output, long MeasuredOutput, long MeasuredMs, CostTally? Cost = null)
 {
     public static ModelTotals operator +(ModelTotals a, ModelTotals b) => new(
-        a.Requests + b.Requests, a.Output + b.Output, a.MeasuredOutput + b.MeasuredOutput, a.MeasuredMs + b.MeasuredMs);
+        a.Requests + b.Requests,
+        a.Output + b.Output,
+        a.MeasuredOutput + b.MeasuredOutput,
+        a.MeasuredMs + b.MeasuredMs,
+        CostMerge.Merged(a.Cost, a.Requests, b.Cost, b.Requests));
+}
+
+internal static class CostMerge
+{
+    /// <summary>
+    /// Sums two contributions. A part without cost data (stored before costs existed) adds its requests as unpriced,
+    /// so a day mixing both shows a partial cost; only parts that all lack cost data stay without.
+    /// </summary>
+    public static CostTally? Merged(CostTally? a, long aRequests, CostTally? b, long bRequests)
+    {
+        if (aRequests == 0 && (a is null || a == CostTally.Zero))
+        {
+            return b;
+        }
+
+        if (bRequests == 0 && (b is null || b == CostTally.Zero))
+        {
+            return a;
+        }
+
+        return (a, b) switch
+        {
+            (null, null) => null,
+            ({ } sum, null) => sum with { UnpricedRequests = sum.UnpricedRequests + bRequests },
+            (null, { } sum) => sum with { UnpricedRequests = sum.UnpricedRequests + aRequests },
+            ({ } x, { } y) => x + y,
+        };
+    }
 }
 
 /// <summary>Sums of one source's responses on one local day (METRICS 8), for one file or for all of them.</summary>
@@ -40,8 +74,21 @@ internal sealed class DayAggregate
 
     public Dictionary<string, ModelTotals> Models { get; } = new(StringComparer.Ordinal);
 
-    public void Add(ParsedResponse response)
+    /// <summary>Null when the contribution was stored before costs existed (METRICS 8, 9.7).</summary>
+    public CostTally? Cost { get; set; }
+
+    /// <summary>Some response has no known price (METRICS 9.7 re-analysis).</summary>
+    public bool HasUnpriced => Cost is { UnpricedRequests: > 0 };
+
+    /// <summary>Adds a response with its cost (null = unknown price).</summary>
+    public void Add(ParsedResponse response, long? cost)
     {
+        if (Cost is null && Requests == 0)
+        {
+            Cost = CostTally.Zero;
+        }
+
+        Cost = Cost?.Add(cost);
         var tokens = response.Tokens;
         Requests++;
         Input += tokens.Input;
@@ -50,8 +97,8 @@ internal sealed class DayAggregate
         Output += tokens.Output;
         Reasoning += tokens.Reasoning;
         var model = response.Model ?? string.Empty;
-        var totals = Models.GetValueOrDefault(model);
-        totals = totals with { Requests = totals.Requests + 1, Output = totals.Output + tokens.Output };
+        var totals = Models.TryGetValue(model, out var known) ? known : new ModelTotals(0, 0, 0, 0, CostTally.Zero);
+        totals = totals with { Requests = totals.Requests + 1, Output = totals.Output + tokens.Output, Cost = totals.Cost?.Add(cost) };
         if (response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval))
         {
             MeasuredOutput += tokens.Output;
@@ -73,6 +120,7 @@ internal sealed class DayAggregate
 
     public void Merge(DayAggregate other)
     {
+        Cost = CostMerge.Merged(Cost, Requests, other.Cost, other.Requests);
         Requests += other.Requests;
         Input += other.Input;
         CachedInput += other.CachedInput;
@@ -85,12 +133,12 @@ internal sealed class DayAggregate
         Agents += other.Agents;
         foreach (var (model, usage) in other.Models)
         {
-            Models[model] = Models.GetValueOrDefault(model) + usage;
+            Models[model] = Models.TryGetValue(model, out var known) ? known + usage : usage;
         }
     }
 
     /// <summary>Models ordered by output, largest first, then by name.</summary>
-    public DailyUsage ToUsage(DayKey key, double? peak) => new(
+    public DailyUsage ToUsage(DayKey key, double? peak, int? priceVersion = null) => new(
         key.Day,
         key.Source,
         new TokenTotals(Requests, Input, CachedInput, CacheWriteInput, Output, Reasoning),
@@ -102,11 +150,21 @@ internal sealed class DayAggregate
         [.. Models
             .OrderByDescending(m => m.Value.Output)
             .ThenBy(m => m.Key, StringComparer.Ordinal)
-            .Select(m => new ModelUsage(m.Key, m.Value.Requests, m.Value.Output, m.Value.MeasuredOutput, m.Value.MeasuredMs))]);
+            .Select(m => new ModelUsage(m.Key, m.Value.Requests, m.Value.Output, m.Value.MeasuredOutput, m.Value.MeasuredMs)
+            {
+                Cost = m.Value.Cost,
+            })])
+    {
+        Cost = Cost,
+        PriceVersion = Cost is null ? null : priceVersion,
+    };
 
-    /// <summary>One file's contributions: its responses grouped by local day of <c>endMs</c>, all under the file's source.</summary>
+    /// <summary>
+    /// One file's contributions: its responses grouped by local day of <c>endMs</c>, all under the file's source, each
+    /// response priced with the table of its date (METRICS 9.7).
+    /// </summary>
     public static Dictionary<DayKey, DayAggregate> Contributions(
-        IEnumerable<ParsedResponse> responses, SourceKind source, DayLabeler labeler)
+        IEnumerable<ParsedResponse> responses, SourceKind source, DayLabeler labeler, PriceBook pricing)
     {
         var days = new Dictionary<DayKey, DayAggregate>();
         foreach (var response in responses)
@@ -122,7 +180,7 @@ internal sealed class DayAggregate
                 days[key] = aggregate = new DayAggregate { Agents = 1 };
             }
 
-            aggregate.Add(response);
+            aggregate.Add(response, pricing.Cost(response, day));
         }
 
         return days;

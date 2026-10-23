@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using AgentSpeed.Core;
 using AgentSpeed.Core.History;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Probe;
 
@@ -9,6 +10,12 @@ internal static class DumpHistory
 {
     public static int Run(ProbeOptions options, ProbeOutput output)
     {
+        if (options.PriceTable(out var tableError) is not { } table)
+        {
+            Console.Error.WriteLine(tableError);
+            return 2;
+        }
+
         var zone = options.Utc ? TimeZoneInfo.Utc : TimeZoneInfo.Local;
         var temporary = options.StorePath is null
             ? Path.Combine(Path.GetTempPath(), "agentspeed-probe-" + Guid.NewGuid().ToString("N"))
@@ -33,7 +40,7 @@ internal static class DumpHistory
                     tuning = tuning with { MaxBufferedBytes = mb * 1024 * 1024 };
                 }
 
-                var analyzer = new HistoryAnalyzer(store, tuning);
+                var analyzer = new HistoryAnalyzer(store, tuning, new PriceBook([table]));
                 report = analyzer.Run(
                     options.Locations, new HashSet<SourceKind>(Enum.GetValues<SourceKind>()), zone, CancellationToken.None);
                 days = analyzer.Days();
@@ -62,6 +69,8 @@ internal static class DumpHistory
                     .Add("output", model.Output)
                     .Add("measuredOutput", model.MeasuredOutput)
                     .Add("measuredMs", model.MeasuredMs)
+                    .Add("costMicroUsd", model.Cost?.CostMicroUsd)
+                    .Add("unpricedRequests", model.Cost?.UnpricedRequests)
                     .Text);
             }
 
@@ -77,6 +86,9 @@ internal static class DumpHistory
                 .Add("measuredOutput", day.MeasuredOutput)
                 .Add("measuredMs", day.MeasuredMs)
                 .Add("unfinalized", day.Unfinalized)
+                .Add("costMicroUsd", day.Cost?.CostMicroUsd)
+                .Add("unpricedRequests", day.Cost?.UnpricedRequests)
+                .Add("priceVersion", day.PriceVersion)
                 .Add("agents", day.Agents)
                 .Raw("models", models.Text)
                 .Text);

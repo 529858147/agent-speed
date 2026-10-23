@@ -17,7 +17,7 @@ namespace AgentSpeed.Orb.Render;
 /// renderer, all retained and cached. Frames come from the shared <see cref="OrbClock"/> at the frame class the scene
 /// and the style ask for; nothing is drawn while the orb is static, hidden or paused.
 /// </summary>
-internal sealed class OrbSurface : FrameworkElement, IOrbFrameClient
+internal sealed class OrbSurface : FrameworkElement, IOrbFrameClient, IOrbSurface
 {
     private const double CrossfadeSeconds = 0.25;
 

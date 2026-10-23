@@ -65,7 +65,8 @@ public sealed class OmpParserTests
 
         Assert.Equal(
             new ParsedResponse(Key("a1", T0 + 1010), SourceKind.Omp, Main, Model, T0 + 1010, T0 + 4510,
-                new TokenCounts(Input: 160, CachedInput: 50, CacheWriteInput: 10, Output: 20, Reasoning: 7)),
+                new TokenCounts(Input: 160, CachedInput: 50, CacheWriteInput: 10, Output: 20, Reasoning: 7),
+                Provider: "anthropic"),
             Assert.Single(sink.Latest));
         Assert.True(Assert.Single(sink.Emissions).IsCompletion);
         Assert.Equal(AgentPhase.Idle, parser.Phase);
@@ -371,7 +372,7 @@ public sealed class OmpParserTests
 
         Feed.Lines(parser, sink, Header(T0), Reply("a1", T0 + 5000, "0.5"));
 
-        Assert.Equal(new ParsedResponse("omp:a1:0", SourceKind.Omp, Main, Model, 0, 1500, new TokenCounts(100, 0, 0, 20, 0)),
+        Assert.Equal(new ParsedResponse("omp:a1:0", SourceKind.Omp, Main, Model, 0, 1500, new TokenCounts(100, 0, 0, 20, 0), Provider: "anthropic"),
             Assert.Single(sink.Latest));
     }
 
@@ -534,7 +535,8 @@ public sealed class OmpParserTests
 
         Assert.Equal(
             new ParsedResponse(Key("m1", T0 + 2000), SourceKind.Omp, Main, "gpt-5-mini", null, T0 + 2000,
-                new TokenCounts(Input: 72, CachedInput: 30, CacheWriteInput: 2, Output: 8, Reasoning: 3)),
+                new TokenCounts(Input: 72, CachedInput: 30, CacheWriteInput: 2, Output: 8, Reasoning: 3),
+                Provider: "openai"),
             sink.Latest[1]);
         Assert.True(sink.Emissions[1].IsCompletion);
         Assert.Equal(Model, parser.Model);

@@ -1,4 +1,6 @@
+using AgentSpeed.Core.History;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.Engine;
 
@@ -31,6 +33,13 @@ internal sealed class SpeedEngine
     private readonly Dictionary<string, AgentInfo> _agents = new(StringComparer.Ordinal);
     private readonly List<ParsedResponse> _completions = [];
     private readonly TodayLedger _today;
+
+    /// <summary>Prices responses as they arrive (METRICS 9.3, 9.7); without it, responses keep the cost they carry.</summary>
+    private readonly PriceBook? _pricing;
+    private readonly DayLabeler _dayLabeler;
+
+    /// <summary>The current table version the stored responses were last priced with.</summary>
+    private int? _pricedVersion;
     private ParsedResponse? _last;
     private double _liveMaxOutput;
     private double _liveMaxTotal;
@@ -38,9 +47,12 @@ internal sealed class SpeedEngine
     private double? _previousPeakOutput;
     private long? _lastPeakEventMs;
 
-    public SpeedEngine(long todayStartMs)
+    public SpeedEngine(long todayStartMs, PriceBook? pricing = null, TimeZoneInfo? zone = null)
     {
         _today = new TodayLedger(todayStartMs);
+        _pricing = pricing;
+        _pricedVersion = pricing?.CurrentVersion;
+        _dayLabeler = new DayLabeler(zone ?? TimeZoneInfo.Local);
     }
 
     public long TodayStartMs => _today.StartMs;
@@ -63,6 +75,11 @@ internal sealed class SpeedEngine
     /// <summary>Adds or replaces a response (METRICS 4.3). Seeded responses never produce events.</summary>
     public void Upsert(ParsedResponse response, bool isCompletion, bool seeded)
     {
+        if (_pricing is not null)
+        {
+            response = response with { CostMicroUsd = Price(response) };
+        }
+
         _responses[response.Key] = new Stored(response);
         _today.Upsert(response);
         if (isCompletion && !seeded)
@@ -89,9 +106,11 @@ internal sealed class SpeedEngine
         }
 
         Evict(nowMs - RetentionMs);
+        RepriceIfNeeded();
 
         var windowStart = nowMs - WindowMs;
         var measured = new Accumulator(SourceCount);
+        var costs = new CostAccumulator(SourceCount);
         var valid = new List<Stored>(_responses.Count);
         var unmeasured = new List<Stored>();
         var latestEnd = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -119,8 +138,12 @@ internal sealed class SpeedEngine
             if (overlap > 0)
             {
                 var fraction = (double)overlap / stored.Interval.DurationMs;
-                measured.Add(stored.Response.Source, stored.Response.AgentId,
-                    stored.Response.Tokens.Output * fraction, stored.Response.Tokens.Total * fraction);
+                var output = stored.Response.Tokens.Output * fraction;
+                measured.Add(stored.Response.Source, stored.Response.AgentId, output, stored.Response.Tokens.Total * fraction);
+                if (stored.Response.CostMicroUsd is { } cost)
+                {
+                    costs.Add(stored.Response.Source, stored.Response.AgentId, new LiveCost(cost * fraction, output));
+                }
             }
         }
 
@@ -131,6 +154,16 @@ internal sealed class SpeedEngine
         var recent = RecentSpeeds(valid, nowMs);
         var estimated = new Accumulator(SourceCount);
         var estimates = new List<(long StartMs, long EndMs, SpeedPair Speed)>();
+
+        void AddEstimate(SourceKind source, string agentId, SpeedPair reference, long overlap)
+        {
+            var output = reference.Output * overlap / 1000.0;
+            estimated.Add(source, agentId, output, reference.Total * overlap / 1000.0);
+            if (reference.CostRate is { } rate)
+            {
+                costs.Add(source, agentId, new LiveCost(rate * overlap / 1000.0, output));
+            }
+        }
 
         // Unfinalized usage: the time is real, the token count is not, so it is estimated (METRICS 6.3).
         foreach (var stored in unmeasured)
@@ -147,7 +180,7 @@ internal sealed class SpeedEngine
 
             estimates.Add((stored.Interval.StartMs, stored.Interval.EndMs, reference));
             var overlap = SpeedMath.Overlap(windowStart, nowMs, stored.Interval.StartMs, stored.Interval.EndMs);
-            estimated.Add(response.Source, response.AgentId, reference.Output * overlap / 1000.0, reference.Total * overlap / 1000.0);
+            AddEstimate(response.Source, response.AgentId, reference, overlap);
         }
 
         foreach (var agent in _agents.Values)
@@ -168,7 +201,7 @@ internal sealed class SpeedEngine
             var estimateStart = latestEnd.TryGetValue(agent.Id, out var ownEnd) ? Math.Max(start, ownEnd) : start;
             estimates.Add((estimateStart, nowMs, estimate));
             var overlap = SpeedMath.Overlap(windowStart, nowMs, estimateStart, nowMs);
-            estimated.Add(agent.Source, agent.Id, estimate.Output * overlap / 1000.0, estimate.Total * overlap / 1000.0);
+            AddEstimate(agent.Source, agent.Id, estimate, overlap);
         }
 
         var seconds = WindowMs / 1000.0;
@@ -185,15 +218,28 @@ internal sealed class SpeedEngine
             sourceEstimated[i] = new Rate(estimated.SourceOutput[i] / seconds, estimated.SourceTotal[i] / seconds);
         }
 
-        var agents = BuildAgents(nowMs, measured, estimated, recent, seconds, out var generating, out var tools);
+        var sourceLiveCost = new LiveCost[SourceCount];
+        var liveCost = LiveCost.Zero;
+        for (var i = 0; i < SourceCount; i++)
+        {
+            sourceLiveCost[i] = PerSecond(costs.Source[i], seconds);
+            liveCost += costs.Source[i];
+        }
+
+        liveCost = PerSecond(liveCost, seconds);
+        var agents = BuildAgents(nowMs, measured, estimated, costs, recent, seconds, out var generating, out var tools);
         var history = BuildHistory(nowMs, valid, estimates);
         var events = DrainCompletions(nowMs);
         var peak = UpdatePeak(nowMs, live, observeLive, events);
 
         var sourceToday = new TokenTotals[SourceCount];
+        var sourceTodayCost = new CostTally[SourceCount];
+        var sourceUnpriced = new IReadOnlyList<string>[SourceCount];
         for (var i = 0; i < SourceCount; i++)
         {
             sourceToday[i] = _today.ForSource((SourceKind)i);
+            sourceTodayCost[i] = _today.CostForSource((SourceKind)i);
+            sourceUnpriced[i] = sourceTodayCost[i].UnpricedRequests > 0 ? _today.UnpricedModels((SourceKind)i) : [];
         }
 
         return new EngineFrame(
@@ -213,7 +259,14 @@ internal sealed class SpeedEngine
             history,
             _last is null ? null : Summarize(_last),
             events,
-            _today.UnfinalizedCount);
+            _today.UnfinalizedCount)
+        {
+            LiveCost = liveCost,
+            SourceLiveCost = sourceLiveCost,
+            TodayCost = _today.Cost,
+            SourceTodayCost = sourceTodayCost,
+            SourceUnpricedModels = sourceUnpriced,
+        };
     }
 
     /// <summary>
@@ -222,6 +275,59 @@ internal sealed class SpeedEngine
     /// set; recomputed only where a member's buckets changed.
     /// </summary>
     public double MeasuredPeakOutput(SourceSet sources) => _today.MeasuredPeakOutput(sources);
+
+    private long? Price(ParsedResponse response) =>
+        _dayLabeler.Label(response.EndMs) is { } day ? _pricing!.Cost(response, day) : null;
+
+    /// <summary>
+    /// A new current price table prices the responses no table could price before (METRICS 9.7); a day's bound table,
+    /// and so every known cost, stays as it was.
+    /// </summary>
+    private void RepriceIfNeeded()
+    {
+        if (_pricing is null || _pricing.CurrentVersion == _pricedVersion)
+        {
+            return;
+        }
+
+        _pricedVersion = _pricing.CurrentVersion;
+        var pending = new Dictionary<string, ParsedResponse>(StringComparer.Ordinal);
+        foreach (var response in _today.UnpricedResponses)
+        {
+            pending[response.Key] = response;
+        }
+
+        foreach (var (key, stored) in _responses)
+        {
+            if (stored.Response.CostMicroUsd is null)
+            {
+                pending[key] = stored.Response;
+            }
+        }
+
+        foreach (var response in pending.Values)
+        {
+            if (Price(response) is not { } cost)
+            {
+                continue;
+            }
+
+            var priced = response with { CostMicroUsd = cost };
+            if (_responses.ContainsKey(priced.Key))
+            {
+                _responses[priced.Key] = new Stored(priced);
+            }
+
+            _today.Upsert(priced);
+            if (_last is not null && string.Equals(_last.Key, priced.Key, StringComparison.Ordinal))
+            {
+                _last = priced;
+            }
+        }
+    }
+
+    private static LiveCost PerSecond(LiveCost value, double seconds) =>
+        new(value.MicroUsdPerSecond / seconds, value.KnownOutput / seconds);
 
     private void RollDay(long todayStartMs)
     {
@@ -264,7 +370,7 @@ internal sealed class SpeedEngine
 
     private static Dictionary<string, SpeedPair> RecentSpeeds(List<Stored> validNewestFirst, long nowMs)
     {
-        var sums = new Dictionary<string, (double Output, double Total, double Seconds, int Count)>(StringComparer.Ordinal);
+        var sums = new Dictionary<string, ReferenceSums>(StringComparer.Ordinal);
         var cutoff = nowMs - RecentWindowMs;
         foreach (var stored in validNewestFirst)
         {
@@ -279,19 +385,15 @@ internal sealed class SpeedEngine
                 continue;
             }
 
-            sums[stored.Response.AgentId] = (
-                sum.Output + stored.Response.Tokens.Output,
-                sum.Total + stored.Response.Tokens.Total,
-                sum.Seconds + stored.Interval.DurationMs / 1000.0,
-                sum.Count + 1);
+            sums[stored.Response.AgentId] = sum.Add(stored);
         }
 
         var result = new Dictionary<string, SpeedPair>(sums.Count, StringComparer.Ordinal);
         foreach (var (agentId, sum) in sums)
         {
-            if (sum.Seconds > 0)
+            if (sum.Estimate() is { } estimate)
             {
-                result[agentId] = new SpeedPair(sum.Output / sum.Seconds, sum.Total / sum.Seconds);
+                result[agentId] = estimate;
             }
         }
 
@@ -315,8 +417,7 @@ internal sealed class SpeedEngine
 
         static SpeedPair? Sum(List<Stored> responses, long cutoffMs, Func<ParsedResponse, bool> match)
         {
-            double output = 0, total = 0, secondsSum = 0;
-            var count = 0;
+            var sum = default(ReferenceSums);
             foreach (var stored in responses)
             {
                 if (stored.Response.EndMs < cutoffMs)
@@ -329,16 +430,14 @@ internal sealed class SpeedEngine
                     continue;
                 }
 
-                output += stored.Response.Tokens.Output;
-                total += stored.Response.Tokens.Total;
-                secondsSum += stored.Interval.DurationMs / 1000.0;
-                if (++count >= FallbackCount)
+                sum = sum.Add(stored);
+                if (sum.Count >= FallbackCount)
                 {
                     break;
                 }
             }
 
-            return count > 0 && secondsSum > 0 ? new SpeedPair(output / secondsSum, total / secondsSum) : null;
+            return sum.Count > 0 ? sum.Estimate() : null;
         }
     }
 
@@ -346,6 +445,7 @@ internal sealed class SpeedEngine
         long nowMs,
         Accumulator measured,
         Accumulator estimated,
+        CostAccumulator costs,
         Dictionary<string, SpeedPair> recent,
         double seconds,
         out int generating,
@@ -357,7 +457,10 @@ internal sealed class SpeedEngine
             estimated.AgentTotals.TryGetValue(agent.Id, out var e);
             var live = new Rate((m.Output + e.Output) / seconds, (m.Total + e.Total) / seconds);
             double? recentSpeed = recent.TryGetValue(agent.Id, out var own) ? own.Output : null;
-            return new AgentFrame(agent, phase, live, recentSpeed);
+            return new AgentFrame(agent, phase, live, recentSpeed)
+            {
+                LiveCost = costs.Agent.TryGetValue(agent.Id, out var cost) ? PerSecond(cost, seconds) : LiveCost.Zero,
+            };
         });
 
         generating = list.Count(a => a.Phase == AgentPhase.Generating);
@@ -494,7 +597,44 @@ internal sealed class SpeedEngine
             DateTimeOffset.FromUnixTimeMilliseconds(response.EndMs));
     }
 
-    private readonly record struct SpeedPair(double Output, double Total);
+    /// <param name="CostRate">micro-USD per second of the same reference responses (METRICS 9.5); null when none has a known cost.</param>
+    private readonly record struct SpeedPair(double Output, double Total, double? CostRate = null);
+
+    /// <summary>Sums over a reference set (METRICS 6.2) and the cost of its priced members (9.5).</summary>
+    private readonly record struct ReferenceSums(
+        int Count, double Output, double Total, double Seconds, long CostMicroUsd, double CostSeconds, bool HasCost)
+    {
+        public ReferenceSums Add(Stored stored)
+        {
+            var seconds = stored.Interval.DurationMs / 1000.0;
+            var cost = stored.Response.CostMicroUsd;
+            return new ReferenceSums(
+                Count + 1,
+                Output + stored.Response.Tokens.Output,
+                Total + stored.Response.Tokens.Total,
+                Seconds + seconds,
+                CostMicroUsd + (cost ?? 0),
+                CostSeconds + (cost is null ? 0 : seconds),
+                HasCost || cost is not null);
+        }
+
+        public SpeedPair? Estimate() => Seconds > 0
+            ? new SpeedPair(Output / Seconds, Total / Seconds, HasCost && CostSeconds > 0 ? CostMicroUsd / CostSeconds : null)
+            : null;
+    }
+
+    private sealed class CostAccumulator(int sourceCount)
+    {
+        public LiveCost[] Source { get; } = new LiveCost[sourceCount];
+
+        public Dictionary<string, LiveCost> Agent { get; } = new(StringComparer.Ordinal);
+
+        public void Add(SourceKind source, string agentId, LiveCost cost)
+        {
+            Source[(int)source] += cost;
+            Agent[agentId] = Agent.GetValueOrDefault(agentId) + cost;
+        }
+    }
 
     private sealed class Stored
     {

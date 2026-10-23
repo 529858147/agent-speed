@@ -3,12 +3,16 @@ using System.Diagnostics;
 using AgentSpeed.App;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Cost;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Presentation.Updates;
 using AgentSpeed.Services;
+using AgentSpeed.Settings.TitleThemes;
 using AgentSpeed.Taskbar;
+using AgentSpeed.Titles;
 using AgentSpeed.Updates;
 
 namespace AgentSpeed.Settings;
@@ -68,19 +72,14 @@ internal sealed class TitleLadderRow(SpeedTitle title, int index) : ObservableOb
 
     public string AccessibleName { get => _accessibleName; private set => Set(ref _accessibleName, value); }
 
-    public void Refresh(Localizer loc, SpeedMetric metric, double redline, bool dark)
+    /// <param name="theme">Names the title (DESIGN 1, Where the theme applies): General here, the orb's own in the orb pane.</param>
+    public void Refresh(Localizer loc, SpeedMetric metric, double redline, bool dark, TitleTheme theme)
     {
-        Name = TitleLadderText.Name(Title, loc);
+        Name = TitleLadderText.Name(Title, theme, loc);
         Value = Presentation.Formatting.DisplayText.TitleThreshold(Title, redline);
         ValueShapes = TitleLadderText.Shapes(Title, metric);
         AccessibleName = $"{Name}, {Value} {loc["unit.tokS"]}";
-        var heat = SpeedTitles.HeatAt(Title, redline);
-        var rgba = dark ? Presentation.Colors.HeatPalette.Sample(heat) : Presentation.Colors.OrbTokens.Light.TierLabel(heat);
-        var color = Theme.MediaColors.ToColor(rgba);
-        if (_valueBrush is not System.Windows.Media.SolidColorBrush { } current || current.Color != color)
-        {
-            ValueBrush = Theme.MediaColors.Frozen(color);
-        }
+        ValueBrush = TitleHeatBrushes.For(SpeedTitles.HeatAt(Title, redline), dark);
     }
 }
 
@@ -99,23 +98,28 @@ internal sealed class SettingsViewModel : ObservableObject
     private TaskbarPresence _taskbarPresence = TaskbarPresence.Hidden;
     private bool _reduceMotion;
     private bool _darkTheme;
+    private OrbsPane.OrbsPaneViewModel? _orbs;
+    private TitleThemesService? _titleService;
 
     /// <param name="openHistory">Opens the Usage History window for all sources.</param>
     /// <param name="confirmClearHistory">Asks the user to confirm clearing the history; true to go ahead.</param>
     /// <param name="clearHistory">Deletes the stored daily history so it is recomputed from the logs.</param>
+    /// <param name="cost">The cost feature: Settings → Cost and the network master switch in About.</param>
     public SettingsViewModel(SettingsService settings, PreviewService preview, Localizer localizer, Func<string?, string?> pickFolder,
-        UpdateService updates, Action openUpdate, Action openHistory, Func<bool> confirmClearHistory, Action clearHistory)
+        UpdateService updates, Action openUpdate, Action openHistory, Func<bool> confirmClearHistory, Action clearHistory, CostService cost)
     {
         _settings = settings;
         _preview = preview;
         _loc = localizer;
         _pickFolder = pickFolder;
         _updates = updates;
+        Cost = new CostPaneViewModel(settings, cost);
 
         Pages.Add(new NavItem("general", "", "settings.general"));
         Pages.Add(new NavItem("taskbar", "", "settings.taskbar"));
         Pages.Add(new NavItem("orb", "", "settings.orb"));
         Pages.Add(new NavItem("effects", "", "settings.effects"));
+        Pages.Add(new NavItem("cost", "", "settings.cost"));
         Pages.Add(new NavItem("sources", "", "settings.sources"));
         Pages.Add(new NavItem("about", "", "settings.about"));
         _selected = Pages[0];
@@ -161,7 +165,7 @@ internal sealed class SettingsViewModel : ObservableObject
         OpenRepositoryCommand = new RelayCommand(() => OpenUrl(AppPaths.RepositoryUrl));
         OpenLicenseCommand = new RelayCommand(() => OpenUrl(AppPaths.LicenseUrl));
         OpenLogsCommand = new RelayCommand(OpenLogs);
-        CheckForUpdatesCommand = new RelayCommand(() => _ = _updates.CheckAsync(manual: true), () => !_updates.Status.IsBusy);
+        CheckForUpdatesCommand = new RelayCommand(() => _ = _updates.CheckAsync(manual: true), () => !_updates.Status.IsBusy && _updates.NetworkEnabled);
         OpenUpdateCommand = new RelayCommand(openUpdate);
         _updates.Changed += (_, _) => OnUpdatesChanged();
 
@@ -186,6 +190,9 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public ObservableCollection<SourceSettingsRow> Sources { get; } = new();
 
+    /// <summary>Settings → Cost (DESIGN 9) and the taskbar page's live value unit.</summary>
+    public CostPaneViewModel Cost { get; }
+
     /// <summary>The speed titles that scale with the redline, climbing (DESIGN section 5, General).</summary>
     public ObservableCollection<TitleLadderRow> TitleLadder { get; } = new();
 
@@ -204,6 +211,11 @@ internal sealed class SettingsViewModel : ObservableObject
                 if (Orbs is not null)
                 {
                     Orbs.DarkTheme = value;
+                }
+
+                if (TitleThemes is not null)
+                {
+                    TitleThemes.DarkTheme = value;
                 }
             }
         }
@@ -397,6 +409,11 @@ internal sealed class SettingsViewModel : ObservableObject
             {
                 Orbs.ReduceMotion = value;
             }
+
+            if (TitleThemes is not null)
+            {
+                TitleThemes.ReduceMotion = value;
+            }
         }
     }
 
@@ -495,6 +512,20 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string UpdateButtonText => UpdateRelease is { } release ? UpdateText.MenuItem(release, _loc) : string.Empty;
 
+    /// <summary>The network master switch (NETWORK 1): off, no update, price or rate request is made.</summary>
+    public bool NetworkEnabled
+    {
+        get => S.NetworkEnabled;
+        set => Apply(s => s with { NetworkEnabled = value });
+    }
+
+    public bool NetworkOff => !S.NetworkEnabled;
+
+    /// <summary><c>settings.network.offHint</c> on the controls the master switch disables; null while it is on.</summary>
+    public string? NetworkOffTooltip => S.NetworkEnabled ? null : _loc["settings.network.offHint"];
+
+    public string UpdateAutoHint => S.NetworkEnabled ? _loc["update.auto.hint"] : _loc["settings.network.offHint"];
+
     public bool AutoCheckUpdates
     {
         get => S.AutoCheckUpdates;
@@ -523,6 +554,8 @@ internal sealed class SettingsViewModel : ObservableObject
 
         RefreshTitleLadder();
         Orbs?.Relocalize(localizer);
+        TitleThemes?.Relocalize(localizer);
+        Cost.Relocalize();
         OnPropertyChanged(string.Empty);
     }
 
@@ -530,6 +563,7 @@ internal sealed class SettingsViewModel : ObservableObject
     {
         _snapshot = snapshot;
         Orbs?.UpdateLive();
+        Cost.UpdateLive(snapshot);
         if (_taskbarPresence != presence)
         {
             _taskbarPresence = presence;
@@ -623,9 +657,10 @@ internal sealed class SettingsViewModel : ObservableObject
 
     private void RefreshTitleLadder()
     {
+        var theme = _titleService?.General ?? TitleTheme.Vehicles;
         foreach (var row in TitleLadder)
         {
-            row.Refresh(_loc, S.Metric, S.Redline, _darkTheme);
+            row.Refresh(_loc, S.Metric, S.Redline, _darkTheme, theme);
         }
     }
 
@@ -678,7 +713,73 @@ internal sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>The floating orb pane (DESIGN 5); set by the app once the orb manager exists.</summary>
-    public OrbsPane.OrbsPaneViewModel? Orbs { get; set; }
+    public OrbsPane.OrbsPaneViewModel? Orbs
+    {
+        get => _orbs;
+        set
+        {
+            if (ReferenceEquals(_orbs, value))
+            {
+                return;
+            }
+
+            if (_orbs is not null)
+            {
+                _orbs.PropertyChanged -= OnOrbsChanged;
+            }
+
+            _orbs = value;
+            if (_orbs is not null)
+            {
+                _orbs.PropertyChanged += OnOrbsChanged;
+            }
+
+            TitleThemes?.Editor.OnLookChanged();
+        }
+    }
+
+    /// <summary>The title themes (DESIGN 1); set by the app. Creates the General page's Title themes group.</summary>
+    public TitleThemesService? TitleService
+    {
+        get => _titleService;
+        set
+        {
+            if (_titleService is not null || value is null)
+            {
+                return;
+            }
+
+            _titleService = value;
+            value.Changed += (_, _) => RefreshTitleLadder();
+            TitleThemes = new TitleThemesViewModel(_settings, value, _loc)
+            {
+                DarkTheme = _darkTheme,
+                ReduceMotion = _reduceMotion,
+                SelectedOrbStyle = SelectedOrbStyle,
+            };
+            TitleThemes.Editor.OnLookChanged();
+            RefreshTitleLadder();
+            OnPropertyChanged(nameof(TitleThemes));
+            OnPropertyChanged(nameof(HasTitleThemes));
+        }
+    }
+
+    /// <summary>Settings → General, Title themes; null until <see cref="TitleService"/> is set.</summary>
+    public TitleThemesViewModel? TitleThemes { get; private set; }
+
+    public bool HasTitleThemes => TitleThemes is not null;
+
+    /// <summary>The style of the orb selected in the floating orb pane (default the first orb).</summary>
+    private Presentation.Orb.OrbStyle SelectedOrbStyle() =>
+        _orbs?.SelectedRow?.Definition?.Style ?? S.Orbs.Orbs.FirstOrDefault()?.Style ?? Presentation.Orb.OrbStyle.Led;
+
+    private void OnOrbsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(OrbsPane.OrbsPaneViewModel.SelectedRow) or null or "")
+        {
+            TitleThemes?.Editor.OnLookChanged();
+        }
+    }
 
     /// <summary>Selects an orb in the floating orb pane (Settings → 懸浮窗).</summary>
     public void SelectOrb(string orbId) => Orbs?.Select(orbId);

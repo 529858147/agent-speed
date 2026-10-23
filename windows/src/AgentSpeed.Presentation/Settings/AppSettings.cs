@@ -5,6 +5,7 @@ using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Hero;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings.Orbs;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Presentation.Updates;
 
 namespace AgentSpeed.Presentation.Settings;
@@ -98,6 +99,12 @@ public sealed record AppSettings
     public bool BarShowUnit { get; init; } = true;
 
     /// <summary>
+    /// The taskbar's second value (DESIGN 3): with <see cref="CostSettings.LiveUnit"/> tokens, the live money rate after
+    /// the value (the live value choice <c>settings.liveUnit.both</c>). Off by default; hidden in glyph-only mode.
+    /// </summary>
+    public bool BarSecondary { get; init; }
+
+    /// <summary>
     /// The single orb's visibility before multiple orbs (<c>orb.show</c>). Read and written back unchanged so a downgrade
     /// restores it; the app uses <see cref="ShowOrbs"/>. The same holds for the other <c>Orb*</c> values below.
     /// </summary>
@@ -176,6 +183,9 @@ public sealed record AppSettings
     /// </summary>
     public string? HeroLastTitle { get; init; }
 
+    /// <summary>The General title theme and the custom title sets (settings value <c>titleThemes</c>, DESIGN 1).</summary>
+    public TitleThemesDocument TitleThemes { get; init; } = TitleThemesDocument.Default;
+
     /// <summary>Last frame of the Usage History window; null opens it at its default size, centered.</summary>
     public WindowFrame? HistoryWindow { get; init; }
 
@@ -196,6 +206,12 @@ public sealed record AppSettings
 
     /// <summary>Release tag a notification was already shown for (one notification per version).</summary>
     public string? NotifiedVersion { get; init; }
+
+    /// <summary>NETWORK 1 master switch: off, nothing is ever requested (updates, prices, rates).</summary>
+    public bool NetworkEnabled { get; init; } = true;
+
+    /// <summary>Currency, live unit, subscriptions and the price-table sync (DESIGN 9).</summary>
+    public CostSettings Cost { get; init; } = CostSettings.Default;
 
     public bool IsSourceEnabled(SourceKind kind) => kind switch
     {
@@ -273,6 +289,7 @@ public sealed record AppSettings
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),
+        TitleThemes = (TitleThemes ?? TitleThemesDocument.Default).Validated(),
         OrbMonitor = string.IsNullOrWhiteSpace(OrbMonitor) || OrbMonitor.Length > 256 ? null : OrbMonitor,
         OrbAnchors = CleanAnchors(OrbAnchors),
         Orbs = (Orbs ?? OrbsDocument.ProcessDefault).Validated(),
@@ -280,6 +297,7 @@ public sealed record AppSettings
         LastUpdateCheck = CleanTimestamp(LastUpdateCheck),
         SkippedVersion = CleanTag(SkippedVersion),
         NotifiedVersion = CleanTag(NotifiedVersion),
+        Cost = (Cost ?? CostSettings.Default).Validated(),
     };
 
     internal static string? CleanTag(string? tag) =>

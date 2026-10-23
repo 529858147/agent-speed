@@ -23,7 +23,8 @@ internal readonly record struct OpenCodeData(
     string? Model,
     bool FinishedWithToolCalls,
     bool HasTokens,
-    TokenCounts Tokens);
+    TokenCounts Tokens,
+    string? Provider = null);
 
 /// <param name="Data">Null when <c>data</c> is not a JSON object (a malformed row).</param>
 internal sealed record OpenCodeRow(
@@ -65,6 +66,7 @@ internal static class OpenCodeDataReader
 
             long? created = null, streamed = null, completed = null;
             string? model = null;
+            string? provider = null;
             var toolCalls = false;
             var hasTokens = false;
             var tokens = default(TokenCounts);
@@ -79,7 +81,7 @@ internal static class OpenCodeDataReader
                 else if (reader.ValueTextEquals("model"u8))
                 {
                     reader.Read();
-                    model = ReadModel(ref reader);
+                    (model, provider) = ReadModel(ref reader);
                 }
                 else if (reader.ValueTextEquals("finish"u8))
                 {
@@ -109,7 +111,7 @@ internal static class OpenCodeDataReader
                 return null;
             }
 
-            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens);
+            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens, provider);
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException)
         {
@@ -166,22 +168,29 @@ internal static class OpenCodeDataReader
         return reader.TryGetDouble(out var real) && double.IsFinite(real) && Math.Abs(real) < 9e15 ? (long)real : null;
     }
 
-    private static string? ReadModel(ref Utf8JsonReader reader)
+    // model.id and model.providerID (METRICS 3.2).
+    private static (string? Id, string? Provider) ReadModel(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return null;
+            return (null, null);
         }
 
         string? id = null;
+        string? provider = null;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var isId = reader.ValueTextEquals("id"u8);
+            var isProvider = !isId && reader.ValueTextEquals("providerID"u8);
             reader.Read();
             if (isId)
             {
                 id = JsonScan.ReadString(ref reader);
+            }
+            else if (isProvider)
+            {
+                provider = JsonScan.ReadString(ref reader);
             }
             else
             {
@@ -189,7 +198,7 @@ internal static class OpenCodeDataReader
             }
         }
 
-        return id;
+        return (id, provider);
     }
 
     // input = input + cache.read + cache.write; output = output + reasoning (OpenCode reports reasoning separately).

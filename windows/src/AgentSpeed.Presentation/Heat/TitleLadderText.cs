@@ -1,6 +1,7 @@
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Titles;
 
 namespace AgentSpeed.Presentation.Heat;
 
@@ -17,7 +18,23 @@ public static class TitleLadderText
     public static string Name(SpeedTitle title, Localizer localizer)
     {
         ArgumentNullException.ThrowIfNull(localizer);
-        var name = DisplayText.TitleName(title, localizer);
+        return TitleCase(DisplayText.TitleName(title, localizer), localizer);
+    }
+
+    /// <summary>
+    /// The title of a title theme as a list entry: built-in Latin titles in title case (<c>Gold Core</c>), custom text
+    /// exactly as typed.
+    /// </summary>
+    public static string Name(SpeedTitle title, TitleTheme theme, Localizer localizer)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(localizer);
+        var text = theme.Text(title, localizer);
+        return theme.Custom?.Field((int)title) is { Length: > 0 } ? text : TitleCase(text, localizer);
+    }
+
+    private static string TitleCase(string name, Localizer localizer)
+    {
         if (!localizer.UsesLatinScript)
         {
             return name;

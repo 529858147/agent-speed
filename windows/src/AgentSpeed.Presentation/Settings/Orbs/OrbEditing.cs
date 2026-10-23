@@ -213,6 +213,45 @@ public static class OrbEditing
     /// <summary>The orb's name plate: null follows the global setting, true / false overrides it.</summary>
     public static OrbsDocument SetShowName(OrbsDocument document, string id, bool? show) => Update(document, id, o => o with { ShowName = show });
 
+    /// <summary>tok/s or the money unit (DESIGN 9).</summary>
+    public static OrbsDocument SetUnit(OrbsDocument document, string id, OrbUnit unit) =>
+        Update(document, id, o => o with { Unit = Enum.IsDefined(unit) ? unit : OrbUnit.Tokens });
+
+    /// <summary>The orb's title theme: null follows the General theme, else a preset or custom set id.</summary>
+    public static OrbsDocument SetTitleTheme(OrbsDocument document, string id, string? themeId) =>
+        Update(document, id, o => o with { TitleTheme = OrbDefinition.CleanId(themeId) });
+
+    /// <summary>Every orb naming <paramref name="themeId"/> takes <paramref name="replacement"/> (a deleted custom set's base).</summary>
+    public static OrbsDocument ReplaceTitleTheme(OrbsDocument document, string themeId, string? replacement)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (!document.Orbs.Any(o => o.TitleTheme == themeId))
+        {
+            return document;
+        }
+
+        return document with
+        {
+            Orbs = [.. document.Orbs.Select(o => o.TitleTheme == themeId ? o with { TitleTheme = OrbDefinition.CleanId(replacement) } : o)],
+        };
+    }
+
+    /// <summary>Undo of <see cref="ReplaceTitleTheme"/>: every orb that still exists takes its title theme from <paramref name="previous"/>.</summary>
+    public static OrbsDocument RestoreTitleThemes(OrbsDocument document, OrbsDocument previous)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(previous);
+        if (!document.Orbs.Any(o => previous.Find(o.Id) is { } old && old.TitleTheme != o.TitleTheme))
+        {
+            return document;
+        }
+
+        return document with
+        {
+            Orbs = [.. document.Orbs.Select(o => previous.Find(o.Id) is { } old ? o with { TitleTheme = old.TitleTheme } : o)],
+        };
+    }
+
     /// <summary>Null follows the General redline of that metric.</summary>
     public static OrbsDocument SetRedline(OrbsDocument document, string id, SpeedMetric metric, double? redline) =>
         Update(document, id, o => o.WithRedline(metric, redline));
@@ -263,6 +302,8 @@ public static class OrbEditing
         RedlineOutput = template.RedlineOutput,
         RedlineTotal = template.RedlineTotal,
         ShowName = template.ShowName,
+        TitleTheme = template.TitleTheme,
+        Unit = template.Unit,
         Visible = true,
     };
 

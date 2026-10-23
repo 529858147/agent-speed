@@ -22,6 +22,9 @@ internal sealed class StoredFile
     public int Version { get; init; }
 
     public required Dictionary<DayKey, DayAggregate> Days { get; init; }
+
+    /// <summary>Some response has no known price (METRICS 9.7 re-analysis).</summary>
+    public bool HasUnpriced => Days.Values.Any(d => d.HasUnpriced);
 }
 
 /// <summary>
@@ -31,8 +34,17 @@ internal sealed class StoredFile
 /// </summary>
 internal sealed class HistoryStore : IDisposable
 {
-    /// <summary>2 adds measured output and time per model (METRICS 8).</summary>
-    public const int SchemaVersion = 2;
+    /// <summary>
+    /// 2 adds measured output and time per model (METRICS 8). 3 adds cost per contribution and model, the day bindings
+    /// of the price tables and their copies (METRICS 9.7).
+    /// </summary>
+    public const int SchemaVersion = 3;
+
+    /// <summary>Day → price table version, and a copy of every version a binding references (METRICS 9.7).</summary>
+    private const string PriceTablesSchema = """
+        CREATE TABLE IF NOT EXISTS price_bindings (day TEXT PRIMARY KEY, version INTEGER NOT NULL) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS price_tables (version INTEGER PRIMARY KEY, body BLOB NOT NULL);
+        """;
 
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -58,6 +70,8 @@ internal sealed class HistoryStore : IDisposable
             measured_ms INTEGER NOT NULL,
             unfinalized INTEGER NOT NULL,
             agents INTEGER NOT NULL,
+            cost_micro_usd INTEGER,
+            unpriced_requests INTEGER,
             PRIMARY KEY (file_id, day, source)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS contribution_models (
             file_id INTEGER NOT NULL,
@@ -68,6 +82,8 @@ internal sealed class HistoryStore : IDisposable
             output INTEGER NOT NULL,
             measured_output INTEGER NOT NULL DEFAULT 0,
             measured_ms INTEGER NOT NULL DEFAULT 0,
+            cost_micro_usd INTEGER,
+            unpriced_requests INTEGER,
             PRIMARY KEY (file_id, day, source, model)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS day_peaks (day TEXT PRIMARY KEY, peak REAL NOT NULL) WITHOUT ROWID;
         """;
@@ -158,7 +174,7 @@ internal sealed class HistoryStore : IDisposable
 
         using (var days = _connection.Prepare(
             "SELECT file_id, day, source, requests, input, cached_input, cache_write_input, output, reasoning, " +
-            "measured_output, measured_ms, unfinalized, agents FROM contributions"))
+            "measured_output, measured_ms, unfinalized, agents, cost_micro_usd, unpriced_requests FROM contributions"))
         {
             while (days.Step())
             {
@@ -179,12 +195,14 @@ internal sealed class HistoryStore : IDisposable
                     MeasuredMs = days.GetInt64(10),
                     Unfinalized = days.GetInt64(11),
                     Agents = (int)days.GetInt64(12),
+                    Cost = ReadCost(days, 13),
                 };
             }
         }
 
         using (var models = _connection.Prepare(
-            "SELECT file_id, day, source, model, requests, output, measured_output, measured_ms FROM contribution_models"))
+            "SELECT file_id, day, source, model, requests, output, measured_output, measured_ms, cost_micro_usd, " +
+            "unpriced_requests FROM contribution_models"))
         {
             while (models.Step())
             {
@@ -192,8 +210,8 @@ internal sealed class HistoryStore : IDisposable
                     && Key(models.GetString(1), models.GetString(2)) is { } key
                     && entry.Days.TryGetValue(key, out var day))
                 {
-                    day.Models[models.GetString(3) ?? string.Empty] =
-                        new ModelTotals(models.GetInt64(4), models.GetInt64(5), models.GetInt64(6), models.GetInt64(7));
+                    day.Models[models.GetString(3) ?? string.Empty] = new ModelTotals(
+                        models.GetInt64(4), models.GetInt64(5), models.GetInt64(6), models.GetInt64(7), ReadCost(models, 8));
                 }
             }
         }
@@ -247,11 +265,11 @@ internal sealed class HistoryStore : IDisposable
         using var deleteModels = _connection.Prepare("DELETE FROM contribution_models WHERE file_id = ?1");
         using var insertDay = _connection.Prepare(
             "INSERT INTO contributions (file_id, day, source, requests, input, cached_input, cache_write_input, output, " +
-            "reasoning, measured_output, measured_ms, unfinalized, agents) " +
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)");
+            "reasoning, measured_output, measured_ms, unfinalized, agents, cost_micro_usd, unpriced_requests) " +
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)");
         using var insertModel = _connection.Prepare(
-            "INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms) " +
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)");
+            "INSERT INTO contribution_models (file_id, day, source, model, requests, output, measured_output, measured_ms, " +
+            "cost_micro_usd, unpriced_requests) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)");
         _connection.Transaction(() =>
         {
             foreach (var (entry, keys) in batch)
@@ -279,15 +297,130 @@ internal sealed class HistoryStore : IDisposable
                     insertDay.Bind(1, entry.Id).Bind(2, key.Day).Bind(3, source)
                         .Bind(4, day.Requests).Bind(5, day.Input).Bind(6, day.CachedInput).Bind(7, day.CacheWriteInput)
                         .Bind(8, day.Output).Bind(9, day.Reasoning).Bind(10, day.MeasuredOutput).Bind(11, day.MeasuredMs)
-                        .Bind(12, day.Unfinalized).Bind(13, day.Agents).Run();
+                        .Bind(12, day.Unfinalized).Bind(13, day.Agents);
+                    BindCost(insertDay, 14, day.Cost).Run();
                     foreach (var (model, usage) in day.Models)
                     {
                         insertModel.Bind(1, entry.Id).Bind(2, key.Day).Bind(3, source).Bind(4, model)
-                            .Bind(5, usage.Requests).Bind(6, usage.Output).Bind(7, usage.MeasuredOutput).Bind(8, usage.MeasuredMs).Run();
+                            .Bind(5, usage.Requests).Bind(6, usage.Output).Bind(7, usage.MeasuredOutput).Bind(8, usage.MeasuredMs);
+                        BindCost(insertModel, 9, usage.Cost).Run();
                     }
                 }
             }
         });
+    }
+
+    public Dictionary<string, int> PriceBindings()
+    {
+        using var statement = _connection.Prepare("SELECT day, version FROM price_bindings");
+        var bindings = new Dictionary<string, int>(StringComparer.Ordinal);
+        while (statement.Step())
+        {
+            if (statement.GetString(0) is { } day)
+            {
+                bindings[day] = (int)statement.GetInt64(1);
+            }
+        }
+
+        return bindings;
+    }
+
+    /// <summary>The stored table copies, by version.</summary>
+    public Dictionary<int, byte[]> PriceTables()
+    {
+        using var statement = _connection.Prepare("SELECT version, body FROM price_tables");
+        var tables = new Dictionary<int, byte[]>();
+        while (statement.Step())
+        {
+            tables[(int)statement.GetInt64(0)] = statement.GetBlob(1).ToArray();
+        }
+
+        return tables;
+    }
+
+    /// <summary>
+    /// Saves bindings, a copy of every table they reference that is not stored yet (<paramref name="tables"/> supplies
+    /// them), and deletes the copies no binding references any more.
+    /// </summary>
+    public void SavePriceBindings(IReadOnlyDictionary<string, int> bindings, Func<int, byte[]?> tables)
+    {
+        if (bindings.Count == 0)
+        {
+            return;
+        }
+
+        using var upsert = _connection.Prepare(
+            "INSERT INTO price_bindings (day, version) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET version = excluded.version");
+        using var stored = _connection.Prepare("SELECT version FROM price_tables");
+        using var insert = _connection.Prepare("INSERT INTO price_tables (version, body) VALUES (?1, ?2)");
+        _connection.Transaction(() =>
+        {
+            foreach (var (day, version) in bindings.OrderBy(b => b.Key, StringComparer.Ordinal))
+            {
+                upsert.Bind(1, day).Bind(2, version).Run();
+            }
+
+            var have = new HashSet<int>();
+            while (stored.Step())
+            {
+                have.Add((int)stored.GetInt64(0));
+            }
+
+            stored.Reset();
+            foreach (var version in bindings.Values.Distinct().Where(v => !have.Contains(v)).Order())
+            {
+                if (tables(version) is { } body)
+                {
+                    insert.Bind(1, version).BindBlob(2, body).Run();
+                }
+            }
+
+            _connection.Execute("DELETE FROM price_tables WHERE version NOT IN (SELECT DISTINCT version FROM price_bindings)");
+        });
+    }
+
+    /// <summary>
+    /// Bindings and table copies of the store at <paramref name="path"/>, read without changing it; empty when the store
+    /// does not exist yet or predates costs. The app reads them before the live engine prices anything (METRICS 9.7).
+    /// </summary>
+    public static (Dictionary<string, int> Bindings, Dictionary<int, byte[]> Tables) StoredPricing(string path)
+    {
+        var bindings = new Dictionary<string, int>(StringComparer.Ordinal);
+        var tables = new Dictionary<int, byte[]>();
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return (bindings, tables);
+            }
+
+            using var connection = SqliteConnection.Open(path, SqliteOpenMode.ReadOnly);
+            using (var statement = connection.Prepare("SELECT day, version FROM price_bindings"))
+            {
+                while (statement.Step())
+                {
+                    if (statement.GetString(0) is { } day)
+                    {
+                        bindings[day] = (int)statement.GetInt64(1);
+                    }
+                }
+            }
+
+            using (var statement = connection.Prepare("SELECT version, body FROM price_tables"))
+            {
+                while (statement.Step())
+                {
+                    tables[(int)statement.GetInt64(0)] = statement.GetBlob(1).ToArray();
+                }
+            }
+        }
+        catch (Exception e) when (e is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            bindings.Clear();
+            tables.Clear();
+        }
+
+        return (bindings, tables);
     }
 
     public Dictionary<string, double> Peaks()
@@ -341,14 +474,14 @@ internal sealed class HistoryStore : IDisposable
                 connection.Transaction(() =>
                 {
                     connection.Execute(Schema);
-                    if (version == 1)
-                    {
-                        // Stored models gain measured totals; AnalysisVersion 2 analyses every file again to fill them.
-                        connection.Execute(
-                            "ALTER TABLE contribution_models ADD COLUMN measured_output INTEGER NOT NULL DEFAULT 0; " +
-                            "ALTER TABLE contribution_models ADD COLUMN measured_ms INTEGER NOT NULL DEFAULT 0;");
-                    }
+                    // Stored models gain measured totals (AnalysisVersion 2) and costs (3); each bump analyses every file
+                    // again to fill them, and contributions of files that are gone keep NULL costs (METRICS 8).
+                    AddMissingColumns(connection, "contribution_models",
+                        ("measured_output", "INTEGER NOT NULL DEFAULT 0"), ("measured_ms", "INTEGER NOT NULL DEFAULT 0"),
+                        ("cost_micro_usd", "INTEGER"), ("unpriced_requests", "INTEGER"));
+                    AddMissingColumns(connection, "contributions", ("cost_micro_usd", "INTEGER"), ("unpriced_requests", "INTEGER"));
 
+                    connection.Execute(PriceTablesSchema);
                     connection.Execute($"PRAGMA user_version = {SchemaVersion}");
                 });
             }
@@ -361,6 +494,39 @@ internal sealed class HistoryStore : IDisposable
             throw;
         }
     }
+
+    private static void AddMissingColumns(SqliteConnection connection, string table, params (string Name, string Type)[] columns)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var info = connection.Prepare($"PRAGMA table_info({table})"))
+        {
+            while (info.Step())
+            {
+                if (info.GetString(1) is { } name)
+                {
+                    existing.Add(name);
+                }
+            }
+        }
+
+        foreach (var (name, type) in columns)
+        {
+            if (!existing.Contains(name))
+            {
+                connection.Execute($"ALTER TABLE {table} ADD COLUMN {name} {type}");
+            }
+        }
+    }
+
+    /// <summary>A cost pair stored at <paramref name="column"/> and the next column; null when stored before costs existed.</summary>
+    private static CostTally? ReadCost(SqliteStatement row, int column) =>
+        row.GetNullableInt64(column) is { } micro && row.GetNullableInt64(column + 1) is { } unpriced
+            ? new CostTally(micro, unpriced)
+            : null;
+
+    private static SqliteStatement BindCost(SqliteStatement statement, int column, CostTally? cost) => cost is { } value
+        ? statement.Bind(column, value.CostMicroUsd).Bind(column + 1, value.UnpricedRequests)
+        : statement.Bind(column, (string?)null).Bind(column + 1, (string?)null);
 
     private static DayKey? Key(string? day, string? source) =>
         day is not null && SourceNames.Parse(source) is { } kind ? new DayKey(day, kind) : null;

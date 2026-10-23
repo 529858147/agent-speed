@@ -12,7 +12,7 @@ namespace AgentSpeed.Orb.Names;
 
 /// <summary>An orb for the plate layout: its definition, window and (target) disc center in physical pixels.</summary>
 /// <param name="Held">A new orb still flying to its slot: its plate is placed but appears only after landing.</param>
-internal readonly record struct PlateOrb(OrbDefinition Definition, OrbWindow Window, PointD Center, bool Held);
+internal readonly record struct PlateOrb(OrbDefinition Definition, IOrbWindow Window, PointD Center, bool Held);
 
 /// <summary>
 /// The name plates of the floating orbs (DESIGN 2b, Name plate): which orbs show one, where each sits without
@@ -121,7 +121,7 @@ internal sealed class NamePlates
     }
 
     /// <summary>A new orb landed: its plate fades in 0.28 s later and stays (in place of the 2 s chip).</summary>
-    public void Land(OrbWindow window, OrbDefinition orb)
+    public void Land(IOrbWindow window, OrbDefinition orb)
     {
         ArgumentNullException.ThrowIfNull(orb);
         if (_placements.TryGetValue(orb.Id, out var placement) && Plate(window, orb.Id) is { } plate)
@@ -192,7 +192,7 @@ internal sealed class NamePlates
     /// The undo chip in the plate's metrics and material, stacked 4 pt beyond the orb's name plate (above it when the
     /// plate is above). False when the orb shows no plate (the caller shows the plain undo chip).
     /// </summary>
-    public bool ShowUndo(OrbWindow window, OrbDefinition orb, string message, Action undo)
+    public bool ShowUndo(IOrbWindow window, OrbDefinition orb, string message, Action undo)
     {
         ArgumentNullException.ThrowIfNull(orb);
         if (!_plates.TryGetValue(orb.Id, out var plate) || !plate.IsShowing || plate.RestRect.IsEmpty)
@@ -282,7 +282,7 @@ internal sealed class NamePlates
         return _type;
     }
 
-    private OrbPlate? Plate(OrbWindow window, string id)
+    private OrbPlate? Plate(IOrbWindow window, string id)
     {
         if (_plates.TryGetValue(id, out var plate))
         {

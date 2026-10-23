@@ -55,6 +55,15 @@ public sealed record OrbDefinition
     /// <summary>Null follows the global <see cref="AppSettings.OrbNames"/>; true / false shows or hides this orb's name plate.</summary>
     public bool? ShowName { get; init; }
 
+    /// <summary>
+    /// Null follows the General title theme; otherwise a preset id or a custom set id naming this orb's titles (DESIGN 2b
+    /// <c>titleTheme</c>). An unknown id is kept (a newer version's preset) and reads as null.
+    /// </summary>
+    public string? TitleTheme { get; init; }
+
+    /// <summary>tok/s or the money unit (DESIGN 2b <c>unit</c>, 9); Add, Duplicate and Split copy it, Merge keeps the target's.</summary>
+    public OrbUnit Unit { get; init; } = OrbUnit.Tokens;
+
     /// <summary>The engine's source set: null tracks every enabled source.</summary>
     public SourceSet? TrackedSources => Sources.Set;
 
@@ -96,6 +105,8 @@ public sealed record OrbDefinition
             Opacity = CleanOpacity(Opacity),
             RedlineOutput = CleanRedline(SpeedMetric.Output, RedlineOutput),
             RedlineTotal = CleanRedline(SpeedMetric.Total, RedlineTotal),
+            TitleTheme = CleanId(TitleTheme),
+            Unit = Enum.IsDefined(Unit) ? Unit : OrbUnit.Tokens,
         };
     }
 

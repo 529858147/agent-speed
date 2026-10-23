@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AgentSpeed.App;
+using AgentSpeed.Orb.Hero.Badge;
 
 namespace AgentSpeed.Services;
 
@@ -14,7 +15,8 @@ namespace AgentSpeed.Services;
 /// their screen positions over a backdrop, or a menu) into PNG files when a <c>capture.request</c> file appears in that
 /// folder. Rendering in-process means no screen capture and nothing of other windows is ever recorded. Request lines:
 /// <c>orbs name [#backdrop | @C:\path\to\image.png]</c> (an image covers the captured area, cropped to fill),
-/// <c>menu-tray name</c>, <c>menu-orb name</c>.
+/// <c>menu-tray name</c>, <c>menu-orb name</c>, <c>badge-sheet name [dark|light]</c> (the hero title badge of every theme
+/// but Vehicles at idle and levels 1–13) and <c>badge-strip name [dark|light]</c> (its transitions at fixed τ).
 /// </summary>
 internal sealed partial class DevCapture
 {
@@ -28,6 +30,9 @@ internal sealed partial class DevCapture
 
     /// <summary>Runs a named orb operation (<c>add</c>, <c>split</c>, <c>merge</c>, <c>undo</c>, <c>corner</c>) for flow checks.</summary>
     public Action<string>? Operation { get; init; }
+
+    /// <summary>The title themes and language for <c>badge-sheet</c> and <c>badge-strip</c>.</summary>
+    public Func<BadgeCaptureSource>? Badges { get; init; }
 
     public DevCapture(Dispatcher dispatcher, string folder, Func<IReadOnlyList<(FrameworkElement Visual, Rect ScreenRect, double Opacity)>> orbs,
         Func<string, ContextMenu?> menu, Func<string, FrameworkElement?> element)
@@ -88,6 +93,10 @@ internal sealed partial class DevCapture
                 case "settings":
                     CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020");
                     break;
+                case "badge-sheet" or "badge-strip" when Badges?.Invoke() is { } source:
+                    var dark = !(parts.Length > 2 && string.Equals(parts[2], "light", StringComparison.OrdinalIgnoreCase));
+                    Save(parts[0] == "badge-sheet" ? BadgeCapture.Sheet(source, dark) : BadgeCapture.Strip(source, dark), parts[1]);
+                    break;
             }
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or NotSupportedException
@@ -124,6 +133,18 @@ internal sealed partial class DevCapture
 
             foreach (var (element, rect, opacity) in orbs)
             {
+                if (element is Orb.OrbSnapshotElement orb)
+                {
+                    if (orb.Snapshot() is { } snapshot)
+                    {
+                        dc.PushOpacity(orb.IncludesOpacity ? 1 : Math.Clamp(opacity, 0, 1));
+                        dc.DrawImage(snapshot, new Rect(rect.Left - left, rect.Top - top, rect.Width, rect.Height));
+                        dc.Pop();
+                    }
+
+                    continue;
+                }
+
                 var scale = rect.Width / Math.Max(1, element.ActualWidth);
                 var bitmap = new RenderTargetBitmap((int)Math.Ceiling(rect.Width), (int)Math.Ceiling(rect.Height), 96 * scale, 96 * scale,
                     PixelFormats.Pbgra32);

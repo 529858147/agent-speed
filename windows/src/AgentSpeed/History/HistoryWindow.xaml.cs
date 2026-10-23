@@ -17,16 +17,19 @@ using AgentSpeed.Theme;
 namespace AgentSpeed.History;
 
 /// <summary>
-/// The Usage History window (DESIGN 4b): summary cards, the daily chart (or one day's breakdown) and the daily table of
-/// one range.
+/// The Usage History window (DESIGN 4b, DESIGN 9): summary cards, the daily chart of output or cost (or one day's
+/// breakdown) and the daily table of one range.
 /// </summary>
 internal sealed partial class HistoryWindow : Window
 {
-    public static readonly DependencyProperty CardColumnsProperty = DependencyProperty.Register(
-        nameof(CardColumns), typeof(int), typeof(HistoryWindow), new PropertyMetadata(4));
+    public static readonly DependencyProperty CardRowsProperty = DependencyProperty.Register(
+        nameof(CardRows), typeof(IReadOnlyList<int>), typeof(HistoryWindow), new PropertyMetadata(null));
 
     private const string SortDescendingGlyph = "";
     private const string SortAscendingGlyph = "";
+
+    /// <summary>The Fluent CheckBox's box (20 DIP) and the space before its content (8 DIP).</summary>
+    private const double CheckBoxChrome = 28;
 
     private readonly HistoryViewModel _model;
     private readonly SmoothScroller _scroller;
@@ -35,7 +38,10 @@ internal sealed partial class HistoryWindow : Window
     private bool _syncingRange;
     private bool _syncingDates;
     private bool _entered;
+    private bool _syncingMetric;
     private ToolbarDensity _density = ToolbarDensity.Full;
+    private bool? _subscriptionsOffered;
+    private double _subscriptionsWidth;
     private double _pickerWidth = HistoryToolbar.PickerMinWidth;
     private int? _hoverIndex;
     private double _dividerTarget;
@@ -66,16 +72,20 @@ internal sealed partial class HistoryWindow : Window
         Table.SpansChanged += (_, _) =>
         {
             TableHeader.Spans = Table.Spans;
+            var padding = new Thickness(Table.Padding, 0, Table.Padding, 0);
             foreach (var (column, header) in _headers)
             {
                 header.Button.Visibility = Table.IsHidden(column) ? Visibility.Collapsed : Visibility.Visible;
+                header.Button.Padding = padding;
             }
         };
-        PageContent.SizeChanged += (_, _) => UpdateCardColumns();
+        PageContent.SizeChanged += (_, _) => UpdateCardRows();
         Toolbar.SizeChanged += (_, _) => UpdateToolbar();
         ExportButton.SizeChanged += (_, _) => UpdateToolbar();
         RangeGroup.SizeChanged += (_, _) => UpdateToolbar();
         SourcePicker.SizeChanged += (_, _) => UpdateToolbar();
+        SubscriptionsGroup.IsVisibleChanged += (_, _) => UpdateToolbar();
+        SubscriptionsCheck.SizeChanged += (_, _) => UpdateToolbar();
         ContentRendered += OnContentRendered;
         PageScroller.ScrollChanged += (_, _) => UpdateScrollDivider();
         Chart.IsVisibleChanged += (_, _) =>
@@ -96,10 +106,14 @@ internal sealed partial class HistoryWindow : Window
         Apply(HistoryUpdate.Filter, ChartTransition.Snap);
     }
 
-    public int CardColumns
+    /// <summary>The space between the source picker and the include-subscriptions checkbox.</summary>
+    public static Thickness SubscriptionsMargin { get; } = new(HistoryToolbar.SubscriptionsGap(ToolbarDensity.Full), 0, 0, 0);
+
+    /// <summary>How many summary cards each row holds (DESIGN 9: five in one row when wide, else 3 + 2).</summary>
+    public IReadOnlyList<int>? CardRows
     {
-        get => (int)GetValue(CardColumnsProperty);
-        set => SetValue(CardColumnsProperty, value);
+        get => (IReadOnlyList<int>?)GetValue(CardRowsProperty);
+        set => SetValue(CardRowsProperty, value);
     }
 
     public bool ReduceMotion { get; private set; }
@@ -119,6 +133,7 @@ internal sealed partial class HistoryWindow : Window
     {
         var loc = _model.Loc;
         _copyItem.Header = loc["win.history.copyRow"];
+        _subscriptionsWidth = 0;
         UpdateHeader();
         Dispatcher.BeginInvoke(UpdateToolbar, System.Windows.Threading.DispatcherPriority.Loaded);
     }
@@ -173,14 +188,17 @@ internal sealed partial class HistoryWindow : Window
     private void Apply(HistoryUpdate update, ChartTransition transition)
     {
         var loc = _model.Loc;
+        var money = _model.Money;
         if (update != HistoryUpdate.Sort)
         {
             var today = _model.Today;
+            Func<double, double, string> axis = _model.Bars.Metric == HistoryChartMetric.Cost ? money.AxisLabel : ChartTexts.TokenAxis;
             var texts = new ChartTexts(loc.Culture, loc["unit.tokS"], loc["history.inProgress"],
                 (day, withYear) => HistoryText.Month(day, withYear, loc), day => HistoryText.MonthDay(day, loc),
-                day => HistoryText.Accessible(day, today, loc));
+                day => HistoryText.Accessible(day, today, loc, money), axis);
             Chart.SetData(_model.Bars, _model.DayAt, _model.Source, today, texts, transition);
             SyncRange();
+            SyncMetric();
         }
 
         if (update == HistoryUpdate.Text)
@@ -188,7 +206,12 @@ internal sealed partial class HistoryWindow : Window
             Relocalize();
         }
 
-        Table.SetRows(_model.Rows, _model.Today, loc);
+        Table.SetRows(_model.Rows, _model.Today, loc, money);
+        if (!_model.HasUnpriced && UnpricedFlyout.IsOpen)
+        {
+            // The models were priced meanwhile: the list (and its link) is gone.
+            UnpricedFlyout.IsOpen = false;
+        }
         UpdateHeader();
         if (update == HistoryUpdate.Filter)
         {
@@ -209,9 +232,73 @@ internal sealed partial class HistoryWindow : Window
         }
 
         _entered = true;
-        UpdateCardColumns();
+        UpdateCardRows();
         UpdateToolbar();
         Chart.PlayEntrance();
+    }
+
+    // ---- Metric ----
+
+    private void SyncMetric()
+    {
+        _syncingMetric = true;
+        try
+        {
+            MetricOutput.IsChecked = _model.Metric == HistoryChartMetric.Output;
+            MetricCost.IsChecked = _model.Metric == HistoryChartMetric.Cost;
+        }
+        finally
+        {
+            _syncingMetric = false;
+        }
+    }
+
+    private void OnMetricChecked(object sender, RoutedEventArgs e)
+    {
+        if (_syncingMetric || sender is not RadioButton { Tag: string tag } || !Enum.TryParse<HistoryChartMetric>(tag, out var metric))
+        {
+            return;
+        }
+
+        _model.SetMetric(metric);
+    }
+
+    // ---- Unknown prices ----
+
+    private void OnShowUnpriced(object sender, RoutedEventArgs e)
+    {
+        if (UnpricedFlyout.IsOpen)
+        {
+            UnpricedFlyout.IsOpen = false;
+            return;
+        }
+
+        UnpricedFlyout.IsOpen = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (UnpricedList.Items.Count > 0 && UnpricedList.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem first)
+            {
+                first.Focus();
+            }
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void OnUnpricedClosed(object? sender, EventArgs e)
+    {
+        if (IsActive && !IsKeyboardFocusWithin && UnpricedButton.IsVisible)
+        {
+            UnpricedButton.Focus();
+        }
+    }
+
+    private void OnUnpricedKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            UnpricedFlyout.IsOpen = false;
+            UnpricedButton.Focus();
+            e.Handled = true;
+        }
     }
 
     // ---- Range ----
@@ -539,44 +626,14 @@ internal sealed partial class HistoryWindow : Window
 
     private TooltipModel TooltipFor(DaySummary day)
     {
-        var loc = _model.Loc;
-        var lines = new List<TooltipLine> { new(loc["history.table.output"], SpeedFormat.Tokens(day.Output), Strong: true) };
-        if (_model.Source is null && day.Sources.Count > 1)
-        {
-            foreach (var source in _model.Bars.Order)
-            {
-                var output = day.OutputOf(source);
-                if (output > 0)
-                {
-                    lines.Add(new TooltipLine(loc[DisplayText.SourceKey(source)], SpeedFormat.Tokens(output),
-                        HeatPalette.SourceColor(source).ToBrush(), Indented: true));
-                }
-            }
-        }
-
-        lines.Add(new TooltipLine(loc["history.table.input"], SpeedFormat.Tokens(day.Input)));
-        lines.Add(new TooltipLine(loc["history.table.requests"], HistoryText.FullNumber(day.Requests, loc)));
-        lines.Add(new TooltipLine(loc["history.table.speed"], HistoryText.Speed(day.AverageSpeed, loc)));
-        if (day.Peak is { } peak)
-        {
-            lines.Add(new TooltipLine(loc["history.table.peak"], HistoryText.Speed(peak, loc)));
-        }
-
-        var models = day.Models.Take(3)
-            .Select(m =>
-            {
-                var share = day.Output > 0 ? (double)m.Output / day.Output : 0;
-                var speed = m.AverageSpeed is { } value && double.IsFinite(value) && value > 0 ? HistoryText.Speed(value, loc) : string.Empty;
-                return new TooltipShare(m.Model, share, HistoryText.Percent(share), speed);
-            })
+        var content = HistoryTooltipText.Build(day, _model.Bars.Order, _model.Source is null, _model.Bars.Metric, _model.Today,
+            _model.Money, _model.Loc);
+        var lines = content.Rows
+            .Select(r => new TooltipLine(r.Label, r.Value, r.Source is { } source ? HeatPalette.SourceColor(source).ToBrush() : null,
+                r.Strong, Indented: r.Source is not null, r.IsNote))
             .ToArray();
-        return new TooltipModel(
-            HistoryText.LongDate(day.Day, loc),
-            day.Day == _model.Today ? loc["history.inProgress"] : string.Empty,
-            lines,
-            day.Unfinalized > 0 ? loc.Format("history.unfinalized", day.Unfinalized) : string.Empty,
-            loc["history.table.models"],
-            models);
+        var models = content.Models.Select(m => new TooltipShare(m.Name, m.Share, m.Percent, m.Speed, m.Cost)).ToArray();
+        return new TooltipModel(content.Title, content.Badge, lines, content.Note, content.ModelsTitle, models);
     }
 
     // ---- Responsive layout ----
@@ -602,16 +659,29 @@ internal sealed partial class HistoryWindow : Window
         ScrollDivider.BeginAnimation(OpacityProperty, fade);
     }
 
-    private void UpdateCardColumns()
+    private void UpdateCardRows()
     {
-        var columns = HistoryLayout.CardColumns(PageContent.ActualWidth);
-        if (columns != CardColumns)
+        var rows = HistoryLayout.CardRows(_model.Cards.Count, PageContent.ActualWidth);
+        if (CardRows is { } shown && shown.SequenceEqual(rows))
         {
-            CardColumns = columns;
+            return;
+        }
+
+        CardRows = rows;
+        var index = 0;
+        foreach (var count in rows)
+        {
+            for (var i = 0; i < count && index < _model.Cards.Count; i++, index++)
+            {
+                _model.Cards[index].SideBySide = count < 3;
+            }
         }
     }
 
-    /// <summary>Narrows the range items, the export button and the picker step by step so the toolbar never wraps.</summary>
+    /// <summary>
+    /// Narrows the range items, the export button, the subscriptions checkbox and the picker step by step so the toolbar
+    /// never wraps.
+    /// </summary>
     private void UpdateToolbar()
     {
         if (Toolbar.ActualWidth <= 0 || ExportButton.ActualWidth <= 0)
@@ -628,16 +698,35 @@ internal sealed partial class HistoryWindow : Window
             _pickerWidth = SourcePicker.ActualWidth;
         }
 
+        var offered = _model.OffersSubscriptions;
+        // The checkbox as last drawn (kept while it is an icon, so the fit never flips back and forth), else estimated.
+        if (SubscriptionsCheck.IsVisible && SubscriptionsCheck.ActualWidth > 0)
+        {
+            _subscriptionsWidth = SubscriptionsCheck.ActualWidth;
+        }
+
+        var subscriptionsLabel = !offered ? 0
+            : _subscriptionsWidth > 0 ? _subscriptionsWidth
+            : TextWidth(SubscriptionsLabel.Text, SubscriptionsLabel.FontFamily, SubscriptionsLabel.FontSize, FontWeights.Normal)
+              + SubscriptionsLabel.Margin.Left + CheckBoxChrome;
+        var subscriptionsIcon = offered ? HistoryToolbar.SubscriptionsIconWidth : 0;
         var items = RangeItems.Children.OfType<ToggleButton>().ToArray();
         var labels = items.Select(item => TextWidth(item.Content as string ?? string.Empty, item.FontFamily, item.FontSize, FontWeights.SemiBold))
             .ToArray();
-        var density = HistoryToolbar.Fit(Toolbar.ActualWidth, labels, _pickerWidth, exportIcon, exportLabel);
-        if (density == _density)
+        var density = HistoryToolbar.Fit(Toolbar.ActualWidth, labels, _pickerWidth, exportIcon, exportLabel, subscriptionsLabel,
+            subscriptionsIcon);
+        if (density == _density && offered == _subscriptionsOffered)
         {
             return;
         }
 
         _density = density;
+        _subscriptionsOffered = offered;
+        var labelled = HistoryToolbar.ShowsSubscriptionsLabel(density);
+        SubscriptionsCheck.Visibility = labelled ? Visibility.Visible : Visibility.Collapsed;
+        SubscriptionsToggle.Visibility = labelled ? Visibility.Collapsed : Visibility.Visible;
+        SubscriptionsToggle.Width = HistoryToolbar.SubscriptionsIcon(density, HistoryToolbar.SubscriptionsIconWidth);
+        SubscriptionsGroup.Margin = new Thickness(HistoryToolbar.SubscriptionsGap(density), 0, 0, 0);
         ExportLabel.Visibility = HistoryToolbar.ShowsExportLabel(density) ? Visibility.Visible : Visibility.Collapsed;
         var padding = HistoryToolbar.ItemPadding(density);
         foreach (var item in items)

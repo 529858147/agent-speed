@@ -12,8 +12,10 @@ using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Orb.Names;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Settings.Orbs;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Services;
 using AgentSpeed.Theme;
+using AgentSpeed.Titles;
 
 namespace AgentSpeed.Settings.OrbsPane;
 
@@ -95,6 +97,10 @@ internal sealed class OrbStyleCardViewModel(OrbStyle style, int index) : Observa
     public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
 }
 
+/// <summary>An entry of the Advanced <c>titles.theme</c> popup: General, a preset, a custom set, or a separator.</summary>
+/// <param name="Id">The theme id stored on the orb; null for <c>orbs.titleTheme.global</c>.</param>
+internal sealed record OrbTitleThemeChoice(string? Id, string Text, bool IsSeparator = false);
+
 /// <summary>
 /// Settings → 懸浮窗 (DESIGN 5, Floating orb pane): master switch, the orb list with live thumbnails, add / remove /
 /// duplicate / split / merge with undo, and the editor of the selected orb. Every change applies live and persists.
@@ -111,6 +117,9 @@ internal sealed class OrbsPaneViewModel : ObservableObject
     private string _nameDraft = string.Empty;
     private bool _dark = true;
     private bool _reduceMotion;
+    private TitleThemesService? _titles;
+    private IReadOnlyList<string> _titleLabels = [];
+    private IReadOnlyList<OrbTitleThemeChoice> _titleChoices = [];
 
     public OrbsPaneViewModel(SettingsService settings, OrbManager manager, SpeedModel speed, Localizer loc)
     {
@@ -127,6 +136,11 @@ internal sealed class OrbsPaneViewModel : ObservableObject
         foreach (var style in OrbStyles.All)
         {
             StyleCards.Add(new OrbStyleCardViewModel(style, index++));
+        }
+
+        for (var i = 0; i < SpeedTitles.Scaled.Count; i++)
+        {
+            TitleLadder.Add(new TitleLadderRow(SpeedTitles.Scaled[i].Title, i));
         }
 
         AddCommand = new RelayCommand(() => _manager.Add(SelectedId), () => S.Orbs.CanAdd);
@@ -193,6 +207,94 @@ internal sealed class OrbsPaneViewModel : ObservableObject
     public ObservableCollection<OrbSourceRowViewModel> SourceRows { get; } = [];
 
     public ObservableCollection<OrbStyleCardViewModel> StyleCards { get; } = [];
+
+    /// <summary>The custom redline's title list, in the selected orb's theme (DESIGN 1, Where the theme applies).</summary>
+    public ObservableCollection<TitleLadderRow> TitleLadder { get; } = [];
+
+    /// <summary>Heat positions of the title ticks under the custom redline slider.</summary>
+    public IReadOnlyList<double> TitleTicks { get; } = SpeedTitles.Scaled.Select(step => SpeedTitles.HeatAt(step.Title, 1)).ToArray();
+
+    /// <summary>The title themes (DESIGN 1); set by the app. Names the previews and the list in the selected orb's theme.</summary>
+    public TitleThemesService? TitleService
+    {
+        get => _titles;
+        set
+        {
+            if (_titles is not null || value is null)
+            {
+                return;
+            }
+
+            _titles = value;
+            value.Changed += (_, _) => RefreshTitles();
+            RefreshTitles();
+        }
+    }
+
+    /// <summary>
+    /// The Advanced <c>titles.theme</c> popup: <c>orbs.titleTheme.global</c> with the General theme's name, a separator,
+    /// the nine presets, then (after a separator) the custom sets.
+    /// </summary>
+    public IReadOnlyList<OrbTitleThemeChoice> TitleThemeChoices
+    {
+        get => _titleChoices;
+        private set
+        {
+            if (!_titleChoices.SequenceEqual(value))
+            {
+                _titleChoices = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>The selected orb's entry in <see cref="TitleThemeChoices"/>; an unknown theme reads as General.</summary>
+    public int TitleThemeIndex
+    {
+        get
+        {
+            var id = Orb?.TitleTheme;
+            var known = id is not null && _titles?.Document.Theme(id) is not null;
+            for (var i = 0; i < _titleChoices.Count; i++)
+            {
+                if (!_titleChoices[i].IsSeparator && (known ? _titleChoices[i].Id == id : _titleChoices[i].Id is null))
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+        set
+        {
+            if (_syncing || SelectedId is not { } id || value < 0 || value >= _titleChoices.Count || _titleChoices[value].IsSeparator)
+            {
+                return;
+            }
+
+            var themeId = _titleChoices[value].Id;
+            if (Orb?.TitleTheme != themeId)
+            {
+                Update(d => OrbEditing.SetTitleTheme(d, id, themeId));
+            }
+        }
+    }
+
+    public string TitleThemeHint => _loc["orbs.titleTheme.hint"];
+
+    /// <summary>The selected orb's titles as its readout draws them (the style preview cards).</summary>
+    public IReadOnlyList<string> OrbTitleLabels
+    {
+        get => _titleLabels;
+        private set
+        {
+            if (!_titleLabels.SequenceEqual(value, StringComparer.Ordinal))
+            {
+                _titleLabels = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
     public ICommand AddCommand { get; }
 
@@ -356,6 +458,23 @@ internal sealed class OrbsPaneViewModel : ObservableObject
 
     public int SizePresetIndex => Orb is { } orb ? OrbMenuPreset(orb.Size) : -1;
 
+    /// <summary>The orb's unit (DESIGN 9 Orb, Switching 3): the two-segment control under the style cards.</summary>
+    public bool UnitTokens { get => Orb?.Unit != OrbUnit.Cost; set => SetUnit(value, OrbUnit.Tokens); }
+
+    public bool UnitCost { get => Orb?.Unit == OrbUnit.Cost; set => SetUnit(value, OrbUnit.Cost); }
+
+    /// <summary><c>US$/s</c> in the display currency.</summary>
+    public string UnitCostLabel => _loc.Format("cost.unitPerSecond",
+        Core.Money.CurrencyTable.Bundled.CurrencyOrUsd(S.Cost.Currency).SymbolFor(_loc.LanguageCode));
+
+    private void SetUnit(bool selected, OrbUnit unit)
+    {
+        if (selected && SelectedId is { } id && !_syncing)
+        {
+            Update(d => OrbEditing.SetUnit(d, id, unit));
+        }
+    }
+
     public bool SizeSmall { get => SizePresetIndex == 0; set => SetPreset(value, 0); }
 
     public bool SizeMedium { get => SizePresetIndex == 1; set => SetPreset(value, 1); }
@@ -458,7 +577,8 @@ internal sealed class OrbsPaneViewModel : ObservableObject
 
     public bool AdvancedExpanded { get => _advancedExpanded; set => Set(ref _advancedExpanded, value); }
 
-    public string AdvancedSummary => $"{_loc["orbs.name"]}{_loc["list.separator"]}{_loc["settings.redline"]}";
+    public string AdvancedSummary =>
+        string.Join(_loc["list.separator"], _loc["orbs.name"], _loc["titles.theme"], _loc["settings.redline"]);
 
     public string NamePlaceholder => Orb is { } orb ? _loc.Format("orbs.name.auto", OrbNaming.AutomaticName(orb.Sources, _loc)) : string.Empty;
 
@@ -584,7 +704,9 @@ internal sealed class OrbsPaneViewModel : ObservableObject
             if (feeds.TryGetValue(row.Id, out var feed))
             {
                 row.Unavailable = feed.IsUnavailable;
-                row.Value = feed.IsUnavailable ? "–" : $"{SpeedFormat.Speed(feed.Value)} {_loc["unit.tokS"]}";
+                row.Value = feed.IsUnavailable ? "–"
+                    : feed.Money is { } money ? $"{money.NumberText} {money.Unit}"
+                    : $"{SpeedFormat.Speed(feed.Value)} {_loc["unit.tokS"]}";
                 row.Live = feed.Value;
                 row.Tier = feed.Tier;
                 row.Title = feed.Title;
@@ -734,6 +856,9 @@ internal sealed class OrbsPaneViewModel : ObservableObject
         OnPropertyChanged(nameof(SizeLarge));
         OnPropertyChanged(nameof(OpacityPercent));
         OnPropertyChanged(nameof(OpacityText));
+        OnPropertyChanged(nameof(UnitTokens));
+        OnPropertyChanged(nameof(UnitCost));
+        OnPropertyChanged(nameof(UnitCostLabel));
         OnPropertyChanged(nameof(AlwaysOnTop));
         OnPropertyChanged(nameof(ClickThrough));
         OnPropertyChanged(nameof(FadeWhenIdle));
@@ -746,6 +871,49 @@ internal sealed class OrbsPaneViewModel : ObservableObject
         OnPropertyChanged(nameof(RedlineText));
         OnPropertyChanged(nameof(RedlineOutputValue));
         OnPropertyChanged(nameof(RedlineTotalLog));
+        RefreshTitles();
+    }
+
+    /// <summary>The theme popup, the preview cards' labels and the custom redline's title list for the selected orb.</summary>
+    private void RefreshTitles()
+    {
+        var titles = _titles;
+        var orb = Orb;
+        var theme = titles?.ForOrb(orb) ?? TitleTheme.Vehicles;
+        if (titles is not null)
+        {
+            var document = titles.Document;
+            List<OrbTitleThemeChoice> choices =
+            [
+                new(null, _loc.Format("orbs.titleTheme.global", titles.Name(titles.General))),
+                new(null, string.Empty, true),
+                .. TitlePresets.All.Select(preset => new OrbTitleThemeChoice(TitlePresets.Id(preset), _loc[TitlePresets.NameKey(preset)])),
+            ];
+            if (!document.Custom.IsEmpty)
+            {
+                choices.Add(new OrbTitleThemeChoice(null, string.Empty, true));
+                choices.AddRange(document.Custom.Select(set => new OrbTitleThemeChoice(set.Id, titles.Name(TitleTheme.Of(set)))));
+            }
+
+            var wasSyncing = _syncing;
+            _syncing = true;
+            try
+            {
+                TitleThemeChoices = choices;
+                OnPropertyChanged(nameof(TitleThemeIndex));
+            }
+            finally
+            {
+                _syncing = wasSyncing;
+            }
+        }
+
+        OrbTitleLabels = theme.Labels(_loc);
+        var redline = orb?.EffectiveRedline(S.Metric, S) ?? S.Redline;
+        foreach (var row in TitleLadder)
+        {
+            row.Refresh(_loc, S.Metric, redline, _dark, theme);
+        }
     }
 
     private void UpdateSourceStatuses()

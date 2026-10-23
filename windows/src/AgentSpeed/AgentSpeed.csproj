@@ -31,7 +31,24 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="AgentSpeed.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\AgentSpeed.Core\AgentSpeed.Core.csproj" />
     <ProjectReference Include="..\AgentSpeed.Presentation\AgentSpeed.Presentation.csproj" />
+  </ItemGroup>
+
+  <!-- The floating orb's Direct3D 11 + DirectComposition renderer (DESIGN 2a, Techniques). Managed bindings only (MIT);
+       the native side is Windows' own d3d11, dxgi, dcomp and d3dcompiler_47. Versions are pinned. -->
+  <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D11" Version="[3.8.3]" />
+    <PackageReference Include="Vortice.DXGI" Version="[3.8.3]" />
+    <PackageReference Include="Vortice.DirectComposition" Version="[3.8.3]" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="[3.8.3]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Orb\Gpu\Shaders\*.hlsl" LogicalName="AgentSpeed.Orb.Shaders.%(Filename).hlsl" />
   </ItemGroup>
 </Project>

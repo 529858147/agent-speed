@@ -6,10 +6,12 @@ using System.Windows.Threading;
 using AgentSpeed.App;
 using AgentSpeed.Core;
 using AgentSpeed.Orb.Hero;
+using AgentSpeed.Orb.Hero.Badge;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Gauge;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Hero;
+using AgentSpeed.Presentation.Hero.Badge;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Particles;
@@ -20,7 +22,8 @@ namespace AgentSpeed.Orb;
 /// <summary>
 /// The orb instrument (DESIGN section 2) drawn with retained DrawingVisual layers. Only layers that change are
 /// re-recorded; frames run only while the scene animates, and never while the view is hidden. The dashboard hero
-/// (embedded style) draws the hero vehicle (DESIGN 4c) in place of the readout.
+/// (embedded style) draws the hero vehicle or, for every title theme but Vehicles, the title badge (DESIGN 4c) in place
+/// of the readout.
 /// </summary>
 internal sealed class OrbView : FrameworkElement
 {
@@ -80,6 +83,12 @@ internal sealed class OrbView : FrameworkElement
     private double _heroFrameInterval = 1 / 60.0;
     private FrameDemand _heroLastDemand = FrameDemand.Full;
     private static bool _heroArtWarned;
+    private double _heroTitleChangedAt = double.NegativeInfinity;
+    private readonly HeroArtMix _heroArt = new();
+    private BadgeLayer? _badgeLayer;
+    private BadgeStage? _badgeStage;
+    private HeroTitles? _badgeTitles;
+    private double _heroArtMix = double.NaN;
 
     public OrbView(Func<double> clock)
     {
@@ -170,6 +179,7 @@ internal sealed class OrbView : FrameworkElement
 
             _heroStage ??= new HeroStage(art, hero.ParkedKey, (uint)Environment.TickCount | 1);
             _heroLayer.Configure(_brushes.Center, config.Diameter, hero.Glow);
+            ConfigureBadge(hero, config.Diameter);
             _heroSettledDrawn = false;
             return;
         }
@@ -186,6 +196,51 @@ internal sealed class OrbView : FrameworkElement
             _root.Children.Remove(_heroLayer.Root);
             _heroLayer = null;
             _heroStage = null;
+        }
+
+        if (_badgeLayer is not null)
+        {
+            _root.Children.Remove(_badgeLayer.Root);
+            _badgeLayer = null;
+            _badgeStage = null;
+        }
+    }
+
+    /// <summary>
+    /// For every title theme but Vehicles the title badge replaces the vehicle (DESIGN 4c); a change crossfades between
+    /// them in 0.3 s (Reduce Motion: cut). The art that becomes visible starts from the current state.
+    /// </summary>
+    private void ConfigureBadge(HeroConfig hero, double diameter)
+    {
+        var showsBadge = hero.Titles is not null;
+        if (hero.Titles is { } titles)
+        {
+            _badgeTitles = titles;
+        }
+
+        if (showsBadge && _badgeLayer is null && _heroLayer is { } vehicle)
+        {
+            _badgeLayer = new BadgeLayer();
+            _root.Children.Insert(_root.Children.IndexOf(vehicle.Root) + 1, _badgeLayer.Root);
+            _badgeStage = new BadgeStage((uint)Environment.TickCount | 1);
+            _heroArtMix = double.NaN;
+        }
+
+        _badgeLayer?.Configure(_brushes.Center, diameter, hero.Glow);
+        var now = _clock();
+        if (!_heroArt.Update(showsBadge, now, hero.Options.ReduceMotion))
+        {
+            return;
+        }
+
+        if (showsBadge)
+        {
+            _badgeStage?.Reset();
+        }
+        else
+        {
+            // The vehicle is not stepped while hidden.
+            _heroResyncUntil = Math.Max(_heroResyncUntil, now + 0.05);
         }
     }
 
@@ -215,6 +270,11 @@ internal sealed class OrbView : FrameworkElement
         var target = double.IsFinite(value) && value > 0 ? value : 0;
         _heroValue = target;
         _heroTier = tier;
+        if (title != _heroTitle)
+        {
+            _heroTitleChangedAt = _clock();
+        }
+
         _heroTitle = title;
         var text = SpeedFormat.Speed(target);
         if (tier == _lastTier && title == _lastTitle && text == _lastText && Math.Abs(target - _lastValue) <= 1e-6 * Math.Max(1, target)
@@ -302,6 +362,7 @@ internal sealed class OrbView : FrameworkElement
         {
             // Reopened: the vehicle shows the current state at once instead of replaying what happened while hidden.
             _heroResyncUntil = _clock() + 0.35;
+            _badgeStage?.Reset();
             _heroSettledDrawn = false;
             if (_heroLayer is not null)
             {
@@ -416,17 +477,29 @@ internal sealed class OrbView : FrameworkElement
     private FrameDemand Demand()
     {
         var demand = !_valueWidth.IsSettled(_valueWidthTarget, 0.05) ? FrameDemand.Full : Scene.Demand;
-        if (_heroStage is { } stage && stage.Demand > demand)
+        var hero = HeroDemand();
+        return hero > demand ? hero : demand;
+    }
+
+    /// <summary>Frames the hero's center needs: those of the art shown, every frame while they crossfade.</summary>
+    private FrameDemand HeroDemand()
+    {
+        if (_heroStage is not { } stage)
         {
-            demand = stage.Demand;
+            return FrameDemand.None;
         }
 
-        return demand;
+        if (_heroArt.IsFading(Scene.Time))
+        {
+            return FrameDemand.Full;
+        }
+
+        return _heroArt.ShowsBadge == true && _badgeStage is { } badge ? BadgeFrameRates.ToFrameDemand(badge.Demand) : stage.Demand;
     }
 
     /// <summary>
-    /// Advances and draws the hero vehicle. With Off and Reduce Motion a settled vehicle is drawn once and then left
-    /// alone, even while the ring keeps animating.
+    /// Advances and draws the hero's center art: the vehicle, the title badge, or both while they crossfade. With Off and
+    /// Reduce Motion a settled art is drawn once and then left alone, even while the ring keeps animating.
     /// </summary>
     private void RenderHero()
     {
@@ -437,28 +510,94 @@ internal sealed class OrbView : FrameworkElement
 
         var started = HeroStats.Begin(out var bytes);
         var now = Scene.Time;
+        var mix = _heroArt.BadgeMix(now);
+        var vehicleShown = mix < 0.999;
+        var badge = mix > 0.001 ? _badgeStage : null;
+        var titles = _badgeTitles;
         var sweep = Scene.IdleSweepStart;
-        stage.IdleSweepOrigin = double.IsFinite(sweep) ? sweep : double.NaN;
-        stage.Update(now, _heroValue, _config.Redline, _heroTier, _heroTitle, hero.Options, snap: now <= _heroResyncUntil);
-        // Moving: the largest divisor of the refresh rate that is at least 60 fps; parked: about 15 fps; static: drawn
-        // once. The ring may ask for more frames; the vehicle keeps its own pace.
-        var demand = stage.Demand;
-        var interval = demand switch
+        var origin = double.IsFinite(sweep) ? sweep : double.NaN;
+        if (vehicleShown)
         {
-            FrameDemand.None => double.PositiveInfinity,
-            FrameDemand.Full => 0.75 * _heroFrameInterval,
-            _ => 1 / HeroStage.ParkedFrameRate - 0.008,
-        };
+            stage.IdleSweepOrigin = origin;
+            stage.Update(now, _heroValue, _config.Redline, _heroTier, _heroTitle, hero.Options, snap: now <= _heroResyncUntil);
+        }
+
+        if (badge is not null && titles is not null)
+        {
+            badge.Step(new BadgeInput(now, (int)_heroTitle, _heroTitleChangedAt, Scene.Heat, Scene.Overdrive, _heroTier, _config.Redline,
+                hero.Options, origin), titles.Labels);
+        }
+        else
+        {
+            badge = null;
+        }
+
+        // Moving: the largest divisor of the refresh rate that is at least 60 fps; parked: about 15 fps (30 while the
+        // badge's light band crosses); static: drawn once. The ring may ask for more frames; the art keeps its own pace.
+        var (demand, interval) = HeroPace(stage, vehicleShown, badge);
         if (_heroSettledDrawn && demand == _heroLastDemand && now - _heroLastRender < interval)
         {
             return;
         }
 
-        layer.Render(stage, _config.HighContrast ? SystemColors.HighlightColor.ToRgba() : null);
+        if (vehicleShown)
+        {
+            layer.Render(stage, _config.HighContrast ? SystemColors.HighlightColor.ToRgba() : null);
+        }
+        else
+        {
+            layer.Clear();
+        }
+
+        if (badge is not null && titles is not null)
+        {
+            _badgeLayer?.Render(badge, titles.LanguageCode,
+                _config.HighContrast ? new BadgeContrast(SystemColors.HighlightColor.ToRgba(), SystemColors.GrayTextColor.ToRgba()) : null);
+        }
+        else
+        {
+            _badgeLayer?.Clear();
+        }
+
+        if (mix != _heroArtMix)
+        {
+            _heroArtMix = mix;
+            layer.Root.Opacity = 1 - mix;
+            if (_badgeLayer is not null)
+            {
+                _badgeLayer.Root.Opacity = mix;
+            }
+        }
+
         _heroLastRender = now;
         _heroLastDemand = demand;
         _heroSettledDrawn = true;
-        _heroStats.End(started, bytes, stage.Parked ? "parked" : stage.CurrentKey);
+        _heroStats.End(started, bytes, badge is null ? stage.Parked ? "parked" : stage.CurrentKey
+            : vehicleShown ? "crossfade" : badge.Level == 0 ? "badge idle" : "badge");
+    }
+
+    /// <summary>The frame demand of the art shown and the shortest interval between its frames.</summary>
+    private (FrameDemand Demand, double Interval) HeroPace(HeroStage stage, bool vehicleShown, BadgeStage? badge)
+    {
+        var moving = 0.75 * _heroFrameInterval;
+        if (badge is not null)
+        {
+            return vehicleShown ? (FrameDemand.Full, moving) : badge.Demand switch
+            {
+                BadgeFrames.None => (FrameDemand.None, double.PositiveInfinity),
+                BadgeFrames.Parked => (FrameDemand.Medium, 1 / BadgeFrameRates.Parked - 0.008),
+                BadgeFrames.Sweep => (FrameDemand.Full, 1 / BadgeFrameRates.Sweep - 0.004),
+                _ => (FrameDemand.Full, moving),
+            };
+        }
+
+        var demand = stage.Demand;
+        return (demand, demand switch
+        {
+            FrameDemand.None => double.PositiveInfinity,
+            FrameDemand.Full => moving,
+            _ => 1 / HeroStage.ParkedFrameRate - 0.008,
+        });
     }
 
     private long AuraKey()

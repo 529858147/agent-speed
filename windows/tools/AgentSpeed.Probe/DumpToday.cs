@@ -1,14 +1,22 @@
 using AgentSpeed.Core;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Probe;
 
 /// <summary><c>--dump-today</c>: seeds from the real roots and prints every response that ended today.</summary>
 internal static class DumpToday
 {
+    /// <summary>Costs use one table for every response, like <c>reference.py --dump-today</c> (no day bindings).</summary>
     public static int Run(ProbeOptions options, ProbeOutput output)
     {
+        if (options.PriceTable(out var tableError) is not { } table)
+        {
+            Console.Error.WriteLine(tableError);
+            return 2;
+        }
+
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var todayStart = options.SinceMs ?? LocalDay.StartMs(now, TimeZoneInfo.Local);
         var collector = new Collector();
@@ -21,8 +29,20 @@ internal static class DumpToday
             .OrderBy(r => r.EndMs)
             .ThenBy(r => r.Key, StringComparer.Ordinal)
             .ToList();
+        long costMicroUsd = 0;
+        var unpriced = 0;
         foreach (var r in today)
         {
+            var cost = table.Cost(r);
+            if (cost is { } known)
+            {
+                costMicroUsd += known;
+            }
+            else
+            {
+                unpriced++;
+            }
+
             output.Line(new JsonLine()
                 .Add("key", r.Key)
                 .Add("source", JsonLine.SourceName(r.Source))
@@ -33,9 +53,13 @@ internal static class DumpToday
                 .Add("input", r.Tokens.Input)
                 .Add("cachedInput", r.Tokens.CachedInput)
                 .Add("cacheWriteInput", r.Tokens.CacheWriteInput)
+                .Add("cacheWrite1hInput", r.Tokens.CacheWrite1hInput)
                 .Add("output", r.Tokens.Output)
                 .Add("reasoning", r.Tokens.Reasoning)
                 .Add("final", r.Final)
+                .Add("provider", r.Provider)
+                .Add("fast", r.Fast)
+                .Add("costMicroUsd", cost)
                 .Text);
         }
 
@@ -48,6 +72,8 @@ internal static class DumpToday
         var summary = new JsonLine()
             .Raw("counts", counts.Text)
             .Add("output", today.Sum(r => r.Tokens.Output))
+            .Add("costMicroUsd", costMicroUsd)
+            .Add("unpricedRequests", unpriced)
             .Add("input", today.Sum(r => r.Tokens.Input))
             .Add("filesRead", report.FilesRead)
             .Add("bytesRead", report.BytesRead)

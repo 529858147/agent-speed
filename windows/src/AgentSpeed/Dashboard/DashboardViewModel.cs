@@ -5,10 +5,13 @@ using System.Windows.Media;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Colors;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Theme;
 
 namespace AgentSpeed.Dashboard;
@@ -109,6 +112,9 @@ internal sealed class AgentRow : ObservableObject
 
     public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
 }
+
+/// <summary>One source of today's cost in the ⓘ popup: colour dot, name, amount and a thin share bar.</summary>
+internal sealed record TodayCostRow(Brush DotBrush, string Name, string AmountText, double Share, string AccessibleName);
 
 /// <summary>Text and rows for the dashboard, refreshed from snapshots (≤ 4 Hz while visible).</summary>
 internal sealed class DashboardViewModel : ObservableObject
@@ -253,6 +259,60 @@ internal sealed class DashboardViewModel : ObservableObject
 
     public string HeroAccessibleName { get => _heroAccessibleName; private set => Set(ref _heroAccessibleName, value); }
 
+    /// <summary>The General title theme the hero's title reads in (DESIGN 1, Where the theme applies).</summary>
+    public TitleTheme TitleTheme { get; set; } = TitleTheme.Vehicles;
+
+    /// <summary>The level of <see cref="TitleText"/>: a new level slides, a new text on the same level crossfades.</summary>
+    public int TitleLevelIndex { get => _titleLevel; private set => Set(ref _titleLevel, value); }
+
+    /// <summary>Title changes slide (motion allowed); otherwise they keep the stagger as a fade.</summary>
+    public bool TitleSlides { get => _titleSlides; set => Set(ref _titleSlides, value); }
+
+    private int _titleLevel;
+    private bool _titleSlides = true;
+    private bool _heroIsMoney;
+    private bool _heroAtLeast;
+    private bool _heroMuted;
+    private string _todayCostText = string.Empty;
+    private string _todayCostAccessibleName = string.Empty;
+    private IReadOnlyList<TodayCostRow> _todayCostRows = [];
+    private string? _todayCostUnpriced;
+    private string? _todayCostExcluded;
+    private string? _todayCostRateLine;
+    private string _currencyCode = "USD";
+
+    /// <summary>Formats every money value (DESIGN 9); null shows no cost.</summary>
+    public CostDisplay? Cost { get; set; }
+
+    /// <summary><c>settings.liveUnit</c>: the hero and the source rows show tok/s or money.</summary>
+    public LiveUnit LiveUnit { get; set; }
+
+    /// <summary>The hero shows the money unit (its value and unit slide when this changes).</summary>
+    public bool HeroIsMoney { get => _heroIsMoney; private set => Set(ref _heroIsMoney, value); }
+
+    /// <summary>Part of the live money value has no known price: a small <c>≥</c> precedes it.</summary>
+    public bool HeroAtLeast { get => _heroAtLeast; private set => Set(ref _heroAtLeast, value); }
+
+    /// <summary>Nothing is priced: the hero's <c>–</c> reads in the secondary color.</summary>
+    public bool HeroMuted { get => _heroMuted; private set => Set(ref _heroMuted, value); }
+
+    /// <summary>今日費用: today's billable cost (amount format, <c>≥</c> / <c>–</c> as needed).</summary>
+    public string TodayCostText { get => _todayCostText; private set => Set(ref _todayCostText, value); }
+
+    public string TodayCostAccessibleName { get => _todayCostAccessibleName; private set => Set(ref _todayCostAccessibleName, value); }
+
+    public IReadOnlyList<TodayCostRow> TodayCostRows { get => _todayCostRows; private set => Set(ref _todayCostRows, value); }
+
+    public string? TodayCostUnpriced { get => _todayCostUnpriced; private set => Set(ref _todayCostUnpriced, value); }
+
+    public string? TodayCostExcluded { get => _todayCostExcluded; private set => Set(ref _todayCostExcluded, value); }
+
+    /// <summary>The display currency; money values crossfade when it changes (DESIGN 9 Currency).</summary>
+    public string CurrencyCode { get => _currencyCode; private set => Set(ref _currencyCode, value); }
+
+    /// <summary>The rate line (<c>rates.status</c>) for a non-USD currency.</summary>
+    public string? TodayCostRateLine { get => _todayCostRateLine; private set => Set(ref _todayCostRateLine, value); }
+
     /// <param name="title">The speed title shown under the hero value.</param>
     public void Update(SpeedSnapshot snapshot, double value, SpeedTitle title, double redline, SpeedMetric metric,
         Localizer loc, bool darkTheme)
@@ -260,14 +320,28 @@ internal sealed class DashboardViewModel : ObservableObject
         var unit = loc["unit.tokS"];
         ValueText = SpeedFormat.Speed(value);
         UnitText = unit;
-        TitleText = DisplayText.TitleLabel(title, loc);
+        TitleLevelIndex = (int)title;
+        TitleText = TitleTheme.Label(title, loc);
         var heat = HeatMath.Heat(value, redline);
         var titleColor = title == SpeedTitle.Idle
             ? HeatPalette.Stops[0].Color
             : darkTheme ? HeatPalette.Sample(Math.Max(heat, 0.08)) : OrbTokens.Light.TierLabel(Math.Max(heat, 0.08));
         TitleBrush = MediaColors.Frozen(titleColor.ToColor());
         ContextText = DisplayText.AgentContext(snapshot, loc);
-        HeroAccessibleName = DisplayText.Accessibility(value, title, loc);
+        HeroAccessibleName = DisplayText.Accessibility(value, TitleTheme.Text(title, loc), loc);
+        var money = LiveUnit == LiveUnit.Cost ? Cost?.Live(snapshot) : null;
+        HeroIsMoney = money is not null;
+        HeroAtLeast = money?.AtLeast ?? false;
+        HeroMuted = money?.Unknown ?? false;
+        if (money is not null)
+        {
+            // The money unit (DESIGN 9): the billable live cost rate; heat and title keep following tokens.
+            ValueText = money.Number;
+            UnitText = money.Unit;
+            HeroAccessibleName = Cost!.LiveAccessibility(money, TitleTheme.Text(title, loc));
+        }
+
+        UpdateTodayCost(snapshot, loc);
 
         IsLoading = snapshot.State.Kind == MonitorStateKind.Starting;
         LoadingProgress = Math.Clamp(snapshot.State.Progress, 0, 1);
@@ -334,7 +408,30 @@ internal sealed class DashboardViewModel : ObservableObject
                 row.LiveAccessibleName = row.LiveText;
             }
 
-            row.TodayText = SpeedFormat.Tokens(status.Today.Output);
+            var costText = string.Empty;
+            var costSpoken = string.Empty;
+            if (Cost is { } cost)
+            {
+                (costText, costSpoken) = SourceCost.Today(status, cost);
+                if (LiveUnit == LiveUnit.Cost)
+                {
+                    if (SourceCost.Live(status, cost) is { } money)
+                    {
+                        row.LiveText = $"{money.NumberText} {money.Unit}";
+                        row.LiveKind = LiveValueKind.Number;
+                        row.LiveAccessibleName = money.SpokenAmount;
+                    }
+                    else
+                    {
+                        row.LiveKind = LiveValueKind.Dash;
+                        row.LiveAccessibleName = loc["phase.idle"];
+                    }
+                }
+            }
+
+            row.TodayText = costText.Length > 0
+                ? $"{SpeedFormat.Tokens(status.Today.Output)} · {costText}"
+                : SpeedFormat.Tokens(status.Today.Output);
             if (!status.Enabled)
             {
                 row.Status = loc["source.disabled"];
@@ -356,8 +453,39 @@ internal sealed class DashboardViewModel : ObservableObject
 
             row.AccessibleName = row.IsDimmed
                 ? $"{row.Name}, {row.Status}"
-                : $"{row.Name}, {loc["today.output"]} {row.TodayText}, {row.LiveAccessibleName}";
+                : costSpoken.Length > 0
+                    ? $"{row.Name}, {loc["today.output"]} {SpeedFormat.Tokens(status.Today.Output)}, {loc["today.cost"]} {costSpoken}, {row.LiveAccessibleName}"
+                    : $"{row.Name}, {loc["today.output"]} {row.TodayText}, {row.LiveAccessibleName}";
         }
+    }
+
+    private void UpdateTodayCost(SpeedSnapshot snapshot, Localizer loc)
+    {
+        if (Cost is not { } cost)
+        {
+            return;
+        }
+
+        CurrencyCode = cost.Currency.Code;
+        var summary = TodayCostSummary.From(snapshot, cost);
+        TodayCostText = summary.AmountText;
+        TodayCostAccessibleName = $"{loc["today.cost"]} ({loc["cost.apiEquivalent"]}) {summary.Spoken}";
+        var rows = summary.Parts
+            .Select(p =>
+            {
+                var name = loc[DisplayText.SourceKey(p.Source)];
+                return new TodayCostRow(Sources.First(r => r.Kind == p.Source).DotBrush, name, p.AmountText, p.Share,
+                    $"{name}, {cost.SpokenTally(p.Cost, p.Requests)}");
+            })
+            .ToList();
+        if (!rows.SequenceEqual(TodayCostRows))
+        {
+            TodayCostRows = rows;
+        }
+
+        TodayCostUnpriced = summary.UnpricedText;
+        TodayCostExcluded = summary.ExcludedText;
+        TodayCostRateLine = summary.RateLine;
     }
 
     private void RefreshAgents()

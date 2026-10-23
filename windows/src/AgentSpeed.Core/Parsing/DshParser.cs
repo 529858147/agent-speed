@@ -10,6 +10,9 @@ internal sealed class DshParser : TranscriptParser<DshLine>
     private string? _parentSession;
     private long? _pendingStartMs;
 
+    /// <summary>The latest <c>request/header</c> <c>config.provider</c> (METRICS 3.2).</summary>
+    private string? _provider;
+
     public DshParser(string agentId, IDeduper deduper)
         : base(agentId, deduper, SourceKind.DeepSeek)
     {
@@ -31,6 +34,7 @@ internal sealed class DshParser : TranscriptParser<DshLine>
         _createdMs = null;
         _parentSession = null;
         _pendingStartMs = null;
+        _provider = null;
     }
 
     public override void Apply(in DshLine line, IResponseSink sink)
@@ -85,6 +89,7 @@ internal sealed class DshParser : TranscriptParser<DshLine>
         {
             case DshEventKind.RequestHeader:
                 SetModel(item.ConfigModel);
+                _provider = item.ConfigProvider ?? _provider;
                 break;
             case DshEventKind.StepStart:
                 _pendingStartMs = ts;
@@ -128,7 +133,9 @@ internal sealed class DshParser : TranscriptParser<DshLine>
         if (item.HasUsage)
         {
             var model = item.SourceModel ?? Model;
-            sink.OnResponse(new ParsedResponse(key, SourceKind.DeepSeek, AgentId, model, _pendingStartMs, ts, item.Usage), true);
+            sink.OnResponse(
+                new ParsedResponse(key, SourceKind.DeepSeek, AgentId, model, _pendingStartMs, ts, item.Usage, Provider: item.SourceProvider ?? _provider),
+                true);
             SetModel(model);
         }
 

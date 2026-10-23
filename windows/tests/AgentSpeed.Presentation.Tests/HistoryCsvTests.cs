@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.History;
+using AgentSpeed.Presentation.Localization;
 using static AgentSpeed.Presentation.Tests.TestSupport.HistoryData;
 
 namespace AgentSpeed.Presentation.Tests;
@@ -10,7 +11,8 @@ public class HistoryCsvTests
 {
     private const string Header =
         "date,source,requests,input_tokens,cached_input_tokens,cache_write_input_tokens,output_tokens,reasoning_tokens," +
-        "cache_hit_percent,measured_output_tokens,measured_ms,avg_speed_tok_s,peak_tok_s,agents,unfinalized,models";
+        "cache_hit_percent,measured_output_tokens,measured_ms,avg_speed_tok_s,peak_tok_s,agents,unfinalized,models," +
+        "cost_usd,unpriced_requests,price_version";
 
     private static DaySummary Row(DateOnly day, double? peak = 412.25, params string[] models) => new(
         day, 1234, 2_000_000, 1_500_000, 25_000, 98_765, 4321, 90_000, 720_000, 2, 3, peak,
@@ -37,7 +39,7 @@ public class HistoryCsvTests
         var lines = Lines(csv);
         Assert.Equal(2, lines.Length);
         Assert.Equal(Header, lines[0]);
-        Assert.Equal("2026-10-20,all,1234,2000000,1500000,25000,98765,4321,75.0,90000,720000,125.0,412.3,3,2,opus; gpt", lines[1]);
+        Assert.Equal("2026-10-20,all,1234,2000000,1500000,25000,98765,4321,75.0,90000,720000,125.0,412.3,3,2,opus; gpt,,,", lines[1]);
         Assert.Equal(HistoryCsv.Columns.Count, lines[1].Split(',').Length);
     }
 
@@ -46,7 +48,7 @@ public class HistoryCsvTests
     {
         var day = new DaySummary(D(2026, 1, 5), 1, 0, 0, 0, 10, 0, 0, 0, 0, 1, null, [], []);
         var line = Lines(HistoryCsv.Build([day], SourceKind.Gemini))[1];
-        Assert.Equal("2026-01-05,gemini,1,0,0,0,10,0,,0,0,,,1,0,", line);
+        Assert.Equal("2026-01-05,gemini,1,0,0,0,10,0,,0,0,,,1,0,,,,", line);
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public class HistoryCsvTests
     public void TextFieldsAreQuotedPerRfc4180(string model, string field)
     {
         var csv = HistoryCsv.Build([Row(D(2026, 10, 20), null, model)], null);
-        Assert.EndsWith("," + field + "\r\n", csv, StringComparison.Ordinal);
+        Assert.EndsWith("," + field + ",,,\r\n", csv, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -101,14 +103,70 @@ public class HistoryCsvTests
     public void FormulaLikeTextIsDefused(string model, string field)
     {
         var csv = HistoryCsv.Build([Row(D(2026, 10, 20), null, model)], null);
-        Assert.EndsWith("," + field + "\r\n", csv, StringComparison.Ordinal);
+        Assert.EndsWith("," + field + ",,,\r\n", csv, StringComparison.Ordinal);
     }
 
     [Fact]
     public void OnlyTheLeadingCharacterMatters()
     {
         var csv = HistoryCsv.Build([Row(D(2026, 10, 20), null, "opus", "=gpt")], null);
-        Assert.EndsWith(",opus; =gpt\r\n", csv, StringComparison.Ordinal);
+        Assert.EndsWith(",opus; =gpt,,,\r\n", csv, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CostColumnsComeLastWithTheDisplayCurrencyAfterThem()
+    {
+        Assert.Equal(["cost_usd", "unpriced_requests", "price_version"], HistoryCsv.Columns.TakeLast(3));
+        Assert.Equal(HistoryCsv.Columns, HistoryCsv.Header(null));
+        Assert.Equal(HistoryCsv.Columns, HistoryCsv.Header(Money(For(LanguageCodes.En))));
+        Assert.Equal([.. HistoryCsv.Columns, "cost_twd"], HistoryCsv.Header(Twd(For(LanguageCodes.ZhHant))));
+    }
+
+    [Fact]
+    public void CostValuesAreExactAndIgnoreSubscriptionMarks()
+    {
+        var twd = Twd(For(LanguageCodes.ZhHant));
+        foreach (var days in new[] { CostDays(), CostDays(SourceSet.Of(SourceKind.ClaudeCode)) })
+        {
+            var lines = Lines(HistoryCsv.Build(days, null, twd));
+            Assert.Equal(string.Join(',', HistoryCsv.Columns.Append("cost_twd")), lines[0]);
+            Assert.Single(lines, l => l.StartsWith("2026-10-20,all,", StringComparison.Ordinal) && l.EndsWith(",5.500000,1,3,178.20", StringComparison.Ordinal));
+            Assert.Single(lines, l => l.StartsWith("2026-10-18,all,", StringComparison.Ordinal) && l.EndsWith(",m,,,,", StringComparison.Ordinal));
+            Assert.Single(lines, l => l.StartsWith("2026-10-19,all,", StringComparison.Ordinal) && l.EndsWith(",0.000000,2,3,0.00", StringComparison.Ordinal));
+            Assert.All(lines, l => Assert.Equal(HistoryCsv.Columns.Count + 1, l.Split(',').Length));
+        }
+    }
+
+    [Theory]
+    [InlineData(1, 0, "0.000001,0")]
+    [InlineData(0, 0, "0.000000,0")]
+    [InlineData(1_234_567_891, 2, "1234.567891,2")]
+    [InlineData(4_200_000, 0, "4.200000,0")]
+    public void CostUsdHasExactlySixDecimals(long microUsd, long unpriced, string fields)
+    {
+        var row = Row(D(2026, 10, 20), null, "opus") with { TotalCost = new CostTally(microUsd, unpriced), PriceVersion = 7 };
+        Assert.EndsWith(",opus," + fields + ",7\r\n", HistoryCsv.Build([row], null, Money(For(LanguageCodes.En))), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("TWD", "32.4", "cost_twd", "178.20")]
+    [InlineData("JPY", "150.25", "cost_jpy", "826.38")]
+    [InlineData("EUR", "0.9", "cost_eur", "4.9500")]
+    public void TheDisplayCurrencyColumnHasItsDigitsPlusTwoDecimals(string currency, string rate, string column, string amount)
+    {
+        var money = Money(For(LanguageCodes.En), currency, decimal.Parse(rate, CultureInfo.InvariantCulture));
+        var row = Row(D(2026, 10, 20), null, "opus") with { TotalCost = new CostTally(5_500_000, 1), PriceVersion = 3 };
+        var lines = Lines(HistoryCsv.Build([row], null, money));
+        Assert.EndsWith("," + column, lines[0], StringComparison.Ordinal);
+        Assert.EndsWith(",5.500000,1,3," + amount, lines[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DaysWithoutCostDataLeaveTheCostFieldsEmpty()
+    {
+        var row = Row(D(2026, 10, 20), null, "opus");
+        Assert.EndsWith(",opus,,,\r\n", HistoryCsv.Build([row], null), StringComparison.Ordinal);
+        Assert.EndsWith(",opus,,,,\r\n", HistoryCsv.Build([row], null, Twd(For(LanguageCodes.En))), StringComparison.Ordinal);
     }
 
     [Fact]

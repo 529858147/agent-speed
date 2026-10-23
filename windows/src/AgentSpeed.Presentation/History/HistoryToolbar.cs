@@ -19,11 +19,17 @@ public enum ToolbarDensity
 }
 
 /// <summary>
-/// Layout of the Usage History toolbar (DESIGN 4b, item 1): source picker, range segments and export on one line,
-/// narrowing the labels' room step by step instead of wrapping, down to the 720 DIP minimum window width.
+/// Layout of the Usage History toolbar (DESIGN 4b, item 1): source picker (with the <c>history.includeSubscriptions</c>
+/// checkbox while a source is marked as a subscription, DESIGN 9), range segments and export on one line, narrowing the
+/// labels' room step by step instead of wrapping, down to the 720 DIP minimum window width.
 /// </summary>
 public static class HistoryToolbar
 {
+    /// <summary>The subscriptions icon toggle; a little narrower at the tightest density.</summary>
+    public const double SubscriptionsIconWidth = 32;
+
+    public const double TightSubscriptionsIconWidth = 28;
+
     /// <summary>Border and inner padding of the segmented container, both sides together.</summary>
     public const double RangeChrome = 6;
 
@@ -44,13 +50,16 @@ public static class HistoryToolbar
     /// <param name="pickerWidth">The source picker at its normal minimum width (wider when its content needs it).</param>
     /// <param name="exportIconWidth">The export button with its icon only.</param>
     /// <param name="exportLabelWidth">The export label text.</param>
+    /// <param name="subscriptionsLabelWidth">The subscriptions checkbox with its label; 0 when it is not offered.</param>
+    /// <param name="subscriptionsIconWidth">The subscriptions toggle as an icon; 0 when it is not offered.</param>
     public static ToolbarDensity Fit(double available, IReadOnlyList<double> labelWidths, double pickerWidth, double exportIconWidth,
-        double exportLabelWidth)
+        double exportLabelWidth, double subscriptionsLabelWidth = 0, double subscriptionsIconWidth = 0)
     {
         ArgumentNullException.ThrowIfNull(labelWidths);
         foreach (var density in Enum.GetValues<ToolbarDensity>())
         {
-            if (Width(density, labelWidths, pickerWidth, exportIconWidth, exportLabelWidth) <= available + 0.5)
+            if (Width(density, labelWidths, pickerWidth, exportIconWidth, exportLabelWidth, subscriptionsLabelWidth, subscriptionsIconWidth)
+                <= available + 0.5)
             {
                 return density;
             }
@@ -61,9 +70,27 @@ public static class HistoryToolbar
 
     /// <summary>Everything on the toolbar line at <paramref name="density"/>.</summary>
     public static double Width(ToolbarDensity density, IReadOnlyList<double> labelWidths, double pickerWidth, double exportIconWidth,
-        double exportLabelWidth) =>
-        PickerWidth(density, pickerWidth) + 2 * RangeMargin(density) + RangeWidth(density, labelWidths)
+        double exportLabelWidth, double subscriptionsLabelWidth = 0, double subscriptionsIconWidth = 0) =>
+        PickerWidth(density, pickerWidth) + SubscriptionsWidth(density, subscriptionsLabelWidth, subscriptionsIconWidth)
+        + 2 * RangeMargin(density) + RangeWidth(density, labelWidths)
         + exportIconWidth + (ShowsExportLabel(density) ? ExportLabelGap + exportLabelWidth : 0);
+
+    /// <summary>The subscriptions checkbox with its gap: labelled while the range keeps its full padding, then an icon toggle.</summary>
+    public static double SubscriptionsWidth(ToolbarDensity density, double labelWidth, double iconWidth)
+    {
+        var width = ShowsSubscriptionsLabel(density) ? labelWidth : SubscriptionsIcon(density, iconWidth);
+        return double.IsFinite(width) && width > 0 ? SubscriptionsGap(density) + width : 0;
+    }
+
+    /// <summary>Space between the source picker and the subscriptions checkbox (less at the tightest density).</summary>
+    public static double SubscriptionsGap(ToolbarDensity density) => density == ToolbarDensity.Tight ? 4 : 8;
+
+    /// <summary>The icon toggle's width at <paramref name="density"/>, given its usual <paramref name="iconWidth"/>.</summary>
+    public static double SubscriptionsIcon(ToolbarDensity density, double iconWidth) =>
+        density == ToolbarDensity.Tight ? Math.Min(iconWidth, TightSubscriptionsIconWidth) : iconWidth;
+
+    /// <summary>The checkbox shows its label (<c>history.includeSubscriptions</c>); tighter, it becomes an icon toggle with the label as its tooltip.</summary>
+    public static bool ShowsSubscriptionsLabel(ToolbarDensity density) => density <= ToolbarDensity.IconExport;
 
     /// <summary>The picker's width: as wide as it needs (at least <see cref="PickerMinWidth"/>), or fixed once compact.</summary>
     public static double PickerWidth(ToolbarDensity density, double pickerWidth) =>

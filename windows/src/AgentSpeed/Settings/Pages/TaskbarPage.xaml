@@ -33,5 +33,18 @@
         <controls:SettingsCard Header="{loc:Loc settings.bar.unit}" Icon="&#xE8D2;">
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding BarShowUnit, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.unit}" />
         </controls:SettingsCard>
+        <controls:SettingsCard Header="{loc:Loc settings.liveUnit}" Icon="&#xEC4A;" Description="{loc:Loc settings.liveUnit.hint}">
+            <Border Style="{StaticResource SegmentedContainer}">
+                <StackPanel Orientation="Horizontal">
+                    <!-- DESIGN 3: tok/s, money, or tok/s with the money rate after it -->
+                    <RadioButton Style="{StaticResource SegmentedItem}" GroupName="TaskbarLiveUnit" MinWidth="64"
+                                 Content="{loc:Loc settings.liveUnit.tokens}" IsChecked="{Binding Cost.BarValueTokens, Mode=TwoWay}" />
+                    <RadioButton Style="{StaticResource SegmentedItem}" GroupName="TaskbarLiveUnit" MinWidth="64" Typography.NumeralAlignment="Tabular"
+                                 Content="{Binding Cost.LiveUnitCostLabel}" IsChecked="{Binding Cost.BarValueCost, Mode=TwoWay}" />
+                    <RadioButton Style="{StaticResource SegmentedItem}" GroupName="TaskbarLiveUnit" MinWidth="64"
+                                 Content="{loc:Loc settings.liveUnit.both}" IsChecked="{Binding Cost.BarValueBoth, Mode=TwoWay}" />
+                </StackPanel>
+            </Border>
+        </controls:SettingsCard>
     </StackPanel>
 </UserControl>

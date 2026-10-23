@@ -76,11 +76,19 @@ public static class DisplayText
 
     /// <summary><c>128 tok/s · 噴射客機</c></summary>
     public static string SpeedLine(double value, SpeedTitle title, Localizer localizer) =>
-        $"{SpeedFormat.Speed(value)} {localizer["unit.tokS"]} · {TitleName(title, localizer)}";
+        SpeedLine(value, TitleName(title, localizer), localizer);
+
+    /// <summary>The speed line with a title text of any title theme (as typed).</summary>
+    public static string SpeedLine(double value, string title, Localizer localizer) =>
+        $"{SpeedFormat.Speed(value)} {localizer["unit.tokS"]} · {title}";
 
     /// <summary><c>每秒 128 個 token，噴射客機</c></summary>
     public static string Accessibility(double value, SpeedTitle title, Localizer localizer) =>
-        localizer.Format("a11y.orb", SpeedFormat.Speed(value), TitleName(title, localizer));
+        Accessibility(value, TitleName(title, localizer), localizer);
+
+    /// <summary>The accessibility label with a title text of any title theme (custom titles are read as typed).</summary>
+    public static string Accessibility(double value, string title, Localizer localizer) =>
+        localizer.Format("a11y.orb", SpeedFormat.Speed(value), title);
 
     /// <summary><c>今日 1.2M · 3 個 agent</c></summary>
     public static string TodaySummary(SpeedSnapshot snapshot, Localizer localizer)

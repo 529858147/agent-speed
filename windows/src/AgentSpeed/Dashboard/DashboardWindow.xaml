@@ -24,6 +24,52 @@
         <BooleanToVisibilityConverter x:Key="Visible" />
         <controls:InverseBoolToVisibilityConverter x:Key="Hidden" />
         <controls:DimOpacityConverter x:Key="Dim" />
+        <controls:TextToVisibilityConverter x:Key="HasText" />
+
+        <!-- The hero's unit toggles tok/s and money (DESIGN 9): 55 % at rest, 85 % with a 0.5 DIP underline on hover. -->
+        <Style x:Key="HeroUnitButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="FocusVisualStyle" Value="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="800" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent" MinHeight="20">
+                            <StackPanel x:Name="Label" Opacity="0.55" VerticalAlignment="Bottom">
+                                <TextBlock Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}" FontSize="14"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <Rectangle x:Name="Underline" Height="0.5" Margin="0,1,0,0" Opacity="0"
+                                           Fill="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Label" Storyboard.TargetProperty="Opacity" To="0.85" Duration="0:0:0.15" />
+                                            <DoubleAnimation Storyboard.TargetName="Underline" Storyboard.TargetProperty="Opacity" To="0.47" Duration="0:0:0.15" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Label" Storyboard.TargetProperty="Opacity" To="0.55" Duration="0:0:0.15" />
+                                            <DoubleAnimation Storyboard.TargetName="Underline" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Label" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="MetricValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="20" />
@@ -113,14 +159,35 @@
                     <Grid x:Name="HeroHost" Grid.Column="0" Width="112" Height="112" ClipToBounds="False"
                           AutomationProperties.Name="{Binding HeroAccessibleName}" />
                     <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal">
+                        <StackPanel x:Name="HeroValue" Orientation="Horizontal">
+                            <StackPanel.RenderTransform>
+                                <TranslateTransform x:Name="HeroValueSlide" />
+                            </StackPanel.RenderTransform>
+                            <!-- A partly priced money value: a small ≥ (60 %, secondary), part of the value's width (DESIGN 9). -->
+                            <TextBlock Text="≥" FontSize="26.4" FontWeight="Bold" Margin="0,0,1,5" VerticalAlignment="Bottom"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Visibility="{Binding HeroAtLeast, Converter={StaticResource Visible}}" />
                             <TextBlock Text="{Binding ValueText}" FontSize="44" FontWeight="Bold" LineHeight="48" LineStackingStrategy="BlockLineHeight"
                                        FontFamily="{DynamicResource AppDisplayFontFamily}" Typography.NumeralAlignment="Tabular"
-                                       AutomationProperties.Name="{Binding HeroAccessibleName}" />
-                            <TextBlock Text="{Binding UnitText}" Margin="6,0,0,7" VerticalAlignment="Bottom" FontSize="14"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                       AutomationProperties.Name="{Binding HeroAccessibleName}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HeroMuted}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <Button x:Name="HeroUnit" Style="{StaticResource HeroUnitButton}" Content="{Binding UnitText}" Margin="6,0,0,7"
+                                    VerticalAlignment="Bottom" Click="OnHeroUnit" ToolTip="{loc:Loc orbs.unit.toggleHint}"
+                                    AutomationProperties.Name="{loc:Loc a11y.orb.toggleUnit}"
+                                    AutomationProperties.HelpText="{Binding UnitText}" />
                         </StackPanel>
-                        <TextBlock Text="{Binding TitleText}" Foreground="{Binding TitleBrush}" FontSize="13" FontWeight="SemiBold" Margin="1,2,0,0" />
+                        <dash:TitleSwapLabel Text="{Binding TitleText}" Level="{Binding TitleLevelIndex}" Foreground="{Binding TitleBrush}"
+                                              Slides="{Binding TitleSlides}" Margin="1,2,0,0" />
                         <TextBlock Text="{Binding ContextText}" Style="{StaticResource CaptionText}" Margin="1,3,0,0" />
                         <Border x:Name="PreviewBadge" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8,2"
                                 CornerRadius="10" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
@@ -331,6 +398,76 @@
                             </StackPanel>
                         </Grid>
                     </Border>
+
+                    <!-- Today's cost (DESIGN 9): styled like the peak row, the amount trailing, ⓘ for the breakdown. -->
+                    <Border Margin="0,8,0,0" Padding="12,8" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                            AutomationProperties.Name="{Binding TodayCostAccessibleName}">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{loc:Loc today.cost}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" />
+                                <TextBlock Text="{loc:Loc cost.apiEquivalent}" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <TextBlock x:Name="TodayCostValue" Text="{Binding TodayCostText}" FontSize="13" FontWeight="SemiBold"
+                                           Typography.NumeralAlignment="Tabular" VerticalAlignment="Center" />
+                                <Button x:Name="CostInfoButton" Style="{StaticResource SubtleButton}" Click="OnCostInfo" Margin="4,-6,-8,-6"
+                                        ToolTip="{loc:Loc cost.apiEquivalent.hint}" AutomationProperties.Name="{loc:Loc cost.apiEquivalent}">
+                                    <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE946;" FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Popup x:Name="CostPopup" PlacementTarget="{Binding ElementName=CostInfoButton}" Placement="Top" StaysOpen="False"
+                           AllowsTransparency="True" PopupAnimation="Fade" HorizontalOffset="-252" VerticalOffset="-6">
+                        <Border Width="280" Margin="12" Padding="14,12" CornerRadius="8" BorderThickness="1"
+                                Background="{DynamicResource ToolTipBackgroundBrush}" BorderBrush="{DynamicResource ToolTipBorderBrush}"
+                                TextElement.Foreground="{DynamicResource ToolTipForegroundBrush}">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22" />
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="{loc:Loc today.cost}" FontSize="13" FontWeight="SemiBold" />
+                                <TextBlock Text="{loc:Loc cost.apiEquivalent.hint}" FontSize="11" LineHeight="16" TextWrapping="Wrap" Margin="0,4,0,0"
+                                           Opacity="0.72" />
+                                <ItemsControl ItemsSource="{Binding TodayCostRows}" Focusable="False" Margin="0,8,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type dash:TodayCostRow}">
+                                            <Grid Margin="0,0,0,8" AutomationProperties.Name="{Binding AccessibleName}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="14" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="5" />
+                                                </Grid.RowDefinitions>
+                                                <Ellipse Width="7" Height="7" Fill="{Binding DotBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding AmountText}" FontSize="12" FontWeight="Medium" Margin="8,0,0,0"
+                                                           Typography.NumeralAlignment="Tabular" />
+                                                <Rectangle Grid.Row="1" Grid.ColumnSpan="3" Height="2" RadiusX="1" RadiusY="1" VerticalAlignment="Bottom"
+                                                           Fill="{Binding DotBrush}" Opacity="0.55" RenderTransformOrigin="0,0.5">
+                                                    <Rectangle.RenderTransform>
+                                                        <ScaleTransform ScaleX="{Binding Share}" />
+                                                    </Rectangle.RenderTransform>
+                                                </Rectangle>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="{Binding TodayCostUnpriced}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" Opacity="0.8"
+                                           Visibility="{Binding TodayCostUnpriced, Converter={StaticResource HasText}}" />
+                                <TextBlock Text="{Binding TodayCostExcluded}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Opacity="0.8"
+                                           Visibility="{Binding TodayCostExcluded, Converter={StaticResource HasText}}" />
+                                <TextBlock Text="{Binding TodayCostRateLine}" FontSize="11" Margin="0,8,0,0" Opacity="0.72"
+                                           Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis"
+                                           Visibility="{Binding TodayCostRateLine, Converter={StaticResource HasText}}" />
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                 </StackPanel>
 
                 <!-- Warnings: informational, never alarming -->
@@ -389,8 +526,13 @@
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22" />
                         </Border.Effect>
-                        <TextBlock Text="{loc:Loc metric.info}" TextWrapping="Wrap" FontSize="12" LineHeight="18"
-                                   Foreground="{DynamicResource ToolTipForegroundBrush}" FontFamily="{DynamicResource AppFontFamily}" />
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc metric.info}" TextWrapping="Wrap" FontSize="12" LineHeight="18"
+                                       Foreground="{DynamicResource ToolTipForegroundBrush}" FontFamily="{DynamicResource AppFontFamily}" />
+                            <!-- The cost explanation follows as a second paragraph (DESIGN 9). -->
+                            <TextBlock Text="{loc:Loc cost.info}" TextWrapping="Wrap" FontSize="12" LineHeight="18" Margin="0,8,0,0"
+                                       Foreground="{DynamicResource ToolTipForegroundBrush}" FontFamily="{DynamicResource AppFontFamily}" />
+                        </StackPanel>
                     </Border>
                 </Popup>
             </StackPanel>

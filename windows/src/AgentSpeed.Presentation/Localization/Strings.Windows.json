@@ -305,5 +305,11 @@
     "zh-Hans": "重置位置",
     "en": "Reset Position",
     "ja": "位置をリセット"
+  },
+  "win.titles.preview.dashboard": {
+    "zh-Hant": "面板",
+    "zh-Hans": "面板",
+    "en": "Dashboard",
+    "ja": "ダッシュボード"
   }
 }

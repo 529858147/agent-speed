@@ -11,7 +11,7 @@ namespace AgentSpeed.Orb.Names;
 /// </summary>
 internal sealed class NamePlateWindow : PlateWindow
 {
-    public NamePlateWindow(OrbWindow orb)
+    public NamePlateWindow(IOrbWindow orb)
         : base(orb)
     {
         Cursor = Cursors.SizeAll;
@@ -82,7 +82,7 @@ internal sealed class NamePlateWindow : PlateWindow
 /// </summary>
 internal sealed class UndoPlateWindow : PlateWindow
 {
-    public UndoPlateWindow(OrbWindow orb, Button action)
+    public UndoPlateWindow(IOrbWindow orb, Button action)
         : base(orb, Overlay(action))
     {
         Action = action;

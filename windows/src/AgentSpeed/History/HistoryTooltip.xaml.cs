@@ -5,20 +5,28 @@ using System.Windows.Media.Animation;
 
 namespace AgentSpeed.History;
 
-/// <summary>A label/value line of the tooltip card; source lines carry a color dot and are indented.</summary>
-internal sealed record TooltipLine(string Label, string Value, Brush? Dot = null, bool Strong = false, bool Indented = false)
+/// <summary>
+/// A label/value line of the tooltip card; source lines carry a color dot and are indented; a note line is small
+/// explanatory text under the line before it (its label is the whole text).
+/// </summary>
+internal sealed record TooltipLine(string Label, string Value, Brush? Dot = null, bool Strong = false, bool Indented = false,
+    bool IsNote = false)
 {
     public bool HasDot => Dot is not null;
 
+    public bool IsValue => !IsNote;
+
     public FontWeight Weight => Strong ? FontWeights.SemiBold : FontWeights.Normal;
 
-    public Thickness Margin => new(Indented ? 2 : 0, Indented ? 1 : 2, 0, Indented ? 1 : 2);
+    public Thickness Margin => IsNote ? new(0, 0, 0, 3) : new(Indented ? 2 : 0, Indented ? 1 : 2, 0, Indented ? 1 : 2);
 }
 
-/// <summary>One of a day's top models: name, average speed (empty when not measured) and share of the output.</summary>
-internal sealed record TooltipShare(string Name, double Share, string Percent, string Speed = "")
+/// <summary>One of a day's top models: name, average speed (empty when not shown), share of the output and cost.</summary>
+internal sealed record TooltipShare(string Name, double Share, string Percent, string Speed = "", string Cost = "")
 {
     public bool HasSpeed => !string.IsNullOrEmpty(Speed);
+
+    public bool HasCost => !string.IsNullOrEmpty(Cost);
 }
 
 internal sealed record TooltipModel(

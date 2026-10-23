@@ -14,6 +14,17 @@ internal sealed class InverseBoolToVisibilityConverter : IValueConverter
         value is Visibility.Collapsed;
 }
 
+/// <summary>Collapses an element whose bound text is null or empty.</summary>
+[ValueConversion(typeof(string), typeof(Visibility))]
+internal sealed class TextToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is string { Length: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        Binding.DoNothing;
+}
+
 [ValueConversion(typeof(bool), typeof(double))]
 internal sealed class DimOpacityConverter : IValueConverter
 {

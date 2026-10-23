@@ -98,6 +98,91 @@ public class HistoryToolbarTests
         Assert.Equal(ToolbarDensity.Tight, HistoryToolbar.Fit(double.NaN, [60], HistoryToolbar.PickerMinWidth, ExportIcon, 80));
     }
 
+    /// <summary>The toolbar of the minimum window that must hold the subscriptions toggle too.</summary>
+    private const double MinimumWithSubscriptions = MinimumToolbar;
+
+    /// <summary>The subscriptions toggle as an icon only.</summary>
+    private const double SubscriptionsIcon = 32;
+
+    /// <summary>The <c>history.includeSubscriptions</c> label of each language at the toolbar's font size.</summary>
+    public static TheoryData<string, double> SubscriptionLabels => new()
+    {
+        { LanguageCodes.ZhHant, 150 },
+        { LanguageCodes.ZhHans, 150 },
+        { LanguageCodes.En, 230 },
+        { LanguageCodes.Ja, 200 },
+    };
+
+    /// <summary>The checkbox: a 20 DIP box, 8 DIP spacing and its label.</summary>
+    private static double Checkbox(double label) => 20 + 8 + label;
+
+    [Theory]
+    [MemberData(nameof(SubscriptionLabels))]
+    public void TheMinimumWindowNeverWrapsWithTheSubscriptionsToggle(string language, double label)
+    {
+        var (_, labels, export) = Row(language);
+        var density = HistoryToolbar.Fit(MinimumWithSubscriptions, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export,
+            Checkbox(label), SubscriptionsIcon);
+        var width = HistoryToolbar.Width(density, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export, Checkbox(label), SubscriptionsIcon);
+        Assert.True(width <= MinimumWithSubscriptions, $"{language}: {density} needs {width:0.#} of {MinimumWithSubscriptions}");
+    }
+
+    [Fact]
+    public void TheDefaultWindowShowsTheSubscriptionsLabelInChinese()
+    {
+        var (_, labels, export) = Row(LanguageCodes.ZhHant);
+        var density = HistoryToolbar.Fit(DefaultToolbar, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export, Checkbox(150), SubscriptionsIcon);
+        Assert.True(HistoryToolbar.ShowsSubscriptionsLabel(density), density.ToString());
+        Assert.True(HistoryToolbar.Width(density, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export, Checkbox(150), SubscriptionsIcon)
+            <= DefaultToolbar);
+    }
+
+    [Theory]
+    [InlineData(ToolbarDensity.Full, true)]
+    [InlineData(ToolbarDensity.IconExport, true)]
+    [InlineData(ToolbarDensity.CompactRange, false)]
+    [InlineData(ToolbarDensity.CompactPicker, false)]
+    [InlineData(ToolbarDensity.Tight, false)]
+    public void TheSubscriptionsLabelGivesWayToAnIconOnceTheRangeNarrows(ToolbarDensity density, bool label)
+    {
+        Assert.Equal(label, HistoryToolbar.ShowsSubscriptionsLabel(density));
+        var icon = density == ToolbarDensity.Tight ? HistoryToolbar.TightSubscriptionsIconWidth : SubscriptionsIcon;
+        Assert.Equal(HistoryToolbar.SubscriptionsGap(density) + (label ? 178 : icon), HistoryToolbar.SubscriptionsWidth(density, 178, SubscriptionsIcon));
+    }
+
+    [Fact]
+    public void TheSubscriptionsToggleTakesNoRoomWhenItIsNotOffered()
+    {
+        Assert.Equal(0, HistoryToolbar.SubscriptionsWidth(ToolbarDensity.Full, 0, 0));
+        Assert.Equal(0, HistoryToolbar.SubscriptionsWidth(ToolbarDensity.Full, double.NaN, SubscriptionsIcon));
+        Assert.Equal(0, HistoryToolbar.SubscriptionsWidth(ToolbarDensity.Tight, 178, 0));
+        var (_, labels, export) = Row(LanguageCodes.En);
+        foreach (var density in Enum.GetValues<ToolbarDensity>())
+        {
+            Assert.Equal(HistoryToolbar.Width(density, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export),
+                HistoryToolbar.Width(density, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export, 0, 0));
+        }
+    }
+
+    [Fact]
+    public void DensitiesStillNarrowStepByStepWithTheSubscriptionsToggle()
+    {
+        var (_, labels, export) = Row(LanguageCodes.En);
+        var widths = Enum.GetValues<ToolbarDensity>()
+            .Select(d => HistoryToolbar.Width(d, labels, HistoryToolbar.PickerMinWidth, ExportIcon, export, Checkbox(230), SubscriptionsIcon))
+            .ToArray();
+        for (var i = 1; i < widths.Length; i++)
+        {
+            Assert.True(widths[i] < widths[i - 1], $"{(ToolbarDensity)i} is narrower than {(ToolbarDensity)(i - 1)}");
+        }
+
+        foreach (var density in Enum.GetValues<ToolbarDensity>())
+        {
+            Assert.Equal(density, HistoryToolbar.Fit(widths[(int)density], labels, HistoryToolbar.PickerMinWidth, ExportIcon, export,
+                Checkbox(230), SubscriptionsIcon));
+        }
+    }
+
     private static (string Language, double[] Labels, double Export) Row(string language)
     {
         foreach (var row in Labels)

@@ -3,11 +3,33 @@ namespace AgentSpeed.Presentation.History;
 /// <summary>Responsive layout rules of the Usage History window.</summary>
 public static class HistoryLayout
 {
-    /// <summary>Content narrower than this shows the summary cards in two rows of two.</summary>
-    public const double FourCardsMinWidth = 820;
+    /// <summary>
+    /// From this page width (the window less its frame and the 24 DIP margins) the five summary cards share one row, narrower
+    /// they wrap 3 + 2 (DESIGN 9). The default 920 DIP window always qualifies, with or without a scroll bar beside the page.
+    /// </summary>
+    public const double FiveCardsMinWidth = 836;
 
-    public static int CardColumns(double contentWidth) =>
-        double.IsFinite(contentWidth) && contentWidth < FourCardsMinWidth ? 2 : 4;
+    /// <summary>How many summary cards each row holds: all in one row when wide, else rows of three and the rest.</summary>
+    public static IReadOnlyList<int> CardRows(int count, double contentWidth)
+    {
+        if (count <= 0)
+        {
+            return [];
+        }
+
+        if (!double.IsFinite(contentWidth) || contentWidth >= FiveCardsMinWidth)
+        {
+            return [count];
+        }
+
+        var rows = new List<int>();
+        for (var left = count; left > 0; left -= 3)
+        {
+            rows.Add(Math.Min(3, left));
+        }
+
+        return rows;
+    }
 
     /// <summary>
     /// Places a tooltip card beside a slot: to the right when it fits, else to the left, else wherever it overlaps the

@@ -59,7 +59,7 @@ internal static class OpenCodeRules
                 return null;
         }
 
-        return new ParsedResponse(row.Id, SourceKind.OpenCode, AgentId(session.Id), data.Model, startMs, endMs, data.Tokens);
+        return new ParsedResponse(row.Id, SourceKind.OpenCode, AgentId(session.Id), data.Model, startMs, endMs, data.Tokens, Provider: data.Provider);
     }
 
     /// <summary>Agent state after replaying a session's rows in <c>seq</c> order.</summary>

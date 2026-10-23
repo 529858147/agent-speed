@@ -3,6 +3,7 @@ using AgentSpeed.Core.Antigravity;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Omp;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core;
 
@@ -35,12 +36,16 @@ public sealed class LiveMonitor : IDisposable
     private CancellationTokenSource? _session;
     private bool _disposed;
 
-    public LiveMonitor(SpeedHub hub, MonitorConfiguration? configuration = null)
+    /// <param name="pricing">Prices every response (METRICS 9); null leaves costs unknown.</param>
+    public LiveMonitor(SpeedHub hub, MonitorConfiguration? configuration = null, PriceBook? pricing = null)
     {
         ArgumentNullException.ThrowIfNull(hub);
         _hub = hub;
         _configuration = configuration ?? MonitorConfiguration.Default;
+        Pricing = pricing;
     }
+
+    public PriceBook? Pricing { get; }
 
     /// <summary>Runs on the pool thread before each background whole-file read (tests make reads slow with it).</summary>
     internal Action<string>? BeforeBackgroundRead { get; set; }
@@ -296,7 +301,8 @@ public sealed class LiveMonitor : IDisposable
     private void RunSession(MonitorConfiguration configuration, CancellationToken token)
     {
         var zone = TimeZoneInfo.Local;
-        using var core = new MonitorCore(configuration, SourceLocations.Resolve(configuration), LocalDay.StartMs(NowMs(), zone));
+        using var core = new MonitorCore(
+            configuration, SourceLocations.Resolve(configuration), LocalDay.StartMs(NowMs(), zone), pricing: Pricing, zone: zone);
         core.ReadWholeFilesInBackground = true;
         core.BackgroundReadCompleted = SignalWake;
         core.BeforeBackgroundRead = BeforeBackgroundRead;

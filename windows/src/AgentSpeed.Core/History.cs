@@ -5,6 +5,9 @@ namespace AgentSpeed.Core;
 /// <param name="MeasuredMs">Widened duration of the model's measured responses (METRICS 3.3).</param>
 public sealed record ModelUsage(string Model, long Requests, long Output, long MeasuredOutput = 0, long MeasuredMs = 0)
 {
+    /// <summary>The model's cost on that day (METRICS 9.7); null when it was stored before costs existed.</summary>
+    public CostTally? Cost { get; init; }
+
     /// <summary>Output tok/s over the model's measured responses; null when none was measured.</summary>
     public double? AverageSpeed => MeasuredMs > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
 }
@@ -23,6 +26,12 @@ public sealed record DailyUsage(
     double? Peak,
     IReadOnlyList<ModelUsage> Models)
 {
+    /// <summary>API-equivalent cost (METRICS 9.7); null when the day's logs were gone before costs existed.</summary>
+    public CostTally? Cost { get; init; }
+
+    /// <summary>The price table version bound to the day; null without cost data.</summary>
+    public int? PriceVersion { get; init; }
+
     /// <summary>Output tok/s over the day's measured responses.</summary>
     public double? AverageSpeed => MeasuredMs > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
 }
@@ -158,19 +167,42 @@ public static class PreviewHistory
                         new ModelUsage(models[1], requests - (long)(requests * split), output - firstOutput, output - firstOutput,
                             measuredMs - firstMs),
                     ];
+                var totals = new TokenTotals(requests, input, (long)(input * 0.9), input / 40, output, output / 3);
+                usage = [.. usage.Select(m => m with { Cost = PreviewCost(m, totals) })];
+                var dayCost = usage.Aggregate(CostTally.Zero, (sum, m) => sum + m.Cost!.Value);
                 result.Add(new DailyUsage(
                     date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                     source,
-                    new TokenTotals(requests, input, (long)(input * 0.9), input / 40, output, output / 3),
+                    totals,
                     output,
                     measuredMs,
                     0,
                     1 + (int)(random.NextDouble() * 6),
                     offset < 30 ? daySpeed * (2 + random.NextDouble() * 3) : null,
-                    usage));
+                    usage)
+                {
+                    // A quarter of the oldest days predate costs, as after an upgrade whose logs are gone.
+                    Cost = offset > count * 3 / 4 && (offset * 7 + (int)source) % 4 == 0 ? null : dayCost,
+                    PriceVersion = Pricing.PriceBook.Bundled.Version,
+                });
             }
         }
 
         return result;
+    }
+
+    /// <summary>A model's share of the day priced with the bundled table, one request at a time (METRICS 9.3).</summary>
+    private static CostTally PreviewCost(ModelUsage model, TokenTotals totals)
+    {
+        var share = totals.Output > 0 ? (double)model.Output / totals.Output : 0;
+        var requests = Math.Max(1, model.Requests);
+        var tokens = new Parsing.TokenCounts(
+            (long)(totals.Input * share) / requests,
+            (long)(totals.CachedInput * share) / requests,
+            (long)(totals.CacheWriteInput * share) / requests,
+            model.Output / requests);
+        return Pricing.PriceBook.Bundled.Cost(model.Model, null, tokens, null, fast: false) is { } each
+            ? new CostTally(each * model.Requests)
+            : new CostTally(UnpricedRequests: model.Requests);
     }
 }

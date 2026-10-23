@@ -87,7 +87,7 @@ internal sealed class DailyTablePeer(DailyTable owner) : FrameworkElementAutomat
             return bounds.IsEmpty ? new Point(double.NaN, double.NaN) : new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
         }
 
-        protected override string GetHelpTextCore() => string.Empty;
+        protected override string GetHelpTextCore() => table.AccessibleHelp(Index);
 
         protected override string GetItemStatusCore() => string.Empty;
 

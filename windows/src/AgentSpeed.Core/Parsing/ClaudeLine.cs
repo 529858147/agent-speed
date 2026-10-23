@@ -44,6 +44,9 @@ internal struct ClaudeLine
     public string? Model;
     public TokenCounts Usage;
 
+    /// <summary><c>message.usage.speed == "fast"</c> (METRICS 3.2).</summary>
+    public bool Fast;
+
     public readonly string? Key => MessageId ?? RequestId ?? Uuid;
 }
 
@@ -203,7 +206,7 @@ internal static class ClaudeLineReader
                 reader.Read();
                 if (reader.TokenType == JsonTokenType.StartObject)
                 {
-                    result.Usage = ReadUsage(ref reader);
+                    (result.Usage, result.Fast) = ReadUsage(ref reader);
                 }
                 else
                 {
@@ -223,9 +226,10 @@ internal static class ClaudeLineReader
         }
     }
 
-    private static TokenCounts ReadUsage(ref Utf8JsonReader reader)
+    private static (TokenCounts Usage, bool Fast) ReadUsage(ref Utf8JsonReader reader)
     {
-        long input = 0, cacheCreation = 0, cacheRead = 0, output = 0, thinking = 0;
+        long input = 0, cacheCreation = 0, cacheCreation1h = 0, cacheRead = 0, output = 0, thinking = 0;
+        var fast = false;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("input_tokens"u8))
@@ -251,7 +255,18 @@ internal static class ClaudeLineReader
             else if (reader.ValueTextEquals("output_tokens_details"u8))
             {
                 reader.Read();
-                thinking = ReadThinkingTokens(ref reader);
+                thinking = ReadNestedCount(ref reader, "thinking_tokens"u8);
+            }
+            else if (reader.ValueTextEquals("cache_creation"u8))
+            {
+                reader.Read();
+                cacheCreation1h = ReadNestedCount(ref reader, "ephemeral_1h_input_tokens"u8);
+            }
+            else if (reader.ValueTextEquals("speed"u8))
+            {
+                reader.Read();
+                fast = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("fast"u8);
+                JsonScan.SkipValue(ref reader);
             }
             else
             {
@@ -261,10 +276,14 @@ internal static class ClaudeLineReader
         }
 
         var totalInput = JsonScan.SaturatingAdd(JsonScan.SaturatingAdd(input, cacheCreation), cacheRead);
-        return new TokenCounts(totalInput, cacheRead, cacheCreation, output, thinking);
+        return (new TokenCounts(totalInput, cacheRead, cacheCreation, output, thinking, Math.Min(cacheCreation1h, cacheCreation)), fast);
     }
 
-    private static long ReadThinkingTokens(ref Utf8JsonReader reader)
+    /// <summary>
+    /// One integer member of a nested object (<c>output_tokens_details.thinking_tokens</c>,
+    /// <c>cache_creation.ephemeral_1h_input_tokens</c>); 0 when absent.
+    /// </summary>
+    private static long ReadNestedCount(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
@@ -272,14 +291,14 @@ internal static class ClaudeLineReader
             return 0;
         }
 
-        long thinking = 0;
+        long count = 0;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
-            var isThinking = reader.ValueTextEquals("thinking_tokens"u8);
+            var isMatch = reader.ValueTextEquals(name);
             reader.Read();
-            if (isThinking)
+            if (isMatch)
             {
-                thinking = JsonScan.ReadCount(ref reader);
+                count = JsonScan.ReadCount(ref reader);
             }
             else
             {
@@ -287,7 +306,7 @@ internal static class ClaudeLineReader
             }
         }
 
-        return thinking;
+        return count;
     }
 
     /// <summary>Inspects the direct content blocks: an interrupt marker text and any <c>tool_use</c> block.</summary>

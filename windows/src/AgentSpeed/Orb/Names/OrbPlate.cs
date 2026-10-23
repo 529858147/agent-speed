@@ -15,7 +15,7 @@ internal sealed class OrbPlate : IOrbAttachment
     /// <summary>Room around the capsule inside the window: the shadow (blur 9, y 1) and the motion offsets (≤ 4 pt).</summary>
     private const double Margin = 14;
 
-    private readonly OrbWindow _orb;
+    private readonly IOrbWindow _orb;
     private readonly Func<double> _clock;
     private readonly NamePlateAnimation _animation = new();
     private PlateInk? _ink;
@@ -35,7 +35,7 @@ internal sealed class OrbPlate : IOrbAttachment
     private int _calmFrames;
     private double _lastHover;
 
-    public OrbPlate(OrbWindow orb, PlateWindow window, Func<double> clock)
+    public OrbPlate(IOrbWindow orb, PlateWindow window, Func<double> clock)
     {
         _orb = orb;
         _clock = clock;

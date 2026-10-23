@@ -29,6 +29,7 @@ public sealed partial class LiquidModel : IOrbStyleModel
     private const double R = LiquidGeometry.GlassRadius;
     private const double Tau = 2 * Math.PI;
     private const double PhaseWrap = Tau * 10;
+    private const double DriftWrap = Tau * 200;
 
     private readonly Body[] _motes = new Body[MotePool];
     private readonly Body[] _pops = new Body[PopPool];
@@ -82,6 +83,7 @@ public sealed partial class LiquidModel : IOrbStyleModel
     private double _rate1;
     private double _rate2;
     private double _rate3;
+    private double _drift;
     private bool _ratesPrimed;
     private double _lastLevelTarget = LiquidGeometry.IdleLevel;
     private bool _boiling;
@@ -126,6 +128,13 @@ public sealed partial class LiquidModel : IOrbStyleModel
     public double Phase3 => _phase3;
 
     public double Phase4 => _phase4;
+
+    /// <summary>
+    /// The energy currents' drift phase (radians): current <c>k</c> runs at <c>(0.35 + 0.2 k)</c> × it, the phase that
+    /// <see cref="CurrentY"/> takes as <c>φ</c>. It wraps at 400π, where both <c>φ</c> and <c>1.7 φ</c> of every current
+    /// are whole turns.
+    /// </summary>
+    public double CurrentDrift => _drift;
 
     /// <summary>True while the surface boils (redline tier, Standard and up).</summary>
     public bool Boiling => _boiling;
@@ -437,6 +446,12 @@ public sealed partial class LiquidModel : IOrbStyleModel
             _currentPhases[k] = Wrap(_currentPhases[k] + Tau * mean1 * (0.35 + 0.2 * k) * dt);
         }
 
+        _drift += Tau * mean1 * dt;
+        if (_drift >= DriftWrap)
+        {
+            _drift -= DriftWrap;
+        }
+
         (_rate1, _rate2, _rate3) = (rate1, rate2, rate3);
     }
 
@@ -483,6 +498,13 @@ public sealed partial class LiquidModel : IOrbStyleModel
     }
 
     internal double RippleAmplitude(int index) => _ripples[index].Amplitude;
+
+    /// <summary>Ripple <paramref name="index"/> (below <see cref="RippleCount"/>): impact x (S), seconds since the impact and <c>A_r</c> (S).</summary>
+    public (double X, double Age, double Amplitude) RippleAt(int index)
+    {
+        ref readonly var ripple = ref _ripples[index];
+        return (ripple.X, _time - ripple.Start, ripple.Amplitude);
+    }
 
     private void ExpireRipples()
     {

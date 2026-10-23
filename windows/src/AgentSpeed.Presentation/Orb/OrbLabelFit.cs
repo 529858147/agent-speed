@@ -36,6 +36,34 @@ public static class OrbLabelFit
         return Math.Max(0, 2 * (Math.Sqrt(inner * inner - bottom * bottom) - RingMargin));
     }
 
+    /// <summary>
+    /// How a title fits <paramref name="limit"/> (DESIGN 1): at its own size and tracking when it fits; otherwise the
+    /// tracking tightens linearly down to 0, then the size shrinks down to <see cref="MinimumScale"/> (never below
+    /// <paramref name="floor"/>). A title that still does not fit is drawn centered past the limit; it is never cut.
+    /// </summary>
+    /// <param name="untrackedWidth">Advance width of the title at <paramref name="size"/> with no tracking.</param>
+    /// <param name="tracking">The style's tracking per gap between characters.</param>
+    /// <param name="gaps">Gaps between grapheme clusters (count − 1).</param>
+    /// <returns>The tracking and size to draw with (size rounded down to 0.25, tracking to 0.05).</returns>
+    public static (double Tracking, double Size) Fit(double untrackedWidth, double tracking, int gaps, double limit, double size,
+        double floor = OrbReadoutLayout.MinTextSize)
+    {
+        gaps = Math.Max(1, gaps);
+        tracking = Math.Max(0, tracking);
+        if (!double.IsFinite(untrackedWidth) || untrackedWidth + tracking * gaps <= limit || limit <= 0)
+        {
+            return (tracking, size);
+        }
+
+        if (untrackedWidth <= limit && tracking > 0)
+        {
+            return (Math.Max(0, Math.Floor((limit - untrackedWidth) / gaps * 20) / 20), size);
+        }
+
+        var scale = Math.Max(MinimumScale, limit / untrackedWidth);
+        return (0, Math.Max(Math.Min(floor, size), Math.Floor(size * scale * 4) / 4));
+    }
+
     /// <summary>Scale for a label of <paramref name="naturalWidth"/>: 1 when it fits, never below <see cref="MinimumScale"/>.</summary>
     public static double Scale(double naturalWidth, double availableWidth)
     {

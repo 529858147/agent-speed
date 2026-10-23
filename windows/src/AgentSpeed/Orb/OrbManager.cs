@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using AgentSpeed.Core;
 using AgentSpeed.Interop;
+using AgentSpeed.Orb.Gpu;
 using AgentSpeed.Orb.Names;
 using AgentSpeed.Orb.Render;
 using AgentSpeed.Presentation.Colors;
@@ -16,8 +17,10 @@ using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Settings.Orbs;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Services;
 using AgentSpeed.Theme;
+using AgentSpeed.Titles;
 
 namespace AgentSpeed.Orb;
 
@@ -100,6 +103,15 @@ internal sealed class OrbManager : IDisposable
         _undoTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => CheckUndo(), ui);
         _undoTimer.Stop();
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
+        GpuOrbSurface.RendererFailed += OnRendererFailed;
+        UnitAnnounced += (_, e) =>
+        {
+            if (_entries.TryGetValue(e.OrbId, out var entry))
+            {
+                entry.Window.Announce(e.Text);
+            }
+        };
+        CompositorTicker.DisplayStateChanged += OnDisplayStateChanged;
     }
 
     /// <summary>Rendering pauses while the session is locked (DESIGN 2a, Frame policy); data keeps flowing.</summary>
@@ -115,12 +127,49 @@ internal sealed class OrbManager : IDisposable
 
     private bool _locked;
 
+    /// <summary>The GPU could not be used any more: every orb is rebuilt with the WPF renderer.</summary>
+    private bool _wpfFallback;
+
+    private void OnRendererFailed(object? sender, EventArgs e) => _ui.BeginInvoke(() =>
+    {
+        if (_wpfFallback || _disposed)
+        {
+            return;
+        }
+
+        App.AppLog.Warn("The orb's GPU renderer failed; switching the orbs to the WPF renderer.");
+        _wpfFallback = true;
+        foreach (var id in _entries.Keys.ToArray())
+        {
+            CloseEntry(id);
+        }
+
+        Apply();
+    });
+
+    /// <summary>Rendering pauses while the console display is off (DESIGN 2a, Frame policy); the first frame after shows the current state.</summary>
+    private void OnDisplayStateChanged(object? sender, EventArgs e)
+    {
+        foreach (var entry in _entries.Values)
+        {
+            entry.Window.Surface.Locked = _locked || CompositorTicker.DisplayOff;
+        }
+    }
+
     /// <summary>Raised when the pending undo appears, changes or expires (the Settings banner follows it).</summary>
     public event EventHandler? UndoChanged;
 
     public OrbUndo? PendingUndo { get; private set; }
 
     private AppSettings Settings => _settings.Current;
+
+    /// <summary>Each orb's title theme (its own, else General); without it the orbs show the Vehicles titles.</summary>
+    public TitleThemesService? Titles { get; init; }
+
+    private TitleTheme ThemeOf(OrbDefinition orb) => Titles?.ForOrb(orb) ?? TitleTheme.Vehicles;
+
+    /// <summary>Formats the money unit of orbs set to cost (DESIGN 9); without it every orb shows tok/s.</summary>
+    public Presentation.Cost.CostDisplay? Cost { get; init; }
 
     /// <summary>Visible orb windows by id (for thumbnails' live values and the settings highlight).</summary>
     public IReadOnlyDictionary<string, OrbFeed> Feeds => _entries.ToDictionary(e => e.Key, e => e.Value.Feed);
@@ -140,7 +189,7 @@ internal sealed class OrbManager : IDisposable
         {
             if (entry.Window.Handle != 0 && User32.GetWindowRect(entry.Window.Handle, out var rect))
             {
-                list.Add((entry.Window.Surface, new Rect(rect.Left, rect.Top, rect.Width, rect.Height), entry.Window.Opacity));
+                list.Add((new OrbSnapshotElement(entry.Window), new Rect(rect.Left, rect.Top, rect.Width, rect.Height), entry.Window.Opacity));
             }
         }
 
@@ -161,7 +210,8 @@ internal sealed class OrbManager : IDisposable
         foreach (var (id, entry) in _entries)
         {
             SetActions(entry.Window, id);
-            entry.Window.Language = AppFonts.XmlLanguageFor(_loc.LanguageCode);
+            entry.Window.SetUnitHint(_loc["orbs.unit.toggleHint"]);
+            entry.Window.SetLanguage(AppFonts.XmlLanguageFor(_loc.LanguageCode));
         }
 
         Apply();
@@ -213,7 +263,16 @@ internal sealed class OrbManager : IDisposable
             }
 
             entry.Definition = orb;
+            var unitChanged = entry.Feed.Unit != orb.Unit;
+            entry.Feed.Unit = orb.Unit;
+            entry.Feed.Cost = Cost;
             ConfigureEntry(entry);
+            if (unitChanged && _started)
+            {
+                // The value switches with the unit line at once (DESIGN 9 Orb, Transition), not with the next snapshot.
+                entry.Feed.Update(_speed.Snapshot, _speed.Now);
+                Push(entry, settings.Orbs.Orbs.Length == 1);
+            }
         }
 
         foreach (var id in created)
@@ -257,6 +316,7 @@ internal sealed class OrbManager : IDisposable
         foreach (var entry in _entries.Values)
         {
             var feed = entry.Feed;
+            feed.Previewing = _speed.IsPreviewing;
             var fired = feed.Update(snapshot, now);
             Push(entry, single);
             if (fired)
@@ -485,6 +545,8 @@ internal sealed class OrbManager : IDisposable
 
         _disposed = true;
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
+        GpuOrbSurface.RendererFailed -= OnRendererFailed;
+        CompositorTicker.DisplayStateChanged -= OnDisplayStateChanged;
         _plates.Dispose();
         _deadline.Stop();
         _chipTimer.Stop();
@@ -506,10 +568,11 @@ internal sealed class OrbManager : IDisposable
 
     private Entry CreateEntry(OrbDefinition orb)
     {
-        var window = new OrbWindow(orb.Id, () => _speed.Now, _clock, _seed++ * 2654435761u | 1)
-        {
-            Language = AppFonts.XmlLanguageFor(_loc.LanguageCode),
-        };
+        var seed = _seed++ * 2654435761u | 1;
+        IOrbWindow window = !_wpfFallback && GpuDevice.Shared is { } device
+            ? new GpuOrbWindow(orb.Id, () => _speed.Now, _clock, seed, device)
+            : new OrbWindow(orb.Id, () => _speed.Now, _clock, seed);
+        window.SetLanguage(AppFonts.XmlLanguageFor(_loc.LanguageCode));
         var entry = new Entry(orb, window, new OrbFeed(orb.Id));
         if (_pendingFlights.Remove(orb.Id, out var from))
         {
@@ -527,18 +590,42 @@ internal sealed class OrbManager : IDisposable
             ShowChip(orb.Id, TimeSpan.Zero);
         };
         window.DragReleased += (_, raw) => OnDragReleased(orb.Id, raw);
+        window.UnitToggleRequested += (_, _) => ToggleUnit(orb.Id);
+        window.SetUnitHint(_loc["orbs.unit.toggleHint"]);
         SetActions(window, orb.Id);
         _entries[orb.Id] = entry;
         return entry;
     }
 
-    private void SetActions(OrbWindow window, string id) => window.SetActions(
+    private void SetActions(IOrbWindow window, string id) => window.SetActions(
     [
         (_loc["menu.dashboard"], () => _host.ShowDashboardAt(new POINT((int)window.Center.X, (int)window.Center.Y))),
         (_loc["a11y.orb.showMenu"], () => _host.ShowOrbMenu(id)),
         (_loc["a11y.orb.moveCorner"], () => MoveToNextCorner(id)),
+        (_loc["a11y.orb.toggleUnit"], () => ToggleUnit(id)),
         (_loc["menu.orb.settings"], () => _host.OpenOrbSettings(id)),
     ]);
+
+    /// <summary>
+    /// Switches an orb between tok/s and money (DESIGN 9 Orb, Switching): the unit click of a floating orb window (after
+    /// the double-click interval, see <see cref="OrbUnitToggle"/>) and the UI Automation action. Persisted at once; the new
+    /// unit is announced once (<c>a11y.unitChanged</c>).
+    /// </summary>
+    public void ToggleUnit(string orbId)
+    {
+        if (_disposed || Settings.Orbs.Find(orbId) is not { } orb)
+        {
+            return;
+        }
+
+        var next = orb.Unit.Toggled();
+        _settings.Update(s => s with { Orbs = OrbEditing.SetUnit(s.Orbs, orbId, next) });
+        var unit = next == OrbUnit.Cost && Cost is { } cost ? cost.UnitPerSecond : _loc["unit.tokS"];
+        UnitAnnounced?.Invoke(this, (orbId, _loc.Format("a11y.unitChanged", unit)));
+    }
+
+    /// <summary>A unit switch to announce once through UI Automation by the orb's window (orb id, text).</summary>
+    public event EventHandler<(string OrbId, string Text)>? UnitAnnounced;
 
     private void CloseEntry(string id)
     {
@@ -561,7 +648,7 @@ internal sealed class OrbManager : IDisposable
         var settings = Settings;
         var orb = entry.Definition;
         var effects = new EffectsPolicy(settings.Effects, _theme.ReduceMotion, _theme.HighContrast);
-        var texts = Texts();
+        var texts = Texts(ThemeOf(orb), orb.Unit == OrbUnit.Cost && Cost is { } cost ? cost.UnitPerSecond : null);
         var sources = orb.TrackedSources is { } set ? set.ToArray() : null;
         var unavailable = UnavailableOf(entry);
         var config = new OrbSurfaceConfig(orb.Style, orb.Size, _theme.IsDark ? OrbAppearance.Dark : OrbAppearance.Light, effects,
@@ -580,20 +667,29 @@ internal sealed class OrbManager : IDisposable
         entry.Window.Surface.IsPreferred = _preferred == orb.Id;
     }
 
-    private ReadoutTexts? _texts;
+    private readonly Dictionary<(TitleTheme Theme, string? Unit), ReadoutTexts> _texts = new();
     private string? _textsLanguage;
 
-    /// <summary>The readout texts, rebuilt only when the language changes (so unchanged configurations compare equal).</summary>
-    private ReadoutTexts Texts()
+    /// <summary>
+    /// The readout texts of a title theme, rebuilt only when the language or the theme's titles change (so unchanged
+    /// configurations compare equal).
+    /// </summary>
+    /// <param name="moneyUnit">The money unit line (<c>US$/s</c>, DESIGN 9) of an orb set to cost; null for tok/s.</param>
+    private ReadoutTexts Texts(TitleTheme theme, string? moneyUnit = null)
     {
-        if (_texts is null || _textsLanguage != _loc.LanguageCode)
+        if (_textsLanguage != _loc.LanguageCode || _texts.Count > 32)
         {
-            var labels = Enum.GetValues<SpeedTitle>().Select(t => DisplayText.TitleLabel(t, _loc)).ToArray();
-            _texts = new ReadoutTexts(_loc["unit.tokS"], _loc["peak.new"], labels, _loc.UsesLatinScript);
+            _texts.Clear();
             _textsLanguage = _loc.LanguageCode;
         }
 
-        return _texts;
+        if (!_texts.TryGetValue((theme, moneyUnit), out var texts))
+        {
+            texts = new ReadoutTexts(moneyUnit ?? _loc["unit.tokS"], _loc["peak.new"], theme.Labels(_loc), _loc.UsesLatinScript);
+            _texts[(theme, moneyUnit)] = texts;
+        }
+
+        return texts;
     }
 
     private SourceSet UnavailableOf(Entry entry)
@@ -619,7 +715,10 @@ internal sealed class OrbManager : IDisposable
             unavailableTitle = _loc[reading.State == SubsetState.AllDisabled ? "source.disabled" : "source.notFound"];
         }
 
-        var info = _loc.Format("today.summary", SpeedFormat.Tokens(reading.Today.Output), reading.Agents.Count);
+        // Money (DESIGN 9): the value and hover line change; heat, tiers and titles keep following tokens.
+        var money = unavailableTitle is null ? feed.Money : null;
+        surface.Scene.SetMoney(money);
+        var info = money?.HoverLine ?? _loc.Format("today.summary", SpeedFormat.Tokens(reading.Today.Output), reading.Agents.Count);
         surface.SetData(feed.Value, feed.Tier, feed.Title, reading.GeneratingSources, info, unavailableTitle);
         surface.SetIdentity(orb.TrackedSources?.ToArray(), UnavailableOf(entry));
         entry.Window.SetDimmed(unavailableTitle is not null);
@@ -631,13 +730,18 @@ internal sealed class OrbManager : IDisposable
         {
             accessible = _loc.Format("a11y.orb.unavailable", name);
         }
+        else if (money is not null && Cost is { } costDisplay)
+        {
+            var named = single && orb.TrackedSources is null ? null : name;
+            accessible = costDisplay.LiveAccessibility(money, ThemeOf(orb).Text(feed.Title, _loc), named);
+        }
         else if (single && orb.TrackedSources is null)
         {
-            accessible = DisplayText.Accessibility(feed.Value, feed.Title, _loc);
+            accessible = DisplayText.Accessibility(feed.Value, ThemeOf(orb).Text(feed.Title, _loc), _loc);
         }
         else
         {
-            accessible = _loc.Format("a11y.orb.named", name, SpeedFormat.Speed(feed.Value), DisplayText.TitleName(feed.Title, _loc));
+            accessible = _loc.Format("a11y.orb.named", name, SpeedFormat.Speed(feed.Value), ThemeOf(orb).Text(feed.Title, _loc));
         }
 
         if (accessible != entry.PendingName)
@@ -1119,11 +1223,11 @@ internal sealed class OrbManager : IDisposable
 
     private long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    private sealed class Entry(OrbDefinition definition, OrbWindow window, OrbFeed feed)
+    private sealed class Entry(OrbDefinition definition, IOrbWindow window, OrbFeed feed)
     {
         public OrbDefinition Definition { get; set; } = definition;
 
-        public OrbWindow Window { get; } = window;
+        public IOrbWindow Window { get; } = window;
 
         public OrbFeed Feed { get; } = feed;
 

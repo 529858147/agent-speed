@@ -76,6 +76,10 @@ public sealed class ParserFixtureTests
             Assert.True(e.GetProperty("reasoning").GetInt64() == r.Tokens.Reasoning, $"{label} reasoning: got {r.Tokens.Reasoning}");
             Assert.True(e.GetProperty("model").GetString() == r.Model, $"{label} model: got {r.Model}");
             Assert.True(e.GetProperty("final").GetBoolean() == r.Final, $"{label} final: got {r.Final}");
+            Assert.True(e.GetProperty("cacheWrite1hInput").GetInt64() == r.Tokens.CacheWrite1hInput,
+                $"{label} cacheWrite1hInput: got {r.Tokens.CacheWrite1hInput}");
+            Assert.True(e.GetProperty("provider").GetString() == r.Provider, $"{label} provider: got {r.Provider}");
+            Assert.True(e.GetProperty("fast").GetBoolean() == r.Fast, $"{label} fast: got {r.Fast}");
             Assert.Equal(parser.Source, r.Source);
             Assert.Equal(parser.AgentId, r.AgentId);
         }

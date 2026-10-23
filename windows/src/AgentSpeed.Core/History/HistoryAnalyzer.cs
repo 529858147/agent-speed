@@ -5,6 +5,7 @@ using AgentSpeed.Core.IO.Sqlite;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.OpenCode;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.History;
 
@@ -47,12 +48,18 @@ internal sealed record HistoryReport(
 /// </summary>
 internal sealed class HistoryAnalyzer
 {
-    /// <summary>2: measured output and time per model (METRICS 8).</summary>
-    public const int AnalysisVersion = 2;
+    /// <summary>2: measured output and time per model (METRICS 8). 3: cost (METRICS 9.7).</summary>
+    public const int AnalysisVersion = 3;
 
     private const string OpenCodeFamily = "opencode";
     private const string ZoneMeta = "timeZone";
     private const string OpenCodeMeta = "opencode";
+
+    /// <summary>
+    /// The current price table version of the last complete run; when it changes, files with unpriced responses are
+    /// analysed again (METRICS 9.7).
+    /// </summary>
+    private const string PriceVersionMeta = "priceTableVersion";
 
     private static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -62,15 +69,36 @@ internal sealed class HistoryAnalyzer
     private readonly Dictionary<string, StoredFile> _entries;
     private readonly Dictionary<string, double> _peaks;
 
-    public HistoryAnalyzer(HistoryStore store, HistoryOptions? options = null)
+    /// <param name="pricing">Shared with the live engine in the app, so today is priced alike (METRICS 9.6); null uses the bundled table.</param>
+    public HistoryAnalyzer(HistoryStore store, HistoryOptions? options = null, PriceBook? pricing = null)
     {
         _store = store;
         _options = options ?? new HistoryOptions();
+        Pricing = pricing ?? new PriceBook();
         _entries = store.LoadFiles(PathComparer);
         _peaks = store.Peaks();
+        var repaired = Pricing.Restore(store.PriceBindings(), store.PriceTables());
+        if (repaired.Count > 0)
+        {
+            Trace.TraceInformation("Price bindings without a valid table rebound to the current table: {0}", repaired.Count);
+        }
+
+        SaveBindings();
     }
 
     public IReadOnlyDictionary<string, StoredFile> Entries => _entries;
+
+    public PriceBook Pricing { get; }
+
+    /// <summary>Stores the dates bound since the last save, with a copy of each referenced table.</summary>
+    public void SaveBindings()
+    {
+        var bindings = Pricing.TakeNewBindings();
+        if (bindings.Count > 0)
+        {
+            _store.SavePriceBindings(bindings, version => Pricing.Table(version)?.Data);
+        }
+    }
 
     /// <summary>Daily totals: sums over files, for the given sources (all when null), sorted by day then source name.</summary>
     public List<DailyUsage> Days(IReadOnlySet<SourceKind>? sources = null, IReadOnlyDictionary<string, double>? livePeaks = null)
@@ -97,7 +125,7 @@ internal sealed class HistoryAnalyzer
         return [.. totals
             .OrderBy(t => t.Key.Day, StringComparer.Ordinal)
             .ThenBy(t => SourceNames.Of(t.Key.Source), StringComparer.Ordinal)
-            .Select(t => t.Value.ToUsage(t.Key, Peak(t.Key.Day, livePeaks)))];
+            .Select(t => t.Value.ToUsage(t.Key, Peak(t.Key.Day, livePeaks), Pricing.BoundVersion(t.Key.Day)))];
     }
 
     /// <summary>Stores day peaks observed live (all sources together) where they raise the stored value.</summary>
@@ -138,7 +166,9 @@ internal sealed class HistoryAnalyzer
         var stopwatch = Stopwatch.StartNew();
         var zoneId = zone.Id;
         var zoneChanged = _entries.Count > 0 && !string.Equals(_store.Meta(ZoneMeta), zoneId, StringComparison.Ordinal);
-        var plan = BuildPlan(locations, enabled, zoneChanged, zoneId, cancellationToken);
+        var priceVersion = Pricing.CurrentVersion.ToString(CultureInfo.InvariantCulture);
+        var repricing = _entries.Count > 0 && !string.Equals(_store.Meta(PriceVersionMeta), priceVersion, StringComparison.Ordinal);
+        var plan = BuildPlan(locations, enabled, zoneChanged, repricing, zoneId, cancellationToken);
         var state = new HistoryProgress(0, plan.Files.Count + plan.Sessions.Count, 0, plan.Files.Sum(f => f.Size));
         progress?.Invoke(state);
         int analyzed = 0, sessions = 0, unreadable = plan.OpenCodeFailed ? 1 : 0;
@@ -160,6 +190,7 @@ internal sealed class HistoryAnalyzer
                     if (pending.Count > 0 && (force || Stopwatch.GetElapsedTime(lastSave).TotalMilliseconds >= _options.SaveIntervalMs))
                     {
                         _store.Save(pending);
+                        SaveBindings();
                         pending.Clear();
                         lastSave = Stopwatch.GetTimestamp();
                     }
@@ -178,12 +209,14 @@ internal sealed class HistoryAnalyzer
                 finally
                 {
                     Flush(force: true);
+                    SaveBindings();
                 }
             }
 
             if (!cancelled)
             {
                 _store.SetMeta(ZoneMeta, zoneId);
+                _store.SetMeta(PriceVersionMeta, priceVersion);
                 if (plan.OpenCodeIdentity is { } identity)
                 {
                     _store.SetMeta(OpenCodeMeta, identity);
@@ -210,8 +243,14 @@ internal sealed class HistoryAnalyzer
         return stored;
     }
 
+    /// <param name="repricing">The current price table changed: files with unpriced responses are analysed again (METRICS 9.7).</param>
     private Plan BuildPlan(
-        SourceLocations locations, IReadOnlySet<SourceKind> enabled, bool zoneChanged, string zoneId, CancellationToken cancellationToken)
+        SourceLocations locations,
+        IReadOnlySet<SourceKind> enabled,
+        bool zoneChanged,
+        bool repricing,
+        string zoneId,
+        CancellationToken cancellationToken)
     {
         var plan = new Plan();
         var seen = new HashSet<string>(PathComparer);
@@ -235,7 +274,8 @@ internal sealed class HistoryAnalyzer
                 var previous = _entries.GetValueOrDefault(file.Path);
                 if (previous is not null && !zoneChanged && previous.Version == _options.Version
                     && string.Equals(previous.Family, familyName, StringComparison.Ordinal)
-                    && previous.Size == file.Length && previous.Modified == file.LastWriteUtc.Ticks)
+                    && previous.Size == file.Length && previous.Modified == file.LastWriteUtc.Ticks
+                    && !(repricing && previous.HasUnpriced))
                 {
                     continue;
                 }
@@ -252,13 +292,13 @@ internal sealed class HistoryAnalyzer
 
         if (Families.IsEnabled(RootFamily.OpenCode, enabled) && locations.OpenCodeRoot.Length > 0)
         {
-            PlanOpenCode(plan, OpenCodeDatabase.DatabasePath(locations.OpenCodeRoot), zoneChanged, zoneId);
+            PlanOpenCode(plan, OpenCodeDatabase.DatabasePath(locations.OpenCodeRoot), zoneChanged, repricing, zoneId);
         }
 
         return plan;
     }
 
-    private void PlanOpenCode(Plan plan, string path, bool zoneChanged, string zoneId)
+    private void PlanOpenCode(Plan plan, string path, bool zoneChanged, bool repricing, string zoneId)
     {
         var database = new FileInfo(path);
         if (!database.Exists)
@@ -274,7 +314,8 @@ internal sealed class HistoryAnalyzer
             wal.Exists ? string.Create(CultureInfo.InvariantCulture, $"{wal.Length}:{wal.LastWriteTimeUtc.Ticks}") : "-",
             string.Create(CultureInfo.InvariantCulture, $"v{_options.Version}"),
             zoneId);
-        if (!zoneChanged && string.Equals(_store.Meta(OpenCodeMeta), identity, StringComparison.Ordinal))
+        var reprices = repricing && _entries.Values.Any(e => e.Family == OpenCodeFamily && e.HasUnpriced);
+        if (!zoneChanged && !reprices && string.Equals(_store.Meta(OpenCodeMeta), identity, StringComparison.Ordinal))
         {
             return;
         }
@@ -299,7 +340,7 @@ internal sealed class HistoryAnalyzer
                 var modified = Math.Max(info.UpdatedMs, lastUpdated);
                 var previous = _entries.GetValueOrDefault(OpenCodeRules.AgentId(info.Id));
                 if (previous is not null && !zoneChanged && previous.Version == _options.Version
-                    && previous.Size == rows && previous.Modified == modified)
+                    && previous.Size == rows && previous.Modified == modified && !(repricing && previous.HasUnpriced))
                 {
                     continue;
                 }
@@ -405,7 +446,7 @@ internal sealed class HistoryAnalyzer
                 Size = result.Length,
                 Modified = result.LastWriteUtc.Ticks,
                 Version = _options.Version,
-                Days = DayAggregate.Contributions(sink.Items.Values, prepared.Parser.Source, labeler),
+                Days = DayAggregate.Contributions(sink.Items.Values, prepared.Parser.Source, labeler, Pricing),
             };
             _entries[file.Path] = entry;
             pending.Add((entry, owned));
@@ -477,7 +518,7 @@ internal sealed class HistoryAnalyzer
                 Size = session.Rows,
                 Modified = session.ModifiedMs,
                 Version = _options.Version,
-                Days = DayAggregate.Contributions(latest.Values, SourceKind.OpenCode, labeler),
+                Days = DayAggregate.Contributions(latest.Values, SourceKind.OpenCode, labeler, Pricing),
             };
             _entries[agentId] = entry;
             pending.Add((entry, ledger.FinishFile()));
@@ -535,6 +576,7 @@ internal sealed class HistoryAnalyzer
                     Tokens = TokenCounts.Max(previous.Tokens, response.Tokens),
                     Model = response.Model ?? previous.Model,
                     Final = previous.Final || response.Final,
+                    Fast = previous.Fast || response.Fast,
                 };
             }
 

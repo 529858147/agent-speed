@@ -5,6 +5,7 @@ using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.OpenCode;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.Monitoring;
 
@@ -69,12 +70,14 @@ internal sealed class MonitorCore : IDisposable
         MonitorConfiguration configuration,
         SourceLocations locations,
         long todayStartMs,
-        IResponseObserver? observer = null)
+        IResponseObserver? observer = null,
+        PriceBook? pricing = null,
+        TimeZoneInfo? zone = null)
     {
         _enabled = configuration.EnabledSources;
         _enabledSet = SourceSet.From(_enabled);
         _observer = observer;
-        _engine = new SpeedEngine(todayStartMs);
+        _engine = new SpeedEngine(todayStartMs, pricing, zone);
         foreach (var (family, path) in locations.FileRoots())
         {
             _roots.Add(new SourceRoot(family, path, Families.IsEnabled(family, _enabled)));
@@ -507,13 +510,15 @@ internal sealed class MonitorCore : IDisposable
                 a.Live,
                 a.RecentSpeed,
                 DateTimeOffset.FromUnixTimeMilliseconds(a.Info.LastLineMs ?? nowMs),
-                a.ParentId))
+                a.ParentId) { LiveCost = a.LiveCost })
             .ToList();
 
         var sources = Enum.GetValues<SourceKind>()
-            .Select(kind => BuildSourceStatus(kind, todayStartMs, frame.SourceLive[(int)kind],
-                frame.SourceToday[(int)kind], agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating),
-                frame.SourceLiveEstimated[(int)kind]))
+            .Select(kind => WithCost(
+                BuildSourceStatus(kind, todayStartMs, frame.SourceLive[(int)kind],
+                    frame.SourceToday[(int)kind], agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating),
+                    frame.SourceLiveEstimated[(int)kind]),
+                frame))
             .ToList();
 
         var snapshot = new SpeedSnapshot(
@@ -535,8 +540,22 @@ internal sealed class MonitorCore : IDisposable
         {
             SubsetPeaks = subsets is { Count: > 0 } ? SubsetPeaks(subsets) : SpeedSnapshot.Empty.SubsetPeaks,
             DayStart = DateTimeOffset.FromUnixTimeMilliseconds(todayStartMs),
+            LiveCost = frame.LiveCost,
+            TodayCost = frame.TodayCost,
         };
         return (snapshot, frame.Events);
+    }
+
+    /// <summary>A disabled source carries no cost, like its tokens.</summary>
+    private static SourceStatus WithCost(SourceStatus status, EngineFrame frame)
+    {
+        var index = (int)status.Kind;
+        return !status.Enabled || frame.SourceLiveCost.Length <= index ? status : status with
+        {
+            LiveCost = frame.SourceLiveCost[index],
+            TodayCost = frame.SourceTodayCost[index],
+            UnpricedModels = frame.SourceUnpricedModels[index],
+        };
     }
 
     /// <summary>Snapshot while seeding: no measurements yet, only the state and the sources.</summary>

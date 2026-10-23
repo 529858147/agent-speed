@@ -1,5 +1,6 @@
 using System.Globalization;
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Localization;
 
@@ -240,8 +241,8 @@ public static class HistoryText
         return string.Join(loc["win.history.a11y.join"], parts.Where(p => !string.IsNullOrEmpty(p)));
     }
 
-    /// <summary>Everything a day holds, as one sentence for screen readers.</summary>
-    public static string Accessible(DaySummary day, DateOnly today, Localizer loc)
+    /// <summary>Everything a day holds, as one sentence for screen readers; with <paramref name="money"/>, its cost too.</summary>
+    public static string Accessible(DaySummary day, DateOnly today, Localizer loc, HistoryMoney? money = null)
     {
         ArgumentNullException.ThrowIfNull(day);
         ArgumentNullException.ThrowIfNull(loc);
@@ -250,6 +251,7 @@ public static class HistoryText
         {
             Labelled(loc["history.table.output"], SpeedFormat.Tokens(day.Output), loc),
             Labelled(loc["history.table.input"], SpeedFormat.Tokens(day.Input), loc),
+            money is null ? string.Empty : Labelled(loc["history.table.cost"], SpokenCost(day.Cost, money, loc), loc),
             Labelled(loc["history.table.requests"], FullNumber(day.Requests, loc), loc),
             Labelled(loc["history.table.cacheHit"], Percent(day.CacheHitRatio), loc),
             Labelled(loc["history.table.speed"], Speed(day.AverageSpeed, loc), loc),
@@ -282,14 +284,18 @@ public static class HistoryText
         return model.AverageSpeed is { } speed && double.IsFinite(speed) && speed > 0 ? $"{model.Model} · {Speed(speed, loc)}" : model.Model;
     }
 
-    /// <summary>The values of one breakdown bar: <c>輸出：312,345，佔比：38%，平均速度：88.2 tok/s，請求：151</c>.</summary>
-    public static string BreakdownValue(BreakdownRow row, Localizer loc)
+    /// <summary>
+    /// The values of one breakdown bar: <c>輸出：312,345，費用：4.20 美元，佔比：38%，平均速度：88.2 tok/s，請求：151</c> (the cost
+    /// only with <paramref name="money"/>).
+    /// </summary>
+    public static string BreakdownValue(BreakdownRow row, Localizer loc, HistoryMoney? money = null)
     {
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(loc);
         return JoinParts(
         [
             Labelled(loc["history.table.output"], FullNumber(row.Output, loc), loc),
+            money is null ? string.Empty : Labelled(loc["history.table.cost"], SpokenCost(row.Cost, money, loc), loc),
             Labelled(loc["win.history.share"], Percent(row.Share), loc),
             Labelled(loc["history.table.speed"], Speed(row.Speed, loc), loc),
             Labelled(loc["history.table.requests"], FullNumber(row.Requests, loc), loc),
@@ -305,7 +311,72 @@ public static class HistoryText
     }
 
     /// <summary>One breakdown bar for screen readers: its name, then its values.</summary>
-    public static string Accessible(BreakdownRow row, Localizer loc) => Labelled(BreakdownName(row, loc), BreakdownValue(row, loc), loc);
+    public static string Accessible(BreakdownRow row, Localizer loc, HistoryMoney? money = null) =>
+        Labelled(BreakdownName(row, loc), BreakdownValue(row, loc, money), loc);
+
+    /// <summary>Source names in source order, joined with <c>list.separator</c>.</summary>
+    public static string SourceList(IEnumerable<SourceKind> sources, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(loc);
+        return string.Join(loc["list.separator"], sources.Select(s => loc[DisplayText.SourceKey(s)]));
+    }
+
+    /// <summary>The line under a cost: unpriced requests, no cost data, or the excluded subscription sources; null when none.</summary>
+    public static string? CostNote(HistoryCost cost, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(loc);
+        return cost.Kind switch
+        {
+            HistoryCostKind.Priced => cost.IsPartial ? loc.Format("history.unpricedDay", cost.Unpriced) : null,
+            HistoryCostKind.Unknown => loc.Format("history.unpricedDay", cost.Requests),
+            HistoryCostKind.Unavailable => loc["history.costUnavailable"],
+            _ => loc.Format("cost.subscriptionExcluded", SourceList(cost.Excluded, loc)),
+        };
+    }
+
+    /// <summary>
+    /// A model's cost next to its share: the amount (<c>≥</c> when partial), <c>cost.free</c>, <c>cost.unknown</c>, or
+    /// <c>cost.subscription.tag</c> when only subscription sources used it.
+    /// </summary>
+    public static string ModelCostText(ModelCost? cost, HistoryMoney money, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(money);
+        ArgumentNullException.ThrowIfNull(loc);
+        if (cost is not { Requests: > 0 } counted)
+        {
+            return loc["cost.subscription.tag"];
+        }
+
+        if (counted.Cost is not { } tally || tally.IsUnknown(counted.Requests))
+        {
+            return loc["cost.unknown"];
+        }
+
+        if (tally.CostMicroUsd == 0 && tally.UnpricedRequests == 0)
+        {
+            return loc["cost.free"];
+        }
+
+        return (tally.UnpricedRequests > 0 ? CostDisplay.AtLeastSign : string.Empty) + money.Amount(tally.CostMicroUsd);
+    }
+
+    /// <summary>
+    /// How accessibility reads a cost: the amount with the currency's name, <c>≥</c> as <c>a11y.orb.costAtLeast</c>, <c>–</c>
+    /// as <c>cost.unknown</c>, a subscription as <c>cost.subscription.tag</c> (DESIGN 9).
+    /// </summary>
+    public static string SpokenCost(HistoryCost cost, HistoryMoney money, Localizer loc)
+    {
+        ArgumentNullException.ThrowIfNull(money);
+        ArgumentNullException.ThrowIfNull(loc);
+        return cost.Kind switch
+        {
+            HistoryCostKind.Priced when cost.IsPartial => loc.Format("a11y.orb.costAtLeast", money.Spoken(cost.MicroUsd)),
+            HistoryCostKind.Priced => money.Spoken(cost.MicroUsd),
+            HistoryCostKind.Subscription => loc["cost.subscription.tag"],
+            _ => loc["cost.unknown"],
+        };
+    }
 
     private static string Pattern(DateOnly day, string key, Localizer loc)
     {

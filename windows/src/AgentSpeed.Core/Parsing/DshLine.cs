@@ -36,8 +36,14 @@ internal struct DshEvent
     /// <summary><c>data.header.config.model</c>.</summary>
     public string? ConfigModel;
 
+    /// <summary><c>data.header.config.provider</c> (METRICS 3.2).</summary>
+    public string? ConfigProvider;
+
     /// <summary><c>data.message.source.model</c>.</summary>
     public string? SourceModel;
+
+    /// <summary><c>data.message.source.provider</c> (METRICS 3.2).</summary>
+    public string? SourceProvider;
     public string? MessageId;
     public bool HasUsage;
     public TokenCounts Usage;
@@ -265,7 +271,9 @@ internal static class DshLineReader
     private static void ReadData(ref Utf8JsonReader reader, ref DshEvent facts)
     {
         facts.ConfigModel = null;
+        facts.ConfigProvider = null;
         facts.SourceModel = null;
+        facts.SourceProvider = null;
         facts.MessageId = null;
         facts.HasUsage = false;
         facts.Usage = default;
@@ -281,7 +289,7 @@ internal static class DshLineReader
             if (reader.ValueTextEquals("header"u8))
             {
                 reader.Read();
-                facts.ConfigModel = ReadConfigModel(ref reader);
+                (facts.ConfigModel, facts.ConfigProvider) = ReadConfig(ref reader);
             }
             else if (reader.ValueTextEquals("message"u8))
             {
@@ -310,23 +318,23 @@ internal static class DshLineReader
         }
     }
 
-    // data.header.config.model
-    private static string? ReadConfigModel(ref Utf8JsonReader reader)
+    // data.header.config.model and .provider
+    private static (string? Model, string? Provider) ReadConfig(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return null;
+            return (null, null);
         }
 
-        string? model = null;
+        (string?, string?) result = (null, null);
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var config = reader.ValueTextEquals("config"u8);
             reader.Read();
             if (config)
             {
-                model = ReadStringProperty(ref reader, "model"u8);
+                result = ReadModelAndProvider(ref reader);
             }
             else
             {
@@ -334,7 +342,7 @@ internal static class DshLineReader
             }
         }
 
-        return model;
+        return result;
     }
 
     private static void ReadMessage(ref Utf8JsonReader reader, ref DshEvent facts)
@@ -348,6 +356,7 @@ internal static class DshLineReader
         }
 
         string? sourceModel = null;
+        string? sourceProvider = null;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("id"u8))
@@ -358,7 +367,7 @@ internal static class DshLineReader
             else if (reader.ValueTextEquals("source"u8))
             {
                 reader.Read();
-                sourceModel = ReadStringProperty(ref reader, "model"u8);
+                (sourceModel, sourceProvider) = ReadModelAndProvider(ref reader);
             }
             else if (reader.ValueTextEquals("content"u8))
             {
@@ -373,6 +382,7 @@ internal static class DshLineReader
         }
 
         facts.SourceModel = sourceModel;
+        facts.SourceProvider = sourceProvider;
     }
 
     private static bool ReadHasToolCall(ref Utf8JsonReader reader)
@@ -448,22 +458,28 @@ internal static class DshLineReader
             JsonScan.SaturatingAdd(JsonScan.SaturatingAdd(input, cacheRead), cacheWrite), cacheRead, cacheWrite, output, 0);
     }
 
-    private static string? ReadStringProperty(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
+    private static (string? Model, string? Provider) ReadModelAndProvider(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return null;
+            return (null, null);
         }
 
-        string? value = null;
+        string? model = null;
+        string? provider = null;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
-            var match = reader.ValueTextEquals(name);
+            var isModel = reader.ValueTextEquals("model"u8);
+            var isProvider = !isModel && reader.ValueTextEquals("provider"u8);
             reader.Read();
-            if (match)
+            if (isModel)
             {
-                value = JsonScan.ReadString(ref reader);
+                model = JsonScan.ReadString(ref reader);
+            }
+            else if (isProvider)
+            {
+                provider = JsonScan.ReadString(ref reader);
             }
             else
             {
@@ -471,7 +487,7 @@ internal static class DshLineReader
             }
         }
 
-        return value;
+        return (model, provider);
     }
 
     /// <summary>A JSON number (not a boolean) as whole milliseconds, truncated toward zero.</summary>

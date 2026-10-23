@@ -38,7 +38,8 @@ public sealed class DshParserTests
         var response = Assert.Single(sink.Latest);
         Assert.Equal(new ParsedResponse(
             "m-1", SourceKind.DeepSeek, AgentA, "deepseek-pro", T0 + 1000, T0 + 5000,
-            new TokenCounts(Input: 9400, CachedInput: 9216, CacheWriteInput: 64, Output: 300, Reasoning: 0)), response);
+            new TokenCounts(Input: 9400, CachedInput: 9216, CacheWriteInput: 64, Output: 300, Reasoning: 0),
+            Provider: "deepseek-account"), response);
         Assert.True(Assert.Single(sink.Emissions).IsCompletion);
         Assert.Equal("deepseek-pro", parser.Model);
         Assert.Equal(AgentPhase.Idle, parser.Phase);

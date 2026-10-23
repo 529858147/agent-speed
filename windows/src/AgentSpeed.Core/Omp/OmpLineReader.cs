@@ -237,6 +237,7 @@ internal static class OmpLineReader
         {
             reader.Read();
             call.HasProvider = reader.TokenType == JsonTokenType.String;
+            call.Provider = call.HasProvider && !reader.ValueSpan.IsEmpty ? reader.GetString() : null;
             JsonScan.SkipValue(ref reader);
         }
         else if (reader.ValueTextEquals("api"u8))
@@ -401,6 +402,7 @@ internal static class OmpLineReader
     {
         public string? Model;
         public bool HasProvider;
+        public string? Provider;
         public bool HasApi;
         public bool HasUsageObject;
         public Usage Usage;
@@ -409,6 +411,7 @@ internal static class OmpLineReader
         {
             Guarded = Model is not null && HasProvider && HasApi && HasUsageObject,
             Model = Model,
+            Provider = Provider,
             HasUsage = Usage.Input > 0 || Usage.Output > 0 || Usage.CacheRead > 0 || Usage.CacheWrite > 0,
             Tokens = new TokenCounts(
                 JsonScan.SaturatingAdd(JsonScan.SaturatingAdd(Usage.Input, Usage.CacheRead), Usage.CacheWrite),

@@ -7,9 +7,11 @@ public static class HistoryAggregator
 {
     /// <summary>
     /// Days with data inside <paramref name="range"/> for one source (or every source when null), oldest first.
-    /// Records with an unreadable day or without any usage are ignored.
+    /// Records with an unreadable day or without any usage are ignored. The costs of <paramref name="excluded"/> sources add
+    /// nothing (METRICS 9.4); their tokens count as usual.
     /// </summary>
-    public static IReadOnlyList<DaySummary> Daily(IEnumerable<DailyUsage> usage, SourceKind? source, DayRange? range = null)
+    public static IReadOnlyList<DaySummary> Daily(IEnumerable<DailyUsage> usage, SourceKind? source, DayRange? range = null,
+        SourceSet excluded = default)
     {
         ArgumentNullException.ThrowIfNull(usage);
         var groups = new SortedDictionary<DateOnly, List<DailyUsage>>();
@@ -33,7 +35,7 @@ public static class HistoryAggregator
         var result = new List<DaySummary>(groups.Count);
         foreach (var (day, records) in groups)
         {
-            result.Add(Summarize(day, records));
+            result.Add(Summarize(day, records, excluded));
         }
 
         return result;
@@ -44,9 +46,17 @@ public static class HistoryAggregator
         ArgumentNullException.ThrowIfNull(days);
         long requests = 0, input = 0, cached = 0, output = 0, measuredOutput = 0, measuredMs = 0;
         var active = 0;
+        var costDays = 0;
+        var cost = HistoryCost.None;
         DaySummary? busiest = null;
         foreach (var day in days)
         {
+            cost = cost.Add(day.Cost);
+            if (day.Cost.Tally is not null)
+            {
+                costDays++;
+            }
+
             requests += day.Requests;
             input += day.Input;
             cached += day.CachedInput;
@@ -60,7 +70,9 @@ public static class HistoryAggregator
             }
         }
 
-        return active == 0 ? HistoryTotals.Empty : new HistoryTotals(requests, input, cached, output, measuredOutput, measuredMs, active, busiest);
+        return active == 0
+            ? HistoryTotals.Empty
+            : new HistoryTotals(requests, input, cached, output, measuredOutput, measuredMs, active, busiest) { Cost = cost, CostDays = costDays };
     }
 
     /// <summary>Sources with at least one day of usage, in <see cref="SourceKind"/> order.</summary>
@@ -147,18 +159,111 @@ public static class HistoryAggregator
         MeasuredMs = total.MeasuredMs + Math.Max(0, part.MeasuredMs),
     };
 
+    /// <summary>
+    /// Models with responses of unknown price in <paramref name="range"/> over the counted sources, most unpriced requests
+    /// first (<c>history.unpricedNotice</c>). Contributions stored before costs existed are not unknown prices and are left
+    /// out; unpriced requests no named model accounts for are listed under an empty name.
+    /// </summary>
+    public static IReadOnlyList<UnpricedModel> UnpricedModels(IEnumerable<DailyUsage> usage, SourceKind? source, DayRange range,
+        SourceSet excluded = default)
+    {
+        ArgumentNullException.ThrowIfNull(usage);
+        var counts = new Dictionary<(string Model, SourceKind Source), long>();
+        foreach (var record in usage)
+        {
+            if (record is null || (source is { } only && record.Source != only) || excluded.Contains(record.Source)
+                || record.Cost is not { } cost || !HistoryRanges.TryParseDay(record.Day, out var day) || !range.Contains(day))
+            {
+                continue;
+            }
+
+            long named = 0;
+            foreach (var model in record.Models ?? [])
+            {
+                if (model.Cost is not { UnpricedRequests: > 0 } modelCost)
+                {
+                    continue;
+                }
+
+                var key = ((model.Model ?? string.Empty).Trim(), record.Source);
+                counts[key] = counts.GetValueOrDefault(key) + modelCost.UnpricedRequests;
+                named += modelCost.UnpricedRequests;
+            }
+
+            if (cost.UnpricedRequests - named is > 0 and var rest)
+            {
+                var key = (string.Empty, record.Source);
+                counts[key] = counts.GetValueOrDefault(key) + rest;
+            }
+        }
+
+        return counts
+            .Select(c => new UnpricedModel(c.Key.Model, c.Key.Source, c.Value))
+            .OrderByDescending(m => m.Requests)
+            .ThenBy(m => m.Model, StringComparer.Ordinal)
+            .ThenBy(m => m.Source)
+            .ToArray();
+    }
+
+    /// <summary>The cost of one stored record as counted: nothing (but the mark) for an excluded source.</summary>
+    public static HistoryCost CostOf(DailyUsage record, SourceSet excluded = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return excluded.Contains(record.Source)
+            ? new HistoryCost(null, 0, SourceSet.Of(record.Source))
+            : new HistoryCost(record.Cost, Math.Max(0, record.Totals.Requests));
+    }
+
     internal static bool HasUsage(DailyUsage record) =>
         record.Totals.Requests > 0 || record.Totals.Output > 0 || record.Totals.Input > 0;
 
-    private static DaySummary Summarize(DateOnly day, List<DailyUsage> records)
+    private static DaySummary Summarize(DateOnly day, List<DailyUsage> records, SourceSet excluded)
     {
         long requests = 0, input = 0, cached = 0, cacheWrite = 0, output = 0, reasoning = 0, measuredOutput = 0, measuredMs = 0, unfinalized = 0;
         var agents = 0;
         double? peak = null;
         var models = new Dictionary<string, ModelUsage>(StringComparer.Ordinal);
-        var sources = new Dictionary<SourceKind, long>();
+        var sources = new Dictionary<SourceKind, SourceOutput>();
+        var dayCost = HistoryCost.None;
+        CostTally? totalCost = null;
+        long totalRequests = 0;
+        int? priceVersion = null;
+        var modelCosts = new Dictionary<string, ModelCost>(StringComparer.Ordinal);
         foreach (var record in records)
         {
+            var counted = CostOf(record, excluded);
+            var recordRequests = Math.Max(0, record.Totals.Requests);
+            dayCost = dayCost.Add(counted);
+            totalCost = HistoryCostMath.Merged(totalCost, totalRequests, record.Cost, recordRequests);
+            totalRequests += recordRequests;
+            if (record.PriceVersion is { } version)
+            {
+                priceVersion = Math.Max(priceVersion ?? version, version);
+            }
+
+            var previous = sources.GetValueOrDefault(record.Source, new SourceOutput(record.Source, 0));
+            sources[record.Source] = previous with
+            {
+                Output = previous.Output + Math.Max(0, record.Totals.Output),
+                Requests = previous.Requests + recordRequests,
+                Cost = previous.Cost.Add(counted),
+            };
+            if (!excluded.Contains(record.Source))
+            {
+                foreach (var model in record.Models ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(model.Model))
+                    {
+                        continue;
+                    }
+
+                    var current = modelCosts.GetValueOrDefault(model.Model);
+                    var modelRequests = Math.Max(0, model.Requests);
+                    modelCosts[model.Model] = new ModelCost(
+                        HistoryCostMath.Merged(current.Cost, current.Requests, model.Cost, modelRequests), current.Requests + modelRequests);
+                }
+            }
+
             var totals = record.Totals;
             requests += Math.Max(0, totals.Requests);
             input += Math.Max(0, totals.Input);
@@ -175,7 +280,6 @@ public static class HistoryAggregator
                 peak = p;
             }
 
-            sources[record.Source] = sources.GetValueOrDefault(record.Source) + Math.Max(0, totals.Output);
             foreach (var model in record.Models ?? [])
             {
                 if (string.IsNullOrWhiteSpace(model.Model))
@@ -192,12 +296,23 @@ public static class HistoryAggregator
             .ThenByDescending(m => m.Requests)
             .ThenBy(m => m.Model, StringComparer.Ordinal)
             .ToArray();
-        var sourceList = sources
-            .Where(s => s.Value > 0)
-            .OrderBy(s => s.Key)
-            .Select(s => new SourceOutput(s.Key, s.Value))
+        var sourceList = sources.Values
+            .Where(s => s.Output > 0 || s.Requests > 0)
+            .OrderBy(s => s.Source)
             .ToArray();
+        // A model only subscription sources used has no counted requests (its cost reads cost.subscription.tag).
+        foreach (var model in modelList)
+        {
+            modelCosts.TryAdd(model.Model, new ModelCost(null, 0));
+        }
+
         return new DaySummary(day, requests, input, cached, cacheWrite, output, reasoning, measuredOutput, measuredMs, unfinalized,
-            agents, peak, modelList, sourceList);
+            agents, peak, modelList, sourceList)
+        {
+            Cost = dayCost,
+            TotalCost = totalCost,
+            PriceVersion = totalCost is null ? null : priceVersion,
+            ModelCosts = modelCosts,
+        };
     }
 }

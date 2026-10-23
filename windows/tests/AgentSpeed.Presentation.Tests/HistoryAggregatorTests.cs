@@ -22,7 +22,13 @@ public class HistoryAggregatorTests
         var twentieth = days[1];
         Assert.Equal(500, twentieth.Output);
         Assert.Equal(5, twentieth.Requests);
-        Assert.Equal([new SourceOutput(SourceKind.Codex, 200), new SourceOutput(SourceKind.ClaudeCode, 300)], twentieth.Sources);
+        // Records without cost data: each source's requests are unavailable for cost.
+        Assert.Equal(
+            [
+                new SourceOutput(SourceKind.Codex, 200, 2, new HistoryCost(null, 2)),
+                new SourceOutput(SourceKind.ClaudeCode, 300, 3, new HistoryCost(null, 3)),
+            ],
+            twentieth.Sources);
         Assert.Equal(200, twentieth.OutputOf(SourceKind.Codex));
         Assert.Equal(300, twentieth.OutputOf(SourceKind.ClaudeCode));
         Assert.Equal(0, twentieth.OutputOf(SourceKind.Gemini));
@@ -34,7 +40,7 @@ public class HistoryAggregatorTests
         var codex = HistoryAggregator.Daily(Mixed, SourceKind.Codex);
         Assert.Equal([D(2026, 10, 19), D(2026, 10, 20)], codex.Select(d => d.Day));
         Assert.Equal(200, codex[1].Output);
-        Assert.Equal([new SourceOutput(SourceKind.Codex, 200)], codex[1].Sources);
+        Assert.Equal([new SourceOutput(SourceKind.Codex, 200, 2, new HistoryCost(null, 2))], codex[1].Sources);
 
         Assert.Empty(HistoryAggregator.Daily(Mixed, SourceKind.DeepSeek));
     }
@@ -144,7 +150,9 @@ public class HistoryAggregatorTests
         Assert.Equal(5, day.Agents);
         Assert.Equal(3, day.Unfinalized);
         Assert.Equal(0.6, day.CacheHitRatio!.Value, 9);
-        Assert.DoesNotContain(day.Sources, s => s.Source == SourceKind.DeepSeek);
+        // A source with requests stays listed (for its cost), its negative output counting as none.
+        Assert.Equal(new SourceOutput(SourceKind.DeepSeek, 0, 1, new HistoryCost(null, 1)),
+            day.Sources.Single(s => s.Source == SourceKind.DeepSeek));
     }
 
     [Fact]

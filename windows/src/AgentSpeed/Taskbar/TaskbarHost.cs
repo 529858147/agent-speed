@@ -69,6 +69,11 @@ internal sealed unsafe class TaskbarHost : IDisposable
     private readonly WidthHold _width = new(ShrinkDelayMs);
     private readonly DispatcherTimer _shrinkTimer;
 
+    /// <summary>The second value's number cell (DESIGN 3): grows at once, shrinks only after the same delay.</summary>
+    private readonly WidthHold _secondaryCell = new(ShrinkDelayMs);
+    private readonly DispatcherTimer _secondaryTimer;
+    private double _secondaryScale;
+
     public TaskbarHost(Action<TaskbarSignal> signal)
     {
         _signal = signal;
@@ -84,6 +89,12 @@ internal sealed unsafe class TaskbarHost : IDisposable
             Ensure();
         }, _dispatcher);
         _shrinkTimer.Stop();
+        _secondaryTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(ShrinkDelayMs + 50), DispatcherPriority.Background, (_, _) =>
+        {
+            _secondaryTimer!.Stop();
+            Ensure();
+        }, _dispatcher);
+        _secondaryTimer.Stop();
         s_current = this;
     }
 
@@ -91,6 +102,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
     {
         var layoutChanged = state.LayoutDiffers(_state) || state.TaskbarDark != _state.TaskbarDark;
         _state = state;
+        UpdateSecondaryCell(_scale > 0 ? _scale : 1);
         _scene.Redline = state.Redline;
         _scene.ReduceMotion = state.ReduceMotion;
         _scene.SetTarget(state.Value, state.Tier);
@@ -157,6 +169,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         _animation.Stop();
         _safety.Stop();
         _shrinkTimer.Stop();
+        _secondaryTimer.Stop();
         Teardown();
         UnwatchTaskbar();
         _surface.Dispose();
@@ -188,6 +201,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         }
 
         var scaleChanged = Math.Abs(geo.Scale - _scale) > 0.001 || geo.Vertical != _vertical;
+        UpdateSecondaryCell(geo.Scale);
         var length = ResolveLength(_renderer.MeasureLength(_state, geo.Scale, geo.Vertical), forceLength || scaleChanged || _hwnd == 0);
         if (TaskbarLocator.WidgetRect(geo, length) is not { } rect)
         {
@@ -464,6 +478,37 @@ internal sealed unsafe class TaskbarHost : IDisposable
         RenderAndPresent(force: false);
     }
 
+    /// <summary>
+    /// Sizes the second value's number cell (DESIGN 3): the number is right-aligned in a cell that grows at once and
+    /// shrinks only after a narrower number has held for 6 s, so the widget never jitters while the numbers change.
+    /// </summary>
+    private void UpdateSecondaryCell(double scale)
+    {
+        var needed = _renderer.SecondaryNumberWidth(_state, scale);
+        if (needed <= 0)
+        {
+            _secondaryCell.Reset();
+            _renderer.SecondaryCell = 0;
+            _secondaryTimer.Stop();
+            return;
+        }
+
+        var force = Math.Abs(scale - _secondaryScale) > 0.001;
+        _secondaryScale = scale;
+        var applied = _secondaryCell.Resolve((int)Math.Ceiling(needed * scale), Environment.TickCount64, force);
+        _renderer.SecondaryCell = applied / scale;
+        if (_secondaryCell.PendingSince is null)
+        {
+            _secondaryTimer.Stop();
+        }
+        else if (!_secondaryTimer.IsEnabled)
+        {
+            var wait = Math.Max(50, (_secondaryCell.DueAt ?? 0) - Environment.TickCount64 + 50);
+            _secondaryTimer.Interval = TimeSpan.FromMilliseconds(wait);
+            _secondaryTimer.Start();
+        }
+    }
+
     /// <summary>The widget grows at once but shrinks only after the shorter width has held for 6 s.</summary>
     private int ResolveLength(int desired, bool force)
     {
@@ -487,7 +532,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         var width = Math.Max(1, _screenRect.Width);
         var height = Math.Max(1, _screenRect.Height);
         var key = string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{width}x{height}|{_scale:F3}|{SpeedFormat.Speed(_state.Value)}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}");
+            $"{width}x{height}|{_scale:F3}|{_state.ValueText ?? SpeedFormat.Speed(_state.Value)}|{_state.ValueMuted}|{_state.Secondary?.Live.Number}|{_state.Secondary?.Today.Number}|{_state.Secondary?.Live.Dim}|{_state.Secondary?.Today.Dim}|{_renderer.SecondaryCell:F2}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}");
         if (!force && key == _renderKey)
         {
             beforePresent?.Invoke();

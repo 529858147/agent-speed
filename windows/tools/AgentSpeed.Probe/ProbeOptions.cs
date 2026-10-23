@@ -1,5 +1,6 @@
 using AgentSpeed.Core;
 using AgentSpeed.Core.Monitoring;
+using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Probe;
 
@@ -8,6 +9,8 @@ internal enum ProbeMode
     DumpToday,
     DumpHistory,
     Watch,
+    SyncPrices,
+    SyncRates,
 }
 
 /// <param name="GeminiRoots">Gemini CLI <c>tmp</c> folders; empty uses the defaults.</param>
@@ -15,6 +18,9 @@ internal enum ProbeMode
 /// <param name="AntigravityRoots">Antigravity store (or <c>conversations</c>) folders; empty uses the three default stores.</param>
 /// <param name="StorePath">History store to use and keep; null analyses into a temporary store.</param>
 /// <param name="SinceMs">Overrides the start of "today" for <c>--dump-today</c> (Unix milliseconds).</param>
+/// <param name="PricesPath"><c>--prices PATH</c>: price with this table instead of the bundled one (METRICS 9), as <c>reference.py --prices</c>.</param>
+/// <param name="SyncDirectory">Scratch app-data folder of <c>--sync-prices</c> / <c>--sync-rates</c> (NETWORK 3, 4).</param>
+/// <param name="SyncCurrency">The selected currency of <c>--sync-rates</c>.</param>
 internal sealed record ProbeOptions(
     ProbeMode Mode,
     int WatchSeconds,
@@ -27,10 +33,13 @@ internal sealed record ProbeOptions(
     string? StorePath,
     long? SinceMs = null,
     IReadOnlyList<string>? OmpRoots = null,
-    IReadOnlyList<string>? AntigravityRoots = null)
+    IReadOnlyList<string>? AntigravityRoots = null,
+    string? PricesPath = null,
+    string? SyncDirectory = null,
+    string? SyncCurrency = null)
 {
     public const string Usage =
-        "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N) " +
+        "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N | --sync-prices DIR | --sync-rates DIR CURRENCY) [--prices PATH] " +
         "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]...";
 
     public MonitorConfiguration Configuration => new(
@@ -71,13 +80,38 @@ internal sealed record ProbeOptions(
         }
     }
 
+    /// <summary>The table of <c>--prices</c>, else the bundled one; null with <paramref name="error"/> when the file does not validate.</summary>
+    public PriceTable? PriceTable(out string? error)
+    {
+        error = null;
+        if (PricesPath is null)
+        {
+            return PriceBook.Bundled;
+        }
+
+        byte[] data;
+        try
+        {
+            data = File.ReadAllBytes(PricesPath);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            error = $"cannot read {PricesPath}";
+            return null;
+        }
+
+        var loaded = AgentSpeed.Core.Pricing.PriceTable.Load(data);
+        error = loaded.Table is null ? $"{PricesPath} is not a valid price table: {loaded.Error}" : null;
+        return loaded.Table;
+    }
+
     public static ProbeOptions? Parse(string[] args, out string? error)
     {
         error = null;
         ProbeMode? mode = null;
         var seconds = 0;
         var utc = false;
-        string? codex = null, claude = null, dsh = null, opencode = null, store = null;
+        string? codex = null, claude = null, dsh = null, opencode = null, store = null, prices = null, sync = null, currency = null;
         long? since = null;
         var gemini = new List<string>();
         var omp = new List<string>();
@@ -124,6 +158,18 @@ internal sealed record ProbeOptions(
                 case "--store" when i + 1 < args.Length:
                     store = args[++i];
                     break;
+                case "--prices" when i + 1 < args.Length:
+                    prices = args[++i];
+                    break;
+                case "--sync-prices" when i + 1 < args.Length:
+                    mode = ProbeMode.SyncPrices;
+                    sync = args[++i];
+                    break;
+                case "--sync-rates" when i + 2 < args.Length:
+                    mode = ProbeMode.SyncRates;
+                    sync = args[++i];
+                    currency = args[++i];
+                    break;
                 case "--since" when i + 1 < args.Length && long.TryParse(args[i + 1], out var ms):
                     since = ms;
                     i++;
@@ -136,10 +182,10 @@ internal sealed record ProbeOptions(
 
         if (mode is null)
         {
-            error = "missing --dump-today, --dump-history or --watch N";
+            error = "missing --dump-today, --dump-history, --watch N, --sync-prices DIR or --sync-rates DIR CURRENCY";
             return null;
         }
 
-        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity);
+        return new ProbeOptions(mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity, prices, sync, currency);
     }
 }

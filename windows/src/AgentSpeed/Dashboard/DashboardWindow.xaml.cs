@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Media.Animation;
 using AgentSpeed.Core;
 using AgentSpeed.Interop;
@@ -101,6 +103,9 @@ internal sealed partial class DashboardWindow : Window
 
     /// <summary>The update pill was clicked.</summary>
     public event EventHandler? UpdateRequested;
+
+    /// <summary>The hero's unit was clicked: switch <c>settings.liveUnit</c> (DESIGN 9).</summary>
+    public event EventHandler? UnitToggleRequested;
 
     public OrbView Hero { get; }
 
@@ -405,6 +410,12 @@ internal sealed partial class DashboardWindow : Window
             case nameof(DashboardViewModel.AgentsScroll):
                 UpdateScrollBars();
                 break;
+            case nameof(DashboardViewModel.HeroIsMoney) when IsVisible:
+                SlideHeroValue();
+                break;
+            case nameof(DashboardViewModel.CurrencyCode) when IsVisible:
+                CrossfadeMoney();
+                break;
         }
     }
 
@@ -559,6 +570,40 @@ internal sealed partial class DashboardWindow : Window
     private void OnOrbToggled(object sender, RoutedEventArgs e) => OrbToggled?.Invoke(this, OrbToggle.IsChecked == true);
 
     private void OnInfo(object sender, RoutedEventArgs e) => InfoPopup.IsOpen = !InfoPopup.IsOpen;
+
+    private void OnCostInfo(object sender, RoutedEventArgs e) => CostPopup.IsOpen = !CostPopup.IsOpen;
+
+    /// <summary>Speaks <paramref name="text"/> once through UI Automation (a polite notification from the hero's unit).</summary>
+    public void Announce(string text)
+    {
+        var peer = UIElementAutomationPeer.FromElement(HeroUnit) ?? UIElementAutomationPeer.CreatePeerForElement(HeroUnit);
+        peer?.RaiseNotificationEvent(AutomationNotificationKind.ActionCompleted, AutomationNotificationProcessing.MostRecent, text, "unitChanged");
+    }
+
+    /// <summary>A single click on the hero's unit switches tok/s and money at once (the hero has no double-click action).</summary>
+    private void OnHeroUnit(object sender, RoutedEventArgs e) => UnitToggleRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>A new display currency: the money values crossfade (0.2 s, DESIGN 9 Currency).</summary>
+    private void CrossfadeMoney()
+    {
+        var fade = new DoubleAnimation(0.35, 1, TimeSpan.FromSeconds(0.2)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
+        TodayCostValue.BeginAnimation(OpacityProperty, fade);
+        if (_model.HeroIsMoney)
+        {
+            HeroValue.BeginAnimation(OpacityProperty, fade);
+        }
+    }
+
+    /// <summary>The value and unit arrive from below like a title change (0.3 s); Reduce Motion: a 0.15 s fade (DESIGN 9).</summary>
+    private void SlideHeroValue()
+    {
+        var reduce = _model.ReduceMotion;
+        var duration = TimeSpan.FromSeconds(reduce ? 0.15 : 0.3);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        HeroValue.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        HeroValueSlide.BeginAnimation(TranslateTransform.YProperty,
+            reduce ? null : new DoubleAnimation(14, 0, duration) { EasingFunction = ease });
+    }
 
     private void OnSettings(object sender, RoutedEventArgs e)
     {

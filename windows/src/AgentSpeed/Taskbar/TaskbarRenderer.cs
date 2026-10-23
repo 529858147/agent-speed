@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Settings;
 
@@ -27,6 +28,7 @@ internal sealed class TaskbarRenderer
     private readonly Typeface _unitFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     private readonly Dictionary<(char, int), FormattedText> _glyphCache = new();
     private readonly DrawingVisual _visual = new();
+    private readonly TaskbarSecondaryText _secondary = new();
     private RenderTargetBitmap? _bitmap;
     private double _cacheScale = -1;
     private Color _cachePrimary;
@@ -41,6 +43,26 @@ internal sealed class TaskbarRenderer
         TextOptions.SetTextHintingMode(_visual, TextHintingMode.Fixed);
     }
 
+    /// <summary>
+    /// The second value's number cell (DIP) the host's width governor holds (grows at once, shrinks after its delay);
+    /// the number is right-aligned in it (DESIGN 3).
+    /// </summary>
+    public double SecondaryCell { get; set; }
+
+    /// <summary>Width (DIP) the second value's number needs now, for the host's governor; 0 without one.</summary>
+    public double SecondaryNumberWidth(TaskbarState state, double scale)
+    {
+        if (!ShowsSecondary(state))
+        {
+            return 0;
+        }
+
+        var colors = Palette(state);
+        return _secondary.NumberWidth(state.Secondary!, scale, colors.Primary, colors.Secondary);
+    }
+
+    private static bool ShowsSecondary(TaskbarState state) => state.Secondary is not null && state.Mode != BarDisplayMode.GlyphOnly;
+
     /// <summary>Widget length along the taskbar in physical pixels: the content width.</summary>
     public int MeasureLength(TaskbarState state, double scale, bool vertical)
     {
@@ -49,7 +71,8 @@ internal sealed class TaskbarRenderer
         if (vertical)
         {
             var lines = state.Mode == BarDisplayMode.GlyphAndValue ? 2 : 1;
-            var height = Padding + lines * 20 + (state.ShowUnit && state.Mode != BarDisplayMode.GlyphOnly ? 14 : 0) + Padding;
+            var height = Padding + lines * 20 + (state.ShowUnit && state.Mode != BarDisplayMode.GlyphOnly ? 14 : 0)
+                + (ShowsSecondary(state) ? TaskbarSecondaryText.Height : 0) + Padding;
             return (int)Math.Ceiling(height * scale);
         }
 
@@ -75,10 +98,16 @@ internal sealed class TaskbarRenderer
                 width += GlyphGap;
             }
 
-            width += TabularWidth(SpeedFormat.Speed(state.Value), 0);
+            width += TabularWidth(ValueText(state), 0);
             if (state.ShowUnit && _unit is not null)
             {
                 width += UnitGap + _unit.WidthIncludingTrailingWhitespace;
+            }
+
+            if (ShowsSecondary(state))
+            {
+                var colors = Palette(state);
+                width += _secondary.Width(state.Secondary!, SecondaryCell, _cacheScale, colors.Primary, colors.Secondary);
             }
         }
 
@@ -153,8 +182,8 @@ internal sealed class TaskbarRenderer
             return;
         }
 
-        var valueText = SpeedFormat.Speed(state.Value);
-        var idle = state.Tier == SpeedTier.Idle || state.Value <= 0;
+        var valueText = ValueText(state);
+        var idle = state.Tier == SpeedTier.Idle || state.Value <= 0 || state.ValueMuted;
         var role = idle ? 1 : 0;
         var baseline = Snap(centerY + CapHeight / 2, scale);
         var valueWidth = TabularWidth(valueText, role);
@@ -165,6 +194,12 @@ internal sealed class TaskbarRenderer
         {
             x += UnitGap;
             dc.DrawText(_unit, new Point(Snap(x, scale), baseline - _unit.Baseline));
+            x += _unit.WidthIncludingTrailingWhitespace;
+        }
+
+        if (ShowsSecondary(state))
+        {
+            _secondary.Draw(dc, state.Secondary!, x, centerY, SecondaryCell, scale, colors.Primary, colors.Secondary);
         }
     }
 
@@ -184,8 +219,8 @@ internal sealed class TaskbarRenderer
             return;
         }
 
-        var text = SpeedFormat.Speed(state.Value);
-        var role = state.Tier == SpeedTier.Idle || state.Value <= 0 ? 1 : 0;
+        var text = ValueText(state);
+        var role = state.Tier == SpeedTier.Idle || state.Value <= 0 || state.ValueMuted ? 1 : 0;
         var total = TabularWidth(text, role);
         var sample = Glyph('8', role);
         DrawTabular(dc, text, (width + total) / 2, y + sample.Baseline, role, 1);
@@ -193,6 +228,15 @@ internal sealed class TaskbarRenderer
         if (state.ShowUnit && _unit is not null)
         {
             dc.DrawText(_unit, new Point((width - _unit.WidthIncludingTrailingWhitespace) / 2, y - 2));
+            y += 14;
+        }
+
+        if (ShowsSecondary(state))
+        {
+            // Stacked under the value, centered across the bar (the gap is part of the block's width).
+            var blockWidth = _secondary.Width(state.Secondary!, SecondaryCell, 1, colors.Primary, colors.Secondary) - TaskbarSecondaryText.Gap;
+            _secondary.Draw(dc, state.Secondary!, (width - blockWidth) / 2 - TaskbarSecondaryText.Gap, y + TaskbarSecondaryText.Height / 2,
+                SecondaryCell, 1, colors.Primary, colors.Secondary);
         }
     }
 
@@ -203,6 +247,9 @@ internal sealed class TaskbarRenderer
         GaugeGlyphPainter.Draw(dc, rect, scene.Heat, label, monochrome, scene.FillOpacity,
             state.HighContrast ? 0 : scene.Glow, stroke);
     }
+
+    /// <summary>tok/s, or the money text of DESIGN 9 when the live unit is money.</summary>
+    private static string ValueText(TaskbarState state) => state.ValueText ?? SpeedFormat.Speed(state.Value);
 
     private void DrawTabular(DrawingContext dc, string text, double right, double baseline, int role, double scale)
     {

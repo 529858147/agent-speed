@@ -97,6 +97,68 @@ public static class OrbSubset
     }
 
     /// <summary>
+    /// The money-unit reading of <paramref name="sources"/> (null = every source) counting only
+    /// <paramref name="billable"/> sources (METRICS 9.4, 9.5).
+    /// </summary>
+    public static CostReading Cost(SpeedSnapshot snapshot, SourceSet? sources, SourceSet billable)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var members = sources ?? SourceSet.Everything;
+        double microUsd = 0, known = 0, liveOutput = 0;
+        var today = CostTally.Zero;
+        long requests = 0;
+        var available = 0;
+        var excluded = new List<SourceKind>();
+        var rank = new Dictionary<string, int>(StringComparer.Ordinal);
+        var order = new List<string>();
+        foreach (var status in snapshot.Sources)
+        {
+            if (!members.Contains(status.Kind) || IsUnavailable(status))
+            {
+                continue;
+            }
+
+            available++;
+            if (!billable.Contains(status.Kind))
+            {
+                excluded.Add(status.Kind);
+                continue;
+            }
+
+            microUsd += status.LiveCost.MicroUsdPerSecond;
+            known += status.LiveCost.KnownOutput;
+            liveOutput += status.Live.Output;
+            today += status.TodayCost;
+            requests += status.Today.Requests;
+            for (var i = 0; i < status.UnpricedModels.Count; i++)
+            {
+                var model = status.UnpricedModels[i];
+                if (!rank.TryGetValue(model, out var best))
+                {
+                    order.Add(model);
+                    rank[model] = i;
+                }
+                else if (i < best)
+                {
+                    rank[model] = i;
+                }
+            }
+        }
+
+        var unpriced = order.Select((model, index) => (model, index))
+            .OrderBy(m => rank[m.model])
+            .ThenBy(m => m.index)
+            .Select(m => m.model)
+            .ToList();
+        var share = new LiveCost(microUsd, known).KnownShare(liveOutput);
+        var state = available > 0 && excluded.Count == available ? CostState.SubscriptionOnly
+            : liveOutput > 0 && known <= 0 ? CostState.NothingPriced
+            : share < CostReading.PartialThreshold && microUsd > 0 ? CostState.Partial
+            : CostState.Priced;
+        return new CostReading(microUsd, share, liveOutput, today, requests, unpriced, excluded, state);
+    }
+
+    /// <summary>
     /// Whether an orb tracking <paramref name="sources"/> receives <paramref name="speedEvent"/>: completions of its own
     /// sources (all for null), and the all-sources new peak only for an all-sources orb (subset orbs use
     /// <see cref="SubsetPeakTracker"/>).

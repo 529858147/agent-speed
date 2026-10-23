@@ -6,6 +6,7 @@ using AgentSpeed.Core;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings.Orbs;
+using AgentSpeed.Presentation.Titles;
 
 namespace AgentSpeed.Presentation.Settings;
 
@@ -40,6 +41,7 @@ public static class SettingsSerializer
             w.WriteString("mode", s.BarMode.ToString());
             w.WriteBoolean("coloredGlyph", s.BarColoredGlyph);
             w.WriteBoolean("showUnit", s.BarShowUnit);
+            w.WriteBoolean("secondary", s.BarSecondary);
             w.WriteEndObject();
 
             w.WriteStartObject("orb");
@@ -70,6 +72,8 @@ public static class SettingsSerializer
             w.WriteString("orbNames", OrbNamesModes.Key(s.OrbNames));
             w.WritePropertyName("orbs");
             OrbsJson.Write(w, s.Orbs);
+            w.WritePropertyName("titleThemes");
+            TitleThemesJson.Write(w, s.TitleThemes);
 
             w.WriteStartObject("effects");
             w.WriteString("intensity", s.Effects.ToString());
@@ -119,6 +123,33 @@ public static class SettingsSerializer
 
             w.WriteEndObject();
 
+            w.WriteStartObject("cost");
+            w.WriteString("currency", s.Cost.Currency);
+            w.WriteString("liveUnit", s.Cost.LiveUnit == LiveUnit.Cost ? "cost" : "tokens");
+            w.WriteStartArray("subscriptions");
+            foreach (var key in s.Cost.SubscriptionKeys)
+            {
+                w.WriteStringValue(key);
+            }
+
+            w.WriteEndArray();
+            w.WriteBoolean("includeSubscriptions", s.Cost.IncludeSubscriptions);
+            w.WriteBoolean("syncPrices", s.Cost.SyncPrices);
+            if (s.Cost.HistoryIncludeSubscriptions is { } historyInclude)
+            {
+                w.WriteBoolean("historyIncludeSubscriptions", historyInclude);
+            }
+            else
+            {
+                w.WriteNull("historyIncludeSubscriptions");
+            }
+
+            w.WriteEndObject();
+
+            w.WriteStartObject("network");
+            w.WriteBoolean("enabled", s.NetworkEnabled);
+            w.WriteEndObject();
+
             w.WriteStartObject("updates");
             w.WriteBoolean("autoCheck", s.AutoCheckUpdates);
             WriteNullableString(w, "lastCheck", s.LastUpdateCheck?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
@@ -157,6 +188,8 @@ public static class SettingsSerializer
         var dashboard = Child(root, "dashboard");
         var updates = Child(root, "updates");
         var history = Child(root, "history");
+        var cost = Child(root, "cost");
+        var network = Child(root, "network");
 
         var settings = new AppSettings
         {
@@ -169,6 +202,7 @@ public static class SettingsSerializer
             BarMode = ReadEnum(taskbar, "mode", d.BarMode),
             BarColoredGlyph = ReadBool(taskbar, "coloredGlyph", d.BarColoredGlyph),
             BarShowUnit = ReadBool(taskbar, "showUnit", d.BarShowUnit),
+            BarSecondary = ReadBool(taskbar, "secondary", d.BarSecondary),
             ShowOrb = ReadBool(orb, "show", d.ShowOrb),
             ShowOrbs = ReadBool(root, "showOrbs", ReadBool(orb, "show", d.ShowOrb)),
             OrbNames = OrbNamesModes.Parse(ReadString(root, "orbNames")),
@@ -205,6 +239,8 @@ public static class SettingsSerializer
             LastUpdateCheck = ReadTimestamp(updates, "lastCheck"),
             SkippedVersion = ReadString(updates, "skippedVersion"),
             NotifiedVersion = ReadString(updates, "notifiedVersion"),
+            NetworkEnabled = ReadBool(network, "enabled", d.NetworkEnabled),
+            Cost = ReadCost(cost),
         };
 
         var fileVersion = ReadDouble(root, "version", 1);
@@ -215,7 +251,9 @@ public static class SettingsSerializer
 
         var validated = settings.Validated();
         var orbs = root.TryGetProperty("orbs", out var orbsValue) ? OrbsJson.Read(orbsValue) : null;
-        return validated with { Orbs = orbs ?? OrbsMigration.FromLegacy(validated) };
+        // An absent value is a fresh install or an older version: Vehicles, no custom sets (DESIGN 1, Persistence).
+        var titles = root.TryGetProperty("titleThemes", out var titlesValue) ? TitleThemesJson.Read(titlesValue) : null;
+        return validated with { Orbs = orbs ?? OrbsMigration.FromLegacy(validated), TitleThemes = titles ?? TitleThemesDocument.Default };
     }
 
     /// <summary>
@@ -227,6 +265,34 @@ public static class SettingsSerializer
         RedlineOutput = settings.RedlineOutput == HeatMath.ReferenceRedline ? HeatMath.DefaultRedline : settings.RedlineOutput,
         RedlineTotal = settings.RedlineTotal == HeatMath.ReferenceRedlineTotal ? HeatMath.DefaultRedlineTotal : settings.RedlineTotal,
     };
+
+    private static CostSettings ReadCost(JsonElement? cost)
+    {
+        var d = CostSettings.Default;
+        if (cost is not { } c)
+        {
+            return d;
+        }
+
+        var subscriptions = c.TryGetProperty("subscriptions", out var list) && list.ValueKind == JsonValueKind.Array
+            ? CostSettings.ParseSubscriptions(list.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Take(64)
+                .Select(e => e.GetString()))
+            : SourceSet.Empty;
+        bool? historyInclude = c.TryGetProperty("historyIncludeSubscriptions", out var h) && h.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? h.ValueKind == JsonValueKind.True
+            : null;
+        return new CostSettings
+        {
+            Currency = ReadString(c, "currency") is { Length: > 0 and <= 8 } code ? code : d.Currency,
+            LiveUnit = ReadString(c, "liveUnit") == "cost" ? LiveUnit.Cost : LiveUnit.Tokens,
+            Subscriptions = subscriptions,
+            IncludeSubscriptions = ReadBool(c, "includeSubscriptions", d.IncludeSubscriptions),
+            SyncPrices = ReadBool(c, "syncPrices", d.SyncPrices),
+            HistoryIncludeSubscriptions = historyInclude,
+        }.Validated();
+    }
 
     private static void WriteNullableString(Utf8JsonWriter writer, string name, string? value)
     {

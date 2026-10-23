@@ -79,6 +79,7 @@ public static class QuickMenuModel
                 Toggle(localizer["orbs.visible"], shown, new MenuAction.SetOrbVisible(orb.Id, !shown)),
                 Toggle(localizer["menu.clickThrough"], orb.ClickThrough, new MenuAction.SetOrbClickThrough(orb.Id, !orb.ClickThrough)),
                 ShowNameToggle(orb, settings, localizer),
+                OrbMenuModel.UnitMenu(orb, settings, localizer),
                 MenuSeparator.Instance,
                 Command(localizer["menu.orb.settings"], new MenuAction.OpenOrbSettings(orb.Id), MenuGlyph.Settings),
             ]) with

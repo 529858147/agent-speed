@@ -2,6 +2,9 @@ namespace AgentSpeed.Core.Parsing;
 
 /// <summary>One response upsert produced by a parser (METRICS 4 and 4.3).</summary>
 /// <param name="Final">False while only a streaming usage snapshot was seen (METRICS 3.3); Codex is always final.</param>
+/// <param name="Provider">The API provider the agent says it used, only for pricing (METRICS 3.2, 9.2).</param>
+/// <param name="Fast">The request ran in a provider's fast mode (METRICS 3.2).</param>
+/// <param name="CostMicroUsd">Integer micro-USD (METRICS 9.3), set by pricing; null while unpriced or when the price is unknown.</param>
 internal sealed record ParsedResponse(
     string Key,
     SourceKind Source,
@@ -10,7 +13,10 @@ internal sealed record ParsedResponse(
     long? StartMs,
     long EndMs,
     TokenCounts Tokens,
-    bool Final = true);
+    bool Final = true,
+    string? Provider = null,
+    bool Fast = false,
+    long? CostMicroUsd = null);
 
 internal interface IResponseSink
 {

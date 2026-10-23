@@ -26,7 +26,7 @@ internal class PlateWindow : Window
     private bool _inside;
 
     /// <param name="overlay">Interactive content above the plate (the undo chip's action), or null.</param>
-    public PlateWindow(OrbWindow orb, UIElement? overlay = null)
+    public PlateWindow(IOrbWindow orb, UIElement? overlay = null)
     {
         Orb = orb;
         View = new PlateView();
@@ -58,9 +58,17 @@ internal class PlateWindow : Window
         Top = -32000;
         Width = 1;
         Height = 1;
-        Owner = orb;
-        Topmost = orb.Topmost;
-        SetBinding(OpacityProperty, new Binding(nameof(Opacity)) { Source = orb, Mode = BindingMode.OneWay });
+        orb.OwnPlate(this);
+        Topmost = orb.Options.AlwaysOnTop;
+        if (orb is Window owner)
+        {
+            SetBinding(OpacityProperty, new Binding(nameof(Opacity)) { Source = owner, Mode = BindingMode.OneWay });
+        }
+        else
+        {
+            Opacity = orb.Opacity;
+            orb.OpacityChanged += OnOrbOpacityChanged;
+        }
         _poll = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Input, (_, _) => Poll(), Dispatcher);
         _poll.Stop();
         SourceInitialized += (_, _) =>
@@ -73,6 +81,7 @@ internal class PlateWindow : Window
         {
             IsClosed = true;
             _poll.Stop();
+            orb.OpacityChanged -= OnOrbOpacityChanged;
         };
         IsVisibleChanged += (_, _) =>
         {
@@ -90,10 +99,18 @@ internal class PlateWindow : Window
         };
     }
 
+    private void OnOrbOpacityChanged(object? sender, EventArgs e)
+    {
+        if (!IsClosed && Math.Abs(Opacity - Orb.Opacity) > 0.0005)
+        {
+            Opacity = Orb.Opacity;
+        }
+    }
+
     /// <summary>Closed (by its plate, or with its owner orb).</summary>
     public bool IsClosed { get; private set; }
 
-    public OrbWindow Orb { get; }
+    public IOrbWindow Orb { get; }
 
     public PlateView View { get; }
 

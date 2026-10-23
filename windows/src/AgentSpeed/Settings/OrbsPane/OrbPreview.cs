@@ -38,6 +38,9 @@ internal sealed class OrbPreview : FrameworkElement
     public static readonly DependencyProperty ReduceMotionProperty = DependencyProperty.Register(nameof(ReduceMotion), typeof(bool),
         typeof(OrbPreview), new PropertyMetadata(false, (d, _) => ((OrbPreview)d).Reconfigure()));
 
+    public static readonly DependencyProperty LabelsProperty = DependencyProperty.Register(nameof(Labels), typeof(IReadOnlyList<string>),
+        typeof(OrbPreview), new PropertyMetadata(null, (d, _) => ((OrbPreview)d).Reconfigure()));
+
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(double),
         typeof(OrbPreview), new PropertyMetadata(0.0, (d, _) => ((OrbPreview)d).PushLive()));
 
@@ -110,6 +113,9 @@ internal sealed class OrbPreview : FrameworkElement
 
     public bool ReduceMotion { get => (bool)GetValue(ReduceMotionProperty); set => SetValue(ReduceMotionProperty, value); }
 
+    /// <summary>The titles as the readout draws them (the orb's title theme, idle first); null for Vehicles.</summary>
+    public IReadOnlyList<string>? Labels { get => (IReadOnlyList<string>?)GetValue(LabelsProperty); set => SetValue(LabelsProperty, value); }
+
     public double Value { get => (double)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
 
     public SpeedTier Tier { get => (SpeedTier)GetValue(TierProperty); set => SetValue(TierProperty, value); }
@@ -143,7 +149,9 @@ internal sealed class OrbPreview : FrameworkElement
 
         var effects = new EffectsPolicy(EffectsIntensity.Soft, ReduceMotion, SystemParameters.HighContrast);
         var loc = Localization.LocalizationSource.Instance.Localizer;
-        var labels = Enum.GetValues<SpeedTitle>().Select(t => Presentation.Formatting.DisplayText.TitleLabel(t, loc)).ToArray();
+        var labels = Labels is { Count: > 0 } themed
+            ? themed
+            : Enum.GetValues<SpeedTitle>().Select(t => Presentation.Formatting.DisplayText.TitleLabel(t, loc)).ToArray();
         _surface.Cap = Card ? FrameClass.Fps24 : FrameClass.Fps15;
         _surface.Configure(new OrbSurfaceConfig(StyleKind, Diameter, Dark ? OrbAppearance.Dark : OrbAppearance.Light, effects,
             SystemParameters.HighContrast, false, 1, false, false, Card ? CardRedline : HeatMath.DefaultRedline,

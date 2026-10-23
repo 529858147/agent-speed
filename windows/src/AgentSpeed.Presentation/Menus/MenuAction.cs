@@ -35,6 +35,9 @@ public abstract record MenuAction
 
     public sealed record SetOrbStyle(string OrbId, OrbStyle Style) : MenuAction;
 
+    /// <summary>tok/s or the money unit of one orb (DESIGN 9 Orb, Switching 2).</summary>
+    public sealed record SetOrbUnit(string OrbId, Settings.Orbs.OrbUnit Unit) : MenuAction;
+
     public sealed record SetOrbAllSources(string OrbId) : MenuAction;
 
     public sealed record ToggleOrbSource(string OrbId, SourceKind Source) : MenuAction;

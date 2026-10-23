@@ -108,6 +108,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
                 Tokens = TokenCounts.Max(previous.Tokens, line.Usage),
                 Model = line.Model ?? previous.Model,
                 Final = previous.Final || line.StopReason != StopReasonKind.Missing,
+                Fast = previous.Fast || line.Fast,
             };
             isCompletion = false;
         }
@@ -140,7 +141,8 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
     private ParsedResponse Create(string key, in ClaudeLine line, long ts)
     {
         var response = new ParsedResponse(
-            key, Source, AgentId, line.Model, _pendingStartMs, ts, line.Usage, line.StopReason != StopReasonKind.Missing);
+            key, Source, AgentId, line.Model, _pendingStartMs, ts, line.Usage, line.StopReason != StopReasonKind.Missing,
+            Fast: line.Fast);
         _pendingStartMs = null;
         _preciseStart = false;
         return response;

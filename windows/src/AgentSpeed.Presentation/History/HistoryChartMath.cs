@@ -106,8 +106,8 @@ public static class HistoryChartMath
         return new AxisTicks(NiceStep(dataMax / intervals), intervals);
     }
 
-    /// <summary>Stacking order: the source with the most output in the range first (drawn at the bottom).</summary>
-    public static IReadOnlyList<SourceKind> StackOrder(IEnumerable<DaySummary> days)
+    /// <summary>Stacking order: the source with the most output (or cost) in the range first (drawn at the bottom).</summary>
+    public static IReadOnlyList<SourceKind> StackOrder(IEnumerable<DaySummary> days, HistoryChartMetric metric = HistoryChartMetric.Output)
     {
         ArgumentNullException.ThrowIfNull(days);
         var totals = new Dictionary<SourceKind, long>();
@@ -115,7 +115,8 @@ public static class HistoryChartMath
         {
             foreach (var entry in day.Sources)
             {
-                totals[entry.Source] = totals.GetValueOrDefault(entry.Source) + entry.Output;
+                totals[entry.Source] = totals.GetValueOrDefault(entry.Source)
+                    + (metric == HistoryChartMetric.Cost ? entry.Cost.MicroUsd : entry.Output);
             }
         }
 

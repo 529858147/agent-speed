@@ -261,7 +261,7 @@ internal sealed class OmpParser : TranscriptParser<OmpLine>
     private void Emit(string key, long? startMs, long endMs, in OmpCall call, IResponseSink sink)
     {
         var isCompletion = Deduper.TryClaim(key, AgentId, out _);
-        var response = new ParsedResponse(key, SourceKind.Omp, AgentId, call.Model, startMs, endMs, call.Tokens, Final: true);
+        var response = new ParsedResponse(key, SourceKind.Omp, AgentId, call.Model, startMs, endMs, call.Tokens, Final: true, Provider: call.Provider);
         if (_responses.TryGetValue(key, out var previous) && previous == response)
         {
             return;

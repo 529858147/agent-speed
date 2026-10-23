@@ -59,7 +59,8 @@ public sealed class EngineCaseTests
                     OptionalLong(response, "startMs"),
                     response.GetProperty("endMs").GetInt64(),
                     new TokenCounts(Input: response.GetProperty("input").GetInt64(), Output: response.GetProperty("output").GetInt64()),
-                    !response.TryGetProperty("final", out var final) || final.GetBoolean()),
+                    !response.TryGetProperty("final", out var final) || final.GetBoolean(),
+                    CostMicroUsd: OptionalLong(response, "costMicroUsd")),
                 isCompletion: true,
                 seeded: true);
         }
@@ -80,6 +81,22 @@ public sealed class EngineCaseTests
                 Assert.Equal(order.EnumerateArray().Select(e => e.GetString()!), frame.Agents.Select(a => a.Info.Id));
                 var parents = query.GetProperty("agentParents").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString());
                 Assert.Equal(parents, frame.Agents.Where(a => a.ParentId is not null).ToDictionary(a => a.Info.Id, a => a.ParentId));
+            }
+
+            if (query.TryGetProperty("liveCost", out var liveCost))
+            {
+                AssertClose(liveCost.GetDouble(), frame.LiveCost.MicroUsdPerSecond, at + " liveCost");
+                AssertClose(query.GetProperty("liveCostKnownShare").GetDouble(), frame.LiveCost.KnownShare(frame.Live.Output),
+                    at + " liveCostKnownShare");
+                var sum = frame.SourceLiveCost.Aggregate(LiveCost.Zero, (a, b) => a + b);
+                AssertClose(frame.LiveCost.MicroUsdPerSecond, sum.MicroUsdPerSecond, at + " liveCost per source");
+            }
+
+            if (query.TryGetProperty("todayCostMicroUsd", out var todayCost))
+            {
+                Assert.True(todayCost.GetInt64() == frame.TodayCost.CostMicroUsd, $"{at} todayCostMicroUsd: got {frame.TodayCost.CostMicroUsd}");
+                var unpriced = query.GetProperty("todayUnpricedRequests").GetInt64();
+                Assert.True(unpriced == frame.TodayCost.UnpricedRequests, $"{at} todayUnpricedRequests: got {frame.TodayCost.UnpricedRequests}");
             }
 
             if (query.TryGetProperty("todayRequests", out var requests))
@@ -127,16 +144,26 @@ public sealed class EngineCaseTests
                     var set = SourceSet.From(subset.GetProperty("sources").EnumerateArray().Select(s => ParseSource(s.GetString()!)));
                     var label = $"{at} subset {set}";
                     var live = 0.0;
+                    var cost = LiveCost.Zero;
                     foreach (var kind in set)
                     {
                         live += frame.SourceLive[(int)kind].Output;
+                        cost += frame.SourceLiveCost[(int)kind];
                     }
 
                     var measured = engine.MeasuredPeakOutput(set);
                     var tracker = trackers.TryGetValue(set, out var known) ? known : trackers[set] = new SubsetPeakTracker();
                     tracker.Update(live, measured, todayStartMs, nowMs);
                     AssertClose(subset.GetProperty("liveOutput").GetDouble(), live, label + " liveOutput");
-                    AssertClose(subset.GetProperty("peakTodayOutput").GetDouble(), tracker.PeakTodayOutput, label + " peakTodayOutput");
+                    if (subset.TryGetProperty("peakTodayOutput", out var peakToday))
+                    {
+                        AssertClose(peakToday.GetDouble(), tracker.PeakTodayOutput, label + " peakTodayOutput");
+                    }
+
+                    if (subset.TryGetProperty("liveCost", out var subsetCost))
+                    {
+                        AssertClose(subsetCost.GetDouble(), cost.MicroUsdPerSecond, label + " liveCost");
+                    }
                 }
             }
 

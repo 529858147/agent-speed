@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Cost;
 using AgentSpeed.Dashboard;
 using AgentSpeed.History;
 using AgentSpeed.Interop;
@@ -12,6 +13,7 @@ using AgentSpeed.Orb;
 using AgentSpeed.Orb.Hero;
 using AgentSpeed.Orb.Render;
 using AgentSpeed.Presentation.Colors;
+using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Hero;
@@ -20,11 +22,13 @@ using AgentSpeed.Presentation.Menus;
 using AgentSpeed.Presentation.Settings.Orbs;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Presentation.Updates;
 using AgentSpeed.Services;
 using AgentSpeed.Settings;
 using AgentSpeed.Taskbar;
 using AgentSpeed.Theme;
+using AgentSpeed.Titles;
 using AgentSpeed.Tray;
 using AgentSpeed.Updates;
 
@@ -42,6 +46,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     private Localizer _loc = null!;
     private ThemeService _theme = null!;
     private SettingsService _settings = null!;
+    private TitleThemesService _titles = null!;
+    private CostService _cost = null!;
     private SpeedHub _hub = null!;
     private HistoryHub _historyHub = null!;
     private HistoryController? _history;
@@ -93,6 +99,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     {
         _ui = Dispatcher.CurrentDispatcher;
         var phases = new StartupPhases();
+        Orb.Gpu.ShaderLibrary.Preload();
 
         _settings = new SettingsService(_ui);
         _settings.Load();
@@ -105,6 +112,11 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _loc = new Localizer(Localizer.LoadEmbeddedTable(), ResolveLanguage(Settings.Language));
         LocalizationSource.Instance.Attach(_loc);
+        _titles = new TitleThemesService(_ui, _settings, () => _loc);
+        _cost = new CostService(_ui, _settings, _loc, AppPaths.Version, HistoryService.DefaultStorePath);
+        _cost.Prices.TableAccepted += (_, _) => _historyHub?.Refresh();
+        _cost.Changed += (_, _) => OnCostChanged();
+        _dashboardModel.Cost = _cost.Display;
         phases.Mark("settings+strings");
 
         _theme = new ThemeService(_ui, Settings.Appearance, _launch.ReduceMotion);
@@ -117,7 +129,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _hub = new SpeedHub(new DispatcherSynchronizationContext(_ui));
         _historyHub = new HistoryHub(new DispatcherSynchronizationContext(_ui));
-        _history = new HistoryController(_historyHub, _settings, _theme, _loc);
+        _history = new HistoryController(_historyHub, _settings, _theme, _loc, _cost.Display);
         _hub.SnapshotChanged += (_, snapshot) =>
         {
             if (!_hub.IsPreviewing)
@@ -171,8 +183,17 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _orbClock = new OrbClock(_ui, () => _speed.Now);
         OrbClock.Current = _orbClock;
-        _orbs = new OrbManager(_ui, _orbClock, _settings, _theme, _speed, _loc, this);
+        if (Orb.Gpu.GpuDevice.Initialize())
+        {
+            _orbClock.UseCompositorTicker();
+            if (_launch.EphemeralSettings)
+            {
+                Orb.Gpu.OrbGpuRenderer.Timer = new Orb.Gpu.GpuTimer();
+            }
+        }
+        _orbs = new OrbManager(_ui, _orbClock, _settings, _theme, _speed, _loc, this) { Titles = _titles, Cost = _cost.Display };
         _orbs.Apply();
+        _titles.Changed += (_, _) => OnTitlesChanged();
         phases.Mark("orb");
         UpdateTaskbar();
         StartMonitor();
@@ -189,6 +210,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             AutoStart.Refresh();
             AppLog.Info($"Fluent theme ready in {fluent.ElapsedMilliseconds} ms.");
             StartUpdates();
+            _cost.Start();
             if (_launch.DemoSpeedValues is { Count: > 0 } speeds)
             {
                 HeroStats.Enabled = true;
@@ -216,6 +238,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
                 var process = System.Diagnostics.Process.GetCurrentProcess();
                 var lastCpu = process.TotalProcessorTime;
                 var lastWall = System.Diagnostics.Stopwatch.GetTimestamp();
+                var lastPresented = Orb.Gpu.GpuOrbSurface.FramesPresented;
+                var lastSkipped = Orb.Gpu.GpuOrbSurface.FramesSkipped;
                 var stats = new DispatcherTimer(TimeSpan.FromSeconds(10), DispatcherPriority.Background, (_, _) =>
                 {
                     var frames = clock.FramesRendered;
@@ -223,7 +247,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
                     process.Refresh();
                     var cpu = process.TotalProcessorTime;
                     var wall = System.Diagnostics.Stopwatch.GetElapsedTime(lastWall).TotalSeconds;
-                    AppLog.Info($"ORBSTATS frames/s={(frames - last) / 10.0:0.0} ticks/s={(ticks - lastTicks) / 10.0:0.0} orbs={Settings.Orbs.Orbs.Length} hz={clock.RefreshHz:0.#} cpu={(cpu - lastCpu).TotalSeconds / wall * 100:0.00}% ws={process.WorkingSet64 / (1024 * 1024)}MB");
+                    var gpu = Orb.Gpu.OrbGpuRenderer.Timer?.Drain();
+                    var presented = Orb.Gpu.GpuOrbSurface.FramesPresented;
+                    var skipped = Orb.Gpu.GpuOrbSurface.FramesSkipped;
+                    AppLog.Info($"ORBSTATS frames/s={(frames - last) / 10.0:0.0} ticks/s={(ticks - lastTicks) / 10.0:0.0} orbs={Settings.Orbs.Orbs.Length} hz={clock.RefreshHz:0.#} cpu={(cpu - lastCpu).TotalSeconds / wall * 100:0.00}% ws={process.WorkingSet64 / (1024 * 1024)}MB renderer={(Orb.Gpu.GpuDevice.Shared is null ? "wpf" : "d3d")} clock={clock.Source} presented={presented - lastPresented} skipped={skipped - lastSkipped} busy={Orb.Gpu.GpuOrbSurface.FramesBusy} gpu={(gpu is { Frames: > 0 } g ? g.Milliseconds.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) + "ms" : "-")}");
+                    lastPresented = presented;
+                    lastSkipped = skipped;
                     last = frames;
                     lastTicks = ticks;
                     lastCpu = cpu;
@@ -236,10 +265,11 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             {
                 _capture = new DevCapture(_ui, captureDir, () => _orbs?.CaptureTargets() ?? [], CaptureMenu, _ =>
                 {
-                    OpenSettings("orb");
-                    return _settingsWindow?.FindName("OrbPage") as FrameworkElement;
+                    OpenSettings(_capturePage);
+                    return _settingsWindow?.FindName(char.ToUpperInvariant(_capturePage[0]) + _capturePage[1..] + "Page") as FrameworkElement;
                 })
                 {
+                    Badges = () => AgentSpeed.Orb.Hero.Badge.BadgeCapture.Presets(_loc),
                     Operation = op =>
                     {
                         var first = Settings.Orbs.Orbs.FirstOrDefault()?.Id;
@@ -259,6 +289,9 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
                                 break;
                             case "corner" when first is not null:
                                 _orbs?.MoveToNextCorner(first);
+                                break;
+                            default:
+                                RunTitleCaptureOperation(op);
                                 break;
                         }
                     },
@@ -311,10 +344,10 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         if (_settingsWindow is null)
         {
             _settingsModel ??= new SettingsViewModel(_settings, _preview, _loc, initial => SettingsWindow.PickFolder(_settingsWindow, initial),
-                _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory);
+                _updates, OpenUpdate, () => OpenHistory(), ConfirmClearHistory, ClearHistory, _cost) { TitleService = _titles };
             if (_settingsModel.Orbs is null && _orbs is not null)
             {
-                _settingsModel.Orbs = new Settings.OrbsPane.OrbsPaneViewModel(_settings, _orbs, _speed, _loc);
+                _settingsModel.Orbs = new Settings.OrbsPane.OrbsPaneViewModel(_settings, _orbs, _speed, _loc) { TitleService = _titles };
             }
 
             _settingsModel.ReduceMotion = _theme.ReduceMotion;
@@ -381,6 +414,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         Try(() => _historyStartFallback?.Stop());
         Try(() => _history?.Dispose());
         Try(() => _historyService?.Dispose());
+        Try(() => _cost.Dispose());
         Try(() => _settings.Flush());
         Try(() => _preview.Stop());
         Try(() => _pinnedSpeeds?.Dispose());
@@ -417,7 +451,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
     {
         try
         {
-            _monitor = new LiveMonitor(_hub, Settings.ToMonitorConfiguration());
+            _monitor = new LiveMonitor(_hub, Settings.ToMonitorConfiguration(), _cost.Book);
             _monitor.Start();
         }
         catch (Exception ex)
@@ -438,7 +472,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         var tier = _speed.Tier;
         var title = _speed.Title;
         var generating = snapshot.Agents.Where(a => a.Phase == AgentPhase.Generating).Select(a => a.Source).ToArray();
-        var accessible = DisplayText.Accessibility(value, title, _loc);
+        var accessible = DisplayText.Accessibility(value, _titles.Text(title, _titles.General), _loc);
 
         _orbs?.Update(snapshot);
 
@@ -466,7 +500,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         if (_tooltipShown)
         {
-            _tooltip?.SetText(DisplayText.SpeedLine(value, title, _loc), DisplayText.TodaySummary(snapshot, _loc));
+            _tooltip?.SetText(LiveLine(), LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(snapshot, _loc));
         }
 
         if (!_historyStarted && snapshot.State.Kind != MonitorStateKind.Starting && _historyStartFallback is not null)
@@ -531,9 +565,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         var snapshot = _speed.Snapshot;
         _dashboardModel.ReduceMotion = _theme.ReduceMotion;
         _dashboardModel.AgentsExpanded = Settings.AgentsExpanded;
+        _dashboardModel.TitleTheme = _titles.General;
+        _dashboardModel.TitleSlides = !_theme.ReduceMotion && Settings.Effects != EffectsIntensity.Off;
+        _dashboardModel.LiveUnit = Settings.Cost.LiveUnit;
         _dashboardModel.Update(snapshot, _speed.Value, _speed.Title, _speed.Redline, _speed.Metric, _loc, _theme.IsDark);
         var peak = snapshot.PeakToday.ValueFor(_speed.Metric);
-        var summary = $"{DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc)} · {_loc["today.peak"]} {SpeedFormat.Speed(peak)}";
+        var summary = $"{DisplayText.SpeedLine(_speed.Value, _titles.Text(_speed.Title, _titles.General), _loc)} · {_loc["today.peak"]} {SpeedFormat.Speed(peak)}";
         dashboard.LiveChart.SetData(snapshot.History, _speed.Metric, _speed.Redline, peak, Settings.ChartSeconds,
             _loc["win.chart.peak"], _loc["unit.tokS"], summary);
     }
@@ -545,8 +582,12 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         var s = Settings;
         _orbs?.Apply();
         // The hero's ring stays at Soft (DESIGN 4.1); its vehicle layer follows the Effects setting (DESIGN 4c).
+        var general = _titles.General;
         var hero = new HeroConfig(new HeroOptions(s.Effects, _theme.ReduceMotion, _theme.HighContrast, _theme.IsDark), s.HeroLastTitle,
-            _launch.HeroGlow == "strokes" ? HeroGlowMode.Strokes : HeroGlowMode.Blur);
+            _launch.HeroGlow == "strokes" ? HeroGlowMode.Strokes : HeroGlowMode.Blur)
+        {
+            Titles = general.ShowsVehicleArt ? null : new HeroTitles(general.Labels(_loc), _loc.LanguageCode),
+        };
         _dashboard?.Hero.Configure(BuildOrbConfig(HeroDiameter, EffectsIntensity.Soft) with { BodyOpacity = 1, Hero = _launch.NoHero ? null : hero });
     }
 
@@ -580,7 +621,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             policy = policy.CappedAt(c);
         }
 
-        var labels = Enum.GetValues<SpeedTitle>().Select(t => DisplayText.TitleLabel(t, _loc)).ToArray();
+        var labels = _titles.General.Labels(_loc);
         return new OrbConfig(diameter, _theme.IsDark ? OrbAppearance.Dark : OrbAppearance.Light, s.OrbOpacity, policy,
             _theme.HighContrast, !_theme.TransparencyEnabled, s.ResponsePulses, s.CelebratePeaks, _speed.Redline,
             _loc["unit.tokS"], _loc["peak.new"], labels);
@@ -594,6 +635,16 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         var s = Settings;
+        var title = _titles.Text(_speed.Title, _titles.General);
+        var money = LiveMoney();
+        var bar = money is null ? ((string?)null, _loc["unit.tokS"]) : CostDisplay.BarValue(money, s.BarShowUnit);
+        var accessible = money is null ? DisplayText.Accessibility(_speed.Value, title, _loc) : _cost.Display.LiveAccessibility(money, title);
+        var secondary = BarSecondaryValue();
+        if (secondary is not null)
+        {
+            accessible = $"{accessible}{SpokenSeparator}{secondary.Spoken}";
+        }
+
         _taskbar.Update(new TaskbarState(
             s.ShowOnTaskbar,
             _speed.Value,
@@ -605,8 +656,40 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             _theme.TaskbarIsDark,
             _theme.HighContrast,
             _theme.ReduceMotion,
-            _loc["unit.tokS"],
-            $"{_loc["app.name"]}: {DisplayText.Accessibility(_speed.Value, _speed.Title, _loc)}"));
+            bar.Item2,
+            $"{_loc["app.name"]}: {accessible}",
+            bar.Item1,
+            money?.Unknown ?? false,
+            secondary));
+    }
+
+    /// <summary>The taskbar money block (DESIGN 3): the live rate and today's total after tok/s with the live value "tok/s + cost".</summary>
+    private BarSecondary? BarSecondaryValue()
+    {
+        var s = Settings;
+        return s.BarSecondary && s.Cost.LiveUnit == LiveUnit.Tokens ? BarSecondary.From(s, _speed.Snapshot, _cost.Display) : null;
+    }
+
+    /// <summary>Joins spoken parts: <c>、</c> in Japanese, <c>, </c> in English, <c>，</c> in Chinese.</summary>
+    private string SpokenSeparator => _loc.LanguageCode switch
+    {
+        LanguageCodes.Ja => "、",
+        LanguageCodes.En => ", ",
+        _ => "，",
+    };
+
+    /// <summary>The billable live cost rate when <c>settings.liveUnit</c> is money (DESIGN 9); null for tok/s.</summary>
+    private LiveMoney? LiveMoney() =>
+        Settings.Cost.LiveUnit == LiveUnit.Cost ? _cost.Display.Live(_speed.Snapshot) : null;
+
+    /// <summary>The taskbar and tray tooltip line: tok/s or money, the second value when shown (DESIGN 3), then the title.</summary>
+    private string LiveLine()
+    {
+        var title = _titles.Text(_speed.Title, _titles.General);
+        var main = LiveMoney() is { } money
+            ? $"{money.NumberText} {money.Unit}"
+            : $"{SpeedFormat.Speed(_speed.Value)} {_loc["unit.tokS"]}";
+        return BarSecondaryValue() is { } secondary ? $"{main} · {secondary.Spoken} · {title}" : $"{main} · {title}";
     }
 
     private TrayVisualState TrayState() => new(
@@ -614,7 +697,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         _theme.TaskbarIsDark,
         _theme.HighContrast,
         !Settings.BarColoredGlyph,
-        $"{_loc["app.name"]}\n{DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc)}");
+        $"{_loc["app.name"]}\n{LiveLine()}");
 
     private void ShowMenu()
     {
@@ -668,6 +751,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
             _dashboard.RangeChanged += (_, seconds) => _settings.Update(s => s with { ChartSeconds = seconds });
             _dashboard.AgentsExpandedChanged += (_, expanded) => _settings.Update(s => s with { AgentsExpanded = expanded });
             _dashboard.UpdateRequested += (_, _) => OpenUpdate();
+            _dashboard.UnitToggleRequested += (_, _) => ToggleLiveUnit();
             _dashboard.IsVisibleChanged += (_, _) =>
             {
                 if (_dashboard?.IsVisible != true)
@@ -710,8 +794,8 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
 
         _tooltipShown = true;
         _tooltip.Language = AppFonts.XmlLanguageFor(_loc.LanguageCode);
-        _tooltip.ShowFor(bounds, DisplayText.SpeedLine(_speed.Value, _speed.Title, _loc), DisplayText.TodaySummary(_speed.Snapshot, _loc),
-            _theme.ReduceMotion);
+        var summary = LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(_speed.Snapshot, _loc);
+        _tooltip.ShowFor(bounds, LiveLine(), summary, _theme.ReduceMotion);
     }
 
     private void HideTooltip()
@@ -759,7 +843,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         _historyStarted = true;
         try
         {
-            _historyService = new HistoryService(_historyHub, Settings.ToMonitorConfiguration());
+            _historyService = new HistoryService(_historyHub, Settings.ToMonitorConfiguration(), pricing: _cost.Book);
             _historyService.Start();
         }
         catch (Exception ex)
@@ -794,6 +878,7 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         }
 
         _updates.OnSettingsChanged(previous, current);
+        _cost.OnSettingsChanged(previous, current);
 
         if (previous.Language != current.Language)
         {
@@ -833,6 +918,106 @@ internal sealed class AppController : IAppCommands, IOrbHost, IDisposable
         if (previous.ChartSeconds != current.ChartSeconds)
         {
             _dashboard?.SetRange(current.ChartSeconds);
+        }
+
+        _dashboardDirty = true;
+        FlushDashboard();
+    }
+
+    /// <summary>The settings page the developer capture's <c>settings</c> request renders (<c>op page-general</c> …).</summary>
+    private string _capturePage = "orb";
+
+    /// <summary>
+    /// Developer capture operations for the title themes (only with <c>--capture-dir</c>): <c>page-&lt;key&gt;</c>,
+    /// <c>theme-&lt;preset id in lowercase&gt;</c>, <c>theme-custom</c> (a sample custom set), <c>lang-&lt;code&gt;</c>,
+    /// <c>appearance-&lt;auto|light|dark&gt;</c>, <c>dashboard</c>.
+    /// </summary>
+    private void RunTitleCaptureOperation(string op)
+    {
+        if (op.StartsWith("page-", StringComparison.Ordinal))
+        {
+            _capturePage = op[5..];
+            OpenSettings(_capturePage);
+        }
+        else if (op == "theme-custom")
+        {
+            var id = _titles.Copy("cultivation");
+            if (id is not null)
+            {
+                _titles.Rename(id, "我的修仙路");
+                _titles.CommitField(id, 4, "結丹");
+                _titles.CommitField(id, 12, "飛升");
+            }
+        }
+        else if (op.StartsWith("theme-", StringComparison.Ordinal))
+        {
+            var id = TitlePresets.All.Select(TitlePresets.Id).FirstOrDefault(p => p.Equals(op[6..], StringComparison.OrdinalIgnoreCase));
+            if (id is not null)
+            {
+                _titles.Select(id);
+            }
+        }
+        else if (op.StartsWith("lang-", StringComparison.Ordinal))
+        {
+            var language = op[5..] switch
+            {
+                "zh-hant" => AppLanguage.ZhHant,
+                "zh-hans" => AppLanguage.ZhHans,
+                "ja" => AppLanguage.Ja,
+                "en" => AppLanguage.En,
+                _ => AppLanguage.System,
+            };
+            _settings.Update(s => s with { Language = language });
+        }
+        else if (op.StartsWith("appearance-", StringComparison.Ordinal) && Enum.TryParse<AppearanceMode>(op[11..], true, out var mode))
+        {
+            _settings.Update(s => s with { Appearance = mode });
+        }
+        else if (op == "dashboard")
+        {
+            ShowDashboard(CursorAnchor());
+        }
+    }
+
+    /// <summary>A title theme, a custom set or a draft changed: every surface takes its new titles.</summary>
+    /// <summary>The hero's unit: switches <c>settings.liveUnit</c> and announces the new unit once (DESIGN 9 Accessibility).</summary>
+    private void ToggleLiveUnit()
+    {
+        var next = Settings.Cost.LiveUnit == LiveUnit.Cost ? LiveUnit.Tokens : LiveUnit.Cost;
+        _settings.Update(s => s with { Cost = s.Cost with { LiveUnit = next } });
+        var unit = next == LiveUnit.Cost ? _cost.Display.UnitPerSecond : _loc["unit.tokS"];
+        if (_dashboard is { IsShown: true } dashboard)
+        {
+            dashboard.Announce(_loc.Format("a11y.unitChanged", unit));
+        }
+    }
+
+    /// <summary>The currency, rates, subscription marks or live unit changed: every money value is shown again (DESIGN 9).</summary>
+    private void OnCostChanged()
+    {
+        if (!_started)
+        {
+            return;
+        }
+
+        _orbs?.Apply();
+        _orbs?.Update(_speed.Snapshot);
+        UpdateTaskbar();
+        _tray?.Update(TrayState());
+        _dashboardDirty = true;
+        FlushDashboard();
+    }
+
+    private void OnTitlesChanged()
+    {
+        ConfigureOrb();
+        UpdateTaskbar();
+        _tray?.Update(TrayState());
+        if (_dashboard is { IsShown: true } dashboard)
+        {
+            dashboard.Hero.SetData(_speed.Value, _speed.Tier, _speed.Title,
+                _speed.Snapshot.Agents.Where(a => a.Phase == AgentPhase.Generating).Select(a => a.Source).ToArray(),
+                DisplayText.Accessibility(_speed.Value, _titles.Text(_speed.Title, _titles.General), _loc));
         }
 
         _dashboardDirty = true;

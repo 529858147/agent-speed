@@ -14,16 +14,23 @@ using AgentSpeed.Theme;
 namespace AgentSpeed.History;
 
 /// <summary>Texts and formatters the chart draws in the selected language.</summary>
+/// <param name="Unit">The speed axis' unit (drawn only with the speed line).</param>
+/// <param name="Axis">The left axis label of a value at a tick step: tokens, or money for the cost chart (DESIGN 9).</param>
 internal sealed record ChartTexts(
     CultureInfo Culture,
     string Unit,
     string InProgress,
     Func<DateOnly, bool, string> Month,
     Func<DateOnly, string> MonthDay,
-    Func<DaySummary, string> Accessible)
+    Func<DaySummary, string> Accessible,
+    Func<double, double, string> Axis)
 {
     public static ChartTexts Empty { get; } = new(CultureInfo.InvariantCulture, "tok/s", string.Empty,
-        (d, _) => d.ToString("MMM", CultureInfo.InvariantCulture), d => d.ToString("M/d", CultureInfo.InvariantCulture), _ => string.Empty);
+        (d, _) => d.ToString("MMM", CultureInfo.InvariantCulture), d => d.ToString("M/d", CultureInfo.InvariantCulture), _ => string.Empty,
+        TokenAxis);
+
+    /// <summary>Output tokens in the compact form.</summary>
+    public static string TokenAxis(double value, double step) => SpeedFormat.Tokens((long)Math.Round(value));
 }
 
 internal enum ChartTransition
@@ -43,8 +50,9 @@ internal enum ChartTransition
 internal readonly record struct ChartHover(int? Index, bool Pointer);
 
 /// <summary>
-/// Daily output bars (stacked by source) with the average-speed line on a second axis (DESIGN 4b, item 3). Drawn into
-/// three layers so hovering never redraws the bars: the slot highlight behind, the chart, and the crosshair in front.
+/// Daily output bars (stacked by source) with the average-speed line on a second axis (DESIGN 4b, item 3), or daily cost
+/// bars on a money axis without the speed line (DESIGN 9). Drawn into three layers so hovering never redraws the bars:
+/// the slot highlight behind, the chart, and the crosshair in front.
 /// </summary>
 internal sealed class HistoryChart : FrameworkElement
 {
@@ -80,6 +88,9 @@ internal sealed class HistoryChart : FrameworkElement
     private double _targetMax = 1;
     private double _lineAlpha = 1;
     private double _fade = 1;
+    private double _fromLeft = double.NaN;
+    private double _fromRight = double.NaN;
+    private double _marginT = 1;
     private DampedSpring _spring;
     private bool _crossfading;
     private bool _animating;
@@ -201,6 +212,7 @@ internal sealed class HistoryChart : FrameworkElement
         ArgumentNullException.ThrowIfNull(bars);
         var previousRange = _target.Range;
         var rangeChanged = bars.Range != previousRange;
+        var metricChanged = bars.Metric != _target.Metric;
         _dayAt = dayAt;
         _source = source;
         _today = today;
@@ -216,6 +228,7 @@ internal sealed class HistoryChart : FrameworkElement
             _linkedIndex = null;
         }
 
+        _marginT = 1;
         if (transition == ChartTransition.Snap || !IsVisible || ActualWidth <= 0)
         {
             StopLoop();
@@ -244,6 +257,21 @@ internal sealed class HistoryChart : FrameworkElement
             _fade = 1;
             _from = previousShown;
             _fromMax = previousMax > 0 ? previousMax : _targetMax;
+            if (metricChanged && previousMax > 0)
+            {
+                // Output and cost share no unit: the old bars start from their heights on the new scale.
+                _from = previousShown.Scaled(_targetMax / previousMax);
+                _fromMax = _targetMax;
+            }
+
+            // The axes' room (labels of another width, the speed axis coming or going) eases along with the bars.
+            if (!_frame.Plot.IsEmpty)
+            {
+                _fromLeft = _frame.Plot.Left;
+                _fromRight = ActualWidth - _frame.Plot.Right;
+                _marginT = 0;
+            }
+
             _spring = new DampedSpring(0.3, 0.86);
             if (transition == ChartTransition.Morph)
             {
@@ -327,7 +355,7 @@ internal sealed class HistoryChart : FrameworkElement
     {
         for (var i = 0; i < _target.Count; i++)
         {
-            if (_target.Total(i) > 0)
+            if (_target.HasData(i))
             {
                 yield return i;
             }
@@ -376,7 +404,7 @@ internal sealed class HistoryChart : FrameworkElement
             index = f.Slots.IndexAt(p.X - f.Plot.Left);
         }
 
-        Cursor = index is { } i && _target.Total(i) > 0 ? Cursors.Hand : null;
+        Cursor = index is { } i && _target.HasData(i) ? Cursors.Hand : null;
         if (index != _pointerIndex)
         {
             _pointerIndex = index;
@@ -407,7 +435,7 @@ internal sealed class HistoryChart : FrameworkElement
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (_pointerIndex is { } index && _target.Total(index) > 0)
+        if (_pointerIndex is { } index && _target.HasData(index))
         {
             DayActivated?.Invoke(this, _target.Range.DayAt(index));
             e.Handled = true;
@@ -438,7 +466,7 @@ internal sealed class HistoryChart : FrameworkElement
 
         switch (e.Key)
         {
-            case Key.Enter or Key.Space when _keyIndex is { } current && _target.Total(current) > 0:
+            case Key.Enter or Key.Space when _keyIndex is { } current && _target.HasData(current):
                 DayActivated?.Invoke(this, _target.Range.DayAt(current));
                 e.Handled = true;
                 break;
@@ -476,7 +504,7 @@ internal sealed class HistoryChart : FrameworkElement
         var start = _keyIndex ?? (direction > 0 ? -1 : _target.Count);
         for (var i = start + direction; i >= 0 && i < _target.Count; i += direction)
         {
-            if (_target.Total(i) > 0)
+            if (_target.HasData(i))
             {
                 return i;
             }
@@ -500,7 +528,7 @@ internal sealed class HistoryChart : FrameworkElement
     {
         for (var i = 0; i < _target.Count; i++)
         {
-            if (_target.Total(i) > 0)
+            if (_target.HasData(i))
             {
                 return i;
             }
@@ -513,7 +541,7 @@ internal sealed class HistoryChart : FrameworkElement
     {
         for (var i = _target.Count - 1; i >= 0; i--)
         {
-            if (_target.Total(i) > 0)
+            if (_target.HasData(i))
             {
                 return i;
             }
@@ -554,6 +582,7 @@ internal sealed class HistoryChart : FrameworkElement
         StopLoop();
         _shown = _target;
         _shownMax = _targetMax;
+        _marginT = 1;
         _lineAlpha = 1;
         _fade = 1;
         _fadeFrom = null;
@@ -597,6 +626,7 @@ internal sealed class HistoryChart : FrameworkElement
 
         _shown = HistoryBars.Blend(_from, _target, t);
         _shownMax = Easing.Lerp(_fromMax, _targetMax, Math.Clamp(t, 0, 1.1));
+        _marginT = Math.Clamp(t, 0, 1);
         RenderMain();
     }
 
@@ -623,7 +653,7 @@ internal sealed class HistoryChart : FrameworkElement
         var left = 0.0;
         for (var i = 0; i <= ticks.Intervals; i++)
         {
-            left = Math.Max(left, Text(SpeedFormat.Tokens((long)Math.Round(ticks.Value(i))), LabelBrush).WidthIncludingTrailingWhitespace);
+            left = Math.Max(left, Text(_texts.Axis(ticks.Value(i), ticks.Step), LabelBrush).WidthIncludingTrailingWhitespace);
         }
 
         var right = 12.0;
@@ -639,6 +669,11 @@ internal sealed class HistoryChart : FrameworkElement
 
         left = Math.Ceiling(Math.Max(24, left + 10));
         right = Math.Ceiling(right);
+        if (_marginT < 1 && double.IsFinite(_fromLeft) && double.IsFinite(_fromRight))
+        {
+            left = Easing.Lerp(_fromLeft, left, _marginT);
+            right = Easing.Lerp(_fromRight, right, _marginT);
+        }
         var plot = new Rect(left, TopBand, Math.Max(0, width - left - right), Math.Max(0, height - TopBand - BottomBand));
         var slots = HistoryChartMath.Slots(_target.Count, plot.Width);
         return new ChartFrame(plot, slots, ticks, speedTicks, Math.Max(_shownMax, 1e-9));
@@ -695,7 +730,7 @@ internal sealed class HistoryChart : FrameworkElement
 
             var snapped = Snap(y, ppd);
             dc.DrawLine(gridPen, new Point(f.Plot.Left, snapped), new Point(f.Plot.Right, snapped));
-            var label = Text(SpeedFormat.Tokens((long)Math.Round(value)), LabelBrush);
+            var label = Text(_texts.Axis(value, f.Ticks.Step), LabelBrush);
             var labelY = Math.Max(0, y - label.Height / 2);
             dc.DrawText(label, new Point(f.Plot.Left - 8 - label.WidthIncludingTrailingWhitespace, labelY));
             if (_target.HasSpeed)
