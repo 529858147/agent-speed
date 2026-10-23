@@ -144,7 +144,8 @@ enum SliderStep {
 struct SegmentedRow<Selection: Hashable, Options: View>: View {
     let title: String
     @Binding var selection: Selection
-    /// Width of one segment; the control is `segmentWidth × count` wide.
+    /// Width of one segment: the control takes up to `segmentWidth × count`, flush with the trailing edge (the
+    /// Liquid Glass control sizes to its labels instead of filling that room).
     var segmentWidth: CGFloat = 76
     let count: Int
     @ViewBuilder var options: Options
@@ -156,7 +157,7 @@ struct SegmentedRow<Selection: Hashable, Options: View>: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: segmentWidth * CGFloat(count))
+            .frame(width: segmentWidth * CGFloat(count), alignment: .trailing)
         } label: {
             RowTitle(title)
         }
