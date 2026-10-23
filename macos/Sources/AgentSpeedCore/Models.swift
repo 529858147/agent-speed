@@ -183,6 +183,10 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         self.todayCost = todayCost
         self.unpricedModels = unpricedModels
     }
+
+    /// Listed on the dashboard (DESIGN 4.3): the source produced output tokens today or is generating right now (its
+    /// first response may still be in flight).
+    public var producedToday: Bool { today.output > 0 || live.output > 0 }
 }
 
 public struct ResponseSummary: Equatable, Sendable {

@@ -11,4 +11,14 @@ public static class SourceDetection
         ArgumentNullException.ThrowIfNull(status);
         return status.Available || status.SessionCount > 0 || status.Today.Requests > 0;
     }
+
+    /// <summary>
+    /// Listed on the dashboard: the source produced output tokens today or is generating right now (its first response
+    /// may still be in flight).
+    /// </summary>
+    public static bool ProducedToday(SourceStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        return status.Today.Output > 0 || status.Live.Output > 0;
+    }
 }

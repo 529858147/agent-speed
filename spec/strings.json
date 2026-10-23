@@ -1152,6 +1152,12 @@
     "en": "Sources",
     "ja": "ソース"
   },
+  "dashboard.sources.empty": {
+    "zh-Hant": "今天還沒有來源產生 token",
+    "zh-Hans": "今天还没有来源产生 token",
+    "en": "No source has produced tokens today",
+    "ja": "今日はまだトークンを生成したソースがありません"
+  },
   "dashboard.agents": {
     "zh-Hant": "Agent",
     "zh-Hans": "Agent",

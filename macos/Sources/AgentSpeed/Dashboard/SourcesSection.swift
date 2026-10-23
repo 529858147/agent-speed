@@ -1,26 +1,37 @@
 import AgentSpeedCore
 import SwiftUI
 
-/// One row per detected data source with its live speed and today's output (DESIGN section 4.3). Each row opens the
-/// Usage History window filtered to its source. Sources that are not on this Mac are left to Settings → Data Sources.
+/// One row per source that produced tokens today, with its live speed and today's output (DESIGN section 4.3). Each
+/// row opens the Usage History window filtered to its source. The other sources are left to Settings → Data Sources.
 struct SourcesSection: View {
     let model: AppModel
 
     var body: some View {
         let l10n = model.l10n
         let sources = SourceKind.allCases.compactMap { kind in
-            model.snapshot.sources.first { $0.kind == kind && $0.isDetected }
+            model.snapshot.sources.first { $0.kind == kind && $0.producedToday }
         }
 
         VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
             HStack(spacing: Spacing.s) {
                 SectionTitle(text: l10n("dashboard.sources"), latin: model.dashboardLatinCaps)
                 Spacer(minLength: 0)
-                ColumnCaption(text: l10n("dashboard.today"), width: DashboardLayout.tokensColumn)
-                ColumnCaption(text: model.settings.liveUnit == .cost ? model.cost.unitPerSecond : l10n("unit.tokS"),
-                              width: DashboardLayout.speedColumn)
+                if !sources.isEmpty {
+                    ColumnCaption(text: l10n("dashboard.today"), width: DashboardLayout.tokensColumn)
+                    ColumnCaption(text: model.settings.liveUnit == .cost ? model.cost.unitPerSecond : l10n("unit.tokS"),
+                                  width: DashboardLayout.speedColumn)
+                }
             }
             .padding(.bottom, 2)
+            if sources.isEmpty {
+                Text(l10n("dashboard.sources.empty"))
+                    .font(DashboardFont.row)
+                    .foregroundStyle(.dashboardSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: DashboardLayout.rowHeight, alignment: .leading)
+                    .transition(.opacity)
+            }
             ForEach(sources) { source in
                 SourceRow(model: model, source: source)
                     .transition(.opacity)

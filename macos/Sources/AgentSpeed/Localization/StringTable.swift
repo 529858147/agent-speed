@@ -99,6 +99,7 @@ enum StringTable {
         "dashboard.agents": Entry("Agent", "Agent", "Agents", "Agent"),
         "dashboard.live": Entry("即時", "实时", "Live", "ライブ"),
         "dashboard.sources": Entry("來源", "来源", "Sources", "ソース"),
+        "dashboard.sources.empty": Entry("今天還沒有來源產生 token", "今天还没有来源产生 token", "No source has produced tokens today", "今日はまだトークンを生成したソースがありません"),
         "dashboard.today": Entry("今天", "今天", "Today", "今日"),
         "effects.max": Entry("熱血全開", "热血全开", "Max", "全開"),
         "effects.off": Entry("關閉", "关闭", "Off", "オフ"),

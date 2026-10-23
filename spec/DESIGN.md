@@ -1181,8 +1181,12 @@ Sections (top to bottom, 16 pt spacing, hairline separators):
 3. **Sources** — one row per detected source: colored dot, name, live tok/s (right), today's output tokens
    (secondary; with today's cost, section 9); a live value below 0.05 shows the tertiary `–` like the agents list. Each row is a button that
    opens the Usage History window (section 4b) pre-filtered to that source:
-   on hover the row gets a subtle highlight and a trailing chevron fades in; keyboard focusable; a11y hint "顯示用量歷史". Sources whose folder does not exist and that have no data today are not listed here (Settings → Data
-   Sources still lists every source with its status); a source that is detected but disabled is dimmed.
+   on hover the row gets a subtle highlight and a trailing chevron fades in; keyboard focusable; a11y hint "顯示用量歷史". Only
+   sources that produced output tokens today, or are generating right now (live output above 0, e.g. the day's first
+   response still in flight), are listed; the others are left to Settings → Data Sources, which lists every source
+   with its status. A listed source that is disabled is dimmed. Rows fade in and out as sources join and leave (at
+   midnight every row leaves until its source produces again). With no row the section shows
+   `dashboard.sources.empty` in secondary text under its header.
 4. **Agents** — up to 6 rows sorted by section 6.7 of METRICS: project (semibold), source + model (secondary,
    truncated), phase badge (generating: animated three-dot shimmer in the source color; tools: wrench glyph;
    idle: grey dot), live tok/s right-aligned. Sub-agents are indented 12 pt with a thin connector line.

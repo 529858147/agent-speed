@@ -137,6 +137,7 @@ internal sealed partial class DashboardViewModel : ObservableObject
     private bool _isRunning = true;
     private double _loadingProgress;
     private bool _hasAgents;
+    private bool _hasListedSources;
     private bool _agentsExpanded;
     private bool _holdAllAgents;
     private bool _canToggleAgents;
@@ -191,6 +192,9 @@ internal sealed partial class DashboardViewModel : ObservableObject
     public double LoadingProgress { get => _loadingProgress; private set => Set(ref _loadingProgress, value); }
 
     public bool HasAgents { get => _hasAgents; private set => Set(ref _hasAgents, value); }
+
+    /// <summary>At least one source produced tokens today (DESIGN section 4, item 3).</summary>
+    public bool HasListedSources { get => _hasListedSources; private set => Set(ref _hasListedSources, value); }
 
     /// <summary>The remembered choice to show every agent (DESIGN section 4, item 4).</summary>
     public bool AgentsExpanded
@@ -398,7 +402,7 @@ internal sealed partial class DashboardViewModel : ObservableObject
                 continue;
             }
 
-            row.IsListed = SourceDetection.IsDetected(status);
+            row.IsListed = SourceDetection.ProducedToday(status);
 
             var live = status.Live.ValueFor(metric);
             if (DisplayText.IsNegligibleSpeed(live))
@@ -462,6 +466,8 @@ internal sealed partial class DashboardViewModel : ObservableObject
                     ? $"{row.Name}, {loc["today.output"]} {SpeedFormat.Tokens(status.Today.Output)}, {loc["today.cost"]} {costSpoken}, {row.LiveAccessibleName}"
                     : $"{row.Name}, {loc["today.output"]} {row.TodayText}, {row.LiveAccessibleName}";
         }
+
+        HasListedSources = Sources.Any(r => r.IsListed);
     }
 
     private void UpdateTodayCost(SpeedSnapshot snapshot, Localizer loc)

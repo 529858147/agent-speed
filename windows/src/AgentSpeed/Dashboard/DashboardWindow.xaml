@@ -291,6 +291,8 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <TextBlock Text="{loc:Loc dashboard.sources.empty}" Style="{StaticResource CaptionText}" Margin="0,4,0,4"
+                               TextWrapping="Wrap" Visibility="{Binding HasListedSources, Converter={StaticResource Hidden}}" />
 
                     <!-- Agents -->
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />
