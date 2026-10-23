@@ -209,7 +209,7 @@ final class OrbAnimator {
     private func handle(_ event: OrbFeedEvent) {
         guard let model, let feed else { return }
         let now = Clock.now
-        let effects = effects(for: model)
+        let effects = self.effects(for: model)
         switch event {
         case .response(let output, let speed):
             guard model.settings.responsePulses, effects.pulses else { return }
@@ -391,7 +391,7 @@ final class OrbAnimator {
     private func desiredClass(model: AppModel, feed: OrbFeed, at now: TimeInterval) -> (OrbFrameClass, TimeInterval) {
         if let interaction, !interaction.isVisibleOnScreen { return (.none, .infinity) }
         let gauge = feed.gauge
-        let effects = effects(for: model)
+        let effects = self.effects(for: model)
         let unavailable = feed.unavailableTitleKey != nil
         let minimal = renderer.kind == .minimal
         let transitionClass: OrbFrameClass = minimal ? .fps30 : .fps60
@@ -462,14 +462,14 @@ final class OrbAnimator {
     /// A minimal frame for scheduling questions (no content needed).
     private func frameFor(_ time: TimeInterval) -> OrbFrame {
         let gauge = feed?.gauge
-        let effects = model.map { effects(for: $0) } ?? OrbEffects(level: .standard, reduceMotion: false, surface: surface)
+        let effects = model.map { self.effects(for: $0) } ?? OrbEffects(level: .standard, reduceMotion: false, surface: surface)
         return OrbFrame.scheduling(time: time, gauge: gauge, effects: effects, unavailable: feed?.unavailableTitleKey != nil,
                                    geometry: cachedGeometry)
     }
 
     private func desiredMode(model: AppModel, feed: OrbFeed, at now: TimeInterval) -> FrameMode {
         let gauge = feed.gauge
-        let effects = effects(for: model)
+        let effects = self.effects(for: model)
         let busy = !gauge.isSettled(at: now)
             || (gauge.tier != .idle && (effects.ambient || effects.shimmer))
             || renderer.isBusy(frameFor(now))

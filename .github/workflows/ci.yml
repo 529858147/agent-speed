@@ -33,7 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Select newest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+        run: |
+          xcode="$(ls -d /Applications/Xcode*.app | grep -viE 'beta|_rc|release_candidate' | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode"
+          echo "::notice::$(xcodebuild -version | tr '\n' ' ')"
       - name: Test core
         working-directory: macos
         run: |
@@ -63,15 +66,20 @@ jobs:
         run: |
           set -o pipefail
           dotnet test windows/tests/AgentSpeed.Core.Tests -c Release 2>&1 | tee "$RUNNER_TEMP/core.log" || {
-            grep -E -A3 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/core.log" | paste -sd' ' - | sed 's/ -- /\n/g' | head -10 | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+            names="$(grep -oE '^\s*Failed [A-Za-z0-9_.]+' "$RUNNER_TEMP/core.log" | sed -E 's/^\s*Failed //; s/^AgentSpeed\.[A-Za-z]+\.Tests\.//' | sort -u | paste -sd',' -)"
+            echo "::error::Failed tests: ${names:0:3500}"
+            grep -E -A2 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/core.log" | grep -E 'Error Message' -A1 | grep -vE 'Error Message|^--' | sed -E 's/[0-9a-f]{32}//g' | sort | uniq -c | sort -rn | head -8 | while IFS= read -r line; do echo "::error::${line:0:600}"; done
             exit 1
           }
       - name: Test presentation
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -o pipefail
           dotnet test windows/tests/AgentSpeed.Presentation.Tests -c Release 2>&1 | tee "$RUNNER_TEMP/presentation.log" || {
-            grep -E -A3 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/presentation.log" | paste -sd' ' - | sed 's/ -- /\n/g' | head -10 | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+            names="$(grep -oE '^\s*Failed [A-Za-z0-9_.]+' "$RUNNER_TEMP/presentation.log" | sed -E 's/^\s*Failed //; s/^AgentSpeed\.[A-Za-z]+\.Tests\.//' | sort -u | paste -sd',' -)"
+            echo "::error::Failed tests: ${names:0:3500}"
+            grep -E -A2 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/presentation.log" | grep -E 'Error Message' -A1 | grep -vE 'Error Message|^--' | sed -E 's/[0-9a-f]{32}//g' | sort | uniq -c | sort -rn | head -8 | while IFS= read -r line; do echo "::error::${line:0:600}"; done
             exit 1
           }
       - name: Publish
