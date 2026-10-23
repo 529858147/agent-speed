@@ -178,7 +178,7 @@ enum CostPreviews {
         }
     }
 
-    /// The second value per locale: tok/s with money after it, then money with tok/s after it (DESIGN 3).
+    /// The second value per locale: tok/s with the money rate after it (DESIGN 3), then money alone for comparison.
     static func renderMenuBarSecondary(model: AppModel, into directory: URL) {
         let redline = model.settings.redline
         model.settings.barSecondary = true

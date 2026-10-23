@@ -1135,13 +1135,13 @@ Glanceable and calm; it must never jitter in width.
 - Unit `tok/s`: 10 pt / 11 px, secondary color, optional (setting). With `settings.liveUnit` set to money the value
   is the live cost rate and the unit `US$/s` (section 9).
 - Display modes (setting): glyph + value (default), value only, glyph only.
-- Second value (optional, `settings.bar.secondary`, default off): the other live unit right after the value — the
-  live money rate (section 9, billable sources) when the value shows tok/s, or tok/s when it shows money — as
-  `0.0042 US$/s` / `555 tok/s` in an 11 pt tabular number plus the 9 pt unit in the secondary color, 8 pt after the
-  unit, in a fixed number cell sized for the widest value of its kind (`≥8.888` / `8.88k`) so the item never resizes
+- Second value (optional, default off): the live money rate (section 9, billable sources) right after a tok/s value,
+  as `0.0042 US$/s` in an 11 pt tabular number plus the 9 pt unit in the secondary color, 8 pt after the unit; the
+  number's room grows at once and shrinks only after 6 s (the value's width governor), so the item never jitters
   while the numbers change; `≥` and `–` follow section 9; hidden in glyph-only mode; read after the value by
-  accessibility and in the tooltip. The settings toggle reads `settings.bar.alsoMoney` or `settings.bar.alsoTokens`
-  depending on the current live unit.
+  accessibility and in the tooltip. In 選單列 / 工作列 the live value control has three choices — `settings.liveUnit.tokens`,
+  `settings.liveUnit.cost` and `settings.liveUnit.both` (tok/s with the money rate after it; tok/s alone stays the default) —
+  so showing both is one visible choice rather than a separate switch.
 - Network speed (optional, `settings.bar.traffic`, default off): a fixed-width two-line `↓` / `↑` block after the value
   (section 10).
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.

@@ -1,8 +1,8 @@
 import AgentSpeedCore
 import AppKit
 
-/// The menu bar's second value (DESIGN 3): the live money rate after a tok/s value, or tok/s after a money value, as
-/// an 11 pt tabular number and a 9 pt unit. The number sits right-aligned in a cell the renderer's width governor
+/// The menu bar's second value (DESIGN 3): the live money rate after a tok/s value, as an 11 pt tabular number and a
+/// 9 pt unit. The number sits right-aligned in a cell the renderer's width governor
 /// sizes (grows at once, shrinks after a delay), so the item never jitters while the numbers change.
 struct StatusItemSecondary: Equatable {
     static let size: CGFloat = 11
@@ -14,7 +14,6 @@ struct StatusItemSecondary: Equatable {
     var unit: String
     /// Idle, nothing priced or zero: the number takes the secondary color.
     var dim: Bool
-    var money: Bool
     /// Room for the number; at least its drawn width.
     var cell: CGFloat = 0
 
@@ -24,19 +23,11 @@ struct StatusItemSecondary: Equatable {
     @MainActor
     init?(model: AppModel) {
         let settings = model.settings
-        guard settings.barSecondary, settings.barMode.showsValue else { return nil }
-        if settings.liveUnit == .cost {
-            money = false
-            number = SpeedFormat.speed(model.gauge.readoutValue)
-            unit = model.l10n("unit.tokS")
-            dim = model.gauge.tier == .idle
-        } else {
-            let live = StatusItemValue.liveMoney(model)
-            money = true
-            number = live.unknown ? "–" : (live.atLeast ? "≥" : "") + live.number
-            unit = live.unit
-            dim = live.unknown || live.value == 0
-        }
+        guard settings.barSecondary, settings.liveUnit == .tokens, settings.barMode.showsValue else { return nil }
+        let live = StatusItemValue.liveMoney(model)
+        number = live.unknown ? "–" : (live.atLeast ? "≥" : "") + live.number
+        unit = live.unit
+        dim = live.unknown || live.value == 0
         cell = numberWidth
     }
 
