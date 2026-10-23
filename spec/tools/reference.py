@@ -3,7 +3,8 @@
 
   python3 spec/tools/reference.py --check-fixtures
   python3 spec/tools/reference.py --dump-today [--codex PATH] [--claude PATH] [--dsh PATH] [--gemini PATH]
-                                              [--omp PATH] [--antigravity PATH]
+                                              [--omp PATH] [--antigravity PATH] [--workbuddy PATH]
+                                              [--workbuddy-ai PATH]
   python3 spec/tools/reference.py --dump-history [--utc] [--prices PATH] [...]
   python3 spec/tools/reference.py --write-history-fixture
 
@@ -137,6 +138,12 @@ class FileState:
             self.source_decided = True
             rel = os.path.relpath(path, root) if root else path
             self.is_subagent = len([p for p in re.split(r"[\\/]", rel) if p]) >= 3
+        # workbuddy
+        self.cwd = None
+        self.open_calls = OrderedDict()
+        if source in WB_FOLDERS:
+            self.source_decided = True
+            self.is_subagent = "subagents" in [p for p in re.split(r"[\\/]", path) if p]
 
 
 def emit(state, key, start, end, tokens, model, final=True, provider=None, fast=False):
@@ -448,8 +455,8 @@ def zst_stream_lines(path):
 def process_file(state, dedupe, start_offset=0, max_lines=None):
     if state.source == "gemini" and state.path.endswith(".json"):
         return gemini_legacy(state, dedupe)
-    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record,
-               "omp": omp_line}.get(state.source, claude_line)
+    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record, "omp": omp_line,
+               "workbuddy": workbuddy_line, "workbuddyAi": workbuddy_line}.get(state.source, claude_line)
     if state.source == "omp" and start_offset > 0:
         omp_read_header(state, dedupe)
     if state.path.endswith(".zstd"):
@@ -1082,6 +1089,174 @@ def discover_omp(root, limit=20_000):
     return found[:limit]
 
 
+# ----------------------------------------------------------------------------- WorkBuddy (METRICS 4.9)
+
+WB_FOLDERS = OrderedDict([("workbuddy", ".workbuddy"), ("workbuddyAi", ".workbuddy-ai")])
+WB_USER_PREFIXES = ("custom:", "custom-local:")
+
+
+def wb_ts(value):
+    if finite(value):
+        return int(value) if value > 0 else None
+    return parse_ts(value)
+
+
+def wb_first(*values):
+    """The first value that is a number > 0 (0 when none), like the CLI's firstPositiveTokenCount."""
+    return next((num(v) for v in values if finite(v) and v > 0), 0)
+
+
+def wb_sum(details, field):
+    """Σ field over agents-core's per-request detail entries (a list of objects; one object is accepted too)."""
+    entries = details if isinstance(details, list) else [details]
+    return sum(num(e.get(field)) for e in entries if isinstance(e, dict))
+
+
+def wb_tokens(pd):
+    """Normalized usage of one model call (METRICS 4.9 Tokens): agents-core's usage, completed from the raw chunk."""
+    usage = pd.get("usage") if isinstance(pd.get("usage"), dict) else {}
+    raw = pd.get("rawUsage") if isinstance(pd.get("rawUsage"), dict) else {}
+    prompt = raw.get("prompt_tokens_details") if isinstance(raw.get("prompt_tokens_details"), dict) else {}
+    completion = raw.get("completion_tokens_details") if isinstance(raw.get("completion_tokens_details"), dict) else {}
+    cached = max(wb_sum(usage.get("inputTokensDetails"), "cached_tokens"),
+                 wb_first(raw.get("cache_read_input_tokens"), prompt.get("cached_tokens"),
+                          raw.get("prompt_cache_hit_tokens")))
+    write = wb_first(raw.get("cache_creation_input_tokens"), raw.get("prompt_cache_write_tokens"))
+    output = max(num(usage.get("outputTokens")), num(raw.get("completion_tokens")))
+    reasoning = max(wb_sum(usage.get("outputTokensDetails"), "reasoning_tokens"),
+                    num(completion.get("reasoning_tokens")))
+    inp = max(num(usage.get("inputTokens")), num(raw.get("prompt_tokens")), cached + write)
+    return dict(input=inp, cachedInput=cached, cacheWriteInput=write, output=output, reasoning=reasoning)
+
+
+def wb_model(pd):
+    """(model, provider): the chunk's model, else the requested id; a user-provider prefix is removed (4.9)."""
+    model = next((v.strip() for v in (pd.get("model"), pd.get("requestModelId")) if isinstance(v, str) and v.strip()),
+                 None)
+    if model and model.lower().startswith(WB_USER_PREFIXES):
+        return model.split(":", 1)[1].strip() or None, "custom"
+    return model, None
+
+
+def wb_idle(state):
+    state.phase, state.pending, state.in_flight = "idle", None, None
+    state.open_calls.clear()
+
+
+def wb_response(state, key, pd, ts, dedupe):
+    """Creates or merges the response of one model call from a line that carries usage (4.9 step 3)."""
+    if not isinstance(pd.get("usage"), dict) and not isinstance(pd.get("rawUsage"), dict):
+        return
+    tokens = wb_tokens(pd)
+    if tokens["input"] == 0 and tokens["output"] == 0:
+        return
+    model, provider = wb_model(pd)
+    resp = state.responses.get(key)
+    if resp is None:
+        dedupe.claim(key, state.path)
+        emit(state, key, state.pending, ts, tokens, model, provider=provider)
+        state.pending = None
+        resp = state.responses[key]
+    else:
+        resp["endMs"] = max(resp["endMs"], ts)
+        for f in TOKEN_FIELDS:
+            resp[f] = max(resp[f], tokens.get(f, 0))
+        resp["model"] = model or resp["model"]
+        resp["provider"] = provider or resp["provider"]
+    state.model = resp["model"] or state.model
+
+
+def workbuddy_line(state, obj, dedupe):
+    """One line of a WorkBuddy session file (METRICS 4.9)."""
+    ts = wb_ts(obj.get("timestamp"))
+    if ts is None:
+        return
+    state.last_line = ts if state.last_line is None else max(state.last_line, ts)
+    if isinstance(obj.get("cwd"), str) and obj["cwd"].strip():
+        state.cwd = obj["cwd"]
+        state.project = basename(obj["cwd"]) or state.project
+    kind, role = obj.get("type"), obj.get("role")
+    pd = obj.get("providerData") if isinstance(obj.get("providerData"), dict) else {}
+    skip = pd.get("skipRun") is True
+    if kind == "message" and role == "user":
+        if not skip:
+            state.open_calls.clear()
+            state.phase, state.pending, state.in_flight = "generating", ts, ts
+        return
+    if kind == "function_call_result":
+        state.open_calls.pop(obj.get("callId"), None)
+        if skip:
+            if not state.open_calls:
+                wb_idle(state)
+        else:
+            state.pending = ts
+            if not state.open_calls:
+                state.phase, state.in_flight = "generating", ts
+        return
+    assistant = kind == "message" and role == "assistant"
+    if not (assistant or kind in ("function_call", "reasoning", "model-usage")):
+        return
+    if assistant and skip:
+        if obj.get("status") == "incomplete" or isinstance(pd.get("error"), dict):
+            wb_idle(state)
+        return
+    if pd.get("isPartialAborted") is True:
+        return
+    mid = pd.get("messageId")
+    key = mid if isinstance(mid, str) and mid else (
+        "workbuddy:" + obj["id"] if isinstance(obj.get("id"), str) and obj["id"] else None)
+    if key is None or dedupe.owner(key) not in (None, state.path):
+        return
+    wb_response(state, key, pd, ts, dedupe)
+    if kind == "model-usage":
+        wb_idle(state)
+        return
+    for call_id in [c for c, k in state.open_calls.items() if k != key]:
+        del state.open_calls[call_id]
+    if kind == "function_call":
+        if isinstance(obj.get("callId"), str):
+            state.open_calls[obj["callId"]] = key
+        state.phase, state.in_flight = "tools", None
+    elif assistant and not state.open_calls:
+        if pd.get("agent") == "compact":
+            state.phase, state.pending, state.in_flight = "generating", ts, ts
+        else:
+            state.phase, state.in_flight = "idle", None
+
+
+def workbuddy_roots(home=None, settings=None):
+    """(source, projects folder) of both editions (METRICS 2, 4.9); a setting names the data root or `projects`."""
+    home = home or os.path.expanduser("~")
+    settings = settings or {}
+    roots = []
+    for source, folder in WB_FOLDERS.items():
+        chosen = (settings.get(source) or "").rstrip("/\\")
+        path = chosen or os.path.join(home, folder)
+        roots.append((source, path if os.path.basename(path) == "projects" else os.path.join(path, "projects")))
+    return roots
+
+
+def discover_workbuddy(projects, limit=20_000):
+    """Main sessions `<slug>/<name>.jsonl` and sub-agents `<slug>/<session>/subagents/<name>.jsonl` (4.9)."""
+    found = []
+    for slug in sorted(_subdirs(projects)):
+        if slug == "cloud" or slug.startswith("."):
+            continue
+        base = os.path.join(projects, slug)
+        candidates = [os.path.join(base, n) for n in os.listdir(base)]
+        for session in _subdirs(base):
+            agents = os.path.join(base, session, "subagents")
+            if not session.startswith(".") and os.path.isdir(agents) and not os.path.islink(agents):
+                candidates += [os.path.join(agents, n) for n in os.listdir(agents)]
+        for path in candidates:
+            name = os.path.basename(path)
+            if name.endswith(".jsonl") and not name.startswith(".") and os.path.isfile(path) \
+                    and not os.path.islink(path):
+                found.append(path)
+    found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return found[:limit]
+
+
 # ----------------------------------------------------------------------------- Antigravity (METRICS 4.8)
 
 def pb_varint(data, pos):
@@ -1698,6 +1873,14 @@ def check_fixtures():
     ag = expected.get("antigravity")
     if ag:
         failures += check_antigravity(root, ag, dedupe)
+    wb = expected.get("workbuddy")
+    if wb:
+        found = sorted(os.path.relpath(p, root).replace(os.sep, "/")
+                       for _, r in fixture_wb_roots(root) for p in discover_workbuddy(r))
+        if found != wb["discover"]:
+            failures.append("workbuddy discover: expected %r got %r" % (wb["discover"], found))
+        failures += check_traces(root, expected, wb["traces"])
+        failures += check_workbuddy_roots()
     hist_path = os.path.join(root, "history-expected.json")
     if os.path.exists(hist_path):
         hist = json.load(open(hist_path, encoding="utf-8"))
@@ -1870,8 +2053,31 @@ def check_antigravity(root, ag, dedupe):
     return failures
 
 
+def check_workbuddy_roots():
+    """Both data folders under the home folder; a setting names a data folder or its `projects` folder."""
+    failures = []
+    home = os.path.join(os.sep, "home", "dev")
+    cases = [
+        ({}, [("workbuddy", os.path.join(home, ".workbuddy", "projects")),
+              ("workbuddyAi", os.path.join(home, ".workbuddy-ai", "projects"))]),
+        ({"workbuddy": "/data/wb/", "workbuddyAi": "/data/wb-ai/projects"},
+         [("workbuddy", "/data/wb/projects"), ("workbuddyAi", "/data/wb-ai/projects")]),
+    ]
+    for settings, want in cases:
+        got = workbuddy_roots(home, settings)
+        if [(s, os.path.normpath(p)) for s, p in got] != [(s, os.path.normpath(p)) for s, p in want]:
+            failures.append("workbuddy roots %r: expected %r got %r" % (settings, want, got))
+    return failures
+
+
+def fixture_wb_roots(root):
+    """The fixture folder `workbuddy` plays the home folder of both WorkBuddy editions."""
+    return workbuddy_roots(os.path.join(root, "workbuddy"))
+
+
 def fixture_source(rel):
-    for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini"), ("omp/", "omp")):
+    for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini"), ("omp/", "omp"),
+                           ("workbuddy/.workbuddy/", "workbuddy"), ("workbuddy/.workbuddy-ai/", "workbuddyAi")):
         if rel.startswith(prefix):
             return source
     return "claudeCode"
@@ -1907,7 +2113,8 @@ def fixture_history(root, expected, config=HISTORY_PRICES):
         return daily_history(collect_all(os.path.join(copy, "codex", "sessions"), os.path.join(copy, "claude", "projects"),
                                          os.path.join(copy, "dsh", "sessions"), os.path.join(copy, "opencode", "opencode.db"),
                                          [os.path.join(copy, "gemini", "tmp")], fixture_omp_roots(copy),
-                                         antigravity_stores(gemini_dir=os.path.join(copy, "antigravity"))),
+                                         antigravity_stores(gemini_dir=os.path.join(copy, "antigravity")),
+                                         fixture_wb_roots(copy)),
                              tz=timezone.utc, day_pricing=fixture_pricing(root, config))
 
 
@@ -1947,8 +2154,8 @@ def discover(root, limit=20_000, deepseek=False, codex=False):
     return found[:limit]
 
 
-def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), limit=20_000,
-                  include_archived=False):
+def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
+                  limit=20_000, include_archived=False):
     """(time, path, source, omp root) of every discovered file and Antigravity database, in startup order (5)."""
     files = [(p, "codex", None) for p in discover(codex_root, limit=limit, codex=True)]
     if include_archived:
@@ -1959,16 +2166,18 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
     files += [(p, "gemini", None) for d in gemini_dirs for p in discover_gemini(d, limit=limit)]
     files += [(p, "omp", r) for r in OrderedDict.fromkeys(omp_dirs) for p in discover_omp(r, limit=limit)]
     files += [(p, "antigravity", None) for s in ag_stores for p in discover_antigravity(s, limit=limit)]
+    files += [(p, s, None) for s, r in wb_roots for p in discover_workbuddy(r, limit=limit)]
     timed = {(ag_mtime(p) if s == "antigravity" else os.path.getmtime(p), p, s, r) for p, s, r in files}
     return sorted(timed, key=lambda t: (t[0], t[1]))
 
 
-def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), table=pricing.TABLE):
+def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
+               table=pricing.TABLE):
     started = time.time()
     index = pricing.Index(pricing.load(table))
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores)
+    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots)
     dedupe = Deduper()
     rows, read_files, read_bytes = [], 0, 0
     for mtime, path, source, omp_root in files:
@@ -2014,10 +2223,10 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
 
 
 def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), omp_dirs=(), ag_stores=(),
-                include_archived=True):
+                wb_roots=(), include_archived=True):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
-    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, limit=10 ** 9,
-                          include_archived=include_archived)
+    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots,
+                          limit=10 ** 9, include_archived=include_archived)
     dedupe = Deduper(limit=10 ** 9)
     out = []
     for _, path, source, omp_root in files:
@@ -2097,6 +2306,9 @@ def main():
     parser.add_argument("--omp", action="append", default=None, help="omp sessions folder (repeatable)")
     parser.add_argument("--antigravity", action="append", default=None,
                         help="Antigravity store folder or its conversations folder (repeatable)")
+    parser.add_argument("--workbuddy", default=None, help="WorkBuddy data folder (~/.workbuddy) or its projects folder")
+    parser.add_argument("--workbuddy-ai", default=None,
+                        help="WorkBuddy AI data folder (~/.workbuddy-ai) or its projects folder")
     parser.add_argument("--write-history-fixture", action="store_true")
     parser.add_argument("--prices", default=pricing.TABLE, help="price table for --dump-history (METRICS 9)")
     args = parser.parse_args()
@@ -2113,12 +2325,13 @@ def main():
     omp_dirs = args.omp or omp_roots()
     ag_stores = ([s for a in args.antigravity for s in antigravity_stores(setting=a)] if args.antigravity
                  else antigravity_stores())
+    wb_roots = workbuddy_roots(settings={"workbuddy": args.workbuddy, "workbuddyAi": args.workbuddy_ai})
     if args.write_history_fixture:
         write_history_fixture()
         return
     if args.dump_history:
         rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs, omp_dirs,
-                                         ag_stores), tz=timezone.utc if args.utc else None,
+                                         ag_stores, wb_roots), tz=timezone.utc if args.utc else None,
                              day_pricing=pricing.DayPricing([pricing.load(args.prices)]))
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
@@ -2126,7 +2339,7 @@ def main():
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, args.prices)
+        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots, args.prices)
     else:
         parser.print_help()
 

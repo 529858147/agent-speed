@@ -2,7 +2,7 @@
   "_comment": "API list prices for API-equivalent costs (METRICS 9). USD per million tokens. Edit by hand: raise version by one, set updated and each changed entry's checked date, add tests for new id forms, run python3 spec/tools/prices.py. Apps sync this file from main daily (spec/NETWORK.md).",
   "schema": 1,
   "version": 1,
-  "updated": "2026-10-22",
+  "updated": "2026-10-23",
   "currency": "USD",
   "unit": "perMillionTokens",
   "providers": {
@@ -45,6 +45,10 @@
     "minimax": {
       "name": "MiniMax",
       "url": "https://platform.minimax.io/docs/pricing/overview"
+    },
+    "tencent": {
+      "name": "Tencent Cloud (Hunyuan)",
+      "url": "https://www.tencentcloud.com/document/product/1300/78937"
     },
     "opencode": {
       "name": "OpenCode Zen",
@@ -144,6 +148,15 @@
           "-medium",
           "-high",
           "-tiered"
+        ]
+      },
+      {
+        "prefix": "deepseek-",
+        "suffixes": [
+          "-sg",
+          "-volc",
+          "-lkeap",
+          "-taiji"
         ]
       }
     ],
@@ -3938,8 +3951,11 @@
         "cachedInput": 0.2,
         "output": 3.2
       },
+      "aliases": [
+        "glm-5.0"
+      ],
       "source": "https://docs.z.ai/guides/overview/pricing",
-      "checked": "2026-10-22"
+      "checked": "2026-10-23"
     },
     {
       "id": "glm-4.7",
@@ -3966,6 +3982,19 @@
       },
       "source": "https://docs.z.ai/guides/overview/pricing",
       "checked": "2026-10-22"
+    },
+    {
+      "id": "glm-4.6v",
+      "provider": "zhipu",
+      "name": "GLM-4.6V",
+      "status": "current",
+      "prices": {
+        "input": 0.3,
+        "cachedInput": 0.05,
+        "output": 0.9
+      },
+      "source": "https://docs.z.ai/guides/overview/pricing",
+      "checked": "2026-10-23"
     },
     {
       "id": "glm-4.7-flashx",
@@ -4183,6 +4212,34 @@
       "checked": "2026-10-22"
     },
     {
+      "id": "hy4-preview",
+      "provider": "tencent",
+      "name": "Hy4 preview",
+      "status": "preview",
+      "prices": {
+        "input": 0.834,
+        "cachedInput": 0.042,
+        "output": 2.501
+      },
+      "source": "https://www.tencentcloud.com/document/product/1300/78937",
+      "checked": "2026-10-23",
+      "note": "Tencent Cloud TokenHub list price; API id hy4-preview."
+    },
+    {
+      "id": "hy3",
+      "provider": "tencent",
+      "name": "Hy3",
+      "status": "current",
+      "prices": {
+        "input": 0.132,
+        "cachedInput": 0.033,
+        "output": 0.528
+      },
+      "source": "https://www.tencentcloud.com/document/product/1300/78937",
+      "checked": "2026-10-23",
+      "note": "Tencent Cloud TokenHub list price; API id hy3."
+    },
+    {
       "id": "big-pickle",
       "provider": "opencode",
       "name": "Big Pickle (OpenCode Zen)",
@@ -4232,6 +4289,51 @@
       "match": "exact",
       "value": "auto",
       "reason": "Router id; the model used is not recorded."
+    },
+    {
+      "match": "prefix",
+      "value": "default-model",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "fast-model",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "balanced-model",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "primary-model",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "deep-model",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "auto-chat",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "default",
+      "reason": "WorkBuddy routing slot; Tencent's gateway picks the model and the log does not name it."
+    },
+    {
+      "match": "exact",
+      "value": "default-1.1",
+      "reason": "WorkBuddy legacy slot labelled Claude-3.7-Sonnet; the served model is chosen by Tencent's gateway and not recorded."
+    },
+    {
+      "match": "exact",
+      "value": "default-1.2",
+      "reason": "WorkBuddy legacy slot labelled Claude-4.0-Sonnet; the served model is chosen by Tencent's gateway and not recorded."
     }
   ],
   "tests": [
@@ -4486,6 +4588,62 @@
       "model": "claude-opus-5-5",
       "provider": "custom",
       "expect": "claude-opus-5-5"
+    },
+    {
+      "model": "deepseek-v4.1-flash-sg",
+      "expect": "deepseek-flash"
+    },
+    {
+      "model": "deepseek-v4-pro-volc",
+      "expect": "deepseek-v4-pro"
+    },
+    {
+      "model": "deepseek-v3-2-volc",
+      "expect": "unknown"
+    },
+    {
+      "model": "deepseek-v3-1-lkeap",
+      "expect": "unknown"
+    },
+    {
+      "model": "minimax-m3-pay",
+      "expect": "unknown"
+    },
+    {
+      "model": "kimi-k3-2",
+      "expect": "unknown"
+    },
+    {
+      "model": "hy3",
+      "expect": "hy3"
+    },
+    {
+      "model": "hy3-x",
+      "expect": "unknown"
+    },
+    {
+      "model": "hy4-preview",
+      "expect": "hy4-preview"
+    },
+    {
+      "model": "glm-5.0",
+      "expect": "glm-5"
+    },
+    {
+      "model": "glm-4.6v",
+      "expect": "glm-4.6v"
+    },
+    {
+      "model": "default-model",
+      "expect": "unknown"
+    },
+    {
+      "model": "balanced-model",
+      "expect": "unknown"
+    },
+    {
+      "model": "default-1.2",
+      "expect": "unknown"
     }
   ]
 }

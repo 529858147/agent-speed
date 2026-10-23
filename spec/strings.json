@@ -1908,6 +1908,30 @@
     "en": "The Antigravity folder that contains conversations, e.g. ~/.gemini/antigravity-cli. The CLI, desktop app and IDE folders are read automatically; conversations are only read, never changed.",
     "ja": "conversations を含む Antigravity のフォルダです（例：~/.gemini/antigravity-cli）。CLI、デスクトップアプリ、IDE のフォルダは自動で読み込みます。会話は読み取るだけで、変更しません。"
   },
+  "source.workbuddy": {
+    "zh-Hant": "WorkBuddy",
+    "zh-Hans": "WorkBuddy",
+    "en": "WorkBuddy",
+    "ja": "WorkBuddy"
+  },
+  "source.workbuddyAi": {
+    "zh-Hant": "WorkBuddy AI",
+    "zh-Hans": "WorkBuddy AI",
+    "en": "WorkBuddy AI",
+    "ja": "WorkBuddy AI"
+  },
+  "settings.sources.workbuddyHint": {
+    "zh-Hant": "WorkBuddy 桌面版的資料夾，通常是 ~/.workbuddy。對話紀錄只會讀取、不會變更；在雲端執行的對話不會計入。",
+    "zh-Hans": "WorkBuddy 桌面版的文件夹，通常是 ~/.workbuddy。对话记录只会读取、不会更改；在云端运行的对话不计入。",
+    "en": "The WorkBuddy desktop app's folder, usually ~/.workbuddy. Conversations are only read, never changed; conversations that run in the cloud are not counted.",
+    "ja": "WorkBuddy デスクトップアプリのフォルダです。通常は ~/.workbuddy です。会話は読み取るだけで、変更しません。クラウドで実行された会話は集計されません。"
+  },
+  "settings.sources.workbuddyAiHint": {
+    "zh-Hant": "WorkBuddy AI 桌面版的資料夾，通常是 ~/.workbuddy-ai。對話紀錄只會讀取、不會變更；在雲端執行的對話不會計入。",
+    "zh-Hans": "WorkBuddy AI 桌面版的文件夹，通常是 ~/.workbuddy-ai。对话记录只会读取、不会更改；在云端运行的对话不计入。",
+    "en": "The WorkBuddy AI desktop app's folder, usually ~/.workbuddy-ai. Conversations are only read, never changed; conversations that run in the cloud are not counted.",
+    "ja": "WorkBuddy AI デスクトップアプリのフォルダです。通常は ~/.workbuddy-ai です。会話は読み取るだけで、変更しません。クラウドで実行された会話は集計されません。"
+  },
   "warning.unsupportedFormat": {
     "zh-Hant": "%@ 的紀錄格式太舊，請更新該工具",
     "zh-Hans": "%@ 的记录格式太旧，请更新该工具",

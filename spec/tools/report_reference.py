@@ -47,7 +47,8 @@ SCHEMA_PATH = SPEC / "report-schema.json"
 VECTORS_PATH = SPEC / "fixtures" / "report-vectors.json"
 EXAMPLES_DIR = SPEC / "fixtures" / "report-examples"
 
-SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity")
+SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
+           "workbuddyAi")
 SECTIONS = ("sources", "models", "cost", "traffic", "machineTraffic")
 DEFAULT_SECTIONS = ("sources", "models", "cost", "traffic")  # DESIGN 11: machineTraffic is off by default
 LABEL = "AGENTSPEED-V1"

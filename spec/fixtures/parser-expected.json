@@ -1,5 +1,5 @@
 {
-  "_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database, then the Antigravity databases in `antigravity.order` (same dedupe set). Paths are relative to this folder. `mtimes` (Unix ms) give the modification times that produce both orders; apply them to a copy of this folder before computing daily history. `traces` (Gemini, omp) give the phase after feeding a file up to and including physical line `afterLine` (after the files before it in `order`). omp: the folder `omp` plays ~/.omp, so its automatic roots are omp/agent/sessions and omp/profiles/*/agent/sessions; `omp.discover` lists what discovery finds there. Antigravity: the folder `antigravity` plays ~/.gemini (stores antigravity-cli, antigravity, antigravity-ide); each database is one agent whose id is its path; `{\"unsupported\": true}` marks a database that contributes no agent; reading must not create any file (no -wal or -shm).",
+  "_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database, then the Antigravity databases in `antigravity.order` (same dedupe set). Paths are relative to this folder. `mtimes` (Unix ms) give the modification times that produce both orders; apply them to a copy of this folder before computing daily history. `traces` (Gemini, omp) give the phase after feeding a file up to and including physical line `afterLine` (after the files before it in `order`). omp: the folder `omp` plays ~/.omp, so its automatic roots are omp/agent/sessions and omp/profiles/*/agent/sessions; `omp.discover` lists what discovery finds there. Antigravity: the folder `antigravity` plays ~/.gemini (stores antigravity-cli, antigravity, antigravity-ide); each database is one agent whose id is its path; `{\"unsupported\": true}` marks a database that contributes no agent; reading must not create any file (no -wal or -shm). WorkBuddy: the folder `workbuddy` plays the home folder (data folders .workbuddy and .workbuddy-ai); `workbuddy.discover` lists what discovery finds in both projects folders; its `traces` work like the omp ones.",
   "order": [
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl",
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-20-subagent.jsonl",
@@ -26,7 +26,13 @@
     "omp/agent/sessions/-projects-pulsar/2026-10-20T11-10-00-000Z_01a15900-ff40-7788-8e98-0004f1bbcd88.jsonl",
     "omp/agent/sessions/-projects-nova/2026-10-20T11-20-00-000Z_01a1590a-2700-7d6a-923e-00062e2ac0ea.jsonl",
     "omp/profiles/work/agent/sessions/-projects-orbit/2026-10-20T23-58-00-000Z_01a15bc0-1f40-705b-9411-0006cc623a9b.jsonl",
-    "omp/profiles/work/agent/sessions/-projects-orbit/2026-10-21T00-10-00-000Z_01a15bcb-1bc0-734c-95e4-00076a99b44c.jsonl"
+    "omp/profiles/work/agent/sessions/-projects-orbit/2026-10-21T00-10-00-000Z_01a15bcb-1bc0-734c-95e4-00076a99b44c.jsonl",
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl",
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2/subagents/agent-66bc0cda-451f-4616-a37d-d44361673dd1.jsonl",
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl",
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/bec52a4b-a049-4377-a53e-fa03a3357f35.jsonl"
   ],
   "files": {
     "codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-modern.jsonl": {
@@ -1158,6 +1164,429 @@
       "lastLineMs": 1792541400000,
       "malformedLines": 0,
       "responses": []
+    },
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl": {
+      "source": "workbuddy",
+      "project": "atlas",
+      "model": "deepseek-v3-2-volc",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "generating",
+      "inFlightStartMs": 1792576890000,
+      "lastLineMs": 1792576890000,
+      "malformedLines": 1,
+      "responses": [
+        {
+          "key": "edbab45572c72a5d9440b40bcc0500c0",
+          "startMs": 1792576865000,
+          "endMs": 1792576868000,
+          "input": 5000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 120,
+          "reasoning": 0,
+          "model": "auto",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "fbfba2e45c2045dc5cab22a5afe83d9d",
+          "startMs": 1792576880000,
+          "endMs": 1792576884000,
+          "input": 5400,
+          "cachedInput": 5000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 300,
+          "reasoning": 0,
+          "model": "minimax-m3-pay",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "7a6f150b83091ce20c89368641f9a137",
+          "startMs": 1792576886000,
+          "endMs": 1792576888000,
+          "input": 5800,
+          "cachedInput": 5300,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 90,
+          "reasoning": 0,
+          "model": "deepseek-v3-2-volc",
+          "provider": null,
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2/subagents/agent-66bc0cda-451f-4616-a37d-d44361673dd1.jsonl": {
+      "source": "workbuddy",
+      "project": "atlas",
+      "model": "glm-5.3-flash",
+      "isSubagent": true,
+      "parentFile": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792577109004,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "8ddf878039b70767c4a5bcf4f0c4f65e",
+          "startMs": 1792577102100,
+          "endMs": 1792577105000,
+          "input": 4000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 60,
+          "reasoning": 0,
+          "model": "glm-5.3-flash",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "fac989447cad2edbc89fbcba70003b36",
+          "startMs": 1792577106000,
+          "endMs": 1792577109004,
+          "input": 4300,
+          "cachedInput": 4000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 500,
+          "reasoning": 90,
+          "model": "glm-5.3-flash",
+          "provider": null,
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl": {
+      "source": "workbuddy",
+      "project": "atlas",
+      "model": "glm-5.3",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792577231020,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "8a8bb7cd343aa2ad99b7d762030857a2",
+          "startMs": 1792576800000,
+          "endMs": 1792576803905,
+          "input": 12000,
+          "cachedInput": 8000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 420,
+          "reasoning": 120,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "693a9fdd4c2fd0700968fba0d07ff3c0",
+          "startMs": 1792576860000,
+          "endMs": 1792576862506,
+          "input": 15000,
+          "cachedInput": 14000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 260,
+          "reasoning": 200,
+          "model": "deepseek-v4-pro",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "9d607a663f3e9b0a90c3c8d4426640dc",
+          "startMs": 1792576869004,
+          "endMs": 1792576872300,
+          "input": 15800,
+          "cachedInput": 15000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 90,
+          "reasoning": 0,
+          "model": "deepseek-v4-pro",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "894f782a148b33af1e39a0efed952d69",
+          "startMs": 1792576875000,
+          "endMs": 1792576879200,
+          "input": 16200,
+          "cachedInput": 15600,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 310,
+          "reasoning": 150,
+          "model": "deepseek-v4-pro",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "32cfe6c19200b67afb7c3d0e1c43eadb",
+          "startMs": 1792576920000,
+          "endMs": 1792576925010,
+          "input": 16500,
+          "cachedInput": 16000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 80,
+          "reasoning": 80,
+          "model": "deepseek-v4-pro",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "c692562238d8c12c32434c50b96d56ae",
+          "startMs": 1792577070050,
+          "endMs": 1792577073050,
+          "input": 17000,
+          "cachedInput": 16800,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 150,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "68c42382c8b93fc29c2fcb6a444aeda5",
+          "startMs": 1792577100000,
+          "endMs": 1792577102000,
+          "input": 17300,
+          "cachedInput": 17000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 70,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "3d1e97d18e692ca5484d1abfe617b6c1",
+          "startMs": 1792577140000,
+          "endMs": 1792577143500,
+          "input": 17600,
+          "cachedInput": 17300,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 240,
+          "reasoning": 30,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "48881d728a96516e0e886c09603e7eee",
+          "startMs": 1792577160000,
+          "endMs": 1792577161500,
+          "input": 17900,
+          "cachedInput": 17600,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 40,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "11340131feec68e7ca463f960f0f341c",
+          "startMs": 1792577220000,
+          "endMs": 1792577228000,
+          "input": 60000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 2000,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "ed20a959d410ccd843d9e1dfcee04228",
+          "startMs": 1792577228020,
+          "endMs": 1792577231020,
+          "input": 3000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 200,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl": {
+      "source": "workbuddy",
+      "project": "atlas",
+      "model": "glm-5.3",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792578004000,
+      "malformedLines": 1,
+      "responses": [
+        {
+          "key": "bd19836ddb62c11c55ab251ccaca5645",
+          "startMs": 1792578001000,
+          "endMs": 1792578004000,
+          "input": 9000,
+          "cachedInput": 8800,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 180,
+          "reasoning": 0,
+          "model": "glm-5.3",
+          "provider": null,
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl": {
+      "source": "workbuddyAi",
+      "project": "orbit",
+      "model": "gpt-5.5",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792580582000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "9948c645c094247794f4c7acdbeb2bb6",
+          "startMs": 1792580400000,
+          "endMs": 1792580404000,
+          "input": 9000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 300,
+          "reasoning": 40,
+          "model": "gpt-5.5",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "b25b0651e4b6e887e5194135d3692631",
+          "startMs": 1792580460000,
+          "endMs": 1792580463000,
+          "input": 9400,
+          "cachedInput": 9000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 50,
+          "reasoning": 0,
+          "model": "deepseek-v4.1-flash-sg",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "e53125275854402400f74fd6ab3f7659",
+          "startMs": 1792580465000,
+          "endMs": 1792580469000,
+          "input": 12000,
+          "cachedInput": 9400,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 400,
+          "reasoning": 0,
+          "model": "deepseek-v4.1-flash-sg",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "ae11976937537e4c1206237dea035331",
+          "startMs": 1792580520000,
+          "endMs": 1792580526000,
+          "input": 20000,
+          "cachedInput": 15000,
+          "cacheWriteInput": 4000,
+          "cacheWrite1hInput": 0,
+          "output": 500,
+          "reasoning": 0,
+          "model": "claude-sonnet-5-5",
+          "provider": "custom",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "b9884d9c846186c2a5426d7f46393de8",
+          "startMs": 1792580580000,
+          "endMs": 1792580582000,
+          "input": 800,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 60,
+          "reasoning": 0,
+          "model": "gpt-5.5",
+          "provider": "custom",
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/bec52a4b-a049-4377-a53e-fa03a3357f35.jsonl": {
+      "source": "workbuddyAi",
+      "project": "orbit",
+      "model": "hy4-preview",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "generating",
+      "inFlightStartMs": 1792580700000,
+      "lastLineMs": 1792580700000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "cd3dc8b6cffb41e4163dcbd857ca87da",
+          "startMs": 1792580462000,
+          "endMs": 1792580466000,
+          "input": 7000,
+          "cachedInput": 6000,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 260,
+          "reasoning": 100,
+          "model": "hy4-preview",
+          "provider": null,
+          "fast": false,
+          "final": true
+        }
+      ]
     }
   },
   "mtimes": {
@@ -1197,7 +1626,13 @@
     "antigravity/antigravity-ide/conversations/7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f.db": 1792576205000,
     "antigravity/antigravity-ide/conversations/3f6c2a10-8b4d-4e5f-9a1b-2c3d4e5f6a7b.db": 1792576500000,
     "antigravity/antigravity-ide/conversations/2c4e6a8b-0d1f-4a3c-9e5b-7d9f1b3d5f7a.db": 1792576623000,
-    "antigravity/antigravity/conversations/6d8f0a2c-4e6b-4d8f-a0c2-e4f6a8b0c2d4.db": 1792576686000
+    "antigravity/antigravity/conversations/6d8f0a2c-4e6b-4d8f-a0c2-e4f6a8b0c2d4.db": 1792576686000,
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl": 1792577232000,
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2/subagents/agent-66bc0cda-451f-4616-a37d-d44361673dd1.jsonl": 1792577110000,
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl": 1792576891000,
+    "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl": 1792578031000,
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl": 1792580583000,
+    "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/bec52a4b-a049-4377-a53e-fa03a3357f35.jsonl": 1792580701000
   },
   "opencode": {
     "database": "opencode/opencode.db",
@@ -2355,5 +2790,305 @@
         ]
       }
     }
+  },
+  "workbuddy": {
+    "discover": [
+      "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl",
+      "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/bec52a4b-a049-4377-a53e-fa03a3357f35.jsonl",
+      "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+      "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+      "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2/subagents/agent-66bc0cda-451f-4616-a37d-d44361673dd1.jsonl",
+      "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl"
+    ],
+    "traces": [
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 1,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 2,
+        "phase": "generating",
+        "inFlightStartMs": 1792576800000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 3,
+        "phase": "generating",
+        "inFlightStartMs": 1792576800000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 4,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 6,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 7,
+        "phase": "generating",
+        "inFlightStartMs": 1792576860000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 8,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 9,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 10,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 11,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 12,
+        "phase": "generating",
+        "inFlightStartMs": 1792576869004
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 13,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 14,
+        "phase": "generating",
+        "inFlightStartMs": 1792576875000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 15,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 16,
+        "phase": "generating",
+        "inFlightStartMs": 1792576920000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 17,
+        "phase": "generating",
+        "inFlightStartMs": 1792576920000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 18,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 19,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 20,
+        "phase": "generating",
+        "inFlightStartMs": 1792576980000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 21,
+        "phase": "generating",
+        "inFlightStartMs": 1792576980000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 22,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 23,
+        "phase": "generating",
+        "inFlightStartMs": 1792577040000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 24,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 25,
+        "phase": "generating",
+        "inFlightStartMs": 1792577070050
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 26,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 27,
+        "phase": "generating",
+        "inFlightStartMs": 1792577100000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 28,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 29,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 30,
+        "phase": "generating",
+        "inFlightStartMs": 1792577140000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 31,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 32,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 33,
+        "phase": "generating",
+        "inFlightStartMs": 1792577160000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 34,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 35,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 36,
+        "phase": "generating",
+        "inFlightStartMs": 1792577220000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 37,
+        "phase": "generating",
+        "inFlightStartMs": 1792577228000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 38,
+        "phase": "generating",
+        "inFlightStartMs": 1792577228020
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/b09191b3-a788-47e6-a104-a4e92743fae2.jsonl",
+        "afterLine": 39,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl",
+        "afterLine": 7,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl",
+        "afterLine": 8,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/ef76e24d-06dd-4094-a4aa-63bd6f8faf05.jsonl",
+        "afterLine": 9,
+        "phase": "generating",
+        "inFlightStartMs": 1792576890000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+        "afterLine": 9,
+        "phase": "generating",
+        "inFlightStartMs": 1792576860000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+        "afterLine": 18,
+        "phase": "generating",
+        "inFlightStartMs": 1792576920000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+        "afterLine": 21,
+        "phase": "generating",
+        "inFlightStartMs": 1792578001000
+      },
+      {
+        "file": "workbuddy/.workbuddy/projects/Users-dev-projects-atlas/99aa739a-ed94-446a-a6e0-be45f96cc697.jsonl",
+        "afterLine": 22,
+        "phase": "idle",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl",
+        "afterLine": 4,
+        "phase": "tools",
+        "inFlightStartMs": null
+      },
+      {
+        "file": "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl",
+        "afterLine": 5,
+        "phase": "generating",
+        "inFlightStartMs": 1792580465000
+      },
+      {
+        "file": "workbuddy/.workbuddy-ai/projects/C-Users-dev-projects-orbit/7321aebd-eedd-4d8c-a034-7b74b0ca1dd1.jsonl",
+        "afterLine": 6,
+        "phase": "idle",
+        "inFlightStartMs": null
+      }
+    ]
   }
 }

@@ -38,7 +38,9 @@
       "maximum": 1000000000000
     },
     "source": {
-      "enum": ["codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity"]
+      "description": "An Agent Speed source id. Known ids: codex, claudeCode, claudeDesktop, deepseek, opencode, gemini, omp, antigravity, workbuddy, workbuddyAi. New ids are added over time; receivers accept ids they do not know.",
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
     },
     "modelId": {
       "description": "A model id of the Agent Speed price table, or one of the reserved ids local, unknown, other.",

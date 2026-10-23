@@ -1,5 +1,5 @@
 {
- "_comment": "METRICS 10 cases, checked by spec/tools/traffic.py. Times are Unix ms; counters are cumulative bytes. A process row: pid, ppid, start (ms), exe, optional args, cwd, openFiles. A counter sample: stream id (a new id starts a new stream unless continues is true) and rows of pid, start, rx, tx. Agents: id, source, optional parent, cwdPath, transcript, active intervals [from, to] (phase generating/tools or new lines). Expected values are written by hand from the spec; only the keys present are compared.",
+ "_comment": "METRICS 10 cases, checked by spec/tools/traffic.py. Times are Unix ms; counters are cumulative bytes. A process row: pid, ppid, start (ms), exe, optional args, bundle (macOS: CFBundleIdentifier of the .app whose Contents/MacOS holds exe), cwd, openFiles. A counter sample: stream id (a new id starts a new stream unless continues is true) and rows of pid, start, rx, tx. Agents: id, source, optional parent, cwdPath, transcript, active intervals [from, to] (phase generating/tools or new lines). Expected values are written by hand from the spec; only the keys present are compared.",
  "schema": 1,
  "format": [
   {
@@ -354,6 +354,127 @@
        "ppid": 1,
        "start": 9000,
        "exe": "/bin/sleep"
+      },
+      {
+       "pid": 200,
+       "ppid": 1,
+       "start": 1000,
+       "exe": "/Applications/WorkBuddy AI.app/Contents/MacOS/Electron",
+       "bundle": "com.workbuddy.workbuddy-ai"
+      },
+      {
+       "pid": 201,
+       "ppid": 200,
+       "start": 1100,
+       "exe": "/Applications/WorkBuddy AI.app/Contents/Frameworks/WorkBuddy AI Helper (Renderer).app/Contents/MacOS/WorkBuddy AI Helper (Renderer)",
+       "bundle": "com.workbuddy.workbuddy-ai.helper.renderer"
+      },
+      {
+       "pid": 202,
+       "ppid": 200,
+       "start": 1200,
+       "exe": "/Applications/WorkBuddy AI.app/Contents/MacOS/Electron",
+       "bundle": "com.workbuddy.workbuddy-ai",
+       "args": [
+        "/Applications/WorkBuddy AI.app/Contents/MacOS/Electron",
+        "/Applications/WorkBuddy AI.app/Contents/Resources/app.asar/main/daemon-app-server-entry.js",
+        "--stdio"
+       ]
+      },
+      {
+       "pid": 203,
+       "ppid": 202,
+       "start": 1300,
+       "exe": "/Applications/WorkBuddy AI.app/Contents/MacOS/Electron",
+       "bundle": "com.workbuddy.workbuddy-ai",
+       "args": [
+        "/Applications/WorkBuddy AI.app/Contents/MacOS/Electron",
+        "--optimize-for-size",
+        "--max-semi-space-size=2",
+        "/Applications/WorkBuddy AI.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+        "--prewarm",
+        "--prewarm-id",
+        "wb-pool-1792490400000-ab12"
+       ]
+      },
+      {
+       "pid": 204,
+       "ppid": 203,
+       "start": 1400,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 205,
+       "ppid": 204,
+       "start": 1500,
+       "exe": "/usr/bin/curl"
+      },
+      {
+       "pid": 210,
+       "ppid": 1,
+       "start": 1000,
+       "exe": "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+       "bundle": "com.tencent.workbuddy.mac"
+      },
+      {
+       "pid": 211,
+       "ppid": 210,
+       "start": 1100,
+       "exe": "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+       "bundle": "com.tencent.workbuddy.mac",
+       "args": [
+        "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+        "/Applications/WorkBuddy.app/Contents/Resources/app.asar/main/daemon-app-server-entry.js",
+        "--stdio"
+       ]
+      },
+      {
+       "pid": 212,
+       "ppid": 211,
+       "start": 1200,
+       "exe": "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+       "bundle": "com.tencent.workbuddy.mac",
+       "args": [
+        "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+        "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+        "--serve",
+        "--session-id",
+        "3c9f2a1e-7b4d-4e6a-9c1f-5d2e8a7b6c40"
+       ]
+      },
+      {
+       "pid": 213,
+       "ppid": 212,
+       "start": 1300,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/.npm/_npx/9a1c/node_modules/some-mcp/dist/index.js"
+       ]
+      },
+      {
+       "pid": 214,
+       "ppid": 211,
+       "start": 1400,
+       "exe": "/Applications/WorkBuddy.app/Contents/MacOS/Electron",
+       "bundle": "com.tencent.workbuddy.mac",
+       "args": [
+        "wb-acp:3c9f2a1e-7b4d-4e6a-9c1f-5d2e8a7b6c41",
+        "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+        "--acp"
+       ]
+      },
+      {
+       "pid": 215,
+       "ppid": 1,
+       "start": 1500,
+       "exe": "/Users/dev/Applications/WB Copy.app/Contents/MacOS/Electron",
+       "bundle": "com.workbuddy.workbuddy-ai",
+       "args": [
+        "/Users/dev/Applications/WB Copy.app/Contents/MacOS/Electron",
+        "/Users/dev/Applications/WB Copy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+        "--serve"
+       ]
       }
      ]
     }
@@ -389,7 +510,19 @@
      "181": "antigravity/agent",
      "190": "deepseek/agent",
      "191": null,
-     "999": null
+     "999": null,
+     "200": null,
+     "201": null,
+     "202": null,
+     "203": "workbuddyAi/agent",
+     "204": "workbuddyAi/tool",
+     "205": "workbuddyAi/tool",
+     "210": null,
+     "211": null,
+     "212": "workbuddy/agent",
+     "213": "workbuddy/tool",
+     "214": "workbuddy/agent",
+     "215": "workbuddyAi/agent"
     }
    }
   },
@@ -511,6 +644,73 @@
        "ppid": 1,
        "start": 3200,
        "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\Antigravity\\resources\\app\\extensions\\antigravity\\bin\\language_server_windows_x64.exe"
+      },
+      {
+       "pid": 900,
+       "ppid": 1,
+       "start": 4000,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe"
+      },
+      {
+       "pid": 901,
+       "ppid": 900,
+       "start": 4100,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe",
+       "args": [
+        "WorkBuddyAI.exe",
+        "--type=renderer"
+       ]
+      },
+      {
+       "pid": 902,
+       "ppid": 900,
+       "start": 4200,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe",
+       "args": [
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe",
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\resources\\app.asar\\main\\daemon-app-server-entry.js",
+        "--stdio"
+       ]
+      },
+      {
+       "pid": 903,
+       "ppid": 902,
+       "start": 4300,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe",
+       "args": [
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe",
+        "--optimize-for-size",
+        "--max-semi-space-size=2",
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy AI\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy",
+        "--serve",
+        "--session-id",
+        "5e1d7c3a-2b9f-4a6e-8d0c-1f2e3d4c5b6a"
+       ]
+      },
+      {
+       "pid": 904,
+       "ppid": 903,
+       "start": 4400,
+       "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      },
+      {
+       "pid": 910,
+       "ppid": 1,
+       "start": 4000,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe"
+      },
+      {
+       "pid": 911,
+       "ppid": 910,
+       "start": 4100,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe",
+       "args": [
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy\\WorkBuddy.exe",
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\WorkBuddy\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy",
+        "--serve",
+        "--session-id",
+        "5e1d7c3a-2b9f-4a6e-8d0c-1f2e3d4c5b6b"
+       ]
       }
      ]
     }
@@ -530,7 +730,14 @@
      "701": "claudeCode/tool",
      "800": "gemini/agent",
      "810": "opencode/agent",
-     "820": "antigravity/agent"
+     "820": "antigravity/agent",
+     "900": null,
+     "901": null,
+     "902": null,
+     "903": "workbuddyAi/agent",
+     "904": "workbuddyAi/tool",
+     "910": null,
+     "911": "workbuddy/agent"
     }
    }
   },

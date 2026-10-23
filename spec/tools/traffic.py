@@ -22,7 +22,8 @@ GAP_MS = 15_000
 FORGET_AFTER = 3
 MAX_BYTES_PER_SECOND = 12_500_000_000
 SCRIPT_HOSTS = {"node", "nodejs", "bun", "deno"}
-SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity")
+SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
+           "workbuddyAi")
 
 
 # ---------------------------------------------------------------------------------------------------- formatting
@@ -102,6 +103,13 @@ DESKTOP_APPS = {
     "windows": ["%LOCALAPPDATA%/AnthropicClaude/"],
 }
 DESKTOP_PACKAGES = ("/windowsapps/claude_", "/windowsapps/openai.codex_", "/windowsapps/openai.chatgpt")
+# WorkBuddy runs its embedded CLI on the app's own executable (Electron as Node): macOS by the bundle id of the .app
+# whose Contents/MacOS holds the executable, Windows by the executable's name.
+WORKBUDDY_APPS = {
+    "macos": {"com.tencent.workbuddy.mac": "workbuddy", "com.workbuddy.workbuddy-ai": "workbuddyAi"},
+    "windows": {"WorkBuddy": "workbuddy", "WorkBuddyAI": "workbuddyAi"},
+}
+WORKBUDDY_CLI = "/app.asar.unpacked/cli/"
 DEEPSEEK_APP = {
     "macos": ["/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"],
     "windows": [],
@@ -167,6 +175,9 @@ def match_source(env: Env, proc: dict, ancestors: list[dict]) -> str | None:
         return "omp"
     if name == "agy" or name.startswith("language_server_"):
         return "antigravity"
+    edition = WORKBUDDY_APPS[env.platform].get(proc.get("bundle") if env.platform == "macos" else name)
+    if edition and any(WORKBUDDY_CLI in env.norm(a) for a in args[1:]):
+        return edition
     return None
 
 

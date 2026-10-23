@@ -444,6 +444,124 @@
           "unpricedRequests": 0
         }
       }
+    },
+    {
+      "date": "2026-10-21",
+      "source": "workbuddy",
+      "requests": 17,
+      "input": 241800,
+      "cachedInput": 160400,
+      "cacheWriteInput": 0,
+      "output": 5110,
+      "reasoning": 670,
+      "measuredOutput": 5110,
+      "measuredMs": 57821,
+      "unfinalized": 0,
+      "costMicroUsd": 0,
+      "unpricedRequests": 17,
+      "priceVersion": 2,
+      "agents": 4,
+      "models": {
+        "auto": {
+          "requests": 1,
+          "output": 120,
+          "measuredOutput": 120,
+          "measuredMs": 3000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        },
+        "deepseek-v3-2-volc": {
+          "requests": 1,
+          "output": 90,
+          "measuredOutput": 90,
+          "measuredMs": 2000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        },
+        "deepseek-v4-pro": {
+          "requests": 4,
+          "output": 740,
+          "measuredOutput": 740,
+          "measuredMs": 15012,
+          "costMicroUsd": 0,
+          "unpricedRequests": 4
+        },
+        "glm-5.3": {
+          "requests": 8,
+          "output": 3300,
+          "measuredOutput": 3300,
+          "measuredMs": 27905,
+          "costMicroUsd": 0,
+          "unpricedRequests": 8
+        },
+        "glm-5.3-flash": {
+          "requests": 2,
+          "output": 560,
+          "measuredOutput": 560,
+          "measuredMs": 5904,
+          "costMicroUsd": 0,
+          "unpricedRequests": 2
+        },
+        "minimax-m3-pay": {
+          "requests": 1,
+          "output": 300,
+          "measuredOutput": 300,
+          "measuredMs": 4000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        }
+      }
+    },
+    {
+      "date": "2026-10-21",
+      "source": "workbuddyAi",
+      "requests": 6,
+      "input": 58200,
+      "cachedInput": 39400,
+      "cacheWriteInput": 4000,
+      "output": 1570,
+      "reasoning": 140,
+      "measuredOutput": 1570,
+      "measuredMs": 23000,
+      "unfinalized": 0,
+      "costMicroUsd": 45850,
+      "unpricedRequests": 3,
+      "priceVersion": 2,
+      "agents": 2,
+      "models": {
+        "claude-sonnet-5-5": {
+          "requests": 1,
+          "output": 500,
+          "measuredOutput": 500,
+          "measuredMs": 6000,
+          "costMicroUsd": 30000,
+          "unpricedRequests": 0
+        },
+        "deepseek-v4.1-flash-sg": {
+          "requests": 2,
+          "output": 450,
+          "measuredOutput": 450,
+          "measuredMs": 7000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 2
+        },
+        "gpt-5.5": {
+          "requests": 2,
+          "output": 360,
+          "measuredOutput": 360,
+          "measuredMs": 6000,
+          "costMicroUsd": 15850,
+          "unpricedRequests": 0
+        },
+        "hy4-preview": {
+          "requests": 1,
+          "output": 260,
+          "measuredOutput": 260,
+          "measuredMs": 4000,
+          "costMicroUsd": 0,
+          "unpricedRequests": 1
+        }
+      }
     }
   ]
 }

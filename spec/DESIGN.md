@@ -289,8 +289,20 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | Gemini CLI | `#34B8F0` sky |
 | omp | `#84CC16` lime |
 | Antigravity | `#EC4899` pink |
+| WorkBuddy | `#11A68B` jade |
+| WorkBuddy AI | `#0B84A5` deep sea |
 
 Pink is `#EC4899`, not the lighter `#F472B6` (too close to coral and lilac); lime is `#84CC16`, not the lighter `#A3E635`, which nearly vanishes on light backgrounds.
+
+The two WorkBuddy editions share one app icon, teal-green (`#0EC8A8` → `#05C890`), which is nearly Codex mint (OKLab
+distance about 0.04; the closest existing pair, coral and amber, is 0.11 apart). So both take a darker member of that teal family,
+which keeps them related to each other and to the brand: jade at the brand's hue for WorkBuddy, and deep sea, bluer
+and darker, for WorkBuddy AI. Each is at least 0.12 from every other source color and from the other edition, and
+reads on both appearances (contrast against `#1E1E1E`: 5.4 and 3.9; against white: 3.1 and 4.3). They follow every
+rule of the other colors (bezel, dots, chips, history bars, light-mode darkening). As for every source, there is no
+separate light or dark tint, no icon and no short name: a source is its colour dot and its name (`source.workbuddy`
+"WorkBuddy", `source.workbuddyAi` "WorkBuddy AI", the apps' own names in every language), in source order (METRICS 1)
+after Antigravity, the China edition first.
 
 ## 2. The orb (floating window)
 
@@ -1655,6 +1667,13 @@ with Mica). Sections:
     `antigravity-ide`); the status counts conversation databases (`source.sessions`). Change… picks one store folder
     (or its `conversations` folder) and replaces all three; Reset returns to them. A chosen `*-backup` store is never
     read (METRICS 4.8) and shows `source.folderMissing`. Caption `settings.sources.antigravityHint`.
+  - WorkBuddy and WorkBuddy AI: one row each, adjacent in source order, each with its own folder (two groups where a
+    platform groups rows by folder, as macOS does). The path is the data folder (`~/.workbuddy`, `~/.workbuddy-ai`);
+    the status counts main session files (`source.sessions`; sub-agent transcripts and cloud conversations are not
+    sessions here). Change… picks the data folder or its `projects` folder and replaces that source's folder only;
+    Reset returns to the default. A data folder without `projects` (installed, never used) shows `source.sessions`
+    with 0. Captions `settings.sources.workbuddyHint` and `settings.sources.workbuddyAiHint`, which also say that
+    cloud conversations are not counted (METRICS 4.9).
 - **關於 About** — version, GitHub link, license, privacy statement: read-only, local-only, no network, no telemetry,
   conversation content is never stored or displayed. With the cost feature: `privacy.statement` and the Network group
   with the master switch (section 9, `spec/NETWORK.md`). With traffic measuring: `privacy.traffic` follows
