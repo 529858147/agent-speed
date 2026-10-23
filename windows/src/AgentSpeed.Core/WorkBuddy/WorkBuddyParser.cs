@@ -20,10 +20,11 @@ internal sealed class WorkBuddyParser : TranscriptParser<WorkBuddyLine>
     private long? _pendingStartMs;
 
     /// <param name="source"><see cref="SourceKind.WorkBuddy"/> or <see cref="SourceKind.WorkBuddyAi"/>, by the root.</param>
-    public WorkBuddyParser(string agentId, IDeduper deduper, SourceKind source)
+    /// <param name="root">The <c>projects</c> folder the file was found in: sub-agents are decided by the path below it.</param>
+    public WorkBuddyParser(string agentId, IDeduper deduper, SourceKind source, string root)
         : base(agentId, deduper, Edition(source))
     {
-        _pathIsSubagent = PathText.HasDirectoryComponent(agentId, WorkBuddyDiscovery.SubagentsFolder);
+        _pathIsSubagent = WorkBuddyDiscovery.IsSubagentPath(root, agentId);
         RestorePathState();
     }
 

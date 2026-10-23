@@ -104,6 +104,26 @@ internal static class WorkBuddyDiscovery
         };
     }
 
+    /// <summary>
+    /// <c>&lt;slug&gt;/&lt;dir&gt;/subagents/&lt;file&gt;</c> below the <c>projects</c> root (METRICS 4.9): the folder
+    /// structure only, so a <c>subagents</c> folder above the root does not count.
+    /// </summary>
+    public static bool IsSubagentPath(string root, string path)
+    {
+        string relative;
+        try
+        {
+            relative = Path.GetRelativePath(root, path);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        var parts = relative.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 4 && parts[2].Equals(SubagentsFolder, FolderComparison);
+    }
+
     private static bool IsSlugName(string name) =>
         !name.StartsWith('.') && !string.Equals(name, CloudFolder, StringComparison.Ordinal);
 

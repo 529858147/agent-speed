@@ -9,6 +9,7 @@ namespace AgentSpeed.Core.Tests;
 public sealed class WorkBuddyParserTests
 {
     private const long T = 1_792_576_800_000;
+    private const string Root = "/w/projects";
     private const string Session = "/w/projects/Users-me-atlas/7321aebd.jsonl";
 
     private readonly RecordingSink _sink = new();
@@ -93,7 +94,7 @@ public sealed class WorkBuddyParserTests
     {
         var deduper = new Deduper();
         deduper.TryClaim("m1", "/w/projects/Users-me-atlas/original.jsonl", out _);
-        var parser = new WorkBuddyParser(Session, deduper, SourceKind.WorkBuddy);
+        var parser = new WorkBuddyParser(Session, deduper, SourceKind.WorkBuddy, Root);
         Feed.Lines(parser, _sink,
             WorkBuddyLines.User(T, "u1"),
             WorkBuddyLines.ToolCall(T + 1000, "c1", "m1", "call_1", WorkBuddyLines.Usage(100, 20)),
@@ -233,9 +234,9 @@ public sealed class WorkBuddyParserTests
         var deduper = new Deduper();
         var parsers = new TranscriptParser[]
         {
-            new WorkBuddyParser(main, deduper, SourceKind.WorkBuddy),
-            new WorkBuddyParser(sub, deduper, SourceKind.WorkBuddy),
-            new WorkBuddyParser(other, deduper, SourceKind.WorkBuddyAi),
+            new WorkBuddyParser(main, deduper, SourceKind.WorkBuddy, "/w/.workbuddy/projects"),
+            new WorkBuddyParser(sub, deduper, SourceKind.WorkBuddy, "/w/.workbuddy/projects"),
+            new WorkBuddyParser(other, deduper, SourceKind.WorkBuddyAi, "/w/.workbuddy/projects"),
         };
 
         var parents = ParentLinks.Resolve([.. parsers.Select(AgentLink.Of)], StringComparer.Ordinal);
@@ -257,7 +258,14 @@ public sealed class WorkBuddyParserTests
         Assert.DoesNotContain(typeof(WorkBuddyLine).GetFields(), f => f.Name.Contains("Content", StringComparison.OrdinalIgnoreCase));
     }
 
-    private WorkBuddyParser Parser() => new(Session, new Deduper(), SourceKind.WorkBuddy);
+    [Theory]
+    [InlineData("/w/subagents/.workbuddy/projects", "/w/subagents/.workbuddy/projects/atlas/s1.jsonl", false)]
+    [InlineData("/w/.workbuddy/projects", "/w/.workbuddy/projects/subagents/s1.jsonl", false)]
+    [InlineData("/w/.workbuddy/projects", "/w/.workbuddy/projects/atlas/s1/subagents/agent-1.jsonl", true)]
+    public void SubAgentsAreDecidedByTheFoldersBelowTheRootOnly(string root, string path, bool subagent) =>
+        Assert.Equal(subagent, new WorkBuddyParser(path, new Deduper(), SourceKind.WorkBuddy, root).IsSubagent);
+
+    private WorkBuddyParser Parser() => new(Session, new Deduper(), SourceKind.WorkBuddy, Root);
 
     private ParsedResponse Respond(string usage)
     {

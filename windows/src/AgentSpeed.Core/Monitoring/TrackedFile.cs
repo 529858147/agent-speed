@@ -50,7 +50,7 @@ internal static class Families
         _ => TranscriptNaming.Jsonl,
     };
 
-    /// <param name="root">The root the file was found in (omp decides sub-agents by the path below it).</param>
+    /// <param name="root">The root the file was found in (omp and WorkBuddy decide sub-agents by the path below it).</param>
     public static TranscriptParser CreateParser(RootFamily family, string path, IDeduper deduper, string root = "") => family switch
     {
         RootFamily.Codex => new CodexParser(path, deduper),
@@ -59,8 +59,8 @@ internal static class Families
         RootFamily.Claude => new ClaudeParser(path, deduper),
         RootFamily.Omp => new OmpParser(path, deduper, root),
         RootFamily.Antigravity => new AntigravityParser(path, deduper),
-        RootFamily.WorkBuddy => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddy),
-        RootFamily.WorkBuddyAi => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddyAi),
+        RootFamily.WorkBuddy => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddy, root),
+        RootFamily.WorkBuddyAi => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddyAi, root),
         _ => throw new ArgumentOutOfRangeException(nameof(family)),
     };
 

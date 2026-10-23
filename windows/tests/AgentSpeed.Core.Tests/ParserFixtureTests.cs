@@ -192,7 +192,8 @@ public sealed class ParserFixtureTests
 
         if (relative.StartsWith("workbuddy/", StringComparison.Ordinal))
         {
-            var workBuddy = new WorkBuddyParser(path, deduper, WorkBuddyFixture.SourceOf(relative));
+            var source = WorkBuddyFixture.SourceOf(relative);
+            var workBuddy = new WorkBuddyParser(path, deduper, source, WorkBuddyFixture.RootOf(source));
             if (maxLines is not null)
             {
                 return FeedLines(workBuddy, content, sink, maxLines);
