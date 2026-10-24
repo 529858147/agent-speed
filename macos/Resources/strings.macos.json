@@ -485,5 +485,23 @@
     "zh-Hans": "网络流量",
     "en": "Traffic",
     "ja": "通信量"
+  },
+  "mac.settings.sources.chooseZcode": {
+    "zh-Hant": "選擇 ZCode 資料夾",
+    "zh-Hans": "选择 ZCode 文件夹",
+    "en": "Choose ZCode Folder",
+    "ja": "ZCode フォルダを選択"
+  },
+  "mac.settings.sources.chooseKimi": {
+    "zh-Hant": "選擇 Kimi Code CLI 資料夾",
+    "zh-Hans": "选择 Kimi Code CLI 文件夹",
+    "en": "Choose Kimi Code CLI Folder",
+    "ja": "Kimi Code CLI フォルダを選択"
+  },
+  "mac.settings.sources.chooseGrokBuild": {
+    "zh-Hant": "選擇 Grok Build 資料夾",
+    "zh-Hans": "选择 Grok Build 文件夹",
+    "en": "Choose Grok Build Folder",
+    "ja": "Grok Build フォルダを選択"
   }
 }

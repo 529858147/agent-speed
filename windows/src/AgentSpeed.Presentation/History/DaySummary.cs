@@ -29,6 +29,8 @@ public sealed record DaySummary(
     IReadOnlyList<ModelUsage> Models,
     IReadOnlyList<SourceOutput> Sources)
 {
+    public IReadOnlyList<ExecutionModeUsage> Modes { get; init; } = [];
+
     /// <summary>The day's cost over the counted sources (DESIGN 9: subscriptions left out unless included).</summary>
     public HistoryCost Cost { get; init; }
 

@@ -83,9 +83,11 @@ public struct ReportModelKey: Equatable, Hashable, Sendable {
 /// values, so every increment lands in exactly one window however snapshots are coalesced.
 public struct ReportCounters: Equatable, Sendable {
     public var byModel: [ReportModelKey: ReportUsage]
+    public var byMode: [ReportModeKey: ReportUsage]
 
-    public init(byModel: [ReportModelKey: ReportUsage] = [:]) {
+    public init(byModel: [ReportModelKey: ReportUsage] = [:], byMode: [ReportModeKey: ReportUsage] = [:]) {
         self.byModel = byModel
+        self.byMode = byMode
     }
 
     public static let zero = ReportCounters()
@@ -101,12 +103,20 @@ public struct ReportCounters: Equatable, Sendable {
             let change = value - (baseline.byModel[key] ?? .zero)
             if !change.isZero { delta[key] = change }
         }
-        return ReportCounters(byModel: delta)
+        var modes: [ReportModeKey: ReportUsage] = [:]
+        for (key, value) in byMode {
+            let change = value - (baseline.byMode[key] ?? .zero)
+            if !change.isZero { modes[key] = change }
+        }
+        return ReportCounters(byModel: delta, byMode: modes)
     }
 
-    public mutating func add(_ usage: ReportUsage, to key: ReportModelKey) {
+    public mutating func add(_ usage: ReportUsage, to key: ReportModelKey, modes: [ExecutionModeAttribution] = []) {
         guard !usage.isZero else { return }
         byModel[key, default: .zero] += usage
+        for attribution in modes {
+            byMode[ReportModeKey(model: key, attribution: attribution), default: .zero] += usage
+        }
     }
 }
 

@@ -53,6 +53,7 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
     public var cost: CostTally?
     /// The price table version bound to the day.
     public var priceVersion: Int?
+    public var modeUsage: [ExecutionModeUsage]
 
     public init(
         day: String,
@@ -65,7 +66,8 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
         peak: Double?,
         models: [ModelUsage],
         cost: CostTally? = nil,
-        priceVersion: Int? = nil
+        priceVersion: Int? = nil,
+        modeUsage: [ExecutionModeUsage] = []
     ) {
         self.day = day
         self.source = source
@@ -78,6 +80,7 @@ public struct DailyUsage: Equatable, Sendable, Identifiable {
         self.models = models
         self.cost = cost
         self.priceVersion = priceVersion
+        self.modeUsage = modeUsage
     }
 
     /// Output tok/s over the day's measured responses.

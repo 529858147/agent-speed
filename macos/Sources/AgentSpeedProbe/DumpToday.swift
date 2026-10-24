@@ -14,9 +14,10 @@ enum DumpToday {
         for response in report.responses {
             counts[response.source, default: 0] += 1
             let cost = table.cost(of: response)
-            if let cost { costMicroUsd += cost } else { unpriced += 1 }
+            if let cost { costMicroUsd += cost } else { unpriced += response.requestCount }
             var line = JSONLine()
             line.add("key", response.key)
+            line.add("requestCount", response.requestCount)
             line.add("source", response.source.rawValue)
             line.add("agentId", response.agentId)
             line.add("model", response.model)
@@ -31,6 +32,9 @@ enum DumpToday {
             line.add("final", response.isFinal)
             line.add("provider", response.provider)
             line.add("fast", response.fast)
+            if !response.modes.facts.isEmpty, let data = try? JSONEncoder().encode(response.modes), let json = String(data: data, encoding: .utf8) {
+                line.add("modes", raw: json)
+            }
             line.add("costMicroUsd", cost)
             output += line.text + "\n"
         }

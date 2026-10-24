@@ -13,7 +13,7 @@ import sys
 FIELDS = ("source", "agentId", "model", "startMs", "endMs", "input", "cachedInput", "cacheWriteInput", "output",
           "reasoning", "final")
 # Added with the cost feature (METRICS 3.2, 9): compared whenever the other dump has them.
-NEW_FIELDS = ("cacheWrite1hInput", "provider", "fast", "costMicroUsd")
+NEW_FIELDS = ("cacheWrite1hInput", "provider", "fast", "costMicroUsd", "requestCount")
 
 
 def load(path):

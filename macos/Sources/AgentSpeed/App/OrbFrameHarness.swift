@@ -11,7 +11,9 @@ import AppKit
 /// - `row-<dark|light>[-<level>][-rm]`: the five styles side by side at 148 pt over the 62 s tour (hover at 50.5 s);
 /// - `levels-<level>`: the row at the redline (12 s from 25 s);
 /// - `hero-<style>[-light][-<level>][-rm]`: one style at 240 pt climbing to the redline (16 s from 22 s);
-/// - `still-<style>-<seconds>[-light]`: a single PNG of one style at a moment of the tour.
+/// - `still-<style>-<seconds>[-light]`: a single PNG of one style at a moment of the tour;
+/// - `fx-<tok/s>[-light][-<level>][-rm][-peak][-zap][-s<size>]`: a single PNG of `led` at R = 2000 tok/s after 6 s at
+///   that speed, for side-by-side review with the v1.4 prototype's still frames (`OrbFrameHarness+Led`).
 /// `AGENT_SPEED_ORB_FPS` (30) and `AGENT_SPEED_ORB_SECONDS` limit the clips.
 @MainActor
 enum OrbFrameHarness {
@@ -20,6 +22,7 @@ enum OrbFrameHarness {
             case row
             case hero(OrbStyleKind)
             case still(OrbStyleKind, Double)
+            case fx(LedStill)
         }
 
         let name: String
@@ -56,6 +59,11 @@ enum OrbFrameHarness {
                 kind = .still(style, at)
                 start = at
                 duration = 0
+            case "fx":
+                guard let still = LedStill(parts) else { return nil }
+                kind = .fx(still)
+                start = 0
+                duration = 0
             default:
                 return nil
             }
@@ -82,6 +90,12 @@ enum OrbFrameHarness {
         model.settings.redlineOutput = 400
         var report = ""
         for clip in names.compactMap(Clip.init) {
+            if case .fx(let still) = clip.kind {
+                let started = Date()
+                renderLedStill(still, clip: clip, model: model, to: directory.appendingPathComponent("\(clip.name).png"))
+                report += String(format: "%@: 1 frame in %.1f s\n", clip.name, Date().timeIntervalSince(started))
+                continue
+            }
             let frames = directory.appendingPathComponent(clip.name, isDirectory: true)
             try? FileManager.default.removeItem(at: frames)
             try? FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
@@ -124,6 +138,8 @@ enum OrbFrameHarness {
                 cells.append(Cell(stage: stage(style, s), center: CGPoint(x: width * (CGFloat(index) + 0.5), y: 0.75 * s + 8),
                                   label: model.l10n(style.titleKey) + "  " + style.rawValue))
             }
+        case .fx:
+            return 0
         case .hero(let style), .still(let style, _):
             let big: CGFloat = 240
             size = CGSize(width: big * 1.8, height: big * 1.6)

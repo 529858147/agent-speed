@@ -88,6 +88,9 @@ internal sealed class JsonLine
         SourceKind.Antigravity => "antigravity",
         SourceKind.WorkBuddy => "workbuddy",
         SourceKind.WorkBuddyAi => "workbuddyAi",
+        SourceKind.ZCode => "zcode",
+        SourceKind.Kimi => "kimi",
+        SourceKind.GrokBuild => "grokBuild",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -108,6 +111,14 @@ internal sealed class JsonLine
         .Text;
 
     public static string Rate(Rate rate) => new JsonLine().Add("output", rate.Output).Add("total", rate.Total).Text;
+
+    public static string Modes(ExecutionModes modes) => Array(modes.Facts.Select(f =>
+    {
+        var value = new JsonLine().Add("kind", ExecutionModes.Name(f.Kind)).Add("value", f.Value).Add("rawValue", f.RawValue)
+            .Add("evidence", ExecutionModes.Name(f.Evidence)).Add("scope", ExecutionModes.Name(f.Scope));
+        if (f.Provider is { } provider) value.Add("provider", provider);
+        return value.Text;
+    }));
 }
 
 /// <summary>Buffered UTF-8 stdout writer, one line per call.</summary>

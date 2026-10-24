@@ -117,6 +117,7 @@ public sealed class OrbGpuOrb
         Scene.PulsesEnabled = config.PulsesEnabled;
         Scene.PeaksEnabled = config.PeaksEnabled;
         Scene.LedEffects = config.Style == OrbStyle.Led;
+        Scene.SilkEffects = config.Style == OrbStyle.Led;
         Scene.SignOfLifeDuration = config.Style switch
         {
             OrbStyle.Minimal => 0,
@@ -307,17 +308,21 @@ public sealed class OrbGpuOrb
         {
             if (crossfading && _outgoing!.SharedEffects)
             {
-                list.AlphaScale = (float)(1 - mix);
-                OrbSharedDraw.Aura(list, ctx, Scene, frame.Unavailable ? 0 : Scene.Heat);
+                Aura(list, ctx, _outgoing, frame, 1 - mix);
             }
 
             if (style.SharedEffects)
             {
-                list.AlphaScale = (float)mix;
-                OrbSharedDraw.Aura(list, ctx, Scene, frame.Unavailable ? 0 : Scene.Heat);
+                Aura(list, ctx, style, frame, mix);
             }
         }
 
+        if (crossfading)
+        {
+            Behind(list, _outgoing!, outgoingFrame, 1 - mix);
+        }
+
+        Behind(list, style, frame, mix);
         list.AlphaScale = 1;
         OrbSharedDraw.Body(list, ctx, style.Body, config.Sources is { Count: > 0 });
         if (crossfading)
@@ -336,6 +341,13 @@ public sealed class OrbGpuOrb
         Labels(list, ctx, style, now, mix);
         list.AlphaScale = 1;
         OrbSharedDraw.Highlight(list, ctx, Accent, _highlight.Value);
+        if (crossfading)
+        {
+            Over(list, _outgoing!, outgoingFrame, 1 - mix, null);
+        }
+
+        Over(list, style, frame, mix, Readout);
+        list.AlphaScale = 1;
 
         var demand = FramePolicy.Max(Scene.SharedFrameClass(config.Style == OrbStyle.Minimal), style.Model.Demand);
         if (crossfading || !_highlight.IsSettled(Highlighted ? 1 : 0, 0.01))
@@ -359,7 +371,7 @@ public sealed class OrbGpuOrb
             return;
         }
 
-        if (style.SharedEffects && !thumbnail)
+        if (style.SharedEffects && !thumbnail && style is not IOrbStyleLayers { OwnsPulseAndPeak: true })
         {
             OrbSharedDraw.Pulses(list, ctx, Scene);
             OrbSharedDraw.PeakRays(list, ctx, Scene);
@@ -368,6 +380,44 @@ public sealed class OrbGpuOrb
         style.Build(list, Scene, frame);
         list.ClipRadius = 0;
         list.ClipFeather = 0;
+    }
+
+    private void Aura(OrbDrawList list, OrbGpuContext ctx, IOrbStyleDraw style, in OrbFrame frame, double alpha)
+    {
+        list.AlphaScale = (float)alpha;
+        var heat = frame.Unavailable ? 0 : Scene.Heat;
+        if (style is IOrbStyleLayers layers)
+        {
+            OrbSharedDraw.Aura(list, ctx, Scene, heat, layers.AuraScale, layers.AuraHotMix * (frame.Unavailable ? 0 : Scene.Overdrive));
+        }
+        else
+        {
+            OrbSharedDraw.Aura(list, ctx, Scene, heat);
+        }
+    }
+
+    private void Behind(OrbDrawList list, IOrbStyleDraw style, in OrbFrame frame, double alpha)
+    {
+        if (style is not IOrbStyleLayers layers || alpha <= 0.002)
+        {
+            return;
+        }
+
+        list.AlphaScale = (float)alpha;
+        layers.BuildBehindBody(list, Scene, frame);
+    }
+
+    /// <summary>Layers above the readout (the digit lightning); the readout was drawn for this style just before.</summary>
+    private void Over(OrbDrawList list, IOrbStyleDraw style, in OrbFrame frame, double alpha, OrbReadoutDraw? readout)
+    {
+        if (style is not IOrbStyleLayers layers || alpha <= 0.002)
+        {
+            return;
+        }
+
+        list.AlphaScale = (float)alpha;
+        list.BeginOverlay();
+        layers.BuildOverReadout(list, Scene, frame, readout);
     }
 
     private void Labels(OrbDrawList list, OrbGpuContext ctx, IOrbStyleDraw style, double now, double alpha)

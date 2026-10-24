@@ -39,7 +39,8 @@ def build_service(args) -> ref.ReferenceService:
     limits = {**ref.DEFAULT_LIMITS, "intervalSeconds": args.interval}
     service = ref.ReferenceService(authority=ref.authority_of(public), api_path=args.api_path, name=args.name,
                                    api_key_mode=args.api_key_mode, api_keys=tuple(args.api_key), rules=rules,
-                                   limits=limits, log=lambda line: print(line, flush=True))
+                                   limits=limits, log=lambda line: print(line, flush=True),
+                                   extensions={name: 1 for name in ref.EXTENSIONS} if args.extensions else None)
     service.public_scheme = public.split("://", 1)[0]
     return service
 
@@ -90,8 +91,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 self._send(400, {}, {"error": {"code": "bad_request", "field": "Content-Length"}})
                 return
-            if size > self.service.limits["maxBodyBytes"]:
-                self._send(413, {"Connection": "close"}, {"error": {"code": "payload_too_large"}})
+            avatar_upload = (method == "PUT" and self.path == self.service.api_path + "/v1/profile/avatar"
+                             and ref.supported(self.service.extensions, "profileAvatar"))
+            body_limit = 512 * 1024 if avatar_upload else self.service.limits["maxBodyBytes"]
+            if size < 0 or size > body_limit:
+                status = 400 if size < 0 else 413
+                code = "bad_request" if size < 0 else ("avatar_too_large" if avatar_upload else "payload_too_large")
+                self._send(status, {"Connection": "close"}, {"error": {"code": code}})
                 self.close_connection = True
                 return
             body = self.rfile.read(size)
@@ -103,7 +109,8 @@ class Handler(BaseHTTPRequestHandler):
                 print(json.dumps(json.loads(body), ensure_ascii=False, indent=2), flush=True)
         if status >= 400 and self.verbose:
             print(f"  -> {status} {payload['error']['code']}", flush=True)
-        self._send(status, extra, payload)
+        content_type = next((v for k, v in extra.items() if k.lower() == "content-type"), "application/json")
+        self._send(status, {k: v for k, v in extra.items() if k.lower() != "content-type"}, payload, content_type)
 
     def _status_page(self) -> str:
         with self.lock:
@@ -145,6 +152,7 @@ def main() -> int:
     parser.add_argument("--tls-cert")
     parser.add_argument("--tls-key")
     parser.add_argument("--verbose", action="store_true", help="print every accepted report in full")
+    parser.add_argument("--extensions", action="store_true", help="enable the optional mode/profile/pairing reference APIs")
     args = parser.parse_args()
     Handler.service = build_service(args)
     Handler.verbose = args.verbose

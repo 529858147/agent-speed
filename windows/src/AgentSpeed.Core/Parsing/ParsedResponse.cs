@@ -16,7 +16,13 @@ internal sealed record ParsedResponse(
     bool Final = true,
     string? Provider = null,
     bool Fast = false,
-    long? CostMicroUsd = null);
+    long? CostMicroUsd = null,
+    long RequestCount = 1)
+{
+    public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
+
+    public long Requests => Math.Clamp(RequestCount, 0, TokenCounts.MaxValue);
+}
 
 internal interface IResponseSink
 {

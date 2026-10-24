@@ -34,14 +34,14 @@ enum SourcePreviews {
         model.l10n.apply(original)
     }
 
-    /// One orb per edition, both together and a mixed set, in every style.
+    /// New harnesses, a mixed set and DSH in every style.
     private static func orbs(model: AppModel, dark: Bool) -> NameplatePreviewSheet? {
         guard let sheet = NameplatePreviewSheet(model: model, size: CGSize(width: 840, height: 300), dark: dark, seed: 23) else {
             return nil
         }
         let entries: [(OrbStyleKind, [SourceKind])] = [
-            (.liquid, [.workbuddy]), (.needle, [.workbuddyAi]), (.led, [.workbuddy, .workbuddyAi]),
-            (.reactor, [.codex, .workbuddy, .workbuddyAi]), (.minimal, [.workbuddyAi]),
+            (.liquid, [.zcode]), (.needle, [.kimi]), (.led, [.grokBuild]),
+            (.reactor, [.codex, .zcode, .kimi, .grokBuild]), (.minimal, [.deepseek]),
         ]
         for (index, entry) in entries.enumerated() {
             let config = OrbConfig(id: UUID().uuidString, sources: .explicit(entry.1), style: entry.0, size: 148)

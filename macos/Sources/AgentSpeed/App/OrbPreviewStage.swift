@@ -103,6 +103,9 @@ final class OrbPreviewStage {
 
     var canvasSide: CGFloat { diameter * OrbView.canvasScale }
 
+    /// The scene of the last step (GPU timing).
+    var lastScene: OrbScene { scene }
+
     /// The current frame: body and dynamic layers at @2x, `canvasSide` points square.
     func image() -> CGImage? {
         guard let dynamic = OrbSnapshot.image(scene, side: canvasSide, scale: 2) else { return nil }

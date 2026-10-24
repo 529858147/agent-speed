@@ -171,6 +171,7 @@ final class ReferenceServer: @unchecked Sendable {
     private let output = Pipe()
     private let lock = NSLock()
     private var buffer = Data()
+    private let stopped = DispatchSemaphore(value: 0)
 
     init(arguments: [String] = []) throws {
         port = try Self.freePort()
@@ -180,6 +181,8 @@ final class ReferenceServer: @unchecked Sendable {
                              "--port", String(port)] + arguments
         process.standardOutput = output
         process.standardError = output
+        let stopped = self.stopped
+        process.terminationHandler = { _ in stopped.signal() }
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard let self else { return }
@@ -204,7 +207,15 @@ final class ReferenceServer: @unchecked Sendable {
     func stop() {
         output.fileHandleForReading.readabilityHandler = nil
         if process.isRunning { process.terminate() }
-        process.waitUntilExit()
+        guard stopped.wait(timeout: .now() + 3) == .timedOut else { return }
+        var status: Int32 = 0
+        if waitpid(process.processIdentifier, &status, WNOHANG) == 0 {
+            kill(process.processIdentifier, SIGKILL)
+            let deadline = Date().addingTimeInterval(1)
+            while Date() < deadline, waitpid(process.processIdentifier, &status, WNOHANG) == 0 {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+        }
     }
 
     private static func freePort() throws -> Int {

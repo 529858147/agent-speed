@@ -144,3 +144,28 @@ public interface IOrbStyleDraw
     /// <summary>Adds the instrument for this frame (after the model's Update).</summary>
     void Build(OrbDrawList list, OrbScene scene, in OrbFrame frame);
 }
+
+/// <summary>
+/// A style that also draws outside its instrument slot (DESIGN 2.1, the floating <c>led</c>): layers behind the body, its own
+/// response wave and new-peak burst instead of the shared ones, and layers above the readout.
+/// </summary>
+public interface IOrbStyleLayers
+{
+    /// <summary>The shared aura's strength (× its standard opacity).</summary>
+    double AuraScale { get; }
+
+    /// <summary>Per unit of overdrive, how far the aura's color moves toward white-hot.</summary>
+    double AuraHotMix { get; }
+
+    /// <summary>Draws the response wave and the new-peak rays itself (the shared ones are skipped).</summary>
+    bool OwnsPulseAndPeak { get; }
+
+    /// <summary>Adds what lies behind the body (after the aura).</summary>
+    void BuildBehindBody(OrbDrawList list, OrbScene scene, in OrbFrame frame);
+
+    /// <summary>
+    /// Adds what lies above the readout (after <see cref="OrbDrawList.BeginOverlay"/>); <paramref name="readout"/> was just drawn in
+    /// this style's layout (null for the outgoing style of a crossfade).
+    /// </summary>
+    void BuildOverReadout(OrbDrawList list, OrbScene scene, in OrbFrame frame, OrbReadoutDraw? readout);
+}

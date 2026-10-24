@@ -131,6 +131,7 @@ internal static class WorkBuddyLineReader
             Compaction = data.Compaction,
             MessageId = data.MessageId,
             Model = model,
+            RequestModelId = data.RequestModelId,
             Provider = provider,
             HasUsage = data.Usage.HasCore || data.Usage.HasRaw,
             Tokens = data.Usage.Normalize(),

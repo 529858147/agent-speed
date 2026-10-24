@@ -579,7 +579,7 @@ internal sealed partial class ReportController
         }
 
         ClearRejection();
-        Rename(name);
+        _ = Rename(name);
     }
 
     /// <summary>Not registered yet: the name waits locally for the next registration — no request — and a waiting setup continues with it.</summary>
@@ -616,7 +616,7 @@ internal sealed partial class ReportController
         Notify();
     }
 
-    private void Rename(string name)
+    private async Task Rename(string name)
     {
         if (Identity is not { Discovery: { } document } identity || _signer is not { } key)
         {
@@ -630,13 +630,8 @@ internal sealed partial class ReportController
         var url = document.Api.Endpoint(ReportEndpoint.Device(identity.DeviceId));
         var timestamp = UnixMs / 1000 + _clockCorrection;
         var origin = identity.Id;
-        _ = RenameAsync();
-
-        async Task RenameAsync()
-        {
-            var attempt = await Perform(builder, "PATCH", url, ReportDocuments.Rename(name), key, timestamp).ConfigureAwait(true);
-            FinishRename(attempt, name, origin);
-        }
+        var attempt = await Perform(builder, "PATCH", url, ReportDocuments.Rename(name), key, timestamp).ConfigureAwait(true);
+        FinishRename(attempt, name, origin);
     }
 
     private void FinishRename(Attempt attempt, string name, string origin)

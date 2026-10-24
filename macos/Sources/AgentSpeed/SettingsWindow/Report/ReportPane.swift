@@ -2,8 +2,7 @@ import AgentSpeedCore
 import SwiftUI
 
 /// Settings → API (DESIGN 11): the master switch, the service, the username (always shown) and the API key, what is
-/// sent, the status line, this device and the other registered services. Everything applies at once; opening the pane
-/// never touches the network.
+/// sent and the status line. Profile management stays in one card; supported services refresh its public data.
 struct ReportPane: View {
     let model: AppModel
 
@@ -13,18 +12,12 @@ struct ReportPane: View {
         Form {
             ReportMasterSection(model: model)
             ReportServiceSection(model: model)
-            ReportUsernameSection(model: model)
+            ReportProfileSection(model: model)
             if report.identity != nil, let mode = report.discovery?.apiKeyMode, mode != .none {
                 ReportAPIKeySection(model: model, mode: mode)
             }
             ReportSectionsSection(model: model)
             ReportStatusSection(model: model)
-            if registered {
-                ReportDeviceSection(model: model)
-            }
-            if !report.otherIdentities.isEmpty {
-                ReportOthersSection(model: model)
-            }
         }
         .settingsForm()
         .animation(model.accessibility.reduceMotion ? nil : .easeOut(duration: 0.2), value: registered)

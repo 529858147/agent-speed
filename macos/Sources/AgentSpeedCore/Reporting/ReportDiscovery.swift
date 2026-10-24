@@ -91,6 +91,7 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
     public var usernameRules: ReportUsernameRules
     public var limits: ReportLimits
     public var sections: Set<ReportSection>
+    public var extensions: ReportExtensions?
 
     /// False when the service shares no protocol version with this client ("needs a newer Agent Speed").
     public var supportsThisClient: Bool { versions.contains(Self.supportedVersion) }
@@ -127,6 +128,7 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
         contact = try service.string("contact").map { ReportPlainText.clean($0, limit: 254) }.flatMap(Self.nonEmpty)
         retentionDays = try service.integer("retentionDays", in: 0...3650)
 
+        extensions = ReportExtensions(root.members["extensions"])
         let apiText = try root.required(root.string("api"), "api")
         guard let api = ReportServiceURL.parseAPI(apiText, discoveryIsLoopbackHTTP: loopback) else { throw .invalid("api") }
         self.api = api

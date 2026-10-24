@@ -26,7 +26,14 @@ internal static class Program
         var launch = LaunchArguments.Parse(args);
         if (Environment.GetEnvironmentVariable("AGENT_SPEED_ORB_FRAMES") is { Length: > 0 } frames)
         {
-            return Orb.Gpu.OrbFrameHarness.Run(frames);
+            return Environment.GetEnvironmentVariable("AGENT_SPEED_ORB_FRAMES_LED") is { Length: > 0 }
+                ? Orb.Gpu.OrbLedCaptures.Run(frames)
+                : Orb.Gpu.OrbFrameHarness.Run(frames);
+        }
+
+        if (Environment.GetEnvironmentVariable("AGENT_SPEED_ORB_BENCH") is { Length: > 0 } bench)
+        {
+            return Orb.Gpu.OrbBenchHarness.Run(bench);
         }
 
         using var instance = Acquire(launch);

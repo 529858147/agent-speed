@@ -149,6 +149,8 @@ public sealed class ReportDiscovery
 
     public IReadOnlySet<ReportSection> Sections { get; private init; } = new HashSet<ReportSection>();
 
+    public ReportExtensions Extensions { get; private init; } = new();
+
     /// <summary>False when the service shares no protocol version with this client ("needs a newer Agent Speed").</summary>
     public bool SupportsThisClient => Versions.Contains(SupportedVersion);
 
@@ -265,7 +267,8 @@ public sealed class ReportDiscovery
                 ("maxAgeSeconds", ReportJson.Of(Limits.MaxAgeSeconds)),
                 ("maxBodyBytes", ReportJson.Of(Limits.MaxBodyBytes)),
                 ("maxModels", ReportJson.Of(Limits.MaxModels)))),
-            ("sections", ReportJson.Array(ReportSections.All.Where(Sections.Contains).Select(s => ReportJson.Of(ReportSections.Name(s))))));
+            ("sections", ReportJson.Array(ReportSections.All.Where(Sections.Contains).Select(s => ReportJson.Of(ReportSections.Name(s))))),
+            ("extensions", Extensions.Json));
     }
 
     private static ReportDiscovery Read(Fields root, bool loopback)
@@ -375,6 +378,7 @@ public sealed class ReportDiscovery
             UsernameRules = rules,
             Limits = limits,
             Sections = sections,
+            Extensions = new(root.Extension("modelHarnessRequests"), root.Extension("executionModes"), root.Extension("profileAvatar"), root.Extension("sharedIdentity")),
         };
     }
 
@@ -388,6 +392,10 @@ public sealed class ReportDiscovery
     /// <summary>One object of the document. A present field of the wrong type is an error, a fraction where an integer is expected included.</summary>
     private sealed class Fields(JsonElement element, string path)
     {
+        public bool Extension(string name) => element.TryGetProperty("extensions", out var extensions)
+            && extensions.ValueKind == JsonValueKind.Object && extensions.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var version) && version == 1;
+
         private string Field(string key) => path.Length == 0 ? key : $"{path}.{key}";
 
         public T Required<T>(T? value, string key)

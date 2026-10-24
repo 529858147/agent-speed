@@ -38,7 +38,8 @@ enum OpencodeRules {
             endMs: endMs,
             usage: tokens,
             isFinal: true,
-            provider: data.provider
+            provider: data.provider,
+            modes: data.modes
         )
     }
 
@@ -56,6 +57,7 @@ enum OpencodeRules {
             case .assistant:
                 if isForkCopy(data, session: session) { continue }
                 state.noteLine(at: row.timeUpdated)
+                state.modes = data.modes
                 if let model = data.model, !model.isEmpty { state.model = model }
                 if data.streamed == nil {
                     state.setPhase(.generating, at: row.timeUpdated, inFlightStartMs: data.created)

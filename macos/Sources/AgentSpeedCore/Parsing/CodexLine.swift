@@ -63,6 +63,8 @@ enum CodexLineKind: Equatable, Sendable {
 struct CodexLine: Equatable, Sendable {
     var timestampMs: Int64?
     var kind: CodexLineKind
+    var modes: ExecutionModes = .empty
+    var hasModeSelection = false
 }
 
 /// Decodes the fields of a Codex envelope line that METRICS 4.2 needs. Conversation text is never captured.
@@ -84,6 +86,8 @@ enum CodexLineExtractor {
         var spawnParentThreadId: String?
         var model: String?
         var modelProvider: String?
+        var serviceTier: String?
+        var serviceTierPresent = false
         var responseId: String?
         var threadId: String?
         var usage: CodexRawUsage?
@@ -111,7 +115,14 @@ enum CodexLineExtractor {
                 }
             }
             try scanner.finish()
-            return .line(CodexLine(timestampMs: timestamp, kind: classify(envelope: envelope, payload: payload)))
+            var line = CodexLine(timestampMs: timestamp, kind: classify(envelope: envelope, payload: payload))
+            if envelope == 1 {
+                line.hasModeSelection = payload?.serviceTierPresent ?? false
+                line.modes = ExecutionModeAdapters.openAI(payload?.serviceTier, evidence: .selected, scope: .turn)
+            } else if envelope == 2 {
+                line.modes = ExecutionModeAdapters.openAI(payload?.serviceTier, evidence: .recorded, scope: .request)
+            }
+            return .line(line)
         } catch {
             return .malformed
         }
@@ -192,6 +203,9 @@ enum CodexLineExtractor {
                 (payload.sourceHasSubagent, payload.spawnParentThreadId) = try scanSource(&scanner)
             } else if scanner.key(key, is: "model") {
                 payload.model = try scanner.readNonEmptyString()
+            } else if scanner.key(key, is: "service_tier") || scanner.key(key, is: "serviceTier") {
+                payload.serviceTierPresent = true
+                payload.serviceTier = try scanner.readString()
             } else if scanner.key(key, is: "model_provider") {
                 payload.modelProvider = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "response_id") {

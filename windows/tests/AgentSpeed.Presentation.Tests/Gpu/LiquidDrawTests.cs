@@ -284,7 +284,7 @@ public class LiquidDrawTests
         {
             if (batch.Pass == OrbPass.Liquid)
             {
-                Assert.Equal(passes++, batch.LiquidMode);
+                Assert.Equal(passes++, batch.Mode);
                 Assert.Equal(covered, batch.Start);
                 continue;
             }

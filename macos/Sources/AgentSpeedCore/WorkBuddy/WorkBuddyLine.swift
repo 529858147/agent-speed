@@ -29,6 +29,7 @@ struct WorkBuddyCall: Equatable, Sendable {
     var model: String?
     /// `custom` for a model of the user's own provider (`custom:` / `custom-local:` ids).
     var provider: String?
+    var modes: ExecutionModes = .empty
 }
 
 /// One WorkBuddy session line. Content, arguments and tool output are never captured.
@@ -176,6 +177,7 @@ enum WorkBuddyLineExtractor {
 
     private static func call(from data: ProviderData) -> WorkBuddyCall {
         var call = WorkBuddyCall(messageId: data.messageId)
+        call.modes = ExecutionModeAdapters.routing(data.requestModelId)
         if data.usage != nil || data.rawUsage != nil {
             call.tokens = WorkBuddyTokens.normalize(data.usage, data.rawUsage)
         }

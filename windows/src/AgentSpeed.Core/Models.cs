@@ -22,6 +22,9 @@ public enum SourceKind
 
     /// <summary>WorkBuddy AI, international edition (<c>~/.workbuddy-ai</c>), METRICS 4.9.</summary>
     WorkBuddyAi,
+    ZCode,
+    Kimi,
+    GrokBuild,
 }
 
 public enum AgentPhase
@@ -75,6 +78,8 @@ public sealed record AgentStatus(
     DateTimeOffset LastActivity,
     string? ParentId = null)
 {
+    public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
+
     /// <summary>The agent's live cost rate (METRICS 9.5).</summary>
     public LiveCost LiveCost { get; init; }
 }
@@ -100,6 +105,9 @@ public sealed record SourceStatus(
 
     /// <summary>Models of today's responses without a known price, most unpriced requests first.</summary>
     public IReadOnlyList<string> UnpricedModels { get; init; } = [];
+
+    public ExecutionModes ConfiguredModes { get; init; } = ExecutionModes.Empty;
+    public IReadOnlyList<ExecutionModeUsage> TodayModes { get; init; } = [];
 }
 
 /// <param name="Duration">Null when the request start is unknown.</param>
@@ -183,6 +191,7 @@ public sealed record SpeedSnapshot(
 
     /// <summary>Live reporting's agent counts and cumulative ledger (METRICS 11.2, 11.4).</summary>
     public Reporting.ReportLiveFacts Report { get; init; } = Reporting.ReportLiveFacts.Empty;
+    public IReadOnlyList<ExecutionModeUsage> TodayModes { get; init; } = [];
 
     public static SpeedSnapshot Empty { get; } = new(
         DateTimeOffset.MinValue,
@@ -228,7 +237,10 @@ public sealed record MonitorConfiguration(
     string? OmpRoot = null,
     string? AntigravityRoot = null,
     string? WorkBuddyRoot = null,
-    string? WorkBuddyAiRoot = null)
+    string? WorkBuddyAiRoot = null,
+    string? ZCodeRoot = null,
+    string? KimiRoot = null,
+    string? GrokBuildRoot = null)
 {
     public static MonitorConfiguration Default { get; } =
         new(new HashSet<SourceKind>(Enum.GetValues<SourceKind>()));
@@ -244,10 +256,13 @@ public sealed record MonitorConfiguration(
         && OmpRoot == other.OmpRoot
         && AntigravityRoot == other.AntigravityRoot
         && WorkBuddyRoot == other.WorkBuddyRoot
-        && WorkBuddyAiRoot == other.WorkBuddyAiRoot;
+        && WorkBuddyAiRoot == other.WorkBuddyAiRoot
+        && ZCodeRoot == other.ZCodeRoot
+        && KimiRoot == other.KimiRoot
+        && GrokBuildRoot == other.GrokBuildRoot;
 
     public override int GetHashCode() => HashCode.Combine(
         HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot),
         WorkBuddyRoot,
-        WorkBuddyAiRoot);
+        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot);
 }

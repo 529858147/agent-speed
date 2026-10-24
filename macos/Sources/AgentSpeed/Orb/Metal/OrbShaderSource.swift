@@ -4,17 +4,21 @@
 /// anti-aliased analytically and glows are a Gaussian of the distance to the shape — no blur passes. Style-specific
 /// functions (the liquid volume) live in their own source files and are compiled into the same library.
 enum OrbShaderSource {
-    static var source: String { header + OrbLiquidShaderSource.source + shapes + text }
+    static var source: String { header + OrbLiquidShaderSource.source + OrbLedShaderSource.source + shapes + text }
 
     static let header = """
     #include <metal_stdlib>
     using namespace metal;
 
     // a: center.xy (points, y down), rotation (rad), shape
-    // b: size.xy, corner radius, glow radius
+    // b: size.xy, corner radius, glow radius (< 0: an exponential glow exp(-d / |glow|) instead of the Gaussian)
     // color / color2: straight-alpha sRGB colors (color2 is the gradient tail)
     // extra: core alpha, glow alpha, p0, p1
     // extra2: fill mode, q0, q1, q2
+    // Polyline (9): a.z first point, b.xy half size of its bounds, b.z point count; color glow stroke (rgb, outer alpha),
+    //   color2 core stroke (rgb, alpha), extra outer, mid and core widths and the mid alpha, extra2.y 1 = strokes add up.
+    // Flare (10): a.z direction (rad), b.x / b.y tangential / radial length, extra.z / extra.w radial / tangential width.
+    // Circle (1) with b.z > 0: a soft disc, color.a × smoothstep(b.z, b.x, r) (full inside b.x, zero from b.z out).
     struct Instance {
         float4 a;
         float4 b;
@@ -113,12 +117,12 @@ enum OrbShaderSource {
                                 constant Uniforms &uniforms [[buffer(1)]]) {
         Instance item = instances[iid];
         float shape = item.a.w;
-        float glow = item.b.w * 3.2;
+        float glow = item.b.w >= 0.0 ? item.b.w * 3.2 : -item.b.w * 7.0;
         float extent;
         if (shape < 0.5) {
             extent = length(item.b.xy) + glow;
         } else if (shape < 1.5) {
-            extent = item.b.x + glow;
+            extent = max(item.b.x, item.b.z) + glow;
         } else if (shape < 2.5) {
             extent = item.b.x + item.b.y + glow;
         } else if (shape < 3.5) {
@@ -129,11 +133,19 @@ enum OrbShaderSource {
             extent = item.b.x + item.b.y + glow;
         } else if (shape < 7.5) {
             extent = max(item.b.x, item.b.y) + glow;
-        } else {
+        } else if (shape < 8.5) {
             extent = max(item.b.x, item.b.y) + max(item.extra.z, item.b.z) + glow;
+        } else {
+            extent = 0.0;
         }
         extent += 2.0 / uniforms.viewport.z;
         float2 local = corners[vid] * extent;
+        if (shape > 8.5 && shape < 9.5) {
+            local = corners[vid] * (item.b.xy + 2.0 / uniforms.viewport.z);
+        } else if (shape > 9.5) {
+            float2 half_size = 5.0 * max(item.b.xy, item.extra.wz) + 2.0 / uniforms.viewport.z;
+            local = orb_rotate(corners[vid] * half_size, item.a.z);
+        }
         if (shape > 4.5 && shape < 6.5) {
             float pad = item.b.y * 0.5 + glow + 2.0 / uniforms.viewport.z;
             float4 box = orb_arc_bounds(item.b.x, item.b.y * 0.5, item.extra.z, item.extra.w);
@@ -151,6 +163,7 @@ enum OrbShaderSource {
     fragment float4 orb_fragment(VertexOut in [[stage_in]],
                                  const device Instance *instances [[buffer(0)]],
                                  constant Uniforms &uniforms [[buffer(1)]],
+                                 const device float2 *points [[buffer(2)]],
                                  texture2d<float> palette [[texture(0)]]) {
         constexpr sampler palette_sampler(address::clamp_to_edge, filter::linear);
         Instance item = instances[in.instance];
@@ -169,6 +182,14 @@ enum OrbShaderSource {
             d = length(max(k, 0.0)) + min(max(k.x, k.y), 0.0) - r;
         } else if (shape < 1.5) {
             d = length(p) - item.b.x;
+            if (item.b.z > 0.0) {
+                float t = clamp((length(p) - item.b.z) / (item.b.x - item.b.z), 0.0, 1.0);
+                float alpha = color.a * t * t * (3.0 - 2.0 * t) * orb_clip_coverage(in.canvas, uniforms);
+                if (alpha <= 0.0005) {
+                    discard_fragment();
+                }
+                return float4(color.rgb * alpha, alpha);
+            }
         } else if (shape < 2.5) {
             d = abs(length(p) - item.b.x) - item.b.y * 0.5;
         } else if (shape < 3.5) {
@@ -248,13 +269,56 @@ enum OrbShaderSource {
             float k1 = length(q / radii);
             float k2 = length(q / (radii * radii));
             d = k1 * (k1 - 1.0) / max(k2, 0.00001);
-        } else {
+        } else if (shape < 8.5) {
             // Needle blade: pivot at the center, tip at b.x along a.z (half width extra.z → extra.w), counterweight
             // b.y behind (half width extra.z → b.z).
             float2 q = orb_rotate(p, -item.a.z);
             float tip = orb_uneven_capsule(float2(q.y, q.x), item.extra.z, item.extra.w, item.b.x);
             float tail = orb_uneven_capsule(float2(q.y, -q.x), item.extra.z, item.b.z, item.b.y);
             d = min(tip, tail);
+        } else if (shape < 9.5) {
+            // Polyline: three round-joined strokes of one path (glow, glow, core).
+            int first = int(item.a.z + 0.5);
+            int count = int(item.b.z + 0.5);
+            float2 q = in.canvas;
+            float dist = 1e6;
+            for (int i = 0; i + 1 < count; i++) {
+                float2 a = points[first + i];
+                float2 ab = points[first + i + 1] - a;
+                float t = clamp(dot(q - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+                dist = min(dist, length(q - a - ab * t));
+            }
+            float c1 = clamp(0.5 - (dist - item.extra.x * 0.5) / aa, 0.0, 1.0) * item.color.a;
+            float c2 = clamp(0.5 - (dist - item.extra.y * 0.5) / aa, 0.0, 1.0) * item.extra.w;
+            float c3 = clamp(0.5 - (dist - item.extra.z * 0.5) / aa, 0.0, 1.0) * item.color2.a;
+            float3 rgb;
+            float alpha;
+            if (item.extra2.y > 0.5) {
+                rgb = item.color.rgb * (c1 + c2) + item.color2.rgb * c3;
+                alpha = 1.0 - (1.0 - c1) * (1.0 - c2) * (1.0 - c3);
+            } else {
+                rgb = item.color.rgb * c1;
+                alpha = c1;
+                rgb = item.color.rgb * c2 + rgb * (1.0 - c2);
+                alpha = c2 + alpha * (1.0 - c2);
+                rgb = item.color2.rgb * c3 + rgb * (1.0 - c3);
+                alpha = c3 + alpha * (1.0 - c3);
+            }
+            float keep = orb_clip_coverage(in.canvas, uniforms);
+            if (alpha * keep <= 0.0005) {
+                discard_fragment();
+            }
+            return float4(rgb * keep, alpha * keep);
+        } else {
+            // Flare: two crossed exponential lines.
+            float2 q = abs(orb_rotate(p, -item.a.z));
+            float v = exp(-q.x / max(item.b.x, 0.0001) - q.y / max(item.extra.z, 0.0001))
+                    + exp(-q.y / max(item.b.y, 0.0001) - q.x / max(item.extra.w, 0.0001));
+            float alpha = min(1.0, color.a * v) * orb_clip_coverage(in.canvas, uniforms);
+            if (alpha <= 0.0005) {
+                discard_fragment();
+            }
+            return float4(color.rgb * alpha, alpha);
         }
 
         if (fill > 0.5 && fill < 1.5) {
@@ -273,6 +337,8 @@ enum OrbShaderSource {
         if (item.b.w > 0.0) {
             float x = max(d, 0.0) / item.b.w;
             glow = exp(-x * x) * item.extra.y;
+        } else if (item.b.w < 0.0) {
+            glow = exp(-max(d, 0.0) / -item.b.w) * item.extra.y;
         }
         float alpha = (core + glow * (1.0 - core)) * color.a * orb_clip_coverage(in.canvas, uniforms);
         if (alpha <= 0.0005) {
@@ -291,8 +357,11 @@ enum OrbShaderSource {
         float4 params; // shear, shear pivot y, glow radius (points), clip mode (0 none, 1 rect, 2 above / 3 below the liquid
                        // surface, 4 a moving band: clip = center x, center y, half width, slope dx/dy)
         float4 clip;   // clip rect: min x, min y, max x, max y (points)
-        float4 fill2;  // a vertical gradient's bottom color (straight alpha), used when gradient.z > 0
-        float4 gradient; // top y, bottom y (points), enabled, unused
+        float4 fill2;  // gradient.z 1: a vertical gradient's bottom color (straight alpha); 2 (the `led` value): chromatic
+                       // split offset (points), its alpha, unused, dark backing alpha
+        float4 gradient; // top y, bottom y (points), mode (1 gradient, 2 `led` value: a black backing blurred over x × the
+                         // glow radius and the chromatic split under the glow), quad inset (points: the outer band where
+                         // nothing is drawn)
     };
 
     struct TextOut {
@@ -304,7 +373,8 @@ enum OrbShaderSource {
     vertex TextOut orb_text_vertex(uint vid [[vertex_id]],
                                    constant TextInstance &item [[buffer(0)]],
                                    constant Uniforms &uniforms [[buffer(1)]]) {
-        float2 uv = corners[vid] * 0.5 + 0.5;
+        float2 inset = min(float2(max(item.gradient.w, 0.0)), item.rect.zw * 0.5 - 0.5);
+        float2 uv = (inset + (corners[vid] * 0.5 + 0.5) * (item.rect.zw - 2.0 * inset)) / item.rect.zw;
         float2 point = item.rect.xy + uv * item.rect.zw;
         point.x += item.params.x * (item.params.y - point.y);
         TextOut out;
@@ -342,32 +412,61 @@ enum OrbShaderSource {
         }
         float coverage = glyphs.sample(linear_sampler, in.uv).a;
         float4 fill = item.color;
-        if (item.gradient.z > 0.5) {
+        bool backing = item.gradient.z > 1.5;
+        if (item.gradient.z > 0.5 && !backing) {
             float t = clamp((in.canvas.y - item.gradient.x) / max(item.gradient.y - item.gradient.x, 0.0001), 0.0, 1.0);
             fill = mix(item.color, item.fill2, t);
         }
         float text_alpha = coverage * fill.a;
         float glow_alpha = 0.0;
-        if (item.glow.a > 0.0) {
+        float back_alpha = 0.0;
+        if (item.glow.a > 0.0 || backing) {
             float2 step = item.params.z / item.rect.zw;
+            float inner = max(item.gradient.x, 0.05);
             float sum = 0.0;
             float weights = 0.0;
+            float sum_back = 0.0;
+            float weights_back = 0.0;
             for (int ring = 1; ring <= 4; ring++) {
                 float radius = float(ring) / 4.0;
                 float weight = exp(-2.2 * radius * radius);
+                float rb = radius / inner;
+                float weight_back = backing ? exp(-2.2 * rb * rb) : 0.0;
                 for (int k = 0; k < 12; k++) {
                     float angle = (float(k) + 0.37 * float(ring)) * 0.5235987756;
-                    sum += glyphs.sample(linear_sampler, in.uv + float2(cos(angle), sin(angle)) * step * radius).a * weight;
+                    float a = glyphs.sample(linear_sampler, in.uv + float2(cos(angle), sin(angle)) * step * radius).a;
+                    sum += a * weight;
                     weights += weight;
+                    sum_back += a * weight_back;
+                    weights_back += weight_back;
                 }
             }
-            glow_alpha = clamp(sum / weights * 1.5, 0.0, 1.0) * item.glow.a * (1.0 - text_alpha);
+            glow_alpha = clamp(sum / weights * 1.5, 0.0, 1.0) * item.glow.a;
+            if (backing) {
+                back_alpha = clamp(sum_back / max(weights_back, 1e-6) * 1.5, 0.0, 1.0) * item.fill2.w;
+            }
         }
-        float alpha = (text_alpha + glow_alpha) * keep;
+        // Bottom to top: backing, chromatic split (right, left), glow, glyph.
+        float3 rgb = float3(0.0);
+        float alpha = back_alpha;
+        if (backing && item.fill2.y > 0.0) {
+            float2 shift = float2(item.fill2.x / item.rect.z, 0.0);
+            float right = glyphs.sample(linear_sampler, in.uv - shift).a * item.fill2.y;
+            float left = glyphs.sample(linear_sampler, in.uv + shift).a * item.fill2.y;
+            rgb = float3(0.235, 0.824, 1.0) * right + rgb * (1.0 - right);
+            alpha = right + alpha * (1.0 - right);
+            rgb = float3(1.0, 0.235, 0.549) * left + rgb * (1.0 - left);
+            alpha = left + alpha * (1.0 - left);
+        }
+        rgb = item.glow.rgb * glow_alpha + rgb * (1.0 - glow_alpha);
+        alpha = glow_alpha + alpha * (1.0 - glow_alpha);
+        rgb = fill.rgb * text_alpha + rgb * (1.0 - text_alpha);
+        alpha = text_alpha + alpha * (1.0 - text_alpha);
+        alpha *= keep;
         if (alpha <= 0.0005) {
             discard_fragment();
         }
-        return float4((fill.rgb * text_alpha + item.glow.rgb * glow_alpha) * keep, alpha);
+        return float4(rgb * keep, alpha);
     }
     """
 }

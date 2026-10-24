@@ -85,6 +85,9 @@ public static class HeatPalette
         SourceKind.Antigravity => Rgba.FromHex("#EC4899"),
         SourceKind.WorkBuddy => Rgba.FromHex("#11A68B"),
         SourceKind.WorkBuddyAi => Rgba.FromHex("#007AB4"),
+        SourceKind.ZCode => Rgba.FromHex("#466BFF"),
+        SourceKind.Kimi => Rgba.FromHex("#E16F8A"),
+        SourceKind.GrokBuild => Rgba.FromHex("#8290A6"),
         _ => Neutral,
     };
 

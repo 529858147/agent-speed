@@ -33,6 +33,9 @@ enum HistoryCSV {
         case .antigravity: "antigravity"
         case .workbuddy: "workbuddy"
         case .workbuddyAi: "workbuddy-ai"
+        case .zcode: "zcode"
+        case .kimi: "kimi"
+        case .grokBuild: "grokBuild"
         }
     }
 

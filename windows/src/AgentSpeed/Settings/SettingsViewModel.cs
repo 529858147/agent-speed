@@ -5,6 +5,7 @@ using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Cost;
 using AgentSpeed.Presentation.Heat;
+using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Titles;
@@ -162,6 +163,15 @@ internal sealed class SettingsViewModel : ObservableObject
             () => _settings.Current.WorkBuddyRoot is not null);
         ResetWorkBuddyAiCommand = new RelayCommand(() => _settings.Update(s => s with { WorkBuddyAiRoot = null }),
             () => _settings.Current.WorkBuddyAiRoot is not null);
+        ChangeZCodeCommand = new RelayCommand(() => ChangeFolder(ZCodePath, (s, path) => s with { ZCodeRoot = path }));
+        ResetZCodeCommand = new RelayCommand(() => _settings.Update(s => s with { ZCodeRoot = null }),
+            () => _settings.Current.ZCodeRoot is not null);
+        ChangeKimiCommand = new RelayCommand(() => ChangeFolder(KimiPath, (s, path) => s with { KimiRoot = path }));
+        ResetKimiCommand = new RelayCommand(() => _settings.Update(s => s with { KimiRoot = null }),
+            () => _settings.Current.KimiRoot is not null);
+        ChangeGrokBuildCommand = new RelayCommand(() => ChangeFolder(GrokBuildPath, (s, path) => s with { GrokBuildRoot = path }));
+        ResetGrokBuildCommand = new RelayCommand(() => _settings.Update(s => s with { GrokBuildRoot = null }),
+            () => _settings.Current.GrokBuildRoot is not null);
         OpenHistoryCommand = new RelayCommand(openHistory);
         ClearHistoryCommand = new RelayCommand(() =>
         {
@@ -302,6 +312,18 @@ internal sealed class SettingsViewModel : ObservableObject
     public RelayCommand ResetWorkBuddyCommand { get; }
 
     public RelayCommand ResetWorkBuddyAiCommand { get; }
+
+    public RelayCommand ChangeZCodeCommand { get; }
+
+    public RelayCommand ResetZCodeCommand { get; }
+
+    public RelayCommand ChangeKimiCommand { get; }
+
+    public RelayCommand ResetKimiCommand { get; }
+
+    public RelayCommand ChangeGrokBuildCommand { get; }
+
+    public RelayCommand ResetGrokBuildCommand { get; }
 
     public RelayCommand OpenHistoryCommand { get; }
 
@@ -510,6 +532,18 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public string WorkBuddyAiStatus => StatusFor(SourceKind.WorkBuddyAi);
 
+    public string ZCodePath => S.ZCodeRoot ?? LiveMonitor.DefaultZCodeRoot;
+
+    public string ZCodeStatus => StatusFor(SourceKind.ZCode);
+
+    public string KimiPath => S.KimiRoot ?? LiveMonitor.DefaultKimiRoot;
+
+    public string KimiStatus => StatusFor(SourceKind.Kimi);
+
+    public string GrokBuildPath => S.GrokBuildRoot ?? LiveMonitor.DefaultGrokBuildRoot;
+
+    public string GrokBuildStatus => StatusFor(SourceKind.GrokBuild);
+
     public string CodexStatus => StatusFor(SourceKind.Codex);
 
     public string DshStatus => StatusFor(SourceKind.DeepSeek);
@@ -664,6 +698,9 @@ internal sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AntigravityPath));
         OnPropertyChanged(nameof(WorkBuddyStatus));
         OnPropertyChanged(nameof(WorkBuddyAiStatus));
+        OnPropertyChanged(nameof(ZCodeStatus));
+        OnPropertyChanged(nameof(KimiStatus));
+        OnPropertyChanged(nameof(GrokBuildStatus));
         OnPropertyChanged(nameof(UpdateLastCheckedText));
     }
 
@@ -703,7 +740,8 @@ internal sealed class SettingsViewModel : ObservableObject
             return _loc["source.disabled"];
         }
 
-        return status.Available ? _loc.Format("source.sessions", status.SessionCount) : _loc["source.folderMissing"];
+        var text = status.Available ? _loc.Format("source.sessions", status.SessionCount) : _loc["source.folderMissing"];
+        return status.ConfiguredModes.IsEmpty ? text : text + Environment.NewLine + ExecutionModeText.Detail(status.ConfiguredModes, _loc);
     }
 
     private void Apply(Func<AppSettings, AppSettings> change)

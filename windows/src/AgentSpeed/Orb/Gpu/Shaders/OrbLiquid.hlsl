@@ -24,11 +24,6 @@ cbuffer LiquidParams : register(b1)
     float4 lq_flags;         // spill additive, scrim strength (0: none), body gradient top y, body gradient bottom y
 };
 
-cbuffer LiquidPass : register(b2)
-{
-    int4 lq_mode;            // x: 0 the volume, 1 the meniscus
-};
-
 float orb_liquid_wave_y(float x, bool back)
 {
     float s = lq_frame.z;
@@ -125,7 +120,7 @@ float4 PsLiquid(LiquidOut input) : SV_Target
     float alpha = 0.0;
     float y_surface = orb_liquid_wave_y(p.x, false);
 
-    if (lq_mode.x == 1)
+    if (pass_mode.x == 1)
     {
         // The meniscus: the surface stroked, with its glow.
         float slope = orb_liquid_wave_y(p.x + 0.5, false) - orb_liquid_wave_y(p.x - 0.5, false);

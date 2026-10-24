@@ -5,6 +5,7 @@ import SwiftUI
 /// deleting the local key only when the service cannot be reached) and Reset after a key mismatch.
 struct ReportDeviceSection: View {
     let model: AppModel
+    var showsRegistrationName = true
 
     @State private var confirmsForget = false
     @State private var confirmsReset = false
@@ -16,7 +17,7 @@ struct ReportDeviceSection: View {
         let host = report.destinationHost ?? ""
         Section {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                Text(l10n("report.device.detail", name, host))
+                Text(showsRegistrationName ? l10n("report.device.detail", name, host) : host)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: Spacing.xs)

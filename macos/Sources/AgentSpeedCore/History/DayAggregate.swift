@@ -53,17 +53,18 @@ struct DayAggregate: Equatable, Sendable {
     var unfinalized = 0
     var agents = 0
     var models: [String: ModelTally] = [:]
+    var modes: [ExecutionModeUsageKey: ExecutionModeUsage] = [:]
     /// Nil when the contribution was stored before costs existed (METRICS 8).
     var cost: CostTally?
 
     /// Adds a response with its cost (nil = unknown price).
     mutating func add(_ record: ResponseRecord, cost responseCost: Int64?) {
         if cost == nil, totals.requests == 0 { cost = .zero }
-        cost?.add(responseCost)
-        totals.add(record.usage, sign: 1)
+        cost?.add(responseCost, requestCount: record.requestCount)
+        totals.add(record.usage, sign: 1, requestCount: record.requestCount)
         var tally = models[record.model ?? ""] ?? ModelTally(cost: .zero)
-        tally.cost?.add(responseCost)
-        tally.requests += 1
+        tally.cost?.add(responseCost, requestCount: record.requestCount)
+        tally.requests += record.requestCount
         tally.output = tally.output.saturatingAdd(record.usage.output)
         if record.isFinal, let timed = TimedResponse(record) {
             measuredOutput = measuredOutput.saturatingAdd(record.usage.output)
@@ -71,8 +72,16 @@ struct DayAggregate: Equatable, Sendable {
             tally.measuredOutput = tally.measuredOutput.saturatingAdd(record.usage.output)
             tally.measuredMs += timed.durationMs
         }
-        if !record.isFinal { unfinalized += 1 }
+        if !record.isFinal { unfinalized += record.requestCount }
         models[record.model ?? ""] = tally
+        for attribution in record.modes.attributed {
+            let key = ExecutionModeUsageKey(model: record.model ?? "", attribution: attribution)
+            let measured = record.isFinal ? TimedResponse(record) : nil
+            let part = ExecutionModeUsage(model: key.model, attribution: attribution, requests: record.requestCount,
+                                          output: record.usage.output, measuredOutput: measured == nil ? 0 : record.usage.output,
+                                          measuredMs: measured?.durationMs ?? 0)
+            if modes[key] == nil { modes[key] = part } else { modes[key]?.add(part) }
+        }
     }
 
     mutating func merge(_ other: DayAggregate) {
@@ -87,6 +96,9 @@ struct DayAggregate: Equatable, Sendable {
         measuredMs += other.measuredMs
         unfinalized += other.unfinalized
         agents += other.agents
+        for (key, usage) in other.modes {
+            if modes[key] == nil { modes[key] = usage } else { modes[key]?.add(usage) }
+        }
         for (model, tally) in other.models {
             models[model, default: ModelTally()].merge(tally)
         }
@@ -126,7 +138,8 @@ struct DayAggregate: Equatable, Sendable {
                 }
                 .sorted { $0.model.unicodeScalars.lexicographicallyPrecedes($1.model.unicodeScalars) },
             cost: cost,
-            priceVersion: cost == nil ? nil : priceVersion
+            priceVersion: cost == nil ? nil : priceVersion,
+            modeUsage: modes.values.sorted { $0.id < $1.id }
         )
     }
 }

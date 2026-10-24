@@ -44,6 +44,9 @@ enum PreviewData {
             source(.antigravity, speed * 0.05, TokenTotals(requests: 41, input: 1_600_000, output: 46_000), 1),
             source(.workbuddy, speed * 0.05, TokenTotals(requests: 58, input: 2_000_000, output: 52_000), 1),
             source(.workbuddyAi, 0, TokenTotals(requests: 19, input: 640_000, output: 21_000), 0),
+            source(.zcode, speed * 0.06, TokenTotals(requests: 34, input: 900_000, output: 42_000), 1),
+            source(.kimi, speed * 0.03, TokenTotals(requests: 28, input: 780_000, output: 32_000), 1),
+            source(.grokBuild, speed * 0.02, TokenTotals(requests: 18, input: 530_000, output: 23_000), 1),
         ]
         var liveCost = LiveCost.zero
         var todayCost = CostTally()
@@ -157,7 +160,7 @@ enum PreviewData {
             switch source.kind {
             case .deepseek: source.available = false
             case .claudeDesktop: source.enabled = false
-            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity, .workbuddy, .workbuddyAi: return source
+            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity, .workbuddy, .workbuddyAi, .zcode, .kimi, .grokBuild: return source
             }
             source.sessionCount = 0
             source.live = .zero
@@ -203,6 +206,9 @@ enum PreviewData {
         case .antigravity: 9
         case .workbuddy: 12
         case .workbuddyAi: 5
+        case .zcode: 3
+        case .kimi: 2
+        case .grokBuild: 1
         }
     }
 }

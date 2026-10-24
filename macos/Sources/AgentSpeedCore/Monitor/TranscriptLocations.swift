@@ -125,6 +125,27 @@ enum TranscriptLocations {
         (TranscriptDiscovery.normalizedRoot(root) as NSString).deletingLastPathComponent
     }
 
+    static var defaultZcodeRoot: URL {
+        let base = environment("ZCODE_DATA_BASE_DIR").map { URL(fileURLWithPath: $0, isDirectory: true) } ?? home
+        return base.appendingPathComponent(".zcode/cli/db", isDirectory: true)
+    }
+
+    static var defaultKimiRoot: URL {
+        let base = environment("KIMI_CODE_HOME").map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? home.appendingPathComponent(".kimi-code", isDirectory: true)
+        return base.appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    static var defaultGrokBuildRoot: URL {
+        let base = environment("GROK_HOME").map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? home.appendingPathComponent(".grok", isDirectory: true)
+        return base.appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    static func sessionsFolder(_ folder: URL) -> URL {
+        folder.lastPathComponent == "sessions" ? folder : folder.appendingPathComponent("sessions", isDirectory: true)
+    }
+
     /// Default roots of a family; Gemini CLI has two, omp one per profile, Antigravity one per store.
     static func defaultRoots(for family: TranscriptFamily) -> [URL] {
         switch family {
@@ -136,6 +157,8 @@ enum TranscriptLocations {
         case .antigravity: defaultAntigravityStores.map(antigravityConversations)
         case .workbuddy: [workbuddyProjects(defaultWorkBuddyDataFolder)]
         case .workbuddyAi: [workbuddyProjects(defaultWorkBuddyAiDataFolder)]
+        case .kimi: [defaultKimiRoot]
+        case .grokBuild: [defaultGrokBuildRoot]
         }
     }
 
@@ -169,6 +192,8 @@ extension MonitorConfiguration {
         case .antigravity: antigravityRoot.map(TranscriptLocations.antigravityConversations)
         case .workbuddy: workbuddyRoot.map(TranscriptLocations.workbuddyProjects)
         case .workbuddyAi: workbuddyAiRoot.map(TranscriptLocations.workbuddyProjects)
+        case .kimi: kimiRoot.map(TranscriptLocations.sessionsFolder)
+        case .grokBuild: grokBuildRoot.map(TranscriptLocations.sessionsFolder)
         }
     }
 
@@ -178,6 +203,7 @@ extension MonitorConfiguration {
             switch family {
             case .antigravity: urls.map(TranscriptLocations.antigravityConversations)
             case .workbuddy, .workbuddyAi: urls.map(TranscriptLocations.workbuddyProjects)
+            case .kimi, .grokBuild: urls.map(TranscriptLocations.sessionsFolder)
             default: urls
             }
         }
@@ -221,11 +247,14 @@ extension MonitorConfiguration {
     var readsClaude: Bool { reads(.claude) }
     var readsDsh: Bool { reads(.dsh) }
     var readsOpencode: Bool { enabledSources.contains(.opencode) }
+    var readsZcode: Bool { enabledSources.contains(.zcode) }
+    var resolvedZcodeRoot: String { TranscriptDiscovery.normalizedRoot((zcodeRoot ?? TranscriptLocations.defaultZcodeRoot).path) }
 
     /// True when switching between the two configurations requires reading the transcripts again.
     func requiresRescan(comparedTo other: MonitorConfiguration) -> Bool {
         enabledSources != other.enabledSources
             || TranscriptFamily.allCases.contains { resolvedRoots(for: $0) != other.resolvedRoots(for: $0) }
             || resolvedOpencodeRoot != other.resolvedOpencodeRoot
+            || resolvedZcodeRoot != other.resolvedZcodeRoot
     }
 }

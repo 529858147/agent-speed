@@ -73,6 +73,7 @@ final class TranscriptSession {
     static let maxOpenDatabases = 16
     /// Deduplication owner of every OpenCode row; transcript files count up from 0.
     static let opencodeFileID: FileID = -1
+    static let zcodeFileID: FileID = -2
 
     let enabledSources: Set<SourceKind>
     let limits: ReadingLimits
@@ -92,6 +93,10 @@ final class TranscriptSession {
     private(set) var partialHistory = false
     /// The OpenCode database, when that source is enabled (METRICS 4.5, 5.2).
     let opencode: OpencodeSource?
+    let zcode: ZcodeSource?
+    private let zcodeRoot: String
+    private var zcodeNeedsSeed = false
+    private var zcodeLinks: [String: String] = [:]
     private let opencodeRoot: String
     private var opencodeNeedsSeed = false
     private var opencodeLinks: [String: String] = [:]
@@ -121,20 +126,25 @@ final class TranscriptSession {
         }
         opencodeRoot = configuration.resolvedOpencodeRoot
         opencode = configuration.readsOpencode ? OpencodeSource(root: opencodeRoot, fileID: Self.opencodeFileID) : nil
+        zcodeRoot = configuration.resolvedZcodeRoot
+        zcode = configuration.readsZcode ? ZcodeSource(root: zcodeRoot, fileID: Self.zcodeFileID) : nil
         refreshAvailability()
     }
 
     // MARK: - Roots
 
-    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.detected } || opencode?.isReady == true }
+    var hasAvailableRoot: Bool { roots.contains { $0.enabled && $0.detected } || opencode?.isReady == true || zcode?.isReady == true }
 
     var watchedPaths: [String] {
         var paths = roots.filter { $0.enabled && $0.available }.map(\.canonicalPath)
         if let directory = opencode?.watchedDirectory, opencode?.isReady == true, !paths.contains(directory) {
             paths.append(directory)
         }
+        if let directory = zcode?.watchedDirectory, !paths.contains(directory) { paths.append(directory) }
         return paths
     }
+
+    var zcodeLocation: (path: String, available: Bool) { (zcodeRoot, zcode?.exists ?? false) }
 
     /// Root path and availability of the OpenCode source (the folder that contains `opencode.db`).
     var opencodeLocation: (path: String, available: Bool, status: OpencodeSource.Status?) {
@@ -148,6 +158,10 @@ final class TranscriptSession {
         if let opencode, opencode.refreshAvailability() {
             changed = true
             opencodeNeedsSeed = true
+        }
+        if let zcode, zcode.refreshAvailability() {
+            changed = true
+            zcodeNeedsSeed = true
         }
         for index in roots.indices {
             let available = roots[index].readable && TranscriptDiscovery.isAvailable(root: roots[index].path)
@@ -243,6 +257,15 @@ final class TranscriptSession {
             }
             seedOpencode(todayStartMs: todayStartMs)
         }
+        if let zcode, zcode.exists {
+            summary.filesDiscovered += 1
+            if zcode.isReady {
+                summary.filesRead += 1
+                summary.bytesRead += zcode.databaseSize
+            }
+            zcodeNeedsSeed = false
+            apply(zcode.seed(todayStartMs: todayStartMs, deduper: &deduper), live: false)
+        }
         summary.partialHistory = partialHistory
         summary.durationMs = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
         return summary
@@ -314,6 +337,9 @@ final class TranscriptSession {
         if let opencode, paths.contains(where: opencode.matches(canonicalPath:)) {
             changed = apply(opencode.refresh(deduper: &deduper), live: true)
         }
+        if let zcode, paths.contains(where: zcode.matches(canonicalPath:)) {
+            changed = apply(zcode.refresh(deduper: &deduper), live: true) || changed
+        }
         var handled: Set<String> = []
         for path in paths.sorted() {
             guard let (localPath, root) = localPath(forCanonical: path), handled.insert(localPath).inserted else { continue }
@@ -357,6 +383,7 @@ final class TranscriptSession {
         if let update = opencode?.refreshIfChanged(deduper: &deduper) {
             changed = apply(update, live: true)
         }
+        if let update = zcode?.refreshIfChanged(deduper: &deduper) { changed = apply(update, live: true) || changed }
         let hot = files.values.filter { nowMs - $0.lastStat.modifiedMs <= Self.hotWindowMs }
         for file in hot.sorted(by: { $0.path < $1.path }) {
             guard let stat = file.family.stat(file.path) else {
@@ -398,12 +425,28 @@ final class TranscriptSession {
             let file = track(discovered, family: root.family, root: root.path, start: .beginning)
             changed = read(file, live: true) || changed
         }
+        for file in files.values where file.family == .grokBuild {
+            var upserts: [ResponseUpsert] = []
+            if file.parser.refreshMetadata(deduper: &deduper, emit: { upserts.append($0) }) {
+                for upsert in upserts { deliver(upsert, project: projectName(of: file), live: true) }
+                syncAgent(file)
+                changed = true
+            }
+        }
         if let opencode {
             if opencodeNeedsSeed {
                 seedOpencode(todayStartMs: todayStartMs)
                 changed = true
             } else {
                 changed = apply(opencode.rediscover(nowMs: clock(), deduper: &deduper), live: true) || changed
+            }
+        }
+        if let zcode {
+            if zcodeNeedsSeed {
+                zcodeNeedsSeed = false
+                changed = apply(zcode.seed(todayStartMs: todayStartMs, deduper: &deduper), live: false) || changed
+            } else if let update = zcode.refreshIfChanged(deduper: &deduper) {
+                changed = apply(update, live: true) || changed
             }
         }
         return changed
@@ -443,6 +486,9 @@ final class TranscriptSession {
         }
         if file.family.isDatabase { return readDatabase(file, live: live) }
         var upserts: [ResponseUpsert] = []
+        let metadataChanged = file.parser.refreshMetadata(deduper: &deduper) { upserts.append($0) }
+        for upsert in upserts { deliver(upsert, project: projectName(of: file), live: live) }
+        upserts.removeAll(keepingCapacity: true)
         let result = file.reader.read(onReset: { file.resetParser() }, onMalformed: { file.parser.noteMalformedLine() }) { bytes in
             file.parser.consume(rawLine: bytes, deduper: &deduper) { upserts.append($0) }
             guard !upserts.isEmpty else { return }
@@ -455,7 +501,7 @@ final class TranscriptSession {
             return true
         }
         finishRead(of: file, result: result)
-        return result.bytesRead > 0 || result.didReset
+        return metadataChanged || result.bytesRead > 0 || result.didReset
     }
 
     /// One read of an Antigravity database, throttled while live (METRICS 5.4).
@@ -507,13 +553,17 @@ final class TranscriptSession {
     }
 
     private func finishRead(of file: TrackedFile, result: FileTailer.ReadResult) {
-        if result.oversized { partialHistory = true }
+        if result.oversized || file.parser.hasPartialHistory { partialHistory = true }
         if result.failed {
             unreadablePaths.insert(file.path)
         } else {
             unreadablePaths.remove(file.path)
         }
-        if let stat = result.stat { file.lastStat = stat }
+        if file.family == .grokBuild, let stat = file.family.stat(file.path) {
+            file.lastStat = stat
+        } else if let stat = result.stat {
+            file.lastStat = stat
+        }
         syncAgent(file)
     }
 
@@ -526,7 +576,7 @@ final class TranscriptSession {
         subsets: Set<SourceSet> = []
     ) -> (output: EngineOutput, events: [SpeedEvent]) {
         if parentLinksAreStale {
-            parentLinks = AgentParents.resolve(Array(parentMembers.values), direct: opencodeLinks)
+            parentLinks = AgentParents.resolve(Array(parentMembers.values), direct: opencodeLinks.merging(zcodeLinks) { first, _ in first })
             engine.setParents(parentLinks)
             parentLinksAreStale = false
         }
@@ -543,7 +593,7 @@ final class TranscriptSession {
         files.values.reduce(removedMalformedLines) { $0 + $1.parser.state.malformedLines } + (opencode?.malformedRows ?? 0)
     }
 
-    var unreadableFileCount: Int { unreadablePaths.count + (opencode?.status == .unreadable ? 1 : 0) }
+    var unreadableFileCount: Int { unreadablePaths.count + (opencode?.status == .unreadable ? 1 : 0) + (zcode?.status == .unreadable ? 1 : 0) }
 
     /// Antigravity databases whose connection is open.
     var openDatabaseCount: Int {
@@ -554,6 +604,7 @@ final class TranscriptSession {
     var unsupportedSources: [SourceKind] {
         var sources: [SourceKind] = []
         if opencode?.status == .unsupported { sources.append(.opencode) }
+        if zcode?.status == .unsupported { sources.append(.zcode) }
         if enabledSources.contains(.antigravity), files.values.contains(where: { $0.family.isDatabase && $0.parser.isUnsupported }) {
             sources.append(.antigravity)
         }
@@ -566,12 +617,13 @@ final class TranscriptSession {
         for file in files.values {
             let state = file.parser.state
             guard let last = state.lastLineMs, last >= todayStartMs, enabledSources.contains(state.source) else { continue }
-            if file.family.isWorkBuddy, state.isSubagent { continue }
+            if (file.family.isWorkBuddy || file.family == .kimi || file.family == .grokBuild), state.isSubagent { continue }
             counts[state.source, default: 0] += 1
         }
         if let opencode, enabledSources.contains(.opencode) {
             counts[.opencode] = opencode.activeSessionCount(todayStartMs: todayStartMs)
         }
+        if let zcode { counts[.zcode] = zcode.activeSessionCount(todayStartMs: todayStartMs) }
         return counts
     }
 
@@ -629,6 +681,21 @@ final class TranscriptSession {
             parentLinksAreStale = true
         }
         return true
+    }
+
+    @discardableResult
+    private func apply(_ update: ZcodeSource.Update, live: Bool) -> Bool {
+        for (upsert, project) in update.upserts { deliver(upsert, project: project, live: live) }
+        for id in update.removedAgents { engine.removeAgent(id: id) }
+        for (id, state) in update.agents {
+            if state.lastLineMs != nil { engine.setAgent(EngineAgent(id: id, state: state, parentId: zcode?.parentLinks[id])) }
+        }
+        let links = zcode?.parentLinks ?? [:]
+        if links != zcodeLinks {
+            zcodeLinks = links
+            parentLinksAreStale = true
+        }
+        return !update.isEmpty
     }
 
     // MARK: - Tracking

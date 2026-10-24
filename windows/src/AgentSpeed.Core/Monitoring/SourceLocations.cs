@@ -16,7 +16,10 @@ internal sealed record SourceLocations(
     IReadOnlyList<string>? AntigravityStores = null,
     bool OmpAutomatic = false,
     string WorkBuddyRoot = "",
-    string WorkBuddyAiRoot = "")
+    string WorkBuddyAiRoot = "",
+    string ZCodeRoot = "",
+    string KimiRoot = "",
+    string GrokBuildRoot = "")
 {
     public static SourceLocations Resolve(MonitorConfiguration configuration) => new(
         Normalize(configuration.CodexRoot ?? LiveMonitor.DefaultCodexRoot),
@@ -28,7 +31,10 @@ internal sealed record SourceLocations(
         NormalizeAll(LiveMonitor.AntigravityStores(configuration.AntigravityRoot)),
         OmpAutomatic: configuration.OmpRoot is null,
         WorkBuddyRoot: WorkBuddyRootOf(configuration.WorkBuddyRoot ?? LiveMonitor.DefaultWorkBuddyFolder),
-        WorkBuddyAiRoot: WorkBuddyRootOf(configuration.WorkBuddyAiRoot ?? LiveMonitor.DefaultWorkBuddyAiFolder));
+        WorkBuddyAiRoot: WorkBuddyRootOf(configuration.WorkBuddyAiRoot ?? LiveMonitor.DefaultWorkBuddyAiFolder),
+        ZCodeRoot: Normalize(configuration.ZCodeRoot ?? LiveMonitor.DefaultZCodeRoot),
+        KimiRoot: Normalize(Harnesses.HarnessPaths.SessionsOf(configuration.KimiRoot ?? LiveMonitor.DefaultKimiRoot)),
+        GrokBuildRoot: Normalize(Harnesses.HarnessPaths.SessionsOf(configuration.GrokBuildRoot ?? LiveMonitor.DefaultGrokBuildRoot)));
 
     /// <summary>Codex <c>archived_sessions</c>, the sibling of the sessions root (METRICS 8).</summary>
     public string CodexArchiveRoot
@@ -73,6 +79,16 @@ internal sealed record SourceLocations(
         if (WorkBuddyAiRoot.Length > 0)
         {
             yield return (RootFamily.WorkBuddyAi, WorkBuddyAiRoot);
+        }
+
+        if (KimiRoot.Length > 0)
+        {
+            yield return (RootFamily.Kimi, KimiRoot);
+        }
+
+        if (GrokBuildRoot.Length > 0)
+        {
+            yield return (RootFamily.GrokBuild, GrokBuildRoot);
         }
     }
 

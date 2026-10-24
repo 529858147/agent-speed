@@ -45,6 +45,13 @@ internal abstract class TranscriptParser
 
     public bool IsSubagent { get; protected set; }
 
+    private ExecutionModes _modes = ExecutionModes.Empty;
+    public ExecutionModes Modes
+    {
+        get => _modes;
+        protected set { if (!_modes.Equals(value)) { _modes = value; Version++; } }
+    }
+
     public AgentPhase Phase => _phase;
 
     public long? PhaseSinceMs { get; private set; }
@@ -79,6 +86,7 @@ internal abstract class TranscriptParser
         SourceDecided = false;
         Project = null;
         Model = null;
+        Modes = ExecutionModes.Empty;
         IsSubagent = false;
         _phase = AgentPhase.Idle;
         PhaseSinceMs = null;

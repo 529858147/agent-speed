@@ -54,6 +54,7 @@ struct OpencodeMessageData: Equatable, Sendable {
     var model: String?
     /// `model.providerID` (METRICS 3.2).
     var provider: String?
+    var modes: ExecutionModes = .empty
     var finishedWithToolCalls = false
     /// Set when `data.tokens` is an object.
     var tokens: TokenUsage?
@@ -65,6 +66,7 @@ enum OpencodeDataExtractor {
         var scanner = JSONScanner(bytes)
         do {
             var data = OpencodeMessageData()
+            var tier: String?
             try scanner.beginObject()
             while let key = try scanner.nextMember() {
                 if scanner.key(key, is: "time") {
@@ -73,6 +75,12 @@ enum OpencodeDataExtractor {
                     (data.model, data.provider) = try scanModel(&scanner)
                 } else if scanner.key(key, is: "finish") {
                     data.finishedWithToolCalls = try scanner.readStringMatch(["tool-calls"]) == 0
+                } else if scanner.key(key, is: "native") {
+                    guard try scanner.beginObjectIfPresent() else { continue }
+                    while let nativeKey = try scanner.nextMember() {
+                        if scanner.key(nativeKey, is: "serviceTier") { tier = try scanner.readString() }
+                        else { try scanner.skipValue() }
+                    }
                 } else if scanner.key(key, is: "tokens") {
                     data.tokens = try scanTokens(&scanner)
                 } else {
@@ -80,6 +88,9 @@ enum OpencodeDataExtractor {
                 }
             }
             try scanner.finish()
+            if ["openai", "azure"].contains(data.provider ?? "") {
+                data.modes = ExecutionModeAdapters.openAI(tier, evidence: .served, scope: .response)
+            }
             return data
         } catch {
             return nil

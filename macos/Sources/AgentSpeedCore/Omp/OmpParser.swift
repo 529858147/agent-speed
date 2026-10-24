@@ -12,6 +12,7 @@ struct OmpParser: Sendable {
     private var headerSeen = false
     private var headerMs: Int64?
     private var pendingToolCalls: Set<String> = []
+    private var branchModes: [String: ExecutionModes] = [:]
 
     /// `root` is the sessions root the file was found under.
     init(agentId: String, fileID: FileID, root: String?) {
@@ -52,10 +53,18 @@ struct OmpParser: Sendable {
             state.thread?.id = header.id
             state.thread?.createdMs = header.timestampMs ?? 0
             if let timestamp = header.timestampMs { state.noteLine(at: timestamp) }
-        case .entry(let id, let timestamp, let record):
+        case .entry(let id, let timestamp, let record, let parentId):
             guard headerSeen else { return }
             if let headerMs, timestamp < headerMs - Self.copiedHistoryMs { return }
             state.noteLine(at: timestamp)
+            state.modes = parentId.flatMap { branchModes[$0] } ?? .empty
+            if case .modeChange(let tiers) = record {
+                state.modes = ExecutionModes(tiers.flatMap { provider, tier in
+                    ExecutionModeAdapters.omp(tier, provider: provider, evidence: .selected, scope: .session).facts
+                })
+            }
+            branchModes[id] = state.modes
+            if branchModes.count > 16_384 { branchModes = [id: state.modes] }
             consume(record, id: id, at: timestamp, deduper: &deduper, emit: emit)
         }
     }
@@ -88,7 +97,7 @@ struct OmpParser: Sendable {
         case .sessionExit:
             state.setPhase(.idle, at: timestamp)
             pendingToolCalls.removeAll()
-        case .other:
+        case .other, .modeChange:
             break
         }
     }
@@ -114,6 +123,7 @@ struct OmpParser: Sendable {
             let startMs = assistant.stop.isFailure ? nil : assistant.startedMs
             emitResponse(key: key, startMs: startMs, endMs: endMs, call: assistant.call, deduper: &deduper, emit: emit)
             state.model = assistant.call.model
+            state.modes = state.modes.merging(assistant.call.modes)
         }
         let continues = assistant.stop == .toolUse || assistant.stop == .stop || assistant.stop == .length
         if assistant.stop.isFailure {
@@ -140,7 +150,8 @@ struct OmpParser: Sendable {
     ) {
         let claim = deduper.claim(key, for: fileID)
         let record = ResponseRecord(key: key, source: .omp, agentId: agentId, model: call.model, startMs: startMs,
-                                    endMs: endMs, usage: call.tokens, isFinal: true, provider: call.provider)
+                                    endMs: endMs, usage: call.tokens, isFinal: true, provider: call.provider,
+                                    modes: ExecutionModes(state.modes.facts.filter { $0.provider == ExecutionModeAdapters.ompProvider(call.provider) }).merging(call.modes))
         // A repeat in the same file (a rewrite read again) is an update (METRICS 4.4).
         emit(ResponseUpsert(record: record, isCompletion: claim == .new))
     }

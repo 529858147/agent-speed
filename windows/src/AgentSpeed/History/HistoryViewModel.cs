@@ -389,6 +389,9 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
     public (string FileName, byte[] Bytes) ExportCsv() =>
         (HistoryCsv.FileName(Range, _source), HistoryCsv.Encode(HistoryCsv.Build(Rows, _source, Money, ShowsTraffic)));
 
+    public (string FileName, byte[] Bytes) ExportModesCsv() =>
+        (ExecutionModeCsv.FileName(Range, _source), HistoryCsv.Encode(ExecutionModeCsv.Build(Rows)));
+
     public void ShowMessage(string text)
     {
         Message = text;

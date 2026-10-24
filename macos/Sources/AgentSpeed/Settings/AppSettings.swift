@@ -77,6 +77,9 @@ final class AppSettings {
     var workbuddyRoot: URL? { didSet { store(workbuddyRoot?.path, .workbuddyRoot) } }
     /// WorkBuddy AI's data folder (or its `projects` folder), replacing `~/.workbuddy-ai`.
     var workbuddyAiRoot: URL? { didSet { store(workbuddyAiRoot?.path, .workbuddyAiRoot) } }
+    var zcodeRoot: URL? { didSet { store(zcodeRoot?.path, .zcodeRoot) } }
+    var kimiRoot: URL? { didSet { store(kimiRoot?.path, .kimiRoot) } }
+    var grokBuildRoot: URL? { didSet { store(grokBuildRoot?.path, .grokBuildRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -154,6 +157,9 @@ final class AppSettings {
         antigravityRoot = Self.url(defaults.string(forKey: Key.antigravityRoot.rawValue))
         workbuddyRoot = Self.url(defaults.string(forKey: Key.workbuddyRoot.rawValue))
         workbuddyAiRoot = Self.url(defaults.string(forKey: Key.workbuddyAiRoot.rawValue))
+        zcodeRoot = Self.url(defaults.string(forKey: Key.zcodeRoot.rawValue))
+        kimiRoot = Self.url(defaults.string(forKey: Key.kimiRoot.rawValue))
+        grokBuildRoot = Self.url(defaults.string(forKey: Key.grokBuildRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
         networkEnabled = defaults.object(forKey: Key.networkEnabled.rawValue) as? Bool ?? true
         syncPrices = defaults.object(forKey: Key.syncPrices.rawValue) as? Bool ?? true
@@ -182,7 +188,10 @@ final class AppSettings {
             ompRoot: ompRoot,
             antigravityRoot: antigravityRoot,
             workbuddyRoot: workbuddyRoot,
-            workbuddyAiRoot: workbuddyAiRoot
+            workbuddyAiRoot: workbuddyAiRoot,
+            zcodeRoot: zcodeRoot,
+            kimiRoot: kimiRoot,
+            grokBuildRoot: grokBuildRoot
         )
     }
 
@@ -247,6 +256,7 @@ final class AppSettings {
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources
         case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot, workbuddyRoot, workbuddyAiRoot
+        case zcodeRoot, kimiRoot, grokBuildRoot
         case autoCheckUpdates
         case networkEnabled, syncPrices, currency, liveUnit, subscriptionSources, includeSubscriptions
         case heroLastTitle

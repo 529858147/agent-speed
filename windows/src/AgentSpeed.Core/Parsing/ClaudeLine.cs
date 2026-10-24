@@ -46,6 +46,7 @@ internal struct ClaudeLine
 
     /// <summary><c>message.usage.speed == "fast"</c> (METRICS 3.2).</summary>
     public bool Fast;
+    public string? Speed;
 
     public readonly string? Key => MessageId ?? RequestId ?? Uuid;
 }
@@ -206,7 +207,7 @@ internal static class ClaudeLineReader
                 reader.Read();
                 if (reader.TokenType == JsonTokenType.StartObject)
                 {
-                    (result.Usage, result.Fast) = ReadUsage(ref reader);
+                    (result.Usage, result.Fast, result.Speed) = ReadUsage(ref reader);
                 }
                 else
                 {
@@ -226,10 +227,11 @@ internal static class ClaudeLineReader
         }
     }
 
-    private static (TokenCounts Usage, bool Fast) ReadUsage(ref Utf8JsonReader reader)
+    private static (TokenCounts Usage, bool Fast, string? Speed) ReadUsage(ref Utf8JsonReader reader)
     {
         long input = 0, cacheCreation = 0, cacheCreation1h = 0, cacheRead = 0, output = 0, thinking = 0;
         var fast = false;
+        string? speed = null;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("input_tokens"u8))
@@ -265,8 +267,8 @@ internal static class ClaudeLineReader
             else if (reader.ValueTextEquals("speed"u8))
             {
                 reader.Read();
-                fast = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("fast"u8);
-                JsonScan.SkipValue(ref reader);
+                speed = JsonScan.ReadString(ref reader);
+                fast = speed == "fast";
             }
             else
             {
@@ -276,7 +278,7 @@ internal static class ClaudeLineReader
         }
 
         var totalInput = JsonScan.SaturatingAdd(JsonScan.SaturatingAdd(input, cacheCreation), cacheRead);
-        return (new TokenCounts(totalInput, cacheRead, cacheCreation, output, thinking, Math.Min(cacheCreation1h, cacheCreation)), fast);
+        return (new TokenCounts(totalInput, cacheRead, cacheCreation, output, thinking, Math.Min(cacheCreation1h, cacheCreation)), fast, speed);
     }
 
     /// <summary>

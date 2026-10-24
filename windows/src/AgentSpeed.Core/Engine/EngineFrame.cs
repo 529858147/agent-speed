@@ -28,6 +28,8 @@ internal sealed record EngineFrame(
     IReadOnlyList<SpeedEvent> Events,
     int UnfinalizedToday)
 {
+    public IReadOnlyList<ExecutionModeUsage> TodayModes { get; init; } = [];
+
     /// <summary>The live cost rate (METRICS 9.5) in total.</summary>
     public LiveCost LiveCost { get; init; }
 

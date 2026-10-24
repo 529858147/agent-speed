@@ -1855,10 +1855,10 @@
     "ja": "クリックしてアップデート。"
   },
   "source.deepseek": {
-    "zh-Hant": "DeepSeek",
-    "zh-Hans": "DeepSeek",
-    "en": "DeepSeek",
-    "ja": "DeepSeek"
+    "zh-Hant": "DSH",
+    "zh-Hans": "DSH",
+    "en": "DSH",
+    "ja": "DSH"
   },
   "settings.sources.dshHint": {
     "zh-Hant": "DeepSeek Harness（dsh）桌面版與命令列共用這個資料夾。",
@@ -4583,5 +4583,389 @@
     "zh-Hans": "已开启实时上报，随时可以在设置中关闭",
     "en": "Live reporting is on — turn it off anytime in Settings",
     "ja": "ライブ送信をオンにしました。設定からいつでもオフにできます"
+  },
+  "source.zcode": {
+    "zh-Hant": "ZCode",
+    "zh-Hans": "ZCode",
+    "en": "ZCode",
+    "ja": "ZCode"
+  },
+  "source.kimi": {
+    "zh-Hant": "Kimi Code CLI",
+    "zh-Hans": "Kimi Code CLI",
+    "en": "Kimi Code CLI",
+    "ja": "Kimi Code CLI"
+  },
+  "source.grokBuild": {
+    "zh-Hant": "Grok Build",
+    "zh-Hans": "Grok Build",
+    "en": "Grok Build",
+    "ja": "Grok Build"
+  },
+  "settings.sources.zcodeHint": {
+    "zh-Hant": "讀取 ZCode 的本機工作階段資料庫；可選擇資料目錄或包含 db.sqlite 的資料夾。",
+    "zh-Hans": "读取 ZCode 的本地会话数据库；可选择数据目录或包含 db.sqlite 的文件夹。",
+    "en": "Reads ZCode’s local session database. Choose its data directory or the folder containing db.sqlite.",
+    "ja": "ZCode のローカルセッションデータベースを読み取ります。データディレクトリまたは db.sqlite を含むフォルダを選択できます。"
+  },
+  "settings.sources.kimiHint": {
+    "zh-Hant": "讀取 Kimi Code CLI 的 sessions 資料夾，包含主 agent 與子 agent 的紀錄。",
+    "zh-Hans": "读取 Kimi Code CLI 的 sessions 文件夹，包括主 agent 和子 agent 的记录。",
+    "en": "Reads Kimi Code CLI’s sessions folder, including main agents and subagents.",
+    "ja": "Kimi Code CLI の sessions フォルダから、メインエージェントとサブエージェントの記録を読み取ります。"
+  },
+  "settings.sources.grokBuildHint": {
+    "zh-Hant": "讀取 Grok Build 的 sessions 資料夾，包含各工作階段的更新紀錄。",
+    "zh-Hans": "读取 Grok Build 的 sessions 文件夹，包括各会话的更新记录。",
+    "en": "Reads Grok Build’s sessions folder and its session update records.",
+    "ja": "Grok Build の sessions フォルダと各セッションの更新記録を読み取ります。"
+  },
+  "mode.label": {
+    "zh-Hant": "執行模式",
+    "zh-Hans": "执行模式",
+    "en": "Execution mode",
+    "ja": "実行モード"
+  },
+  "mode.unknown": {
+    "zh-Hant": "未提供",
+    "zh-Hans": "未提供",
+    "en": "Not provided",
+    "ja": "未提供"
+  },
+  "mode.mixed": {
+    "zh-Hant": "多種模式",
+    "zh-Hans": "多种模式",
+    "en": "Mixed modes",
+    "ja": "複数のモード"
+  },
+  "mode.evidence.configured": {
+    "zh-Hant": "設定預設",
+    "zh-Hans": "配置默认",
+    "en": "Configured default",
+    "ja": "設定上の既定"
+  },
+  "mode.evidence.selected": {
+    "zh-Hant": "任務選擇",
+    "zh-Hans": "任务选择",
+    "en": "Selected by task",
+    "ja": "タスクの選択"
+  },
+  "mode.evidence.recorded": {
+    "zh-Hant": "Agent 記錄",
+    "zh-Hans": "Agent 记录",
+    "en": "Recorded by agent",
+    "ja": "Agent の記録"
+  },
+  "mode.evidence.served": {
+    "zh-Hant": "實際回應",
+    "zh-Hans": "实际响应",
+    "en": "Served response",
+    "ja": "実際の応答"
+  },
+  "mode.kind.serviceTier": {
+    "zh-Hant": "服務加速",
+    "zh-Hans": "服务加速",
+    "en": "Service tier",
+    "ja": "サービス階層"
+  },
+  "mode.kind.accelerator": {
+    "zh-Hant": "加速卡",
+    "zh-Hans": "加速卡",
+    "en": "Accelerator",
+    "ja": "アクセラレーター"
+  },
+  "mode.kind.modelVariant": {
+    "zh-Hant": "模型變體",
+    "zh-Hans": "模型变体",
+    "en": "Model variant",
+    "ja": "モデルの種類"
+  },
+  "mode.kind.routing": {
+    "zh-Hant": "模型路由",
+    "zh-Hans": "模型路由",
+    "en": "Model routing",
+    "ja": "モデルのルーティング"
+  },
+  "mode.kind.workflow": {
+    "zh-Hant": "工作流程",
+    "zh-Hans": "工作流程",
+    "en": "Workflow",
+    "ja": "ワークフロー"
+  },
+  "mode.value.standard": {
+    "zh-Hant": "標準",
+    "zh-Hans": "标准",
+    "en": "Standard",
+    "ja": "標準"
+  },
+  "mode.value.fast": {
+    "zh-Hant": "Fast",
+    "zh-Hans": "Fast",
+    "en": "Fast",
+    "ja": "Fast"
+  },
+  "mode.value.ultrafast": {
+    "zh-Hant": "Ultrafast",
+    "zh-Hans": "Ultrafast",
+    "en": "Ultrafast",
+    "ja": "Ultrafast"
+  },
+  "mode.value.highspeed": {
+    "zh-Hant": "Highspeed",
+    "zh-Hans": "Highspeed",
+    "en": "Highspeed",
+    "ja": "Highspeed"
+  },
+  "mode.value.balanced": {
+    "zh-Hant": "均衡",
+    "zh-Hans": "均衡",
+    "en": "Balanced",
+    "ja": "バランス"
+  },
+  "mode.value.deep": {
+    "zh-Hant": "深度",
+    "zh-Hans": "深度",
+    "en": "Deep",
+    "ja": "深い分析"
+  },
+  "mode.value.planning": {
+    "zh-Hant": "規劃",
+    "zh-Hans": "规划",
+    "en": "Planning",
+    "ja": "計画"
+  },
+  "mode.value.auto": {
+    "zh-Hant": "自動",
+    "zh-Hans": "自动",
+    "en": "Auto",
+    "ja": "自動"
+  },
+  "mode.value.flex": {
+    "zh-Hant": "Flex",
+    "zh-Hans": "Flex",
+    "en": "Flex",
+    "ja": "Flex"
+  },
+  "mode.value.scale": {
+    "zh-Hant": "Scale",
+    "zh-Hans": "Scale",
+    "en": "Scale",
+    "ja": "Scale"
+  },
+  "mode.value.unknown": {
+    "zh-Hant": "未提供",
+    "zh-Hans": "未提供",
+    "en": "Not provided",
+    "ja": "未提供"
+  },
+  "mode.defaultNote": {
+    "zh-Hant": "設定檔的預設值；不代表每個任務實際使用的模式。",
+    "zh-Hans": "配置文件的默认值；不代表每个任务实际使用的模式。",
+    "en": "The configuration default; it does not confirm the mode used by each task.",
+    "ja": "設定ファイルの既定値です。各タスクで実際に使用されたモードを示すものではありません。"
+  },
+  "mode.history": {
+    "zh-Hant": "依執行模式",
+    "zh-Hans": "按执行模式",
+    "en": "By execution mode",
+    "ja": "実行モード別"
+  },
+  "mode.exportCsv": {
+    "zh-Hant": "匯出模式 CSV",
+    "zh-Hans": "导出模式 CSV",
+    "en": "Export modes CSV",
+    "ja": "モード CSV を書き出す"
+  },
+  "profile.title": {
+    "zh-Hant": "個人資料",
+    "zh-Hans": "个人资料",
+    "en": "Profile",
+    "ja": "プロフィール"
+  },
+  "profile.refresh": {
+    "zh-Hant": "重新整理",
+    "zh-Hans": "刷新",
+    "en": "Refresh",
+    "ja": "更新"
+  },
+  "profile.unavailable": {
+    "zh-Hant": "服務尚未支援此功能",
+    "zh-Hans": "服务尚未支持此功能",
+    "en": "This service does not support this feature yet.",
+    "ja": "このサービスはまだこの機能に対応していません。"
+  },
+  "profile.failed": {
+    "zh-Hant": "同步失敗，請稍後重試",
+    "zh-Hans": "同步失败，请稍后重试",
+    "en": "Sync failed. Please try again.",
+    "ja": "同期できませんでした。もう一度お試しください。"
+  },
+  "profile.avatar.choose": {
+    "zh-Hant": "選擇頭像…",
+    "zh-Hans": "选择头像…",
+    "en": "Choose avatar…",
+    "ja": "アバターを選択…"
+  },
+  "profile.avatar.change": {
+    "zh-Hant": "更換頭像…",
+    "zh-Hans": "更换头像…",
+    "en": "Change avatar…",
+    "ja": "アバターを変更…"
+  },
+  "profile.avatar.remove": {
+    "zh-Hant": "移除頭像",
+    "zh-Hans": "移除头像",
+    "en": "Remove avatar",
+    "ja": "アバターを削除"
+  },
+  "profile.avatar.save": {
+    "zh-Hant": "上傳頭像",
+    "zh-Hans": "上传头像",
+    "en": "Upload avatar",
+    "ja": "アバターをアップロード"
+  },
+  "profile.avatar.pending": {
+    "zh-Hant": "尚未同步",
+    "zh-Hans": "尚未同步",
+    "en": "Not synced yet",
+    "ja": "未同期"
+  },
+  "profile.avatar.invalid": {
+    "zh-Hant": "請選擇符合大小限制的 PNG 或 JPEG",
+    "zh-Hans": "请选择符合大小限制的 PNG 或 JPEG",
+    "en": "Choose a PNG or JPEG within the size limits.",
+    "ja": "サイズ制限内の PNG または JPEG を選択してください。"
+  },
+  "profile.avatar.note": {
+    "zh-Hant": "圖片會置中裁切並移除位置等中繼資料；按上傳後才傳送至這個服務。",
+    "zh-Hans": "图片会居中裁剪并移除位置等元数据；点击上传后才发送到此服务。",
+    "en": "The image is center-cropped and metadata is removed. It is sent to this service only when you upload it.",
+    "ja": "画像は中央で切り抜かれ、位置情報などのメタデータは削除されます。アップロード操作を行ったときだけ送信されます。"
+  },
+  "profile.identity.create": {
+    "zh-Hant": "建立共用身分",
+    "zh-Hans": "创建共享身份",
+    "en": "Create shared identity",
+    "ja": "共有 ID を作成"
+  },
+  "profile.identity.bound": {
+    "zh-Hant": "已綁定共用身分",
+    "zh-Hans": "已绑定共享身份",
+    "en": "Shared identity linked",
+    "ja": "共有 ID に連携済み"
+  },
+  "profile.identity.unbound": {
+    "zh-Hant": "僅此裝置",
+    "zh-Hans": "仅此设备",
+    "en": "This device only",
+    "ja": "このデバイスのみ"
+  },
+  "profile.identity.unlink": {
+    "zh-Hant": "解除本機綁定",
+    "zh-Hans": "解除本机绑定",
+    "en": "Unlink this device",
+    "ja": "このデバイスの連携を解除"
+  },
+  "profile.identity.unlinkNote": {
+    "zh-Hant": "已入帳歷史會保留，之後用量不再加入此身分。",
+    "zh-Hans": "已入账历史会保留，之后用量不再加入此身份。",
+    "en": "Recorded history is kept. Future usage from this device will no longer belong to this identity.",
+    "ja": "記録済みの履歴は保持されます。以後、このデバイスの使用量はこの ID に追加されません。"
+  },
+  "profile.displayName": {
+    "zh-Hant": "共用顯示名稱",
+    "zh-Hans": "共享显示名称",
+    "en": "Shared display name",
+    "ja": "共有表示名"
+  },
+  "profile.save": {
+    "zh-Hant": "儲存",
+    "zh-Hans": "保存",
+    "en": "Save",
+    "ja": "保存"
+  },
+  "profile.pairing.invite": {
+    "zh-Hant": "邀請另一台裝置",
+    "zh-Hans": "邀请另一台设备",
+    "en": "Invite another device",
+    "ja": "別のデバイスを招待"
+  },
+  "profile.pairing.join": {
+    "zh-Hant": "使用配對碼加入",
+    "zh-Hans": "使用配对码加入",
+    "en": "Join with pairing code",
+    "ja": "ペアリングコードで参加"
+  },
+  "profile.pairing.code": {
+    "zh-Hant": "一次性配對碼",
+    "zh-Hans": "一次性配对码",
+    "en": "One-time pairing code",
+    "ja": "ワンタイムペアリングコード"
+  },
+  "profile.pairing.approve": {
+    "zh-Hant": "核准此裝置",
+    "zh-Hans": "批准此设备",
+    "en": "Approve this device",
+    "ja": "このデバイスを承認"
+  },
+  "profile.pairing.cancel": {
+    "zh-Hant": "取消配對",
+    "zh-Hans": "取消配对",
+    "en": "Cancel pairing",
+    "ja": "ペアリングをキャンセル"
+  },
+  "profile.pairing.waiting": {
+    "zh-Hant": "等待另一台裝置申請",
+    "zh-Hans": "等待另一台设备申请",
+    "en": "Waiting for another device",
+    "ja": "別のデバイスからの申請を待機中"
+  },
+  "profile.pairing.pending": {
+    "zh-Hant": "等待邀請裝置核准",
+    "zh-Hans": "等待邀请设备批准",
+    "en": "Waiting for the inviting device to approve",
+    "ja": "招待したデバイスの承認待ち"
+  },
+  "profile.pairing.approved": {
+    "zh-Hant": "配對完成",
+    "zh-Hans": "配对完成",
+    "en": "Pairing complete",
+    "ja": "ペアリング完了"
+  },
+  "profile.pairing.expired": {
+    "zh-Hant": "配對已過期或取消",
+    "zh-Hans": "配对已过期或取消",
+    "en": "Pairing expired or cancelled",
+    "ja": "ペアリングは期限切れかキャンセル済みです"
+  },
+  "profile.pairing.check": {
+    "zh-Hant": "檢查配對狀態",
+    "zh-Hans": "检查配对状态",
+    "en": "Check pairing status",
+    "ja": "ペアリング状況を確認"
+  },
+  "profile.pairing.note": {
+    "zh-Hant": "只輸入配對碼不會完成綁定；仍須由邀請裝置核准。",
+    "zh-Hans": "仅输入配对码不会完成绑定；仍须由邀请设备批准。",
+    "en": "Entering a code does not link the device until the inviting device approves it.",
+    "ja": "コードを入力するだけでは連携されません。招待したデバイスの承認が必要です。"
+  },
+  "profile.devices": {
+    "zh-Hant": "已綁定裝置",
+    "zh-Hans": "已绑定设备",
+    "en": "Linked devices",
+    "ja": "連携済みデバイス"
+  },
+  "profile.manageDevices": {
+    "en": "Manage devices…",
+    "zh-Hant": "管理裝置…",
+    "zh-Hans": "管理设备…",
+    "ja": "デバイスを管理…"
+  },
+  "profile.deviceManagement": {
+    "en": "Device management",
+    "zh-Hant": "裝置管理",
+    "zh-Hans": "设备管理",
+    "ja": "デバイス管理"
   }
 }

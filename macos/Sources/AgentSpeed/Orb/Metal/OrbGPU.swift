@@ -11,6 +11,11 @@ final class OrbGPU: Sendable {
     let additive: MTLRenderPipelineState
     let text: MTLRenderPipelineState
     let liquid: MTLRenderPipelineState
+    /// The `led` silk core and corona fields (DESIGN 2.1), laid over (light, silk) or adding light (dark corona).
+    let ledOver: MTLRenderPipelineState
+    let ledAdditive: MTLRenderPipelineState
+    /// Lays the half-resolution silk over the disc.
+    let ledSilk: MTLRenderPipelineState
     /// The heat palette (DESIGN 1) as a 256 × 1 texture, for shapes that follow the spectrum.
     nonisolated(unsafe) let palette: MTLTexture
     /// The dashboard hero's vehicle layer (DESIGN 4c); nil if its shaders failed, which only hides the vehicle.
@@ -27,7 +32,10 @@ final class OrbGPU: Sendable {
                   let textVertex = library.makeFunction(name: "orb_text_vertex"),
                   let textFragment = library.makeFunction(name: "orb_text_fragment"),
                   let liquidVertex = library.makeFunction(name: "orb_liquid_vertex"),
-                  let liquidFragment = library.makeFunction(name: "orb_liquid_fragment") else {
+                  let liquidFragment = library.makeFunction(name: "orb_liquid_fragment"),
+                  let ledVertex = library.makeFunction(name: "orb_led_vertex"),
+                  let ledFragment = library.makeFunction(name: "orb_led_fragment"),
+                  let ledSilkFragment = library.makeFunction(name: "orb_led_silk_fragment") else {
                 logger.error("Orb shader functions are missing")
                 return nil
             }
@@ -35,6 +43,9 @@ final class OrbGPU: Sendable {
             additive = try Self.pipeline(device: device, vertex: vertex, fragment: fragment, additive: true)
             text = try Self.pipeline(device: device, vertex: textVertex, fragment: textFragment, additive: false)
             liquid = try Self.pipeline(device: device, vertex: liquidVertex, fragment: liquidFragment, additive: false)
+            ledOver = try Self.pipeline(device: device, vertex: ledVertex, fragment: ledFragment, additive: false)
+            ledAdditive = try Self.pipeline(device: device, vertex: ledVertex, fragment: ledFragment, additive: true)
+            ledSilk = try Self.pipeline(device: device, vertex: ledVertex, fragment: ledSilkFragment, additive: false)
         } catch {
             logger.error("Orb shaders failed to compile: \(String(describing: error), privacy: .public)")
             return nil
@@ -48,6 +59,10 @@ final class OrbGPU: Sendable {
 
     func pipeline(for blend: OrbBlend) -> MTLRenderPipelineState {
         blend == .over ? over : additive
+    }
+
+    func ledPipeline(for blend: OrbBlend) -> MTLRenderPipelineState {
+        blend == .over ? ledOver : ledAdditive
     }
 
     private static func paletteTexture(device: MTLDevice) -> MTLTexture? {

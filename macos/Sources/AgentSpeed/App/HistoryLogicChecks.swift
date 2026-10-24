@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 enum HistoryLogicChecks {
     static func run(l10n: Localizer, into directory: URL) {
-        var results: [(String, Bool)] = []
+        var results = ExecutionModeLogicChecks.run(l10n: l10n)
         func check(_ name: String, _ condition: Bool) { results.append((name, condition)) }
 
         // Day arithmetic.

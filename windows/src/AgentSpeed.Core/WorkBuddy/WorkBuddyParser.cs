@@ -55,6 +55,7 @@ internal sealed class WorkBuddyParser : TranscriptParser<WorkBuddyLine>
         switch (line.Item)
         {
             case WorkBuddyItem.UserMessage when !line.SkipRun:
+                Modes = ExecutionModes.Empty;
                 _openCalls.Clear();
                 _pendingStartMs = ts;
                 SetPhase(AgentPhase.Generating, ts, ts);
@@ -169,6 +170,7 @@ internal sealed class WorkBuddyParser : TranscriptParser<WorkBuddyLine>
                 Tokens = TokenCounts.Max(previous.Tokens, line.Tokens),
                 Model = line.Model ?? previous.Model,
                 Provider = line.Provider ?? previous.Provider,
+                Modes = previous.Modes.Merge(ExecutionModeNative.Routing(line.RequestModelId)),
             };
             isCompletion = false;
         }
@@ -177,11 +179,13 @@ internal sealed class WorkBuddyParser : TranscriptParser<WorkBuddyLine>
             // A key this file claimed before a reset is replayed as an update.
             isCompletion = Deduper.TryClaim(key, AgentId, out _);
             response = new ParsedResponse(
-                key, Source, AgentId, line.Model, _pendingStartMs, ts, line.Tokens, Final: true, Provider: line.Provider);
+                key, Source, AgentId, line.Model, _pendingStartMs, ts, line.Tokens, Final: true, Provider: line.Provider)
+            { Modes = ExecutionModeNative.Routing(line.RequestModelId) };
             _pendingStartMs = null;
         }
 
         SetModel(response.Model);
+        Modes = response.Modes;
         if (previous is not null && previous == response)
         {
             return;

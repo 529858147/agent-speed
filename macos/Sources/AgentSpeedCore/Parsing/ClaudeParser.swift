@@ -95,6 +95,7 @@ struct ClaudeParser: Sendable {
             existing.usage = existing.usage.merged(with: line.usage)
             if let model = line.model { existing.model = model }
             existing.fast = existing.fast || line.fast
+            existing.modes = existing.modes.merging(line.modes)
             existing.isFinal = existing.isFinal || hasStopReason
             record = existing
         } else {
@@ -107,13 +108,15 @@ struct ClaudeParser: Sendable {
                 endMs: timestamp,
                 usage: line.usage,
                 isFinal: hasStopReason,
-                fast: line.fast
+                fast: line.fast,
+                modes: line.modes
             )
             pendingStartMs = nil
             preciseStart = false
             remember(key)
         }
         responses[key] = record
+        state.modes = record.modes
         if let model = line.model { state.model = model }
 
         switch line.stopReason {

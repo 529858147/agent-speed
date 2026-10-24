@@ -20,7 +20,9 @@ internal static class AppPaths
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ProductFolder, "settings.json");
 
     public static string LogsDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductFolder, "logs");
+        Environment.GetEnvironmentVariable("AGENT_SPEED_LOGS_DIR") is { Length: > 0 } custom && Path.IsPathFullyQualified(custom)
+            && !custom.StartsWith(@"\\", StringComparison.Ordinal)
+            ? custom : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductFolder, "logs");
 
     public static string? ExecutablePath => Environment.ProcessPath;
 

@@ -66,6 +66,9 @@ public static class DisplayText
         SourceKind.Antigravity => "source.antigravity",
         SourceKind.WorkBuddy => "source.workbuddy",
         SourceKind.WorkBuddyAi => "source.workbuddyAi",
+        SourceKind.ZCode => "source.zcode",
+        SourceKind.Kimi => "source.kimi",
+        SourceKind.GrokBuild => "source.grokBuild",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 

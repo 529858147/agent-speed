@@ -18,7 +18,7 @@ internal sealed class RootWatcher : IDisposable
         FileSystemWatcher? watcher = null;
         try
         {
-            var database = naming is TranscriptNaming.OpenCodeDatabase or TranscriptNaming.AntigravityDatabase;
+            var database = naming is TranscriptNaming.OpenCodeDatabase or TranscriptNaming.AntigravityDatabase or TranscriptNaming.ZCodeDatabase;
             watcher = new FileSystemWatcher(root)
             {
                 IncludeSubdirectories = !database,
@@ -56,6 +56,9 @@ internal sealed class RootWatcher : IDisposable
         TranscriptNaming.CodexRollout => ["*.jsonl", "*.zst"],
         TranscriptNaming.GeminiSession => ["*.jsonl", "*.json"],
         TranscriptNaming.OpenCodeDatabase => [OpenCode.OpenCodeDatabase.FileName, OpenCode.OpenCodeDatabase.FileName + "-wal"],
+        TranscriptNaming.ZCodeDatabase => ["db.sqlite", "db.sqlite-wal"],
+        TranscriptNaming.KimiSession => ["wire.jsonl"],
+        TranscriptNaming.GrokBuildSession => ["updates.jsonl", "summary.json"],
 
         // Never *-shm: readers touch it, so watching it would make every read trigger the next one.
         TranscriptNaming.AntigravityDatabase => ["*.db", "*.db-wal"],

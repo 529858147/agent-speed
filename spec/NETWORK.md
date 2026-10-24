@@ -201,3 +201,17 @@ METRICS 11; Settings, consent and storage of keys are DESIGN 11. Differences fro
 - No `ETag`-based caching except for the discovery document; failures are not retried daily but handled by the
   report scheduler (METRICS 11.5) and shown in the pane's status line, never as dialogs or notifications.
 - README and About wording for this feature: DESIGN 11 (prepared, applied when the feature ships).
+
+### Optional profile and report extensions
+
+`spec/REPORTING-EXTENSIONS.md` defines independently advertised model/Harness counts, execution-mode metadata,
+avatars and approved one-time device pairing. Model breakdowns require the existing models sharing switch.
+Profile requests use the same confirmed API host, signature, redirect policy and master network switch; they
+are explicit actions available for an already registered device even when periodic reporting is paused.
+Opening the profile surface may fetch the signed profile and current avatar. Pairing polls only while its
+surface is open (at least 2 s between requests), and stops on close, expiry or network disable.
+No image or pairing code is included in telemetry, persisted in settings or written to application logs.
+Avatar input stays local until upload: PNG/JPEG up to 10 MiB is re-encoded without source metadata as one
+256×256 PNG up to 512 KiB. Profile JSON responses are bounded to 64 KiB; these separate limits do not raise
+the existing 16 KiB periodic report limit. Avatar URLs are website metadata; native clients download their
+own avatar through the signed API endpoint rather than following an arbitrary external image URL.

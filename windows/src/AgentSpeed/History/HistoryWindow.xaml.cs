@@ -512,8 +512,20 @@ internal sealed partial class HistoryWindow : Window
 
     private void OnExport(object sender, RoutedEventArgs e)
     {
+        var menu = new ContextMenu { PlacementTarget = ExportButton, Placement = PlacementMode.Bottom };
+        var usage = new MenuItem { Header = _model.Loc["history.export"] };
+        usage.Click += (_, _) => SaveExport(_model.ExportCsv());
+        var modes = new MenuItem { Header = _model.Loc["mode.exportCsv"] };
+        modes.Click += (_, _) => SaveExport(_model.ExportModesCsv());
+        menu.Items.Add(usage);
+        menu.Items.Add(modes);
+        menu.IsOpen = true;
+    }
+
+    private void SaveExport((string FileName, byte[] Bytes) export)
+    {
         var loc = _model.Loc;
-        var (fileName, bytes) = _model.ExportCsv();
+        var (fileName, bytes) = export;
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             FileName = fileName,

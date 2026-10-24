@@ -48,6 +48,7 @@ final class ReportController {
         case idle, working, done, failed(ReportFailure)
     }
 
+    let profile = ReportProfileController()
     var preferences: ReportPreferences
     var serviceState: ServiceState = .unknown
     var consent: ConsentDraft?
@@ -132,6 +133,7 @@ final class ReportController {
         api = ReportAPI(transport: transport, userAgent: userAgent)
         preferences = ReportPreferences.load(from: settings.storage)
         networkWasEnabled = settings.networkEnabled
+        profile.owner = self
     }
 
     // MARK: - Reading
@@ -287,6 +289,7 @@ final class ReportController {
             let enabled = self.settings.networkEnabled
             guard enabled != self.networkWasEnabled else { return }
             self.networkWasEnabled = enabled
+            if !enabled { self.profile.networkOff() }
             self.post(enabled ? .networkOn : .networkOff)
             if enabled {
                 self.refreshDiscoveryIfDue(force: true)
@@ -299,6 +302,7 @@ final class ReportController {
     }
 
     func shutdown() {
+        profile.reset()
         if let liveToken { store.removeLiveListener(liveToken) }
         liveToken = nil
         loops.forEach { $0.cancel() }

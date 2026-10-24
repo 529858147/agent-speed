@@ -7,6 +7,7 @@ struct SnapshotContext: Sendable {
         var rootPath: String
         var available: Bool
         var sessionCount: Int
+        var configuredModes: ExecutionModes = .empty
     }
 
     var sources: [SourceKind: SourceInfo]
@@ -30,9 +31,15 @@ struct SnapshotContext: Sendable {
             } else if kind == .opencode {
                 let location = session.opencodeLocation
                 sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
+            } else if kind == .zcode {
+                let location = session.zcodeLocation
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
             } else {
                 sources[kind] = SourceInfo(enabled: enabled, rootPath: "", available: false, sessionCount: 0)
             }
+        }
+        if let info = sources[.codex] {
+            sources[.codex]?.configuredModes = ConfiguredModes.codex(sessionsRoot: info.rootPath)
         }
         self.sources = sources
         var warnings: [MonitorWarning] = []
@@ -67,7 +74,8 @@ enum SnapshotBuilder {
                 lastActivity: date(row.agent.lastLineMs ?? 0),
                 parentId: row.parentId,
                 liveCost: row.liveCost,
-                cwdPath: row.agent.cwdPath
+                cwdPath: row.agent.cwdPath,
+                modes: row.agent.modes
             )
         }
         let sources = SourceKind.allCases.map { kind in
@@ -84,7 +92,8 @@ enum SnapshotBuilder {
                 liveEstimated: output.sourceLiveEstimated[kind] ?? .zero,
                 liveCost: output.sourceLiveCost[kind] ?? .zero,
                 todayCost: output.todayCostBySource[kind] ?? .zero,
-                unpricedModels: unpricedModels(output.todayCostByModel[kind])
+                unpricedModels: unpricedModels(output.todayCostByModel[kind]),
+                configuredModes: info?.configuredModes ?? .empty
             )
         }
         return SpeedSnapshot(
@@ -134,7 +143,8 @@ enum SnapshotBuilder {
                 sessionCount: 0,
                 live: .zero,
                 today: TokenTotals(),
-                activeAgents: 0
+                activeAgents: 0,
+                configuredModes: info?.configuredModes ?? .empty
             )
         }
         snapshot.warnings = context.warnings

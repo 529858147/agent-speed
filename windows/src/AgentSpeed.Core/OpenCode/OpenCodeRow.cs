@@ -24,7 +24,8 @@ internal readonly record struct OpenCodeData(
     bool FinishedWithToolCalls,
     bool HasTokens,
     TokenCounts Tokens,
-    string? Provider = null);
+    string? Provider = null,
+    string? ServiceTier = null);
 
 /// <param name="Data">Null when <c>data</c> is not a JSON object (a malformed row).</param>
 internal sealed record OpenCodeRow(
@@ -67,6 +68,7 @@ internal static class OpenCodeDataReader
             long? created = null, streamed = null, completed = null;
             string? model = null;
             string? provider = null;
+            string? serviceTier = null;
             var toolCalls = false;
             var hasTokens = false;
             var tokens = default(TokenCounts);
@@ -82,6 +84,21 @@ internal static class OpenCodeDataReader
                 {
                     reader.Read();
                     (model, provider) = ReadModel(ref reader);
+                }
+                else if (reader.ValueTextEquals("native"u8))
+                {
+                    reader.Read();
+                    if (reader.TokenType == JsonTokenType.StartObject)
+                    {
+                        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                        {
+                            var tier = reader.ValueTextEquals("serviceTier"u8);
+                            reader.Read();
+                            if (tier) serviceTier = JsonScan.ReadString(ref reader);
+                            else JsonScan.SkipValue(ref reader);
+                        }
+                    }
+                    else JsonScan.SkipValue(ref reader);
                 }
                 else if (reader.ValueTextEquals("finish"u8))
                 {
@@ -111,7 +128,7 @@ internal static class OpenCodeDataReader
                 return null;
             }
 
-            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens, provider);
+            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens, provider, serviceTier);
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException)
         {

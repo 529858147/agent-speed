@@ -158,6 +158,7 @@ extension ReportController {
     /// The pane closed: with reporting off, a fetch's message belonged to the attempt that caused it (DESIGN 11,
     /// Service), so it goes.
     func paneClosed() {
+        profile.closePairing()
         if consent == nil { consentWanted = false }
         guard !preferences.enabled else { return }
         if serviceIssue != nil { serviceState = .unknown }

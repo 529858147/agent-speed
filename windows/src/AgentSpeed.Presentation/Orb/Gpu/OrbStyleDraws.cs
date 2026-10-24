@@ -11,6 +11,6 @@ public static class OrbStyleDraws
         OrbStyle.Minimal => new MinimalDraw(),
         OrbStyle.Liquid => new LiquidDraw(unchecked((int)seed)),
         OrbStyle.Reactor => new ReactorDraw(unchecked((int)seed)),
-        _ => new LedDraw(scene),
+        _ => new LedDraw(scene, seed),
     };
 }

@@ -32,7 +32,7 @@ internal sealed class StoredFile
 /// owns and its per-day contributions, plus live day peaks. Only aggregates; never keys in plain text or content.
 /// One owner thread.
 /// </summary>
-internal sealed class HistoryStore : IDisposable
+internal sealed partial class HistoryStore : IDisposable
 {
     /// <summary>
     /// 2 adds measured output and time per model (METRICS 8). 3 adds cost per contribution and model, the day bindings
@@ -241,6 +241,7 @@ internal sealed class HistoryStore : IDisposable
             }
         }
 
+        LoadModes(byId);
         var result = new Dictionary<string, StoredFile>(byId.Count, pathComparer);
         foreach (var entry in byId.Values)
         {
@@ -316,6 +317,7 @@ internal sealed class HistoryStore : IDisposable
 
                 deleteDays.Bind(1, entry.Id).Run();
                 deleteModels.Bind(1, entry.Id).Run();
+                SaveModes(entry);
                 foreach (var (key, day) in entry.Days)
                 {
                     var source = SourceNames.Of(key.Source);
@@ -605,6 +607,7 @@ internal sealed class HistoryStore : IDisposable
             }
 
             connection.Execute(TrafficSchema);
+            connection.Execute(ModesSchema);
             return new HistoryStore(connection);
         }
         catch
@@ -700,6 +703,9 @@ internal static class SourceNames
         SourceKind.Antigravity => "antigravity",
         SourceKind.WorkBuddy => "workbuddy",
         SourceKind.WorkBuddyAi => "workbuddyAi",
+        SourceKind.ZCode => "zcode",
+        SourceKind.Kimi => "kimi",
+        SourceKind.GrokBuild => "grokBuild",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -715,6 +721,9 @@ internal static class SourceNames
         "antigravity" => SourceKind.Antigravity,
         "workbuddy" => SourceKind.WorkBuddy,
         "workbuddyAi" => SourceKind.WorkBuddyAi,
+        "zcode" => SourceKind.ZCode,
+        "kimi" => SourceKind.Kimi,
+        "grokBuild" => SourceKind.GrokBuild,
         _ => null,
     };
 }

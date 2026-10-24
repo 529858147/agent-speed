@@ -530,6 +530,7 @@ internal sealed partial class DashboardViewModel : ObservableObject
             row.Project = string.IsNullOrWhiteSpace(agent.Project) ? source : agent.Project;
             var detail = string.IsNullOrWhiteSpace(agent.Model) ? source : $"{source} · {agent.Model}";
             detail = agent.IsSubagent ? $"{loc["agents.subagent"]} · {detail}" : detail;
+            detail += " · " + ExecutionModeText.Summary(agent.Modes, loc);
             if (AgentTraffic(agent.Id) is { } traffic)
             {
                 // DESIGN 10: the agent's attributed download today ends its secondary line; the tooltip has both directions.
@@ -542,6 +543,9 @@ internal sealed partial class DashboardViewModel : ObservableObject
                 row.Detail = detail;
                 row.TrafficTooltip = null;
             }
+
+            var modeDetail = ExecutionModeText.Detail(agent.Modes, loc);
+            row.TrafficTooltip = row.TrafficTooltip is { } trafficTip ? modeDetail + Environment.NewLine + trafficTip : modeDetail;
 
             row.Phase = agent.Phase;
             row.Color = HeatPalette.SourceColor(agent.Source).ToColor();

@@ -19,6 +19,7 @@ internal enum OmpEntryKind : byte
 
     /// <summary><c>custom</c> with <c>customType == "session_exit"</c>.</summary>
     SessionExit,
+    ServiceTierChange,
 }
 
 internal enum OmpRole : byte
@@ -48,6 +49,8 @@ internal enum OmpStop : byte
 internal struct OmpCall
 {
     public bool Guarded;
+    public string? ServiceTier;
+    public bool DisabledPriority;
     public string? Model;
 
     /// <summary>The <c>provider</c> string; null when it is empty (METRICS 3.2).</summary>
@@ -66,6 +69,9 @@ internal struct OmpLine
 
     /// <summary>The entry <c>id</c> when it is a string.</summary>
     public string? Id;
+    public string? ParentId;
+    public bool HasParentId;
+    public ExecutionModes? SelectedModes;
 
     /// <summary>The entry (or header) <c>timestamp</c>, ISO 8601.</summary>
     public long? TimestampMs;

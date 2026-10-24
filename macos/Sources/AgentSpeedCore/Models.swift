@@ -15,6 +15,9 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case workbuddy
     /// WorkBuddy AI, international edition (desktop app).
     case workbuddyAi
+    case zcode
+    case kimi
+    case grokBuild
 
     public var id: String { rawValue }
 }
@@ -94,6 +97,7 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     public var source: SourceKind
     public var project: String
     public var model: String?
+    public var modes: ExecutionModes
     public var phase: AgentPhase
     public var isSubagent: Bool
     public var live: Rate
@@ -119,12 +123,14 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         lastActivity: Date,
         parentId: String? = nil,
         liveCost: LiveCost = .zero,
-        cwdPath: String? = nil
+        cwdPath: String? = nil,
+        modes: ExecutionModes = .empty
     ) {
         self.id = id
         self.source = source
         self.project = project
         self.model = model
+        self.modes = modes
         self.phase = phase
         self.isSubagent = isSubagent
         self.live = live
@@ -139,6 +145,7 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
 public struct SourceStatus: Identifiable, Equatable, Sendable {
     public var id: SourceKind { kind }
     public var kind: SourceKind
+    public var configuredModes: ExecutionModes = .empty
     public var enabled: Bool
     public var rootPath: String
     /// The source is detected: its root folder (WorkBuddy: the data folder) exists and is readable (METRICS 2).
@@ -168,7 +175,8 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         liveEstimated: Rate = .zero,
         liveCost: LiveCost = .zero,
         todayCost: CostTally = .zero,
-        unpricedModels: [String] = []
+        unpricedModels: [String] = [],
+        configuredModes: ExecutionModes = .empty
     ) {
         self.kind = kind
         self.enabled = enabled
@@ -182,6 +190,7 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         self.liveCost = liveCost
         self.todayCost = todayCost
         self.unpricedModels = unpricedModels
+        self.configuredModes = configuredModes
     }
 
     /// Listed on the dashboard (DESIGN 4.3): the source produced output tokens today or is generating right now (its
@@ -359,6 +368,9 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var workbuddyRoot: URL?
     /// WorkBuddy AI's data folder (or its `projects` folder); nil reads `~/.workbuddy-ai` (METRICS 4.9).
     public var workbuddyAiRoot: URL?
+    public var zcodeRoot: URL?
+    public var kimiRoot: URL?
+    public var grokBuildRoot: URL?
     /// Tests: replaces the automatic roots of a family that are otherwise derived from the environment and the home
     /// folder (omp `sessions` roots, Antigravity store folders, WorkBuddy data folders).
     var automaticRoots: [TranscriptFamily: [URL]] = [:]
@@ -373,7 +385,10 @@ public struct MonitorConfiguration: Equatable, Sendable {
         ompRoot: URL? = nil,
         antigravityRoot: URL? = nil,
         workbuddyRoot: URL? = nil,
-        workbuddyAiRoot: URL? = nil
+        workbuddyAiRoot: URL? = nil,
+        zcodeRoot: URL? = nil,
+        kimiRoot: URL? = nil,
+        grokBuildRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
@@ -385,5 +400,8 @@ public struct MonitorConfiguration: Equatable, Sendable {
         self.antigravityRoot = antigravityRoot
         self.workbuddyRoot = workbuddyRoot
         self.workbuddyAiRoot = workbuddyAiRoot
+        self.zcodeRoot = zcodeRoot
+        self.kimiRoot = kimiRoot
+        self.grokBuildRoot = grokBuildRoot
     }
 }

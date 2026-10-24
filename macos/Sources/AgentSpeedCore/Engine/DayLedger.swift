@@ -52,13 +52,13 @@ struct DayLedger: Sendable {
 
     private mutating func apply(_ record: ResponseRecord, sign: Int) {
         guard contains(record) else { return }
-        totals.add(record.usage, sign: sign)
-        bySource[record.source, default: TokenTotals()].add(record.usage, sign: sign)
-        if !record.isFinal { unfinalized += sign }
-        cost.add(record.costMicroUsd, sign: sign)
-        costBySource[record.source, default: CostTally()].add(record.costMicroUsd, sign: sign)
+        totals.add(record.usage, sign: sign, requestCount: record.requestCount)
+        bySource[record.source, default: TokenTotals()].add(record.usage, sign: sign, requestCount: record.requestCount)
+        if !record.isFinal { unfinalized += sign * record.requestCount }
+        cost.add(record.costMicroUsd, sign: sign, requestCount: record.requestCount)
+        costBySource[record.source, default: CostTally()].add(record.costMicroUsd, sign: sign, requestCount: record.requestCount)
         let model = record.model ?? ""
-        costByModel[record.source, default: [:]][model, default: CostTally()].add(record.costMicroUsd, sign: sign)
+        costByModel[record.source, default: [:]][model, default: CostTally()].add(record.costMicroUsd, sign: sign, requestCount: record.requestCount)
         guard record.isFinal, let timed = TimedResponse(record) else { return }
         validOutput = validOutput.saturatingAdd(sign * record.usage.output)
         validDurationMs += Int64(sign) * timed.durationMs

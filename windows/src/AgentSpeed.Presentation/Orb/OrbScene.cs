@@ -41,6 +41,9 @@ public enum FrameDemand
 public sealed class OrbScene
 {
     public const double PulseDuration = 0.7;
+    public const double SilkPulseDuration = 0.85;
+    public const double LeanDegrees = -6;
+    public const double SilkLeanDegrees = -7.5;
     public const double PulseCoalesce = 0.15;
     public const double PeakRayDuration = 0.9;
     public const double PeakSweepDuration = 0.5;
@@ -123,6 +126,16 @@ public sealed class OrbScene
     /// off and keep only the shared state: springs, tiers, titles, readout, pulses, peak, hover.
     /// </summary>
     public bool LedEffects { get; set; } = true;
+
+    /// <summary>
+    /// The floating <c>led</c> orb's v1.4 effects (DESIGN 2.1): its style model owns the sparks and embers, the comet speeds
+    /// up past the redline (period ÷ (1 + 0.6 o)), the value leans <c>−7.5° h</c> and jitters <c>0.9 + 1.2 o</c> px at the
+    /// redline, and the response wave lasts 0.85 s. Off for the dashboard hero and the WPF fallback renderer (v1.3).
+    /// </summary>
+    public bool SilkEffects { get; set; }
+
+    /// <summary>Length of a response wave: <see cref="PulseDuration"/>, 0.85 s with <see cref="SilkEffects"/>.</summary>
+    public double PulseLength => SilkEffects ? SilkPulseDuration : PulseDuration;
 
     /// <summary>
     /// Floating orbs (DESIGN 2a): the idle sign of life runs on the shared clock, every 6 s at multiples of
@@ -289,7 +302,7 @@ public sealed class OrbScene
             || _pendingText != Odometer.Current
             || UnitSwitch is not null
             || !_hover.IsSettled(_hovering ? 1 : 0) || !_hoverBlend.IsSettled(_hovering ? 1 : 0)
-            || !_skew.IsSettled(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * HeatRaw : 0, 0.01))
+            || !_skew.IsSettled(SkewTarget(HeatRaw), 0.01))
         {
             return transition;
         }
@@ -378,7 +391,7 @@ public sealed class OrbScene
         Math.Clamp((_now - _titleTransitionStart) / TierTransitionDuration, 0, 1));
 
     public IEnumerable<Shockwave> Pulses => _pulses.Select(p => new Shockwave(
-        Math.Clamp((_now - p.Start) / PulseDuration, 0, 1), p.Strength, p.Heat));
+        Math.Clamp((_now - p.Start) / PulseLength, 0, 1), p.Strength, p.Heat));
 
     public int PulseCount => _pulses.Count;
 
@@ -386,7 +399,7 @@ public sealed class OrbScene
     public Shockwave PulseAt(int index)
     {
         var p = _pulses[index];
-        return new Shockwave(Math.Clamp((_now - p.Start) / PulseDuration, 0, 1), p.Strength, p.Heat);
+        return new Shockwave(Math.Clamp((_now - p.Start) / PulseLength, 0, 1), p.Strength, p.Heat);
     }
 
     /// <summary>New-peak ray burst progress 0..1, or null when inactive.</summary>
@@ -550,7 +563,7 @@ public sealed class OrbScene
         _overdrive.Snap(HeatMath.Overdrive(_targetValue, Redline));
         _cometVisibility.Snap(LedEffects && Effects.Comet && _tier != SpeedTier.Idle ? 1 : 0);
         _redlineAmount.Snap(LedEffects && _tier == SpeedTier.Redline ? 1 : 0);
-        _skew.Snap(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * Heat : 0);
+        _skew.Snap(SkewTarget(Heat));
         _pulses.Clear();
         _flare = 0;
         Particles.Clear();
@@ -593,11 +606,12 @@ public sealed class OrbScene
         _cometVisibility.Step(cometOn ? 1 : 0, dt);
         if (_cometVisibility.Value > 0.001)
         {
-            _cometPhase = (_cometPhase + dt / Easing.Lerp(6, 0.7, heat)) % 1;
+            var boost = SilkEffects ? 1 + 0.6 * Overdrive : 1;
+            _cometPhase = (_cometPhase + dt / Easing.Lerp(6, 0.7, heat) * boost) % 1;
         }
 
         _redlineAmount.Step(LedEffects && _tier == SpeedTier.Redline ? 1 : 0, dt);
-        _skew.Step(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * heat : 0, dt);
+        _skew.Step(SkewTarget(heat), dt);
         _hover.Step(_hovering ? 1 : 0, dt);
         _hoverBlend.Step(_hovering ? 1 : 0, dt);
 
@@ -632,7 +646,7 @@ public sealed class OrbScene
                 || !_hover.IsSettled(_hovering ? 1 : 0) || !_hoverBlend.IsSettled(_hovering ? 1 : 0)
                 || _redlineAmount.Value > 0.001 && Effects.AuraBreathing
                 || !_redlineAmount.IsSettled(_tier == SpeedTier.Redline ? 1 : 0)
-                || !_skew.IsSettled(Effects.Skew && _tier >= SpeedTier.Overdrive ? -6 * targetHeat : 0, 0.01)
+                || !_skew.IsSettled(SkewTarget(targetHeat), 0.01)
                 || _agents.Count > 0 && Effects.AuraBreathing;
             if (full)
             {
@@ -662,6 +676,10 @@ public sealed class OrbScene
             return last + IdleSweepInterval;
         }
     }
+
+    /// <summary>The forward lean from overdrive up: <c>−6° h</c>, <c>−7.5° h</c> with <see cref="SilkEffects"/>.</summary>
+    private double SkewTarget(double heat) =>
+        Effects.Skew && _tier >= SpeedTier.Overdrive ? (SilkEffects ? SilkLeanDegrees : LeanDegrees) * heat : 0;
 
     private void UpdateReadout()
     {
@@ -717,15 +735,16 @@ public sealed class OrbScene
         }
 
         _nextJitterAt = _now + 1 / 30.0;
-        JitterX = (_random.NextDouble() * 2 - 1) * 0.6;
-        JitterY = (_random.NextDouble() * 2 - 1) * 0.6;
+        var amplitude = SilkEffects ? 0.9 + 1.2 * Overdrive : 0.6;
+        JitterX = (_random.NextDouble() * 2 - 1) * amplitude;
+        JitterY = (_random.NextDouble() * 2 - 1) * amplitude;
     }
 
     private void UpdatePulses()
     {
         for (var i = _pulses.Count - 1; i >= 0; i--)
         {
-            if (_now - _pulses[i].Start >= PulseDuration)
+            if (_now - _pulses[i].Start >= PulseLength)
             {
                 _pulses.RemoveAt(i);
             }
@@ -761,7 +780,7 @@ public sealed class OrbScene
     private void UpdateParticles(double dt)
     {
         var heat = Heat;
-        if (Effects.Particles && LedEffects)
+        if (Effects.Particles && LedEffects && !SilkEffects)
         {
             _sparkRate = heat >= 0.45 ? 120 * ((heat - 0.45) / 0.55) * Effects.ParticleRate * ParticleRateScale : 0;
             _emberRate = _tier == SpeedTier.Redline ? 90 * Math.Max(Overdrive, 0.3) * Effects.ParticleRate * ParticleRateScale : 0;

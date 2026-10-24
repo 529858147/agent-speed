@@ -61,19 +61,22 @@ enum ReportHarness {
     private static func run(_ model: AppModel, url: String) async {
         let report = model.report
         let apiKey = ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_E2E_API_KEY"]
-        if apiKey == nil { await invitation(model, url: url) }
+        let profileE2E = ProcessInfo.processInfo.environment["AGENT_SPEED_PROFILE_E2E"] == "1"
+        if apiKey == nil && !profileE2E { await invitation(model, url: url) }
         report.selectPreset(.custom)
         report.commitCustomURL(url)
         await check("discovery", within: 10) { if case .ready = report.serviceState { true } else { false } }
 
+        if profileE2E { report.updatePreferences { $0.username = ReportUsername.random() } }
+        let expectedName = report.nextUsername(rules: report.usernameRules)
         report.setEnabled(true)
         await check("consent sheet opens with the fitted computer name", within: 10) {
-            report.consent?.username == "Zoes MacBook Pro"
+            report.consent?.username == expectedName
         }
         check("nothing is created before Start", report.identity == nil && keyFiles(model).isEmpty)
         if let apiKey { report.consent?.apiKey = apiKey }
         report.startReporting()
-        await check("registered and on", within: 10) { report.isOn && report.identity?.username == "Zoes MacBook Pro" }
+        await check("registered and on", within: 10) { report.isOn && report.identity?.username == expectedName }
         let deviceId = report.identity?.deviceId ?? ""
         check("Secure Enclave key handle stored with mode 0600", fileMode(model, "\(deviceId).sekey") == 0o600)
         if apiKey != nil {
@@ -81,6 +84,11 @@ enum ReportHarness {
                   && fileMode(model, "\(deviceId).seagree") == 0o600)
             check("sealed API key opens again", ReportKeyStore.standard(appData: AppModel.appDataDirectory)
                 .loadAPIKey(deviceId: deviceId) == apiKey)
+        }
+
+        if ProcessInfo.processInfo.environment["AGENT_SPEED_PROFILE_E2E"] == "1" {
+            check("profile extension lifecycle", await ReportProfileHarness.run(first: model, url: url))
+            return
         }
 
         if ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_BENCH"] != nil {

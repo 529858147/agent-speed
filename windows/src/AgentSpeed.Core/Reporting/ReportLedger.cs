@@ -30,9 +30,9 @@ internal sealed class ReportLedger
         }
 
         var values = Values(response);
-        var usage = new ReportUsage(1, values.Output, values.Input, values.CachedInput, values.CacheWriteInput, values.Reasoning,
-            values.MeasuredOutput, values.MeasuredMs, values.CostMicroUsd, response.CostMicroUsd is null ? 1 : 0);
-        Counters.Add(usage, new ReportModelKey(modelId, response.Source));
+        var usage = new ReportUsage(values.Requests, values.Output, values.Input, values.CachedInput, values.CacheWriteInput, values.Reasoning,
+            values.MeasuredOutput, values.MeasuredMs, values.CostMicroUsd, values.UnpricedRequests);
+        Counters.Add(usage, new ReportModelKey(modelId, response.Source), values.Modes);
         _counted[response.Key] = values;
         _order.Enqueue(response.Key);
         while (_counted.Count > MaxCountedKeys && _order.TryDequeue(out var oldest))
@@ -51,7 +51,7 @@ internal sealed class ReportLedger
 
         var now = Values(response);
         var usage = new ReportUsage(
-            0,
+            Step(now.Requests, reported.Requests),
             Step(now.Output, reported.Output),
             Step(now.Input, reported.Input),
             Step(now.CachedInput, reported.CachedInput),
@@ -59,13 +59,14 @@ internal sealed class ReportLedger
             Step(now.Reasoning, reported.Reasoning),
             Step(now.MeasuredOutput, reported.MeasuredOutput),
             Step(now.MeasuredMs, reported.MeasuredMs),
-            Step(now.CostMicroUsd, reported.CostMicroUsd));
+            Step(now.CostMicroUsd, reported.CostMicroUsd), Step(now.UnpricedRequests, reported.UnpricedRequests));
         _counted[response.Key] = new Reported(
             Math.Max(reported.Output, now.Output), Math.Max(reported.Input, now.Input), Math.Max(reported.CachedInput, now.CachedInput),
             Math.Max(reported.CacheWriteInput, now.CacheWriteInput), Math.Max(reported.Reasoning, now.Reasoning),
             Math.Max(reported.MeasuredOutput, now.MeasuredOutput), Math.Max(reported.MeasuredMs, now.MeasuredMs),
-            Math.Max(reported.CostMicroUsd, now.CostMicroUsd), Math.Max(reported.EndMs, now.EndMs));
-        Counters.Add(usage, new ReportModelKey(modelId, response.Source));
+            Math.Max(reported.CostMicroUsd, now.CostMicroUsd), Math.Max(reported.EndMs, now.EndMs),
+            Math.Max(reported.Requests, now.Requests), Math.Max(reported.UnpricedRequests, now.UnpricedRequests)) { Modes = reported.Modes };
+        Counters.Add(usage, new ReportModelKey(modelId, response.Source), reported.Modes);
     }
 
     /// <summary>Forgets counted keys whose response left the engine's retention (by its latest end).</summary>
@@ -106,11 +107,15 @@ internal sealed class ReportLedger
         var measured = response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval) ? interval.DurationMs : (long?)null;
         return new Reported(
             tokens.Output, tokens.Input, tokens.CachedInput, tokens.CacheWriteInput, tokens.Reasoning,
-            measured is null ? 0 : tokens.Output, measured ?? 0, response.CostMicroUsd ?? 0, response.EndMs);
+            measured is null ? 0 : tokens.Output, measured ?? 0, response.CostMicroUsd ?? 0, response.EndMs,
+            response.Requests, response.CostMicroUsd is null ? response.Requests : 0) { Modes = response.Modes };
     }
 
     /// <summary>The values a counted response has added so far, field by field.</summary>
     private readonly record struct Reported(
         long Output, long Input, long CachedInput, long CacheWriteInput, long Reasoning, long MeasuredOutput, long MeasuredMs,
-        long CostMicroUsd, long EndMs);
+        long CostMicroUsd, long EndMs, long Requests, long UnpricedRequests)
+    {
+        public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
+    }
 }

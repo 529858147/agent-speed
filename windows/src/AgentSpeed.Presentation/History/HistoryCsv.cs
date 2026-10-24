@@ -49,6 +49,9 @@ public static class HistoryCsv
         SourceKind.Antigravity => "antigravity",
         SourceKind.WorkBuddy => "workbuddy",
         SourceKind.WorkBuddyAi => "workbuddy-ai",
+        SourceKind.ZCode => "zcode",
+        SourceKind.Kimi => "kimi",
+        SourceKind.GrokBuild => "grokBuild",
         _ => "unknown",
     };
 

@@ -74,6 +74,8 @@ internal sealed class DayAggregate
 
     public Dictionary<string, ModelTotals> Models { get; } = new(StringComparer.Ordinal);
 
+    public Dictionary<ExecutionModeKey, ExecutionModeTotals> Modes { get; } = [];
+
     /// <summary>Null when the contribution was stored before costs existed (METRICS 8, 9.7).</summary>
     public CostTally? Cost { get; set; }
 
@@ -88,9 +90,9 @@ internal sealed class DayAggregate
             Cost = CostTally.Zero;
         }
 
-        Cost = Cost?.Add(cost);
+        Cost = Cost?.Add(cost, requests: response.Requests);
         var tokens = response.Tokens;
-        Requests++;
+        Requests += response.Requests;
         Input += tokens.Input;
         CachedInput += tokens.CachedInput;
         CacheWriteInput += tokens.CacheWriteInput;
@@ -98,7 +100,7 @@ internal sealed class DayAggregate
         Reasoning += tokens.Reasoning;
         var model = response.Model ?? string.Empty;
         var totals = Models.TryGetValue(model, out var known) ? known : new ModelTotals(0, 0, 0, 0, CostTally.Zero);
-        totals = totals with { Requests = totals.Requests + 1, Output = totals.Output + tokens.Output, Cost = totals.Cost?.Add(cost) };
+        totals = totals with { Requests = totals.Requests + response.Requests, Output = totals.Output + tokens.Output, Cost = totals.Cost?.Add(cost, requests: response.Requests) };
         if (response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval))
         {
             MeasuredOutput += tokens.Output;
@@ -112,10 +114,19 @@ internal sealed class DayAggregate
 
         if (!response.Final)
         {
-            Unfinalized++;
+            Unfinalized += response.Requests;
         }
 
         Models[model] = totals;
+        long modeMs = 0;
+        if (response.Final && SpeedMath.TryGetSpeedInterval(response, out var modeInterval)) modeMs = modeInterval.DurationMs;
+        var measured = modeMs > 0;
+        foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+        {
+            var key = ExecutionModeKey.Of(model, response.Modes.Attribute(kind));
+            var value = new ExecutionModeTotals(response.Requests, tokens.Output, measured ? tokens.Output : 0, modeMs);
+            Modes[key] = Modes.GetValueOrDefault(key) + value;
+        }
     }
 
     public void Merge(DayAggregate other)
@@ -131,6 +142,7 @@ internal sealed class DayAggregate
         MeasuredMs += other.MeasuredMs;
         Unfinalized += other.Unfinalized;
         Agents += other.Agents;
+        foreach (var (key, value) in other.Modes) Modes[key] = Modes.GetValueOrDefault(key) + value;
         foreach (var (model, usage) in other.Models)
         {
             Models[model] = Models.TryGetValue(model, out var known) ? known + usage : usage;
@@ -156,8 +168,36 @@ internal sealed class DayAggregate
             })])
     {
         Cost = Cost,
+        Modes = ModeRows(key.Source),
         PriceVersion = Cost is null ? null : priceVersion,
     };
+
+    private IReadOnlyList<ExecutionModeUsage> ModeRows(SourceKind source)
+    {
+        var rows = Modes.Select(pair => new ExecutionModeUsage(pair.Key.Model, source, pair.Key.Kind, pair.Key.Mode, pair.Key.Evidence,
+            pair.Key.Provider.Length == 0 ? null : pair.Key.Provider, pair.Value.Requests, pair.Value.Output, pair.Value.MeasuredOutput, pair.Value.MeasuredMs)).ToList();
+        var expected = new Dictionary<string, ModelTotals>(Models, StringComparer.Ordinal);
+        var rest = new ModelTotals(Math.Max(0, Requests - Models.Values.Sum(m => m.Requests)), Math.Max(0, Output - Models.Values.Sum(m => m.Output)),
+            Math.Max(0, MeasuredOutput - Models.Values.Sum(m => m.MeasuredOutput)), Math.Max(0, MeasuredMs - Models.Values.Sum(m => m.MeasuredMs)));
+        if (rest.Requests > 0 || rest.Output > 0 || rest.MeasuredOutput > 0 || rest.MeasuredMs > 0)
+            expected[string.Empty] = expected.GetValueOrDefault(string.Empty) + rest;
+        rows.RemoveAll(row => !expected.ContainsKey(row.Model));
+        foreach (var (model, totals) in expected)
+        foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+        {
+            var known = rows.Where(r => r.Model == model && r.Kind == kind).ToArray();
+            var missing = new ExecutionModeTotals(totals.Requests - known.Sum(r => r.Requests), totals.Output - known.Sum(r => r.Output),
+                totals.MeasuredOutput - known.Sum(r => r.MeasuredOutput), totals.MeasuredMs - known.Sum(r => r.MeasuredMs));
+            if (missing.Requests < 0 || missing.Output < 0 || missing.MeasuredOutput < 0 || missing.MeasuredMs < 0)
+            {
+                rows.RemoveAll(row => row.Model == model && row.Kind == kind);
+                missing = new(totals.Requests, totals.Output, totals.MeasuredOutput, totals.MeasuredMs);
+            }
+            if (missing.Requests > 0 || missing.Output > 0 || missing.MeasuredOutput > 0 || missing.MeasuredMs > 0)
+                rows.Add(new ExecutionModeUsage(model, source, kind, "unknown", "unknown", null, missing.Requests, missing.Output, missing.MeasuredOutput, missing.MeasuredMs));
+        }
+        return ExecutionModeUsage.Combine(rows);
+    }
 
     /// <summary>
     /// One file's contributions: its responses grouped by local day of <c>endMs</c>, all under the file's source, each

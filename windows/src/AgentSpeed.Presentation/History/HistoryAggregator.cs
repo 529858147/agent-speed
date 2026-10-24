@@ -319,6 +319,7 @@ public static class HistoryAggregator
             TotalCost = totalCost,
             PriceVersion = totalCost is null ? null : priceVersion,
             ModelCosts = modelCosts,
+            Modes = ExecutionModeUsage.Combine(records.SelectMany(r => r.Modes)),
         };
     }
 }

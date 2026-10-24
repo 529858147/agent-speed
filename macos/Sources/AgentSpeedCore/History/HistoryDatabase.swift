@@ -29,7 +29,7 @@ final class HistoryDatabase {
     }
 
     let path: String
-    private let connection: SQLiteConnection
+    let connection: SQLiteConnection
 
     /// Opens (creating when needed) the store at `path`; `:memory:` keeps it in memory.
     convenience init(path: String) throws {
@@ -55,6 +55,7 @@ final class HistoryDatabase {
             try connection.execute(Self.metaTableSQL)
         }
         try connection.execute(Self.trafficTableSQL)
+        if migrating || version == 0 { try connection.execute(Self.modeTableSQL) }
     }
 
     static func inMemory() throws -> HistoryDatabase {
@@ -238,6 +239,7 @@ final class HistoryDatabase {
                 requests: Int(row.int64(4)), output: Int(row.int64(5)), measuredOutput: Int(row.int64(6)), measuredMs: row.int64(7),
                 cost: Self.cost(row, 8))
         }
+        try loadModes(into: &entries, paths: paths)
         return entries
     }
 
@@ -311,7 +313,9 @@ final class HistoryDatabase {
                 try clearDays.run()
                 clearModels.bind(1, id)
                 try clearModels.run()
+                try deleteModes(fileId: id)
                 for (key, day) in entry.days {
+                    try saveModes(day.modes.values.sorted { $0.id < $1.id }, fileId: id, day: key.day, source: key.source)
                     insertDay.bind(1, id)
                     insertDay.bind(2, key.day)
                     insertDay.bind(3, key.source.rawValue)

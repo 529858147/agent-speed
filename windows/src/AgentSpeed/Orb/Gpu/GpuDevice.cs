@@ -234,6 +234,10 @@ internal sealed class GpuDevice : IDisposable
 
         public ID3D11PixelShader LiquidPixel { get; private set; } = null!;
 
+        public ID3D11VertexShader LedVertex { get; private set; } = null!;
+
+        public ID3D11PixelShader LedPixel { get; private set; } = null!;
+
         public ID3D11InputLayout ShapeLayout { get; private set; } = null!;
 
         public ID3D11InputLayout TextLayout { get; private set; } = null!;
@@ -251,6 +255,8 @@ internal sealed class GpuDevice : IDisposable
         public ID3D11Buffer LiquidParams { get; private set; } = null!;
 
         public ID3D11Buffer LiquidPass { get; private set; } = null!;
+
+        public ID3D11Buffer LedParams { get; private set; } = null!;
 
         public ID3D11ShaderResourceView Palette { get; private set; } = null!;
 
@@ -312,6 +318,8 @@ internal sealed class GpuDevice : IDisposable
             TextPixel = Device.CreatePixelShader(code.TextPixel);
             LiquidVertex = Device.CreateVertexShader(code.LiquidVertex);
             LiquidPixel = Device.CreatePixelShader(code.LiquidPixel);
+            LedVertex = Device.CreateVertexShader(code.LedVertex);
+            LedPixel = Device.CreatePixelShader(code.LedPixel);
             ShapeLayout = Device.CreateInputLayout(InstanceElements(6), code.ShapeVertex);
             TextLayout = Device.CreateInputLayout(InstanceElements(8), code.TextVertex);
 
@@ -322,6 +330,7 @@ internal sealed class GpuDevice : IDisposable
             Uniforms = Device.CreateBuffer(48, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
             LiquidParams = Device.CreateBuffer(OrbLiquidUniforms.Size, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
             LiquidPass = Device.CreateBuffer(16, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
+            LedParams = Device.CreateBuffer(OrbLedUniforms.Size, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
             Palette = CreatePalette();
         }
 
@@ -378,6 +387,7 @@ internal sealed class GpuDevice : IDisposable
             Instances?.Dispose();
             Texts?.Dispose();
             Palette?.Dispose();
+            LedParams?.Dispose();
             LiquidPass?.Dispose();
             LiquidParams?.Dispose();
             Uniforms?.Dispose();
@@ -387,6 +397,8 @@ internal sealed class GpuDevice : IDisposable
             Over?.Dispose();
             TextLayout?.Dispose();
             ShapeLayout?.Dispose();
+            LedPixel?.Dispose();
+            LedVertex?.Dispose();
             LiquidPixel?.Dispose();
             LiquidVertex?.Dispose();
             TextPixel?.Dispose();

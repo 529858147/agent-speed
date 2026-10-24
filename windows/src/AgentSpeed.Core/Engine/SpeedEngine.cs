@@ -292,6 +292,7 @@ internal sealed class SpeedEngine
             LiveCost = liveCost,
             SourceLiveCost = sourceLiveCost,
             TodayCost = _today.Cost,
+            TodayModes = _today.Modes,
             SourceTodayCost = sourceTodayCost,
             SourceUnpricedModels = sourceUnpriced,
             Report = ReportFacts(nowMs),

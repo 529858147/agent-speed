@@ -6,9 +6,9 @@ public readonly record struct CostTally(long CostMicroUsd = 0, long UnpricedRequ
     public static CostTally Zero => default;
 
     /// <summary>Adds (<paramref name="sign"/> 1) or removes (-1) one response's cost; null counts as unpriced.</summary>
-    public CostTally Add(long? cost, int sign = 1) => cost is { } value
+    public CostTally Add(long? cost, int sign = 1, long requests = 1) => cost is { } value
         ? this with { CostMicroUsd = CostMicroUsd + sign * value }
-        : this with { UnpricedRequests = UnpricedRequests + sign };
+        : this with { UnpricedRequests = UnpricedRequests + sign * requests };
 
     public static CostTally operator +(CostTally a, CostTally b) =>
         new(a.CostMicroUsd + b.CostMicroUsd, a.UnpricedRequests + b.UnpricedRequests);

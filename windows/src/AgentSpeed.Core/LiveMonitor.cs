@@ -146,6 +146,21 @@ public sealed class LiveMonitor : IDisposable
             ? WorkBuddyPaths.DefaultDataFolder(source, UserHome)
             : WorkBuddyPaths.DataFolderOf(setting);
 
+    public static string DefaultZCodeRoot
+    {
+        get
+        {
+            var baseDir = Environment.GetEnvironmentVariable("ZCODE_DATA_BASE_DIR");
+            return Path.Combine(string.IsNullOrWhiteSpace(baseDir) ? UserHome : baseDir, ".zcode", "cli", "db");
+        }
+    }
+
+    public static string DefaultKimiRoot => Path.Combine(
+        Environment.GetEnvironmentVariable("KIMI_CODE_HOME") is { Length: > 0 } home ? home : Path.Combine(UserHome, ".kimi-code"), "sessions");
+
+    public static string DefaultGrokBuildRoot => Path.Combine(
+        Environment.GetEnvironmentVariable("GROK_HOME") is { Length: > 0 } home ? home : Path.Combine(UserHome, ".grok"), "sessions");
+
     private static string GeminiHome
     {
         get
@@ -472,7 +487,15 @@ public sealed class LiveMonitor : IDisposable
 
     private void EnsureWatchers(MonitorCore core, Dictionary<SourceRoot, RootWatcher> watchers)
     {
-        foreach (var root in core.WatchRoots)
+        var roots = core.WatchRoots.ToArray();
+        var current = roots.ToHashSet();
+        foreach (var old in watchers.Keys.Where(root => !current.Contains(root)).ToList())
+        {
+            watchers.Remove(old, out var watcher);
+            watcher?.Dispose();
+        }
+
+        foreach (var root in roots)
         {
             var wanted = root.Enabled && root.Available;
             if (wanted && !watchers.ContainsKey(root))

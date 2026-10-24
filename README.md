@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code, Claude Desktop, DeepSeek Harness, OpenCode, Gemini CLI, omp, Antigravity, WorkBuddy and WorkBuddy AI — calm when idle, on fire at the redline.
+**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code, Claude Desktop, DSH (DeepSeek Harness), OpenCode, Gemini CLI, omp, Antigravity, WorkBuddy, WorkBuddy AI, ZCode, Kimi Code CLI and Grok Build — calm when idle, on fire at the redline.
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -58,6 +58,8 @@ Add `--purge` / `-Purge` to remove settings as well. On Windows you can also uni
 - **Title themes** — nine ladders of speed titles: *Vehicles*, *Animals*, *Beaufort Scale*, *Cosmos*, *Cultivation*, *Martial Arts*, *Arcane Ranks*, *Game Ranks* and *Engineer Career* — or up to eight sets of your own. Outside *Vehicles*, the dashboard orb shows a glowing title badge.
 - **Usage history** — every day since your oldest log: output and input tokens, requests, average speed and peak, cost and network traffic, charted by source over today, yesterday or any date range, with per-model speed and CSV export. Only daily totals are kept, so your history survives even after your tools delete old logs.
 - **Live reporting (opt-in)** — off by default; if you like, share your live numbers with an API you pick, such as the [Codex Radar](https://codexradar.com/) speed ladder, under a username you choose. Never conversation content, files or project names — see [Privacy](#privacy).
+- **Execution modes** — show confirmed Standard / Fast / Ultrafast modes and native accelerator, model-variant or routing choices across supported agents, with defaults and unknown values kept distinct. History has a separate mode CSV; measurement formulas stay the same.
+- **Profile and devices (optional API extension)** — preview, change or remove an avatar, and link devices through an approved one-time code. Your receiver must support the [new API schema](spec/report-schema.json); each device keeps its own key and unlinking preserves accounted history.
 - **Native everywhere** — SwiftUI + AppKit on macOS, WPF with Fluent/Mica on Windows. Light, dark or automatic theme. English, 繁體中文, 简体中文, 日本語.
 - **Humane** — effects intensity from *Off* to *Max*, respects Reduce Motion and high contrast, click-through mode, magnetic edges, remembers its place on every display, launches at login.
 - **Always current** — checks GitHub Releases in the background and updates with one click, verified by SHA-256.
@@ -81,13 +83,18 @@ Agent Speed reads the transcripts your agents already write on your disk:
 | Codex (CLI, IDE, desktop) | `~/.codex/sessions` and `archived_sessions`, compressed logs included (or `$CODEX_HOME`) |
 | Claude Code (CLI, IDE) | `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) |
 | Claude Desktop (Code and agent sessions) | `~/.claude/projects`, told apart automatically |
-| DeepSeek Harness (`dsh`, desktop and CLI) | `~/.dsh/sessions` (or `$DSH_HOME/sessions`) |
+| DSH (`dsh`, desktop and CLI) | `~/.dsh/sessions` (or `$DSH_HOME/sessions`) |
 | OpenCode (CLI and desktop) | `~/.local/share/opencode/opencode.db` (or `$XDG_DATA_HOME/opencode`) |
 | Gemini CLI | `~/.gemini/tmp` (or `$GEMINI_CLI_HOME/.gemini/tmp`) |
 | omp (oh-my-pi) | `~/.omp/agent/sessions` and every profile in `~/.omp/profiles` (or `$PI_CODING_AGENT_DIR/sessions`) |
 | Antigravity (`agy` CLI, desktop app, IDE and extensions) | `~/.gemini/antigravity-cli`, `~/.gemini/antigravity` and `~/.gemini/antigravity-ide` (their `conversations` folders) |
 | WorkBuddy (Tencent, China edition) | `~/.workbuddy/projects` |
 | WorkBuddy AI (international edition) | `~/.workbuddy-ai/projects` |
+| ZCode | `~/.zcode/cli/db/db.sqlite` (or `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`) |
+| Kimi Code CLI (TypeScript v2) | `~/.kimi-code/sessions` (or `$KIMI_CODE_HOME/sessions`) |
+| Grok Build | `~/.grok/sessions` (or `$GROK_HOME/sessions`) |
+
+Grok Build supplies native per-turn model batches: token counts, API duration and the actual number of model calls enter the same speed engine. Child usage is already included in its parent and is counted once; child activity remains visible. Its individual-call timeline is not stored, so intra-batch concurrency cannot be reconstructed.
 
 **Speed = output tokens ÷ the real time the model spent on them** — from the moment the request was sent until the response finished, including time to first token. Parallel agents add up. While a response is still streaming, it is estimated from that agent's recent measured speed and corrected with the measured value the instant it completes. Optionally you can switch to *total throughput* (input + output).
 
@@ -102,6 +109,8 @@ Read-only. Local-only. No telemetry, no accounts. Agent Speed makes only three k
 Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only. It never reads content, addresses or destinations; only live reporting (below), if you turn it on, sends your agents' byte counts to the service you chose. On Windows, per-agent traffic needs an optional helper service that runs as the restricted Local Service account and only counts bytes per process; it is installed and removed with one administrator prompt each ([details](spec/WINDOWS-SERVICE.md)).
 
 Live reporting (optional, off by default; the dashboard offers it once): if you turn it on for an API — for example a public leaderboard service such as the built-in Codex Radar speed ladder (`deng.codexradar.com`) — Agent Speed sends that service your live speed, the tokens used in the last few seconds and, if you leave them on, the API-equivalent cost in US dollars, your agents' network traffic, models in use and a per-tool breakdown, together with the username you choose (it starts as your computer's name; one click picks a random one). It reports every few seconds while your agents work and stops when they rest. It never sends conversation content, prompts, file, folder or project names, or your usage history, and failed reports are never resent. Each report is signed with a key that stays on your computer; the service can tell that reports come from the same device, not whether the numbers are true. You can pause, turn it off, or ask the service to forget your device in Settings.
+
+Optional API extensions also share per-model Harness counts and execution-mode metadata when model sharing is enabled. Avatar uploads and one-time device pairing happen only through explicit profile actions, with a receiver that supports the [extension schema](spec/report-schema.json); images never go into periodic reports. Paired devices retain independent private keys, and the network master switch also disables profile requests.
 
 Every host Agent Speed may contact, and when, is listed in [`spec/NETWORK.md`](spec/NETWORK.md).
 

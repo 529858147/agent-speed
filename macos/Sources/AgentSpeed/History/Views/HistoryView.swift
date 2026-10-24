@@ -77,6 +77,8 @@ struct HistoryView: View {
                     }
                     .animation(HistoryMotion.fade, value: content.breakdown == nil)
                     .padding(.bottom, HistoryLayout.sectionSpacing + Spacing.xxs)
+                    ModeHistorySection(model: model)
+                        .padding(.bottom, HistoryLayout.sectionSpacing)
                     Text(model.l10n("mac.history.table"))
                         .font(HistoryFont.sectionTitle)
                         .accessibilityAddTraits(.isHeader)

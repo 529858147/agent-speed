@@ -92,6 +92,9 @@ public static class SettingsSerializer
             w.WriteBoolean("antigravity", s.AntigravityEnabled);
             w.WriteBoolean("workbuddy", s.WorkBuddyEnabled);
             w.WriteBoolean("workbuddyAi", s.WorkBuddyAiEnabled);
+            w.WriteBoolean("zcode", s.ZCodeEnabled);
+            w.WriteBoolean("kimi", s.KimiEnabled);
+            w.WriteBoolean("grokBuild", s.GrokBuildEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
             WriteNullableString(w, "dshRoot", s.DshRoot);
@@ -101,6 +104,9 @@ public static class SettingsSerializer
             WriteNullableString(w, "antigravityRoot", s.AntigravityRoot);
             WriteNullableString(w, "workbuddyRoot", s.WorkBuddyRoot);
             WriteNullableString(w, "workbuddyAiRoot", s.WorkBuddyAiRoot);
+            WriteNullableString(w, "zcodeRoot", s.ZCodeRoot);
+            WriteNullableString(w, "kimiRoot", s.KimiRoot);
+            WriteNullableString(w, "grokBuildRoot", s.GrokBuildRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
@@ -241,6 +247,9 @@ public static class SettingsSerializer
             AntigravityEnabled = ReadBool(sources, "antigravity", d.AntigravityEnabled),
             WorkBuddyEnabled = ReadBool(sources, "workbuddy", d.WorkBuddyEnabled),
             WorkBuddyAiEnabled = ReadBool(sources, "workbuddyAi", d.WorkBuddyAiEnabled),
+            ZCodeEnabled = ReadBool(sources, "zcode", d.ZCodeEnabled),
+            KimiEnabled = ReadBool(sources, "kimi", d.KimiEnabled),
+            GrokBuildEnabled = ReadBool(sources, "grokBuild", d.GrokBuildEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             DshRoot = ReadString(sources, "dshRoot"),
@@ -250,6 +259,9 @@ public static class SettingsSerializer
             AntigravityRoot = ReadString(sources, "antigravityRoot"),
             WorkBuddyRoot = ReadString(sources, "workbuddyRoot"),
             WorkBuddyAiRoot = ReadString(sources, "workbuddyAiRoot"),
+            ZCodeRoot = ReadString(sources, "zcodeRoot"),
+            KimiRoot = ReadString(sources, "kimiRoot"),
+            GrokBuildRoot = ReadString(sources, "grokBuildRoot"),
             HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),

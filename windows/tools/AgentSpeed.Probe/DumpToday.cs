@@ -30,7 +30,7 @@ internal static class DumpToday
             .ThenBy(r => r.Key, StringComparer.Ordinal)
             .ToList();
         long costMicroUsd = 0;
-        var unpriced = 0;
+        var unpriced = 0L;
         foreach (var r in today)
         {
             var cost = table.Cost(r);
@@ -40,11 +40,12 @@ internal static class DumpToday
             }
             else
             {
-                unpriced++;
+                unpriced += r.Requests;
             }
 
-            output.Line(new JsonLine()
+            var row = new JsonLine()
                 .Add("key", r.Key)
+                .Add("requestCount", r.Requests)
                 .Add("source", JsonLine.SourceName(r.Source))
                 .Add("agentId", r.AgentId)
                 .Add("model", r.Model)
@@ -59,8 +60,9 @@ internal static class DumpToday
                 .Add("final", r.Final)
                 .Add("provider", r.Provider)
                 .Add("fast", r.Fast)
-                .Add("costMicroUsd", cost)
-                .Text);
+                .Add("costMicroUsd", cost);
+            if (!r.Modes.IsEmpty) row.Raw("modes", JsonLine.Modes(r.Modes));
+            output.Line(row.Text);
         }
 
         var counts = new JsonLine();

@@ -63,6 +63,7 @@ internal static class OmpLineReader
             TypeName.Session => OmpEntryKind.Session,
             TypeName.Message => top.HasMessage ? OmpEntryKind.Message : OmpEntryKind.Other,
             TypeName.ModelUsage => OmpEntryKind.ModelUsage,
+            TypeName.ServiceTierChange => OmpEntryKind.ServiceTierChange,
             TypeName.Custom when top.IsSessionExit => OmpEntryKind.SessionExit,
             _ => OmpEntryKind.Other,
         };
@@ -85,6 +86,7 @@ internal static class OmpLineReader
         {
             result.Call = top.Call.ToCall();
         }
+        if (result.Kind != OmpEntryKind.ServiceTierChange) result.SelectedModes = null;
     }
 
     private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref OmpLine result, ref TopLevel top)
@@ -96,6 +98,7 @@ internal static class OmpLineReader
                 : reader.ValueTextEquals("message"u8) ? TypeName.Message
                 : reader.ValueTextEquals("session"u8) ? TypeName.Session
                 : reader.ValueTextEquals("title"u8) ? TypeName.Title
+                : reader.ValueTextEquals("service_tier_change"u8) ? TypeName.ServiceTierChange
                 : reader.ValueTextEquals("model_usage"u8) ? TypeName.ModelUsage
                 : reader.ValueTextEquals("custom"u8) ? TypeName.Custom
                 : TypeName.Other;
@@ -106,6 +109,31 @@ internal static class OmpLineReader
             reader.Read();
             result.Id = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
             JsonScan.SkipValue(ref reader);
+        }
+        else if (reader.ValueTextEquals("parentId"u8))
+        {
+            reader.Read();
+            result.HasParentId = true;
+            result.ParentId = JsonScan.ReadString(ref reader);
+        }
+        else if (reader.ValueTextEquals("serviceTier"u8))
+        {
+            reader.Read();
+            var modes = ExecutionModes.Empty;
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var family = reader.GetString();
+                    reader.Read();
+                    var tier = JsonScan.ReadString(ref reader);
+                    if (family is "openai" or "anthropic" or "google")
+                        modes = modes.Merge(ExecutionModeNative.OmpTier(tier, family, ExecutionModeEvidence.Selected, ExecutionModeScope.Session));
+                }
+            }
+            else if (reader.TokenType == JsonTokenType.String) top.Call.ServiceTier = reader.GetString();
+            else JsonScan.SkipValue(ref reader);
+            result.SelectedModes = modes;
         }
         else if (reader.ValueTextEquals("timestamp"u8))
         {
@@ -239,6 +267,24 @@ internal static class OmpLineReader
             call.HasProvider = reader.TokenType == JsonTokenType.String;
             call.Provider = call.HasProvider && !reader.ValueSpan.IsEmpty ? reader.GetString() : null;
             JsonScan.SkipValue(ref reader);
+        }
+        else if (reader.ValueTextEquals("serviceTier"u8))
+        {
+            reader.Read();
+            call.ServiceTier = JsonScan.ReadString(ref reader);
+        }
+        else if (reader.ValueTextEquals("disabledFeatures"u8))
+        {
+            reader.Read();
+            if (reader.TokenType == JsonTokenType.StartArray)
+            {
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                {
+                    if (reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("priority"u8)) call.DisabledPriority = true;
+                    JsonScan.SkipValue(ref reader);
+                }
+            }
+            else JsonScan.SkipValue(ref reader);
         }
         else if (reader.ValueTextEquals("api"u8))
         {
@@ -387,6 +433,7 @@ internal static class OmpLineReader
         Message,
         ModelUsage,
         Custom,
+        ServiceTierChange,
     }
 
     private struct Usage
@@ -401,6 +448,8 @@ internal static class OmpLineReader
     private struct CallFields
     {
         public string? Model;
+        public string? ServiceTier;
+        public bool DisabledPriority;
         public bool HasProvider;
         public string? Provider;
         public bool HasApi;
@@ -411,6 +460,8 @@ internal static class OmpLineReader
         {
             Guarded = Model is not null && HasProvider && HasApi && HasUsageObject,
             Model = Model,
+            ServiceTier = ServiceTier,
+            DisabledPriority = DisabledPriority,
             Provider = Provider,
             HasUsage = Usage.Input > 0 || Usage.Output > 0 || Usage.CacheRead > 0 || Usage.CacheWrite > 0,
             Tokens = new TokenCounts(

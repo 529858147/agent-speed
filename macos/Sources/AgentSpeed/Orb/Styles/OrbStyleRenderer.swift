@@ -97,6 +97,8 @@ struct OrbFrame {
     var resumed = false
     /// How far the readout stack sits below its resting place while the traffic block shows above it (DESIGN 10).
     var readoutShift: CGFloat = 0
+    /// The aura's flare after a response pulse (0...1), for styles that draw their own aura.
+    var auraFlare: Double = 0
 
     var tokens: OrbTokens { content.tokens }
     var dark: Bool { content.tokens.isDark }
@@ -169,6 +171,9 @@ struct OrbReadoutLayout {
     var valueGlow = true
     /// Forward lean from overdrive and redline jitter of the value (`minimal`, which barely moves, has neither).
     var valueMotion = true
+    /// The v1.4 `led` value (DESIGN 2.1, Readout): growing and doubled glow, a dark backing, a stronger lean and jitter
+    /// and the redline chromatic split.
+    var silkValue = false
 
     /// The title's baseline below the center, × S.
     var titleOffset: CGFloat {

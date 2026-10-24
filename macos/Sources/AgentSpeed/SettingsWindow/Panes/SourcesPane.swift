@@ -64,6 +64,9 @@ extension SourceKind {
         case .antigravity: .antigravity
         case .workbuddy: .workbuddy
         case .workbuddyAi: .workbuddyAi
+        case .zcode: .zcode
+        case .kimi: .kimi
+        case .grokBuild: .grokBuild
         }
     }
 }
@@ -114,6 +117,13 @@ private struct SourceToggleRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(l10n(kind.titleKey))
                     SourceStatusLabel(state: SourceState(kind: kind, model: model), l10n: l10n)
+                    if kind == .codex, settings.isEnabled(kind) {
+                        let modes = model.snapshot.sources.first(where: { $0.kind == kind })?.configuredModes ?? .empty
+                        Text(ExecutionModeText.detail(modes, l10n))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(l10n("mode.defaultNote"))
+                    }
                 }
             }
         }

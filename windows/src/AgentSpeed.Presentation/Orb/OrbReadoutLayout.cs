@@ -21,6 +21,10 @@ namespace AgentSpeed.Presentation.Orb;
 /// <param name="TitleCrossfade">Titles crossfade (0.25 s) instead of sliding.</param>
 /// <param name="ValueGlow">The value glows from boost up.</param>
 /// <param name="DotHalo">Agent dots get a 1.2 pt halo (liquid).</param>
+/// <param name="ValueEffects">
+/// The floating <c>led</c>'s value effects (DESIGN 2.1, Readout): the glow widens with overdrive and doubles from overdrive,
+/// a black backing under the value in dark, and the redline's chromatic split.
+/// </param>
 public sealed record OrbReadoutLayout(
     double ValueSize,
     double ValueBaseline,
@@ -38,17 +42,19 @@ public sealed record OrbReadoutLayout(
     bool Rolls = true,
     bool TitleCrossfade = false,
     bool ValueGlow = true,
-    bool DotHalo = false)
+    bool DotHalo = false,
+    bool ValueEffects = false)
 {
     public const double MinTextSize = 7;
     public const double TitleMinScale = 0.8;
     public const double InfoMinScale = 0.7;
 
-    public static OrbReadoutLayout Led { get; } = new(0.24, 0.012, 0.62, 0.072, 0.104, 0.09, null, 0.062, 0.58, 0.62, 0.92, 0.3785, -0.232);
+    public static OrbReadoutLayout Led { get; } =
+        new(0.24, 0.012, 0.62, 0.072, 0.104, 0.09, null, 0.062, 0.58, 0.62, 0.92, 0.3785, -0.232, ValueEffects: true);
 
     public static OrbReadoutLayout Needle { get; } = new(0.205, 0.035, 0.40, 0.062, 0.08, 0, 0.338, 0.062, 0.46, 0.42, 0.85, 0.405, -0.175);
 
-    public static OrbReadoutLayout Liquid { get; } = Led with { DotHalo = true };
+    public static OrbReadoutLayout Liquid { get; } = Led with { DotHalo = true, ValueEffects = false };
 
     public static OrbReadoutLayout Reactor { get; } = new(0.205, 0.03, 0.46, 0.062, 0.08, 0.074, null, 0.058, 0.50, 0.52, 0.92, 0.252, -0.172);
 

@@ -132,7 +132,7 @@ extension ReportController {
         ReportOptions(
             sections: preferences.sections.intersection(document.sections), maxModels: document.limits.maxModels,
             bodyLimit: document.limits.sendLimitBytes, metric: settings.metric, redline: settings.redline,
-            priceVersion: priceBook.reportPriceVersion(atMs: ReportClock.unixMs))
+            priceVersion: priceBook.reportPriceVersion(atMs: ReportClock.unixMs), extensions: document.extensions ?? .none)
     }
 
     func send(_ ticket: ReportScheduler.Ticket) {

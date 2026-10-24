@@ -33,6 +33,7 @@ enum AgentParents {
         var threads: [TranscriptFamily: [String: (createdMs: Int64, id: String)]] = [:]
         let geminiMains = geminiMainSessions(members)
         let conversations = antigravityConversations(members)
+        let grokSessions = Dictionary(grouping: members.filter { $0.family == .grokBuild && $0.thread?.id != nil }, by: { $0.thread!.id! })
         for member in members {
             ids.insert(member.id)
             if member.family == .omp { ompIds.insert(member.id) }
@@ -61,6 +62,20 @@ enum AgentParents {
                 parent = member.thread?.parentId.flatMap { ompIds.contains($0) ? $0 : nil }
             case .antigravity:
                 parent = antigravityParent(of: member, in: conversations)
+            case .kimi:
+                parent = member.thread?.parentId.flatMap { ids.contains($0) ? $0 : nil }
+            case .grokBuild:
+                parent = member.thread?.parentId.flatMap { parent in
+                    let workspace = ((member.id as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+                    return grokSessions[parent]?.min { lhs, rhs in
+                        let leftWorkspace = ((lhs.id as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+                        let rightWorkspace = ((rhs.id as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+                        if (leftWorkspace == workspace) != (rightWorkspace == workspace) { return leftWorkspace == workspace }
+                        let leftCreated = lhs.thread?.createdMs ?? 0, rightCreated = rhs.thread?.createdMs ?? 0
+                        if leftCreated != rightCreated { return leftCreated < rightCreated }
+                        return ordinal(lhs.id, precedes: rhs.id)
+                    }?.id
+                }
             case .workbuddy, .workbuddyAi:
                 // As Claude, within the same edition: nested sub-agents are stored flat under the main session.
                 parent = claudeParentPath(of: member.id).flatMap { workbuddyIds[member.family]?.contains($0) == true ? $0 : nil }

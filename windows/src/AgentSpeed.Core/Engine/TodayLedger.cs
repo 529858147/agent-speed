@@ -3,7 +3,7 @@ using AgentSpeed.Core.Parsing;
 namespace AgentSpeed.Core.Engine;
 
 /// <summary>Incremental "today" aggregates (METRICS 6.6) that support replacing a response by key.</summary>
-internal sealed class TodayLedger
+internal sealed partial class TodayLedger
 {
     private const int IndexCapacity = 65_536;
 
@@ -22,7 +22,7 @@ internal sealed class TodayLedger
     private double _validOutput;
     private double _validSeconds;
     private long _validCount;
-    private int _unfinalized;
+    private long _unfinalized;
 
     public TodayLedger(long startMs)
     {
@@ -37,7 +37,7 @@ internal sealed class TodayLedger
     public double? AverageOutputSpeed => _validCount > 0 && _validSeconds > 0 ? Math.Max(0, _validOutput) / _validSeconds : null;
 
     /// <summary>Today's responses whose final usage was never written.</summary>
-    public int UnfinalizedCount => Math.Max(0, _unfinalized);
+    public int UnfinalizedCount => (int)Math.Clamp(_unfinalized, 0, int.MaxValue);
 
     public TokenTotals ForSource(SourceKind source) => _perSource[(int)source];
 
@@ -98,6 +98,7 @@ internal sealed class TodayLedger
         Array.Clear(_costPerSource);
         _costPerModel.Clear();
         _unpriced.Clear();
+        ResetModes();
         Cost = default;
         Totals = default;
         _validOutput = 0;
@@ -140,7 +141,7 @@ internal sealed class TodayLedger
             response.Final,
             response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval) ? interval : null,
             response.Model ?? string.Empty,
-            response.CostMicroUsd);
+            response.CostMicroUsd, response.Requests, response.Modes);
         Apply(entry, 1);
         _entries[response.Key] = entry;
         if (response.CostMicroUsd is not null)
@@ -155,12 +156,13 @@ internal sealed class TodayLedger
 
     private void Apply(in Entry entry, int sign)
     {
-        Totals = Add(Totals, entry.Tokens, sign);
-        _perSource[(int)entry.Source] = Add(_perSource[(int)entry.Source], entry.Tokens, sign);
-        Cost = Cost.Add(entry.Cost, sign);
-        _costPerSource[(int)entry.Source] = _costPerSource[(int)entry.Source].Add(entry.Cost, sign);
+        Totals = Add(Totals, entry.Tokens, sign, entry.Requests);
+        _perSource[(int)entry.Source] = Add(_perSource[(int)entry.Source], entry.Tokens, sign, entry.Requests);
+        Cost = Cost.Add(entry.Cost, sign, entry.Requests);
+        ApplyModes(entry, sign);
+        _costPerSource[(int)entry.Source] = _costPerSource[(int)entry.Source].Add(entry.Cost, sign, entry.Requests);
         var modelKey = (entry.Source, entry.Model);
-        var modelCost = _costPerModel.GetValueOrDefault(modelKey).Add(entry.Cost, sign);
+        var modelCost = _costPerModel.GetValueOrDefault(modelKey).Add(entry.Cost, sign, entry.Requests);
         if (modelCost == default)
         {
             _costPerModel.Remove(modelKey);
@@ -172,7 +174,7 @@ internal sealed class TodayLedger
 
         if (!entry.Final)
         {
-            _unfinalized += sign;
+            _unfinalized += sign * entry.Requests;
         }
 
         if (entry.Measured is not { } interval)
@@ -188,8 +190,8 @@ internal sealed class TodayLedger
         _sourceOutput.AddInterval(entry.Source, interval.StartMs, interval.EndMs, sign * (double)entry.Tokens.Output, StartMs);
     }
 
-    private static TokenTotals Add(TokenTotals totals, in TokenCounts tokens, int sign) => new(
-        totals.Requests + sign,
+    private static TokenTotals Add(TokenTotals totals, in TokenCounts tokens, int sign, long requests) => new(
+        totals.Requests + sign * requests,
         totals.Input + sign * tokens.Input,
         totals.CachedInput + sign * tokens.CachedInput,
         totals.CacheWriteInput + sign * tokens.CacheWriteInput,
@@ -197,5 +199,5 @@ internal sealed class TodayLedger
         totals.Reasoning + sign * tokens.Reasoning);
 
     /// <param name="Measured">The speed interval when the response is final and valid (METRICS 3.3).</param>
-    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured, string Model, long? Cost);
+    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured, string Model, long? Cost, long Requests, ExecutionModes Modes);
 }

@@ -204,7 +204,7 @@ struct OrbTextInstance {
     var clip: SIMD4<Float>
     /// Bottom color of a vertical gradient fill (when `gradient.z` is 1).
     var fill2: SIMD4<Float> = .zero
-    /// Gradient top y, bottom y (points), enabled, unused.
+    /// Gradient top y, bottom y (points), enabled, quad inset (points).
     var gradient: SIMD4<Float> = .zero
 }
 
@@ -260,6 +260,32 @@ struct OrbTextDraw {
             params: SIMD4(Float(shear), Float(shearPivot), Float(glowRadius), clip.mode),
             clip: clip.rect
         )
+    }
+
+    /// The `led` value's underlays in the glyph's own pass: a black backing blurred over `radius` points (sharing the
+    /// glow's samples) at `alpha`, and the chromatic split (#FF3C8C left, #3CD2FF right) `offset` points either side
+    /// at `chroma`.
+    func ledUnderlays(backing alpha: Double, radius: CGFloat, chroma: Double, offset: CGFloat) -> OrbTextDraw {
+        var copy = self
+        let glowRadius = CGFloat(copy.instance.params.z)
+        if copy.instance.glow.w <= 0 || glowRadius <= 0 {
+            copy.instance.params.z = Float(radius)
+            copy.instance.gradient.x = 1
+        } else {
+            // Shared taps sit on the glow's rings: weighting them for a blur of 1.4 × the radius matches a blur pass of
+            // `radius` of its own.
+            copy.instance.gradient.x = Float(min(1, 1.4 * radius / glowRadius))
+        }
+        copy.instance.gradient.z = 2
+        copy.instance.fill2 = SIMD4(Float(offset), Float(chroma.clamped(to: 0...1)), 0, Float(alpha.clamped(to: 0...1)))
+        return copy
+    }
+
+    /// Skips the outer `points` of the quad (where a glow of a smaller radius than the padding draws nothing).
+    func inset(_ points: CGFloat) -> OrbTextDraw {
+        var copy = self
+        copy.instance.gradient.w = Float(max(0, points))
+        return copy
     }
 
     /// Centers the text horizontally on `centerX`.

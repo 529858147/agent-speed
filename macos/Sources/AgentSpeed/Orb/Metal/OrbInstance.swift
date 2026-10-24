@@ -1,4 +1,5 @@
 import AgentSpeedHero
+import AgentSpeedOrbModel
 import CoreGraphics
 import simd
 
@@ -17,6 +18,8 @@ struct OrbInstance {
         case bandArc = 6
         case ellipse = 7
         case blade = 8
+        case polyline = 9
+        case flare = 10
     }
 
     enum Fill: Float {
@@ -47,6 +50,13 @@ struct OrbInstance {
     /// Shader glow radius for a Gaussian glow of standard deviation `sigma` (a canvas `shadowBlur` of 2σ).
     static func glow(sigma: CGFloat) -> CGFloat { sigma * 1.414 }
 
+    /// The same shape with an exponential glow `exp(−d / glow)` instead of the Gaussian (a negative glow radius).
+    func exponentialGlow() -> OrbInstance {
+        var copy = self
+        copy.b.w = -abs(copy.b.w)
+        return copy
+    }
+
     static func roundedRect(center: CGPoint, halfSize: CGSize, rotation: Double, corner: CGFloat, color: RGBColor,
                             core: Double = 1, glow: CGFloat = 0, glowAlpha: Double = 0) -> OrbInstance {
         OrbInstance(shape: .roundedRect, center: center, rotation: rotation,
@@ -58,6 +68,12 @@ struct OrbInstance {
                        glowAlpha: Double = 0) -> OrbInstance {
         OrbInstance(shape: .circle, center: center, size: SIMD2(Float(radius), 0), glow: glow, color: color,
                     core: core, glowAlpha: glowAlpha)
+    }
+
+    /// A soft disc: `color` in full up to `inner`, falling to zero at `outer` with a smoothstep.
+    static func softDisc(center: CGPoint, inner: CGFloat, outer: CGFloat, color: RGBColor) -> OrbInstance {
+        OrbInstance(shape: .circle, center: center, size: SIMD2(Float(inner), 0), corner: Float(max(outer, inner + 0.01)),
+                    glow: 0, color: color, core: 1, glowAlpha: 0)
     }
 
     static func ring(center: CGPoint, radius: CGFloat, width: CGFloat, color: RGBColor, core: Double = 1,
@@ -131,6 +147,30 @@ struct OrbInstance {
                     color: color, core: core, glowAlpha: glowAlpha, p0: Float(pivotHalfWidth), p1: Float(tipHalfWidth))
     }
 
+    /// A four-pointed star of two crossed exponential lines (the `led` tip flare): along `rotation` (radians)
+    /// `exp(−|t| / tangential) · exp(−|n| / radialWidth)`, across it `exp(−|n| / radial) · exp(−|t| / tangentialWidth)`;
+    /// `color.alpha` scales the sum (clamped to 1).
+    static func flare(center: CGPoint, rotation: Double, tangential: CGFloat, radial: CGFloat, radialWidth: CGFloat,
+                      tangentialWidth: CGFloat, color: RGBColor) -> OrbInstance {
+        OrbInstance(shape: .flare, center: center, rotation: rotation, size: SIMD2(Float(tangential), Float(radial)),
+                    glow: 0, color: color, core: 0, glowAlpha: 0, p0: Float(radialWidth), p1: Float(tangentialWidth))
+    }
+
+    /// A polyline of `count` points starting at `first` in the scene's point buffer, drawn as three round-joined strokes
+    /// of one path (the prototype's canvas strokes): `outer` and `mid` in `glowColor`, `core` in `coreColor`. `sum`
+    /// adds the strokes (dark glass), otherwise they are laid over each other in order.
+    static func polyline(first: Int, count: Int, bounds: CGRect, glowColor: RGBColor, coreColor: RGBColor,
+                         outer: OrbStroke, mid: OrbStroke, core: OrbStroke, sum: Bool) -> OrbInstance {
+        var instance = OrbInstance(
+            shape: .polyline, center: CGPoint(x: bounds.midX, y: bounds.midY), rotation: Double(first),
+            size: SIMD2(Float(bounds.width / 2), Float(bounds.height / 2)), corner: Float(count), glow: 0,
+            color: glowColor.opacity(outer.alpha), tail: coreColor.opacity(core.alpha), core: 0, glowAlpha: 0,
+            extra2: SIMD4(Fill.solid.rawValue, sum ? 1 : 0, 0, 0)
+        )
+        instance.extra = SIMD4(Float(outer.width), Float(mid.width), Float(core.width), Float(mid.alpha.clamped(to: 0...1)))
+        return instance
+    }
+
     // MARK: Fills (circle, ring, rounded rect, ellipse, blade)
 
     /// Linear gradient from `color` to `end` along `angle` degrees, over `halfLength` points either side of the center.
@@ -153,7 +193,14 @@ struct OrbInstance {
     mutating func scaleAlpha(_ factor: Float) {
         color.w *= factor
         color2.w *= factor
+        if a.w == Shape.polyline.rawValue { extra.w *= factor }
     }
+}
+
+/// One stroke of a polyline: width in points and alpha.
+struct OrbStroke {
+    var width: CGFloat
+    var alpha: Double
 }
 
 extension RGBColor {
@@ -182,6 +229,8 @@ struct OrbScene {
         case shapes(OrbBlend)
         /// The liquid volume shader in a mode (0 the volume, 1 the meniscus).
         case liquid(Int32)
+        /// The `led` per-pixel fields in a mode (0 the silk core, 1 the corona and warp streaks).
+        case ledField(Int32, OrbBlend)
     }
 
     struct Batch {
@@ -192,6 +241,8 @@ struct OrbScene {
         var feather: Float = 0
         var start: Int
         var count: Int
+        /// Drawn after the texts (the `led` digit lightning).
+        var overlay = false
     }
 
     /// Drawn first, over the body and under everything else (DESIGN 4c, Placement).
@@ -200,8 +251,15 @@ struct OrbScene {
     private(set) var batches: ContiguousArray<Batch> = []
     /// Drawn after all shapes, in order.
     private(set) var texts: ContiguousArray<OrbTextDraw> = []
+    /// Polyline points (canvas points), indexed by the polyline instances.
+    private(set) var points: ContiguousArray<SIMD2<Float>> = []
     /// Parameters of the liquid volume when a `.liquid` pass is present.
     var liquid = OrbLiquidUniforms()
+    /// Parameters of the `led` fields when a `.ledField` pass is present, and the corona's body noise around the rim.
+    var ledField = OrbLedFieldUniforms()
+    var ledCoronaBody = ContiguousArray<Float>(repeating: 0.5, count: LedNoise.coronaSamples)
+    /// Shapes added while set are drawn after the texts.
+    var overlay = false
     /// Multiplies the alpha of everything added while set (style crossfades).
     var alphaScale: Float = 1
     /// Clip radius for shapes added from now on (0 = none).
@@ -218,6 +276,7 @@ struct OrbScene {
         instances.reserveCapacity(capacity)
         batches.reserveCapacity(32)
         texts.reserveCapacity(48)
+        points.reserveCapacity(capacity > 0 ? 2048 : 0)
     }
 
     mutating func reset() {
@@ -225,10 +284,12 @@ struct OrbScene {
         instances.removeAll(keepingCapacity: true)
         batches.removeAll(keepingCapacity: true)
         texts.removeAll(keepingCapacity: true)
+        points.removeAll(keepingCapacity: true)
         alphaScale = 1
         clipRadius = 0
         clipFeather = 0
         contentScale = 1
+        overlay = false
     }
 
     mutating func add(_ instance: OrbInstance, blend: OrbBlend) {
@@ -237,16 +298,48 @@ struct OrbScene {
         let clip = Float(clipRadius)
         let feather = Float(clipFeather)
         if let last = batches.indices.last, batches[last].pass == .shapes(blend), batches[last].clip == clip,
-           batches[last].feather == feather, batches[last].start + batches[last].count == instances.count {
+           batches[last].feather == feather, batches[last].overlay == overlay,
+           batches[last].start + batches[last].count == instances.count {
             batches[last].count += 1
         } else {
-            batches.append(Batch(pass: .shapes(blend), clip: clip, feather: feather, start: instances.count, count: 1))
+            batches.append(Batch(pass: .shapes(blend), clip: clip, feather: feather, start: instances.count, count: 1,
+                                 overlay: overlay))
         }
         instances.append(instance)
     }
 
+    /// Adds a three-stroke polyline through `path` (points relative to `origin`, y down); see `OrbInstance.polyline`.
+    mutating func addPolyline<Path: Sequence>(_ path: Path, origin: CGPoint, glowColor: RGBColor, coreColor: RGBColor,
+                                              outer: OrbStroke, mid: OrbStroke, core: OrbStroke, blend: OrbBlend)
+        where Path.Element == SIMD2<Double> {
+        let first = points.count
+        var lo = SIMD2<Float>(repeating: .greatestFiniteMagnitude)
+        var hi = SIMD2<Float>(repeating: -.greatestFiniteMagnitude)
+        let o = SIMD2<Float>(Float(origin.x), Float(origin.y))
+        for point in path {
+            let p = o + SIMD2<Float>(Float(point.x), Float(point.y))
+            lo = pointwiseMin(lo, p)
+            hi = pointwiseMax(hi, p)
+            points.append(p)
+        }
+        let count = points.count - first
+        guard count >= 2 else {
+            points.removeLast(count)
+            return
+        }
+        let pad = Float(max(outer.width, mid.width, core.width) / 2 + 1)
+        let bounds = CGRect(x: CGFloat(lo.x - pad), y: CGFloat(lo.y - pad), width: CGFloat(hi.x - lo.x + 2 * pad),
+                            height: CGFloat(hi.y - lo.y + 2 * pad))
+        add(.polyline(first: first, count: count, bounds: bounds, glowColor: glowColor, coreColor: coreColor, outer: outer,
+                      mid: mid, core: core, sum: blend == .additive), blend: blend)
+    }
+
     mutating func addLiquid(mode: Int32) {
         batches.append(Batch(pass: .liquid(mode), clip: 0, start: instances.count, count: 0))
+    }
+
+    mutating func addLedField(mode: Int32, blend: OrbBlend) {
+        batches.append(Batch(pass: .ledField(mode, blend), clip: 0, start: instances.count, count: 0))
     }
 
     mutating func add(_ text: OrbTextDraw) {

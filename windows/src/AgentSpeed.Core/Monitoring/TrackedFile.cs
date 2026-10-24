@@ -26,6 +26,9 @@ internal enum RootFamily
 
     /// <summary>One SQLite database instead of transcript files (METRICS 5.2).</summary>
     OpenCode,
+    ZCode,
+    Kimi,
+    GrokBuild,
 }
 
 /// <summary>Per-family file rules: names, parser and the sources it can produce (METRICS 2 and 4).</summary>
@@ -35,7 +38,7 @@ internal static class Families
     public static readonly RootFamily[] FileFamilies =
         [
             RootFamily.Codex, RootFamily.Claude, RootFamily.DeepSeek, RootFamily.Gemini, RootFamily.Omp, RootFamily.Antigravity,
-            RootFamily.WorkBuddy, RootFamily.WorkBuddyAi,
+            RootFamily.WorkBuddy, RootFamily.WorkBuddyAi, RootFamily.Kimi, RootFamily.GrokBuild,
         ];
 
     public static TranscriptNaming Naming(RootFamily family) => family switch
@@ -47,6 +50,9 @@ internal static class Families
         RootFamily.Antigravity => TranscriptNaming.AntigravityDatabase,
         RootFamily.WorkBuddy or RootFamily.WorkBuddyAi => TranscriptNaming.WorkBuddySession,
         RootFamily.OpenCode => TranscriptNaming.OpenCodeDatabase,
+        RootFamily.ZCode => TranscriptNaming.ZCodeDatabase,
+        RootFamily.Kimi => TranscriptNaming.KimiSession,
+        RootFamily.GrokBuild => TranscriptNaming.GrokBuildSession,
         _ => TranscriptNaming.Jsonl,
     };
 
@@ -61,12 +67,15 @@ internal static class Families
         RootFamily.Antigravity => new AntigravityParser(path, deduper),
         RootFamily.WorkBuddy => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddy, root),
         RootFamily.WorkBuddyAi => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddyAi, root),
+        RootFamily.Kimi => new Kimi.KimiParser(path, deduper),
+        RootFamily.GrokBuild => new GrokBuild.GrokParser(path, deduper),
         _ => throw new ArgumentOutOfRangeException(nameof(family)),
     };
 
     /// <summary>Antigravity databases are queried; every other family is a file read by its extension.</summary>
     public static TranscriptTailer CreateTailer(RootFamily family, string path) =>
-        family == RootFamily.Antigravity ? new AntigravityTailer(path) : TranscriptTailer.For(path);
+        family == RootFamily.Antigravity ? new AntigravityTailer(path)
+        : family == RootFamily.GrokBuild ? new GrokBuild.GrokTailer(path) : TranscriptTailer.For(path);
 
     /// <summary>True when any source of the family is enabled.</summary>
     public static bool IsEnabled(RootFamily family, IReadOnlySet<SourceKind> enabled) => family switch
@@ -80,6 +89,9 @@ internal static class Families
         RootFamily.WorkBuddy => enabled.Contains(SourceKind.WorkBuddy),
         RootFamily.WorkBuddyAi => enabled.Contains(SourceKind.WorkBuddyAi),
         RootFamily.OpenCode => enabled.Contains(SourceKind.OpenCode),
+        RootFamily.ZCode => enabled.Contains(SourceKind.ZCode),
+        RootFamily.Kimi => enabled.Contains(SourceKind.Kimi),
+        RootFamily.GrokBuild => enabled.Contains(SourceKind.GrokBuild),
         _ => false,
     };
 
@@ -93,6 +105,9 @@ internal static class Families
         SourceKind.Antigravity => RootFamily.Antigravity,
         SourceKind.WorkBuddy => RootFamily.WorkBuddy,
         SourceKind.WorkBuddyAi => RootFamily.WorkBuddyAi,
+        SourceKind.ZCode => RootFamily.ZCode,
+        SourceKind.Kimi => RootFamily.Kimi,
+        SourceKind.GrokBuild => RootFamily.GrokBuild,
         _ => RootFamily.Claude,
     };
 }

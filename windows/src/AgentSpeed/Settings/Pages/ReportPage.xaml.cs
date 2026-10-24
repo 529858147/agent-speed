@@ -27,11 +27,14 @@ internal sealed partial class ReportPage
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => _model?.Tick(), Dispatcher);
         _clock.Stop();
         DataContextChanged += (_, _) => Attach(DataContext as ReportPaneViewModel);
+        Loaded += (_, _) => { if (IsVisible) { _clock.Start(); _model?.Opened(); } };
+        Unloaded += (_, _) => { _clock.Stop(); _model?.Closed(); };
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible)
             {
                 _clock.Start();
+                _model?.Opened();
                 UpdateApiKeyPlaceholder();
             }
             else
@@ -46,6 +49,7 @@ internal sealed partial class ReportPage
     {
         if (_model is not null)
         {
+            _model.Closed();
             _model.PropertyChanged -= OnModelChanged;
         }
 
@@ -53,6 +57,7 @@ internal sealed partial class ReportPage
         if (model is not null)
         {
             model.PropertyChanged += OnModelChanged;
+            if (IsVisible) model.Opened();
         }
     }
 

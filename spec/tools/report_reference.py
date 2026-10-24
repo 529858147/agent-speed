@@ -42,13 +42,21 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+from execution_modes_reference import EXTENSIONS, report_extension_errors, supported
+
 SPEC = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = SPEC / "report-schema.json"
 VECTORS_PATH = SPEC / "fixtures" / "report-vectors.json"
 EXAMPLES_DIR = SPEC / "fixtures" / "report-examples"
 
 SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
-           "workbuddyAi")
+           "workbuddyAi", "zcode", "kimi", "grokBuild")
+
+
+def source_order(source):
+    return (SOURCES.index(source), "") if source in SOURCES else (len(SOURCES), source)
+
+
 SECTIONS = ("sources", "models", "cost", "traffic")
 DEFAULT_SECTIONS = SECTIONS  # DESIGN 11: every section switch is on by default
 LABEL = "AGENTSPEED-V1"
@@ -531,6 +539,7 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
     errors = schema_errors(report, schema["$defs"]["report"], schema, closed=strict)
     if errors or not strict:
         return errors
+    errors += [path + ": " + reason for path, reason in report_extension_errors(report)]
     live, peak, delta = report["live"], report["peak"], report["delta"]
     rates = [("live.outputTokS", live["outputTokS"]), ("live.totalTokS", live["totalTokS"]),
              ("peak.outputTokS", peak["outputTokS"]), ("peak.totalTokS", peak["totalTokS"])]
@@ -576,7 +585,7 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
                 errors.append(f"{key}: peak {direction} below the rate")
     if "sources" in report:
         listed = [entry["source"] for entry in report["sources"]]
-        if listed != sorted(listed, key=SOURCES.index) or len(set(listed)) != len(listed):
+        if listed != sorted(listed, key=source_order) or len(set(listed)) != len(listed):
             errors.append("sources: not unique or not in source order")
         for field in delta:
             if sum(entry["delta"][field] for entry in report["sources"]) != delta[field]:
@@ -622,7 +631,7 @@ def report_errors(report, schema: dict, *, strict: bool = True, sections: tuple 
         if sum(m["generating"] for m in models) != live["agents"]["generating"]:
             errors.append("models: generating does not add up")
         for m in models:
-            if m["sources"] != sorted(m["sources"], key=SOURCES.index):
+            if m["sources"] != sorted(m["sources"], key=source_order):
                 errors.append(f"models.{m['id']}: sources not in source order")
             if ("deltaMicroUsd" in m) != ("cost" in report):
                 errors.append(f"models.{m['id']}: deltaMicroUsd must be present exactly with the cost section")
@@ -734,6 +743,9 @@ def parse_discovery(document, fetched_from: str) -> dict:
     if sections is not None and not all(isinstance(name, str) for name in sections):
         raise DiscoveryError("sections")
     result["sections"] = [name for name in SECTIONS if sections is None or name in sections]
+    enabled = {name: 1 for name in EXTENSIONS if supported(document.get("extensions"), name)}
+    if enabled:
+        result["extensions"] = enabled
     return result
 
 
@@ -804,7 +816,8 @@ class ReferenceService:
 
     def __init__(self, *, authority: str, api_path: str = "", name: str = "Agent Speed reference server",
                  api_key_mode: str = "none", api_keys: tuple = (), rules: dict | None = None,
-                 limits: dict | None = None, sections: tuple = SECTIONS, log=None):
+                 limits: dict | None = None, sections: tuple = SECTIONS, log=None,
+                 extensions: dict | None = None):
         self.authority, self.api_path = authority.lower(), api_path.rstrip("/")
         self.name, self.api_key_mode, self.api_keys = name, api_key_mode, set(api_keys)
         self.rules = username_rules(rules)
@@ -818,17 +831,25 @@ class ReferenceService:
         self.ip_bucket = TokenBucket(60, 1.0)
         self.device_bucket = TokenBucket(3, 0.25)
         self.log = log or (lambda line: None)
+        self.extensions = {name: 1 for name in EXTENSIONS if supported(extensions, name)}
+        self.extension_state = None
+        if self.extensions:
+            from report_profile_reference import ProfileExtensions
+            self.extension_state = ProfileExtensions(self, sys.modules[__name__])
 
     # -- documents
 
     def discovery(self, scheme: str = "https") -> dict:
         api = f"{scheme}://{self.authority}{self.api_path}"
         repo = "https://github.com/zoefix/agent-speed"
-        return {"protocol": "agent-speed-report", "versions": [1],
+        result = {"protocol": "agent-speed-report", "versions": [1],
                 "service": {"name": self.name, "description": "Local test server (spec/tools/report_server.py).",
                             "terms": repo, "privacy": repo, "retentionDays": 0},
                 "api": api, "apiKey": {"mode": self.api_key_mode}, "username": dict(self.rules),
                 "limits": dict(self.limits), "sections": list(self.sections)}
+        if self.extensions:
+            result["extensions"] = dict(self.extensions)
+        return result
 
     # -- helpers
 
@@ -866,11 +887,20 @@ class ReferenceService:
         route_path = path.split("?", 1)[0]
         if method == "GET" and route_path == "/.well-known/agent-speed-report":
             return 200, {"Cache-Control": "max-age=3600"}, self.discovery()
+        if self.extension_state and method == "GET" and route_path == self.api_path + "/public/users":
+            return 200, {}, {"users": self.extension_state.public_users(now)}
+        if self.extension_state and method == "GET":
+            asset = self.extension_state.public_avatar(route_path)
+            if asset is not None:
+                return asset
         if not route_path.startswith(self.api_path + "/v1/"):
             return self._error(404, "not_found")
         route = route_path[len(self.api_path):]
+        extension_methods = self.extension_state.allowed(route) if self.extension_state else None
         match = re.fullmatch(r"/v1/devices/([0-9a-f-]{36})(/key)?", route)
-        if route == "/v1/devices":
+        if extension_methods:
+            allowed = extension_methods
+        elif route == "/v1/devices":
             allowed = ("POST",)
         elif route == "/v1/reports":
             allowed = ("POST",)
@@ -882,8 +912,10 @@ class ReferenceService:
             return self._error(404, "not_found")
         if method not in allowed:
             return 405, {"Allow": ", ".join(allowed)}, {"error": {"code": "method_not_allowed"}}
-        if len(body) > self.limits["maxBodyBytes"]:
-            return self._error(413, "payload_too_large")
+        binary_avatar = extension_methods and route == "/v1/profile/avatar" and method == "PUT"
+        body_limit = 512 * 1024 if binary_avatar else self.limits["maxBodyBytes"]
+        if len(body) > body_limit:
+            return self._error(413, "avatar_too_large" if binary_avatar else "payload_too_large")
         field = check_signature_headers(headers)
         if field:
             return self._error(400, "bad_request", "malformed or missing header", field=field)
@@ -899,7 +931,7 @@ class ReferenceService:
                 return self._error(401, "api_key_invalid")
         device_id = headers["x-agentspeed-device"]
         document = None
-        if body:
+        if body and not binary_avatar:
             try:
                 document = strict_json(body)
             except StrictJsonError as error:
@@ -934,6 +966,8 @@ class ReferenceService:
                 self.devices[device_id]["apiKey"] = api_key
         if route == "/v1/devices":
             return self._register(device_id, pub, document, api_key, now)
+        if extension_methods:
+            return self.extension_state.handle(device_id, method, route, headers, body, document, now)
         if route == "/v1/reports":
             return self._report(device_id, headers, body, document, now)
         if match.group(2):
@@ -1035,6 +1069,8 @@ class ReferenceService:
         return 200, {}, {"status": "rotated"}
 
     def _delete(self, device_id):
+        if self.extension_state:
+            self.extension_state.delete_device(device_id)
         self._release(device_id)
         device = self.devices.pop(device_id)
         self.nonces = {k: v for k, v in self.nonces.items() if k[0] != device_id}
@@ -1052,6 +1088,10 @@ class ReferenceService:
         errors = schema_errors(document, self.schema["$defs"]["report"], self.schema)
         if errors:
             return self._error(422, "payload_invalid", errors[0], field=json_pointer(errors[0]))
+        extension_errors = report_extension_errors(document, self.extensions)
+        if extension_errors:
+            field, reason = extension_errors[0]
+            return self._error(422, "payload_invalid", reason, field=field)
         device = self.devices[device_id]
         if document["deviceId"] != device_id:
             return self._error(400, "device_mismatch")
@@ -1076,6 +1116,8 @@ class ReferenceService:
         if "cost" in document:
             totals["costMicroUsd"] = totals.get("costMicroUsd", 0) + document["cost"]["deltaMicroUsd"]
         device.update(last=document, lastAt=now, online=document["activity"] != "leaving")
+        if self.extension_state:
+            self.extension_state.record_report(device_id, document, now)
         self.log(report_line(document))
         return 200, {}, {"status": "accepted"}
 

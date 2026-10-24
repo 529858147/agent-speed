@@ -16,6 +16,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
     /// WorkBuddy (China edition) and WorkBuddy AI (international edition): one format, one root each (METRICS 4.9).
     case workbuddy
     case workbuddyAi
+    case kimi
+    case grokBuild
 
     /// Nil for sources that are not read from transcript files: OpenCode is a database (`OpencodeSource`).
     init?(_ source: SourceKind) {
@@ -28,7 +30,9 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .antigravity: self = .antigravity
         case .workbuddy: self = .workbuddy
         case .workbuddyAi: self = .workbuddyAi
-        case .opencode: return nil
+        case .kimi: self = .kimi
+        case .grokBuild: self = .grokBuild
+        case .opencode, .zcode: return nil
         }
     }
 
@@ -43,6 +47,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .antigravity: [.antigravity]
         case .workbuddy: [.workbuddy]
         case .workbuddyAi: [.workbuddyAi]
+        case .kimi: [.kimi]
+        case .grokBuild: [.grokBuild]
         }
     }
 
@@ -57,6 +63,8 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
         case .omp: .ompSession
         case .antigravity: .antigravityDatabase
         case .workbuddy, .workbuddyAi: .workbuddySession
+        case .kimi: .kimiSession
+        case .grokBuild: .grokBuildSession
         }
     }
 
@@ -69,12 +77,16 @@ enum TranscriptFamily: String, CaseIterable, Sendable {
     /// The stat that identifies one transcript of this family; nil unless it is a regular file.
     func stat(_ path: String) -> FileStat? {
         if isDatabase { return FileStat.databaseStat(path) }
+        if self == .grokBuild { return GrokBuildParser.stat(path) }
         guard let stat = FileStat.lstat(path), stat.isRegularFile else { return nil }
         return stat
     }
 
     /// The transcript a changed path belongs to: an Antigravity `<id>.db-wal` stands for `<id>.db`.
     func transcriptPath(forChanged path: String) -> String {
+        if self == .grokBuild, (path as NSString).lastPathComponent == "summary.json" {
+            return ((path as NSString).deletingLastPathComponent as NSString).appendingPathComponent("updates.jsonl")
+        }
         guard isDatabase, path.hasSuffix(".db-wal") else { return path }
         return String(path.dropLast(4))
     }
@@ -87,6 +99,8 @@ enum DecodedLine: Sendable {
     case gemini(LineExtraction<GeminiLine>)
     case omp(LineExtraction<OmpLine>)
     case workbuddy(LineExtraction<WorkBuddyLine>)
+    case kimi(LineExtraction<KimiLine>)
+    case grokBuild(LineExtraction<GrokBuildLine>)
 }
 
 /// Lines decoded ahead of time (off the state-machine thread) so seeding can extract in parallel. An Antigravity read
@@ -99,6 +113,8 @@ enum DecodedLines: Sendable {
     case omp([LineExtraction<OmpLine>])
     case antigravity(AntigravityBatch?)
     case workbuddy([LineExtraction<WorkBuddyLine>])
+    case kimi([LineExtraction<KimiLine>])
+    case grokBuild([LineExtraction<GrokBuildLine>])
 }
 
 /// A family-agnostic per-file parser. Exactly one of the machines is set.
@@ -111,6 +127,8 @@ struct TranscriptParser: Sendable {
     private var omp: OmpParser?
     private var antigravity: AntigravityParser?
     private var workbuddy: WorkBuddyParser?
+    private var kimi: KimiParser?
+    private var grokBuild: GrokBuildParser?
 
     /// `root` is the root folder the file was discovered under (omp and WorkBuddy derive `isSubagent` from it,
     /// METRICS 4.7, 4.9).
@@ -125,11 +143,13 @@ struct TranscriptParser: Sendable {
         case .antigravity: antigravity = AntigravityParser(agentId: agentId, fileID: fileID)
         case .workbuddy, .workbuddyAi:
             workbuddy = WorkBuddyParser(source: family.sources[0], agentId: agentId, fileID: fileID, root: root)
+        case .kimi: kimi = KimiParser(agentId: agentId, fileID: fileID)
+        case .grokBuild: grokBuild = GrokBuildParser(agentId: agentId, fileID: fileID)
         }
     }
 
     var state: AgentState {
-        codex?.state ?? claude?.state ?? dsh?.state ?? gemini?.state ?? omp?.state ?? workbuddy?.state ?? antigravity!.state
+        codex?.state ?? claude?.state ?? dsh?.state ?? gemini?.state ?? omp?.state ?? workbuddy?.state ?? kimi?.state ?? grokBuild?.state ?? antigravity!.state
     }
 
     /// An Antigravity database without the expected tables (`unsupportedFormat`).
@@ -147,7 +167,15 @@ struct TranscriptParser: Sendable {
         case .omp: .omp(OmpLineExtractor.extract(bytes))
         case .workbuddy, .workbuddyAi: .workbuddy(WorkBuddyLineExtractor.extract(bytes))
         case .antigravity: nil
+        case .kimi: .kimi(KimiLineExtractor.extract(bytes))
+        case .grokBuild: .grokBuild(GrokBuildLine.extract(bytes))
         }
+    }
+
+    var hasPartialHistory: Bool { grokBuild?.partialHistory ?? false }
+
+    mutating func refreshMetadata(deduper: inout Deduper, emit: (ResponseUpsert) -> Void) -> Bool {
+        grokBuild?.refreshMetadata(deduper: &deduper, emit: emit) ?? false
     }
 
     /// Counts a unit of input that could not be decoded at all, such as a corrupt zstd frame (METRICS 5.1).
@@ -159,6 +187,8 @@ struct TranscriptParser: Sendable {
         omp?.noteMalformedLine()
         antigravity?.noteMalformedLine()
         workbuddy?.noteMalformedLine()
+        kimi?.noteMalformedLine()
+        grokBuild?.noteMalformedLine()
     }
 
     mutating func consume(_ line: DecodedLine, deduper: inout Deduper, emit: (ResponseUpsert) -> Void) {
@@ -169,6 +199,8 @@ struct TranscriptParser: Sendable {
         case .gemini(let extraction): gemini?.consume(extraction, deduper: &deduper, emit: emit)
         case .omp(let extraction): omp?.consume(extraction, deduper: &deduper, emit: emit)
         case .workbuddy(let extraction): workbuddy?.consume(extraction, deduper: &deduper, emit: emit)
+        case .kimi(let extraction): kimi?.consume(extraction, deduper: &deduper, emit: emit)
+        case .grokBuild(let extraction): grokBuild?.consume(extraction, deduper: &deduper, emit: emit)
         }
     }
 
@@ -193,6 +225,10 @@ struct TranscriptParser: Sendable {
             if let batch { antigravity?.consume(batch, deduper: &deduper, emit: emit) }
         case .workbuddy(let extractions):
             for extraction in extractions { workbuddy?.consume(extraction, deduper: &deduper, emit: emit) }
+        case .kimi(let extractions):
+            for extraction in extractions { kimi?.consume(extraction, deduper: &deduper, emit: emit) }
+        case .grokBuild(let extractions):
+            for extraction in extractions { grokBuild?.consume(extraction, deduper: &deduper, emit: emit) }
         }
     }
 }
@@ -223,6 +259,12 @@ enum TranscriptDecoder {
         case .workbuddy, .workbuddyAi:
             let (lines, read) = extract(WorkBuddyLineExtractor.extract, reader: &reader)
             return (.workbuddy(lines), read)
+        case .kimi:
+            let (lines, read) = extract(KimiLineExtractor.extract, reader: &reader)
+            return (.kimi(lines), read)
+        case .grokBuild:
+            let (lines, read) = extract(GrokBuildLine.extract, reader: &reader)
+            return (.grokBuild(lines), read)
         }
     }
 

@@ -4,7 +4,7 @@ using AgentSpeed.Core.Parsing;
 namespace AgentSpeed.Core.IO;
 
 /// <summary>Reads appended bytes of one plain JSONL transcript and splits them into complete lines (METRICS 5).</summary>
-internal sealed class FileTailer : TranscriptTailer
+internal class FileTailer : TranscriptTailer
 {
     public const int MaxLineBytes = LineSplitter.MaxLineBytes;
     private const int ChunkBytes = 1024 * 1024;

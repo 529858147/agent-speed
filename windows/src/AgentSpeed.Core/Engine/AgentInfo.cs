@@ -11,4 +11,7 @@ internal readonly record struct AgentInfo(
     AgentPhase Phase,
     long? InFlightStartMs,
     long? LastLineMs,
-    string? ParentId = null);
+    string? ParentId = null)
+{
+    public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
+}

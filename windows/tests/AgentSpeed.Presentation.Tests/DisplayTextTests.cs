@@ -153,13 +153,16 @@ public class DisplayTextTests
     [InlineData(SourceKind.Codex, "source.codex", "Codex")]
     [InlineData(SourceKind.ClaudeCode, "source.claudeCode", "Claude Code")]
     [InlineData(SourceKind.ClaudeDesktop, "source.claudeDesktop", "Claude Desktop")]
-    [InlineData(SourceKind.DeepSeek, "source.deepseek", "DeepSeek")]
+    [InlineData(SourceKind.DeepSeek, "source.deepseek", "DSH")]
     [InlineData(SourceKind.OpenCode, "source.opencode", "OpenCode")]
     [InlineData(SourceKind.Gemini, "source.gemini", "Gemini CLI")]
     [InlineData(SourceKind.Omp, "source.omp", "omp")]
     [InlineData(SourceKind.Antigravity, "source.antigravity", "Antigravity")]
     [InlineData(SourceKind.WorkBuddy, "source.workbuddy", "WorkBuddy")]
     [InlineData(SourceKind.WorkBuddyAi, "source.workbuddyAi", "WorkBuddy AI")]
+    [InlineData(SourceKind.ZCode, "source.zcode", "ZCode")]
+    [InlineData(SourceKind.Kimi, "source.kimi", "Kimi Code CLI")]
+    [InlineData(SourceKind.GrokBuild, "source.grokBuild", "Grok Build")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));

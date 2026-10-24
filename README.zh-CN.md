@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop、DeepSeek Harness、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy 与 WorkBuddy AI 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
+**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop、DSH（DeepSeek Harness）、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy、WorkBuddy AI、ZCode、Kimi Code CLI 与 Grok Build 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -53,6 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **称号主题**——九套速度称号：「交通工具」「动物」「蒲福风级」「宇宙」「修真境界」「武学境界」「魔法位阶」「游戏段位」「工程师生涯」，也能自定义最多 8 组。选择交通工具以外的主题时，面板圆圈会显示发光的称号徽章。
 - **用量历史**——从最早的记录开始，每天的输出与输入 token、请求数、平均速度与峰值、费用与网络流量，可按来源，以今天、昨天或任意日期区间绘成图表，并查看各模型的速度、导出 CSV。只保存每日汇总，即使工具删除了旧记录，历史也不会消失。
 - **实时上报（可选）**——默认关闭；想参与的话，可以用你取的用户名，把实时数字分享给你选择的 API，例如 [Codex Radar](https://codexradar.com/) 的速蹬天梯。从不发送对话内容、文件或项目名称，详见[隐私](#隐私)。
+- **执行模式**——依据可靠记录显示 Standard／Fast／Ultrafast，以及各 agent 的加速卡、模型变体或路由选择，区分默认设置与未知；历史可单独导出模式 CSV，沿用既有测速公式。
+- **头像与多设备（可选 API 扩展）**——预览、更换、移除头像，通过一次性配对码由原设备批准后合并身份；每台设备保留自己的密钥，解绑不影响已入账历史。接收端须支持[新版 API 结构](spec/report-schema.json)。
 - **全原生**——macOS 使用 SwiftUI + AppKit，Windows 使用 WPF 与 Fluent／Mica。浅色、深色、自动主题；繁體中文、简体中文、English、日本語。
 - **人性化**——特效强度从「关闭」到「热血全开」，遵循「减弱动态效果」与高对比度设置，支持鼠标穿透、边缘磁吸、记住每块屏幕上的位置、登录时自动启动。
 - **永远最新**——后台检查 GitHub Releases，有新版一键更新，并以 SHA-256 验证。
@@ -76,13 +78,18 @@ Agent Speed 只读取 agent 本来就写在你电脑上的记录：
 | Codex（CLI、IDE、桌面版） | `~/.codex/sessions` 与 `archived_sessions`，含压缩记录（或 `$CODEX_HOME`） |
 | Claude Code（CLI、IDE） | `~/.claude/projects`（或 `$CLAUDE_CONFIG_DIR/projects`） |
 | Claude Desktop（Code 与 agent 会话） | `~/.claude/projects`，自动区分 |
-| DeepSeek Harness（`dsh`，桌面版与命令行） | `~/.dsh/sessions`（或 `$DSH_HOME/sessions`） |
+| DSH（`dsh`，桌面版与命令行） | `~/.dsh/sessions`（或 `$DSH_HOME/sessions`） |
 | OpenCode（命令行与桌面版） | `~/.local/share/opencode/opencode.db`（或 `$XDG_DATA_HOME/opencode`） |
 | Gemini CLI | `~/.gemini/tmp`（或 `$GEMINI_CLI_HOME/.gemini/tmp`） |
 | omp（oh-my-pi） | `~/.omp/agent/sessions`，以及 `~/.omp/profiles` 里的每个配置文件（或 `$PI_CODING_AGENT_DIR/sessions`） |
 | Antigravity（`agy` 命令行、桌面版、IDE 与扩展） | `~/.gemini/antigravity-cli`、`~/.gemini/antigravity`、`~/.gemini/antigravity-ide`（其中的 `conversations` 文件夹） |
 | WorkBuddy（腾讯，国内版） | `~/.workbuddy/projects` |
 | WorkBuddy AI（国际版） | `~/.workbuddy-ai/projects` |
+| ZCode | `~/.zcode/cli/db/db.sqlite`（或 `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`） |
+| Kimi Code CLI（TypeScript v2） | `~/.kimi-code/sessions`（或 `$KIMI_CODE_HOME/sessions`） |
+| Grok Build | `~/.grok/sessions`（或 `$GROK_HOME/sessions`） |
+
+Grok Build 提供每回合、每模型的原生批次记录：Token、API 耗时与实际调用数交给同一套速度引擎计算。子 agent 用量已合并在父会话中，因此只计算一次，仍会显示子 agent 的活动状态；上游未保存每次调用的独立时间线，无法重建批次内的并行速度。
 
 **速度＝输出 token ÷ 模型实际花在这些 token 上的时间**——从发出请求到回应完成，含等待第一个字。多个 agent 并行时会加总。回应仍在进行时，先以该 agent 近期的实测速度估算，完成的瞬间立即以实测值校正。也可以切换成「总吞吐量」（输入＋输出）。
 
@@ -97,6 +104,8 @@ Claude Desktop 普通聊天对话不会保存在本机，因此无法统计；Wo
 网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象；只有在你开启实时上报（见下文）时，才会把 agent 的字节数发送给你选择的服务。在 Windows 上，要显示各 agent 的流量需要安装可选的辅助服务；它以权限受限的“本地服务”账户运行，只统计每个程序的字节数，安装和卸载各需要一次管理员确认（[详细说明](spec/WINDOWS-SERVICE.md)）。
 
 实时上报（可选，默认关闭；面板会询问一次）：为某个 API（例如公开排行榜服务，像是内置的 Codex Radar 速蹬天梯 `deng.codexradar.com`）开启后，Agent Speed 会把你的实时速度、最近几秒用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型、各工具的明细——连同你选择的用户名（默认是电脑名称，一键即可换成随机名称）发送给该服务。agent 工作时每隔几秒上报一次，空闲时停止。它从不发送对话内容、提示词、文件／文件夹／项目名称或用量历史，上报失败的数据也不会补发。每条上报都用只保存在你电脑上的密钥签名；服务能确认数据来自同一台设备，但无法确认数字是否准确。可以在设置中暂停、关闭，或要求服务忘记你的设备。
+
+可选 API 扩展会在模型分享开启时，额外发送每模型的 Harness 请求明细与执行模式。头像上传与一次性设备配对仅由你明确操作，且接收端必须支持[扩展 API](spec/report-schema.json)；图片不会放入周期报文。配对不共享私钥，网络总开关也会停用个人资料请求。
 
 Agent Speed 可能连接的所有主机与时机，都列在 [`spec/NETWORK.md`](spec/NETWORK.md)。
 

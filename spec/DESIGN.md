@@ -474,9 +474,9 @@ Elements, back to front (layer numbers of section 2):
   - Flash: a radial glow over the digit's cell, radius 1.44 × the cell width, peak `min(0.8, 0.35 p)` fading as
     `(1 − t/T)²`, `T = 0.16 + 0.06 p` s; white in dark, `#6B80FF` at half strength in light.
   - Bolts: `1 + [h > 0.55] + [redline tier, 60 %]` per digit, at most 16 alive. A bolt starts on the top or bottom
-    edge of the digit (±0.36 cell height, within ±0.29 cell width of its center) and ends — redline tier, 30 %: on
-    the LED ring (0.39 S) in the direction of its start; otherwise 30 %: on the same edge of a neighboring digit;
-    else a short crackle `S (0.05 + 0.07 p)` long pointing away from the digit (±90° ± 0.85 rad). Path: midpoint
+    edge of the digit (±0.36 cell height, within ±0.29 cell width of its center) and ends — with one uniform roll `u`:
+    redline tier and `u < 0.3`: on the LED ring (0.39 S) in the direction of its start; else `u < 0.6` and a
+    neighboring digit exists: on the same edge of that digit; else a short crackle `S (0.05 + 0.07 p)` long pointing away from the digit (±90° ± 0.85 rad). Path: midpoint
     displacement, 5 levels, roughness 0.3, × 0.55 per level; one fork (two when `p > 0.9`) from an interior point at
     ±0.95 rad, 0.2–0.5 of the bolt length, 4 levels, roughness 0.35. Re-shaped every 45 ms; life
     `0.14 + 0.1 rand + 0.05 p` s; alpha `min(1, 1.6 (1 − t/T))` with a 22 % chance per frame of dropping to 40 %.
@@ -484,8 +484,8 @@ Elements, back to front (layer numbers of section 2):
     95 % in the core color; forks 0.6 w at 80 %. Dark: glow `mix(heat(max(h, 0.3)), #B3D1FF, 0.45)`, core white,
     additive. Light: glow `#6B80FF`, core `#3340D9`, normal blending.
 - **Pulse** (layer 7): plus a soft wake ring (`0.5 → 0.66 S`, 3.5× wider, 30 %) and the silk ripple; 0.85 s.
-- **New peak** (layer 8): the disc flashes (white-hot, `0.75 e^(−4.5 t)` fading out by 0.3 S from the rim inward; light:
-  `#FFB021` at 35 %); a gold ring `#FFC74D` blows from 0.5 S to 0.74 S in 1.4 s; the 24 rays are 0.014 S wide, turn at
+- **New peak** (layer 8): the disc flashes (white-hot, `0.75 e^(−4.5 t)`, full within 0.15 S of `c` and fading to zero
+  at 0.6 S; light: `#FFB021` at 35 %); a gold ring `#FFC74D` blows from 0.5 S to 0.74 S in 1.4 s; the 24 rays are 0.014 S wide, turn at
   0.4 rad/s and reach 0.74 S; 160 sparks burst outward from 0.48 S (30 % gold `#FFD159`, 0.5–1.8 S/s, 0.7–1.6 s); plus
   the silk's gold sweep.
 
@@ -2384,6 +2384,18 @@ Everything applies live; turning measuring off stops the sampler and the helper 
 Agent Speed can share its live numbers with an API the user picks — for example a leaderboard service such as Codex
 Radar. The protocol and everything a service sees are `spec/REPORTING.md`; how each value is computed and when a
 report is sent are METRICS 11. Strings are `report.*` in `spec/strings.json`.
+
+Execution-mode labels distinguish configured defaults, task selections, harness records and response evidence;
+missing evidence stays unknown. See `spec/EXECUTION-MODES.md`. The optional profile controls in Settings → API
+provide avatar preview/upload/removal and approved one-time device pairing when the service advertises support
+(`spec/REPORTING-EXTENSIONS.md`). Explicit profile actions follow the network master switch; periodic sharing
+does not upload images or create identities. Existing measurement formulas and orb styles remain unchanged.
+
+The API page has one personal-profile card: avatar and editable name together. Before shared-identity binding,
+the name uses the existing device registration/rename flow; after binding it edits the shared display name without
+changing the device's registered username. Image selection keeps a local preview until explicit upload. A separate
+Manage devices surface contains identity creation, unlinking, pairing and the device list, with no duplicate avatar
+or name editor. Services without profile capabilities retain the existing registration/name controls.
 
 **Naming.** The feature is named after where the numbers go: the settings tab and its window title are
 `settings.report` — "API" in every language — and the main switch is `report.enabled` (即時上報到 API · 实时上报到

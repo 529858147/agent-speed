@@ -29,6 +29,7 @@ from urllib.parse import unquote
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import prices as pricing  # noqa: E402
+import harness_reference as harnesses  # noqa: E402
 
 if hasattr(sys, "set_int_max_str_digits"):
     sys.set_int_max_str_digits(0)  # integer literals of any length are numbers (METRICS 3.6), not malformed lines
@@ -1868,11 +1869,11 @@ def today_stats(responses, today_start, now):
     peak = 0.0
     for k in b:
         peak = max(peak, sum(b.get(k - i * 1000, 0.0) for i in range(3)) / 3)
-    return dict(requests=len(today), output=sum(r["output"] for r in today),
-                unfinalized=sum(1 for r in today if not is_final(r)),
+    return dict(requests=sum(r.get("requestCount", 1) for r in today), output=sum(r["output"] for r in today),
+                unfinalized=sum(r.get("requestCount", 1) for r in today if not is_final(r)),
                 input=sum(r["input"] for r in today), average=sp[0] if sp else None, peak=peak, buckets=b,
                 cost=sum(r["costMicroUsd"] for r in today if r.get("costMicroUsd") is not None),
-                unpriced=sum(1 for r in today if r.get("costMicroUsd") is None))
+                unpriced=sum(r.get("requestCount", 1) for r in today if r.get("costMicroUsd") is None))
 
 
 # ----------------------------------------------------------------------------- commands
@@ -1999,6 +2000,7 @@ def check_fixtures():
                         failures.append("%s: bucket %s expected %r got %r" % (case["name"], k, v,
                                                                               st["buckets"].get(int(k))))
     failures += ["prices: " + e for e in pricing.check_cases()]
+    failures += ["harnesses: " + e for e in harnesses.check_fixtures(root)]
     if failures:
         print("\n".join(failures))
         sys.exit(1)
@@ -2238,7 +2240,7 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
 
 
 def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
-               table=pricing.TABLE):
+               table=pricing.TABLE, zcode_root=None, kimi_root=None, grok_root=None):
     started = time.time()
     index = pricing.Index(pricing.load(table))
     now = datetime.now().astimezone()
@@ -2275,6 +2277,10 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
                                          ("reasoning", r["reasoning"]), ("final", r["final"]),
                                          ("provider", r["provider"]), ("fast", r["fast"]),
                                          ("costMicroUsd", index.price(r) if has_day(r["endMs"]) else None)]))
+    for source, agent, record in harnesses.collect(zcode_root, kimi_root, grok_root):
+        if record["endMs"] >= today_start:
+            rows.append(dict(record, source=source, agentId=agent,
+                             costMicroUsd=index.price(record) if has_day(record["endMs"]) else None))
     rows.sort(key=lambda r: (r["endMs"], r["key"]))
     for r in rows:
         print(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
@@ -2283,13 +2289,13 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
         counts[r["source"]] = counts.get(r["source"], 0) + 1
     print(json.dumps({"summary": {"counts": counts, "output": sum(r["output"] for r in rows),
                                   "costMicroUsd": sum(r["costMicroUsd"] or 0 for r in rows),
-                                  "unpricedRequests": sum(1 for r in rows if r["costMicroUsd"] is None),
+                                  "unpricedRequests": sum(r.get("requestCount", 1) for r in rows if r["costMicroUsd"] is None),
                                   "input": sum(r["input"] for r in rows), "filesRead": read_files,
                                   "bytesRead": read_bytes, "seedMs": int((time.time() - started) * 1000)}}))
 
 
 def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), omp_dirs=(), ag_stores=(),
-                wb_roots=(), include_archived=True):
+                wb_roots=(), include_archived=True, zcode_root=None, kimi_root=None, grok_root=None):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
     files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots,
                           limit=10 ** 9, include_archived=include_archived)
@@ -2307,6 +2313,7 @@ def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), 
     if opencode_db and os.path.exists(opencode_db):
         for st in opencode_states(opencode_db, dedupe):
             out += [(st.source, st.path, r) for r in st.responses.values()]
+    out += harnesses.collect(zcode_root, kimi_root, grok_root)
     return out
 
 
@@ -2326,12 +2333,13 @@ def daily_history(responses, tz=None, day_pricing=None):
         d = days.setdefault(key, dict(requests=0, input=0, cachedInput=0, cacheWriteInput=0, output=0, reasoning=0,
                                       measuredOutput=0, measuredMs=0, unfinalized=0, costMicroUsd=0,
                                       unpricedRequests=0, agents=set(), models={}))
-        d["requests"] += 1
+        requests = r.get("requestCount", 1)
+        d["requests"] += requests
         for f in HISTORY_TOKENS:
             d[f] += r[f]
         iv = interval(r)
         m = d["models"].setdefault(r.get("model") or "", [0, 0, 0, 0, 0, 0])
-        m[0] += 1
+        m[0] += requests
         m[1] += r["output"]
         if iv is not None and is_final(r):
             d["measuredOutput"] += r["output"]
@@ -2339,11 +2347,11 @@ def daily_history(responses, tz=None, day_pricing=None):
             m[2] += r["output"]
             m[3] += iv[1] - iv[0]
         if not is_final(r):
-            d["unfinalized"] += 1
+            d["unfinalized"] += requests
         cost = day_pricing.price(key[0], r)
         if cost is None:
-            d["unpricedRequests"] += 1
-            m[5] += 1
+            d["unpricedRequests"] += requests
+            m[5] += requests
         else:
             d["costMicroUsd"] += cost
             m[4] += cost
@@ -2370,6 +2378,9 @@ def main():
     parser.add_argument("--codex", default=None)
     parser.add_argument("--claude", default=None)
     parser.add_argument("--dsh", default=None)
+    parser.add_argument("--zcode", default=None, help="ZCode data folder, database folder, or db.sqlite")
+    parser.add_argument("--kimi", default=None, help="Kimi Code CLI sessions folder")
+    parser.add_argument("--grok", default=None, help="Grok Build sessions folder")
     parser.add_argument("--gemini", action="append", default=None, help="Gemini CLI tmp folder (repeatable)")
     parser.add_argument("--omp", action="append", default=None, help="omp sessions folder (repeatable)")
     parser.add_argument("--antigravity", action="append", default=None,
@@ -2394,12 +2405,16 @@ def main():
     ag_stores = ([s for a in args.antigravity for s in antigravity_stores(setting=a)] if args.antigravity
                  else antigravity_stores())
     wb_roots = workbuddy_roots(settings={"workbuddy": args.workbuddy, "workbuddyAi": args.workbuddy_ai})
+    zcode_root = args.zcode or os.path.join(os.environ.get("ZCODE_DATA_BASE_DIR") or home, ".zcode", "cli", "db")
+    kimi_root = args.kimi or os.path.join(os.environ.get("KIMI_CODE_HOME") or os.path.join(home, ".kimi-code"), "sessions")
+    grok_root = args.grok or os.path.join(os.environ.get("GROK_HOME") or os.path.join(home, ".grok"), "sessions")
     if args.write_history_fixture:
         write_history_fixture()
         return
     if args.dump_history:
         rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs, omp_dirs,
-                                         ag_stores, wb_roots), tz=timezone.utc if args.utc else None,
+                                         ag_stores, wb_roots, zcode_root=zcode_root, kimi_root=kimi_root,
+                                         grok_root=grok_root), tz=timezone.utc if args.utc else None,
                              day_pricing=pricing.DayPricing([pricing.load(args.prices)]))
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
@@ -2407,7 +2422,8 @@ def main():
     if args.check_fixtures:
         check_fixtures()
     elif args.dump_today:
-        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots, args.prices)
+        dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots, args.prices,
+                   zcode_root, kimi_root, grok_root)
     else:
         parser.print_help()
 

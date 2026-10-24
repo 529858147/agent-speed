@@ -105,6 +105,10 @@ enum PreviewRenderer {
         if wants("cost") {
             CostPreviews.render(model: model, into: directory)
         }
+        if wants("modes") { ExecutionModePreviews.render(model: model, into: directory) }
+        #if DEBUG
+        if wants("profilecard") { ProfileCardPreviews.render(model: model, into: directory) }
+        #endif
         if wants("report") {
             ReportPreviews.render(model: model, into: directory)
         }

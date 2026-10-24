@@ -89,6 +89,31 @@
         </controls:SettingsCard>
         <TextBlock Text="{loc:Loc settings.sources.workbuddyAiHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
 
+        <controls:SettingsCard Header="{loc:Loc source.zcode}" Icon="&#xE8B7;" Description="{Binding ZCodePath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding ZCodeStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeZCodeCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetZCodeCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.zcodeHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+        <controls:SettingsCard Header="{loc:Loc source.kimi}" Icon="&#xE8B7;" Description="{Binding KimiPath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding KimiStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeKimiCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetKimiCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.kimiHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+        <controls:SettingsCard Header="{loc:Loc source.grokBuild}" Icon="&#xE8B7;" Description="{Binding GrokBuildPath}" Margin="0,12,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding GrokBuildStatus}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" TextWrapping="NoWrap" />
+                <Button Content="{loc:Loc settings.sources.change}" Command="{Binding ChangeGrokBuildCommand}" MinWidth="88" />
+                <Button Content="{loc:Loc settings.sources.reset}" Command="{Binding ResetGrokBuildCommand}" Margin="8,0,0,0" MinWidth="72" />
+            </StackPanel>
+        </controls:SettingsCard>
+        <TextBlock Text="{loc:Loc settings.sources.grokBuildHint}" Style="{StaticResource CaptionText}" Margin="2,6,0,0" />
+
         <controls:SettingsCard Header="{loc:Loc history.title}" Description="{loc:Loc history.privacy}" Icon="&#xE81C;" ContentBelow="True"
                                Margin="0,24,0,4">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">

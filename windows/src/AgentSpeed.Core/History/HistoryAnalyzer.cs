@@ -46,10 +46,10 @@ internal sealed record HistoryReport(
 /// parsed completely with the live rules in startup order, incrementally against a <see cref="HistoryStore"/>. One
 /// owner thread.
 /// </summary>
-internal sealed class HistoryAnalyzer
+internal sealed partial class HistoryAnalyzer
 {
     /// <summary>2: measured output and time per model (METRICS 8). 3: cost (METRICS 9.7).</summary>
-    public const int AnalysisVersion = 3;
+    public const int AnalysisVersion = 4;
 
     private const string OpenCodeFamily = "opencode";
     private const string ZoneMeta = "timeZone";
@@ -169,17 +169,17 @@ internal sealed class HistoryAnalyzer
         var priceVersion = Pricing.CurrentVersion.ToString(CultureInfo.InvariantCulture);
         var repricing = _entries.Count > 0 && !string.Equals(_store.Meta(PriceVersionMeta), priceVersion, StringComparison.Ordinal);
         var plan = BuildPlan(locations, enabled, zoneChanged, repricing, zoneId, cancellationToken);
-        var state = new HistoryProgress(0, plan.Files.Count + plan.Sessions.Count, 0, plan.Files.Sum(f => f.Size));
+        var state = new HistoryProgress(0, plan.Files.Count + plan.Sessions.Count + plan.ZCodeSessions.Count, 0, plan.Files.Sum(f => f.Size));
         progress?.Invoke(state);
-        int analyzed = 0, sessions = 0, unreadable = plan.OpenCodeFailed ? 1 : 0;
+        int analyzed = 0, sessions = 0, unreadable = (plan.OpenCodeFailed ? 1 : 0) + (plan.ZCodeFailed ? 1 : 0);
         long bytes = 0;
         var cancelled = false;
         try
         {
-            if (plan.Files.Count > 0 || plan.Sessions.Count > 0)
+            if (plan.Files.Count > 0 || plan.Sessions.Count > 0 || plan.ZCodeSessions.Count > 0)
             {
                 var ledger = new KeyLedger();
-                var replaced = plan.Files.Select(f => f.Previous?.Id ?? 0).Concat(plan.Sessions.Select(s => s.Previous?.Id ?? 0))
+                var replaced = plan.Files.Select(f => f.Previous?.Id ?? 0).Concat(plan.Sessions.Select(s => s.Previous?.Id ?? 0)).Concat(plan.ZCodeSessions.Select(s => s.Previous?.Id ?? 0))
                     .Where(id => id != 0).ToHashSet();
                 _store.LoadKeys(ledger, replaced);
                 var labeler = new DayLabeler(zone);
@@ -200,6 +200,12 @@ internal sealed class HistoryAnalyzer
                 {
                     cancelled = !AnalyzeFiles(plan.Files, ledger, labeler, pending, Flush, ref state, ref analyzed, ref bytes, ref unreadable,
                         progress, cancellationToken);
+                    if (!cancelled)
+                    {
+                        cancelled = !AnalyzeZCodeSessions(plan.ZCodeSessions, ledger, labeler, pending, Flush, ref state, ref sessions,
+                            progress, cancellationToken);
+                    }
+
                     if (!cancelled && plan.Database is { } database)
                     {
                         cancelled = !AnalyzeSessions(database, plan.Sessions, ledger, labeler, pending, Flush, ref state, ref sessions,
@@ -228,7 +234,7 @@ internal sealed class HistoryAnalyzer
             plan.Database?.Dispose();
         }
 
-        return new HistoryReport(plan.Discovered, plan.Files.Count + plan.Sessions.Count, analyzed, bytes, sessions, unreadable,
+        return new HistoryReport(plan.Discovered, plan.Files.Count + plan.Sessions.Count + plan.ZCodeSessions.Count, analyzed, bytes, sessions, unreadable,
             stopwatch.ElapsedMilliseconds, cancelled);
     }
 
@@ -295,6 +301,7 @@ internal sealed class HistoryAnalyzer
             PlanOpenCode(plan, OpenCodeDatabase.DatabasePath(locations.OpenCodeRoot), zoneChanged, repricing, zoneId);
         }
 
+        PlanZCode(plan, locations, enabled, zoneChanged, repricing, cancellationToken);
         return plan;
     }
 
@@ -551,6 +558,10 @@ internal sealed class HistoryAnalyzer
         public List<PlannedFile> Files { get; } = [];
 
         public List<PlannedSession> Sessions { get; } = [];
+
+        public List<PlannedZCodeSession> ZCodeSessions { get; } = [];
+
+        public bool ZCodeFailed { get; set; }
 
         public int Discovered { get; set; }
 

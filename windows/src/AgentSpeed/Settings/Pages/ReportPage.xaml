@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:AgentSpeed.Localization"
              xmlns:controls="clr-namespace:AgentSpeed.Controls"
+             xmlns:reporting="clr-namespace:AgentSpeed.Reporting"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
@@ -188,8 +189,11 @@
             </StackPanel>
         </Border>
 
-        <!-- 3. Username (always shown) -->
-        <Border Style="{StaticResource GroupCard}">
+        <!-- 3. Profile, or the registration name while profile extensions are unavailable. -->
+        <reporting:ReportProfileCard x:Name="InlineProfileCard" DataContext="{Binding Profile}"
+                                    ManageDevicesCommand="{Binding DataContext.ManageDevicesCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Visibility="{Binding DataContext.ShowsInlineProfile, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
+        <Border Style="{StaticResource GroupCard}" Visibility="{Binding ShowsLegacyUsername, Converter={StaticResource Visible}}">
             <StackPanel>
                 <Grid>
                     <Grid.ColumnDefinitions>

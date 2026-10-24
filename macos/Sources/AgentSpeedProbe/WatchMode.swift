@@ -39,9 +39,21 @@ enum WatchMode {
             item.add("phase", agent.phase.rawValue)
             item.add("live", agent.live.output)
             item.add("parent", agent.parentId.map { ($0 as NSString).lastPathComponent })
+            if !agent.modes.facts.isEmpty, let bytes = try? JSONEncoder().encode(agent.modes), let json = String(data: bytes, encoding: .utf8) {
+                item.add("modes", raw: json)
+            }
             return item.text
         }
         line.add("agents", raw: JSONLine.array(agents))
+        let configured = snapshot.sources.compactMap { source -> String? in
+            guard !source.configuredModes.facts.isEmpty,
+                  let bytes = try? JSONEncoder().encode(source.configuredModes), let json = String(data: bytes, encoding: .utf8) else { return nil }
+            var item = JSONLine()
+            item.add("source", source.kind.rawValue)
+            item.add("configuredModes", raw: json)
+            return item.text
+        }
+        if !configured.isEmpty { line.add("sources", raw: JSONLine.array(configured)) }
         var today = JSONLine()
         today.add("requests", snapshot.today.requests)
         today.add("input", snapshot.today.input)

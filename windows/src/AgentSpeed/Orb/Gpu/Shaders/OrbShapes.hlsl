@@ -6,6 +6,7 @@
 // color / color2: straight-alpha sRGB (color2 is the gradient tail)
 // extra: core alpha, glow alpha, p0, p1
 // extra2: fill mode, q0, q1, q2
+// (the stroke segment, shape 9, uses b, extra and extra2 its own way; see its branch)
 
 Texture2D palette : register(t0);
 
@@ -137,6 +138,12 @@ ShapeOut VsShape(ShapeIn input)
         float pad = input.b.y * 0.5 + glow + 2.0 / viewport.z;
         float4 box = orb_arc_bounds(input.b.x, input.b.y * 0.5, input.extra.z, input.extra.w);
         local = lerp(box.xy - pad, box.zw + pad, corner * 0.5 + 0.5);
+    }
+    else if (shape > 8.5)
+    {
+        // Stroke segment: a quad along the segment, as wide as its widest layer.
+        float pad = input.b.y + 2.0 / viewport.z;
+        local = orb_rotate(corner * float2(input.b.x + pad, pad), input.a.z);
     }
 
     float2 p = input.a.xy + local;
@@ -281,7 +288,7 @@ float4 PsShape(ShapeOut input) : SV_Target
         float k2 = length(q / (radii * radii));
         d = k1 * (k1 - 1.0) / max(k2, 0.00001);
     }
-    else
+    else if (shape < 8.5)
     {
         // Needle blade: pivot at the center, tip at b.x along a.z (half width extra.z → extra.w), counterweight b.y
         // behind (half width extra.z → b.z).
@@ -289,6 +296,57 @@ float4 PsShape(ShapeOut input) : SV_Target
         float tip = orb_uneven_capsule(float2(q.y, q.x), input.extra.z, input.extra.w, input.b.x);
         float tail = orb_uneven_capsule(float2(q.y, -q.x), input.extra.z, input.b.z, input.b.y);
         d = min(tip, tail);
+    }
+    else
+    {
+        // Stroke segment of a polyline (bolts, arcs): half length b.x along a.z, three concentric round-capped layers with half
+        // widths b.y (glow), b.z (body) and b.w (core) and alphas extra.xyz; glow and body in color, the core in color2;
+        // summed when extra.w > 0.5, laid over each other otherwise. A joint keeps this segment's side of the bisector whose
+        // direction along the path is extra2.xy at the start and extra2.zw at the end (zero: an end of the path, round).
+        float2 direction = float2(cos(input.a.z), sin(input.a.z));
+        float half_length = input.b.x;
+        float2 cut0 = input.extra2.xy;
+        float2 cut1 = input.extra2.zw;
+        if (dot(cut0, cut0) > 0.0 && dot(p + direction * half_length, cut0) < 0.0)
+        {
+            discard;
+        }
+
+        if (dot(cut1, cut1) > 0.0 && dot(p - direction * half_length, cut1) >= 0.0)
+        {
+            discard;
+        }
+
+        float along = clamp(dot(p, direction), -half_length, half_length);
+        float dist = length(p - direction * along);
+        float3 layer = saturate(0.5 - (dist - input.b.yzw) / aa) * input.extra.xyz;
+        float a_glow = layer.x * input.color.a;
+        float a_body = layer.y * input.color.a;
+        float a_core = layer.z * input.color2.a;
+        float3 rgb;
+        float stroke_alpha;
+        if (input.extra.w > 0.5)
+        {
+            rgb = input.color.rgb * (a_glow + a_body) + input.color2.rgb * a_core;
+            stroke_alpha = saturate(a_glow + a_body + a_core);
+        }
+        else
+        {
+            rgb = input.color.rgb * a_glow;
+            stroke_alpha = a_glow;
+            rgb = input.color.rgb * a_body + rgb * (1.0 - a_body);
+            stroke_alpha = a_body + stroke_alpha * (1.0 - a_body);
+            rgb = input.color2.rgb * a_core + rgb * (1.0 - a_core);
+            stroke_alpha = a_core + stroke_alpha * (1.0 - a_core);
+        }
+
+        float keep = orb_clip_coverage(input.canvas);
+        if (stroke_alpha * keep <= 0.0005)
+        {
+            discard;
+        }
+
+        return orb_output(rgb * keep, stroke_alpha * keep);
     }
 
     if (fill > 0.5 && fill < 1.5)
@@ -302,6 +360,14 @@ float4 PsShape(ShapeOut input) : SV_Target
     {
         float t = saturate(length(p - input.extra2.yz) / max(input.extra2.w, 0.0001));
         color = lerp(input.color, input.color2, t);
+    }
+    else if (fill > 3.5 && fill < 4.5)
+    {
+        // Three stops from the center: color → color2 at q0 × the radius → color2 transparent at the radius.
+        float t = saturate(length(p) / max(input.b.x, 0.0001));
+        float stop = input.extra2.y;
+        color = t < stop ? lerp(input.color, input.color2, t / stop)
+            : float4(input.color2.rgb, input.color2.a * saturate(1.0 - (t - stop) / max(1.0 - stop, 0.0001)));
     }
 
     float coverage = saturate(0.5 - d / aa);

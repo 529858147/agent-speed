@@ -3,6 +3,7 @@ using AgentSpeed.Core;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Motion;
+using AgentSpeed.Presentation.Orb.Styles;
 using AgentSpeed.Presentation.Titles;
 
 namespace AgentSpeed.Presentation.Orb.Gpu;
@@ -26,14 +27,30 @@ public sealed class OrbReadoutDraw
     public const double TitleSlide = 0.35;
     public const double TitleFade = 0.25;
 
+    /// <summary>The prototype's value cell (its font's em box): 1.193 × the size tall, centered 0.355 × the size above the baseline.</summary>
+    public const double CellHeight = 1.193;
+
+    public const double CellCenter = 0.355;
+
     private const string Dash = "–";
     private const string AtLeastSign = "≥";
     private const double PrefixScale = 0.6;
+
+    /// <summary>
+    /// The text shader brightens a glow 1.5 × (<c>saturate(1.5 g)</c>); the <c>led</c>'s value layers follow the prototype's
+    /// CSS text shadows (<c>g × alpha</c>), so their alphas are divided back.
+    /// </summary>
+    private const double CssGlow = 1 / 1.5;
+
+    /// <summary>Share of a bold digit's box its ink covers, for the value's widest glow.</summary>
+    private const double InkDensity = 0.4;
 
     private static readonly string[] Ascii = BuildAscii();
     private static readonly string[] OverflowLabels = BuildOverflow();
     private static readonly Rgba PillInk = new(0.10, 0.07, 0.02);
     private static readonly Rgba PillGold = OkLab.Mix(OkLab.Mix(HeatPalette.Gold, HeatPalette.WhiteHot, 0.2), HeatPalette.Sample(0.92), 0.25);
+    private static readonly Rgba SplitLeft = new(1, 60 / 255.0, 140 / 255.0, 0.55);
+    private static readonly Rgba SplitRight = new(60 / 255.0, 210 / 255.0, 1, 0.55);
 
     private IOrbGlyphs _glyphs;
     private OrbGpuContext? _context;
@@ -43,6 +60,10 @@ public sealed class OrbReadoutDraw
     private readonly TitleRenameTracker _rename = new();
     private string? _gapsText;
     private int _gaps;
+    private readonly ValueLayer[] _layers = new ValueLayer[4];
+    private int _layerCount;
+    private readonly LedDigitCell[] _cells = new LedDigitCell[LedLightning.MaxCells];
+    private int _cellCount;
 
     public OrbReadoutDraw(IOrbGlyphs glyphs)
     {
@@ -76,6 +97,12 @@ public sealed class OrbReadoutDraw
 
     /// <summary><c>needle</c> with the traffic readout on: the unit is printed on the dial face, not in the hub (DESIGN 10).</summary>
     public bool UnitOnDial { get; set; }
+
+    /// <summary>The character cells of the value drawn last (S from the disc center, y down), one per character of <see cref="ValueCellsText"/>.</summary>
+    public ReadOnlySpan<LedDigitCell> ValueCells => _cells.AsSpan(0, _cellCount);
+
+    /// <summary>The value text of <see cref="ValueCells"/>.</summary>
+    public string ValueCellsText { get; private set; } = string.Empty;
 
     public void Configure(OrbGpuContext context, OrbReadoutStrings strings)
     {
@@ -114,6 +141,7 @@ public sealed class OrbReadoutDraw
         }
 
         var s = ctx.Size;
+        _cellCount = 0;
         var valueLine = ctx.CenterY + Shift + layout.ValueBaseline * s;
         var unitLine = layout.UnitBaseline is { } unitBaseline ? ctx.CenterY + Shift + unitBaseline * s : valueLine;
         var unitText = scene.UnitText ?? _strings.Unit;
@@ -200,12 +228,16 @@ public sealed class OrbReadoutDraw
         }
         else if (layout.ValueGlow && colors.ValueGlow && !unavailable && !muted && !ctx.HighContrast)
         {
-            var strength = _glow.Value * (ctx.Dark ? 0.85 : 0.45);
+            var strength = _glow.Value * (ctx.Dark ? 0.85 : 0.45) * (layout.ValueEffects ? CssGlow : 1);
             if (strength > 0.01)
             {
                 var h = Math.Round(Math.Max(scene.Heat, 0.2) * 31) / 31;
                 glow = (ctx.Dark ? HeatPalette.Sample(h) : ctx.Label(h)).WithAlpha(strength);
                 sigma = 0.0167 * s * effects.Bloom;
+                if (layout.ValueEffects)
+                {
+                    sigma *= 1 + 0.8 * Math.Round(scene.Overdrive * 4) / 4;
+                }
             }
         }
 
@@ -214,6 +246,11 @@ public sealed class OrbReadoutDraw
         var fit = natural > limit && natural > 0 ? Math.Max(0.4, Math.Floor(limit / natural * 50) / 50) : 1;
         var size = fullSize * fit;
         sigma *= fit;
+        _layerCount = 0;
+        if (layout.ValueEffects && colors.Shadow is null && !unavailable && !muted && !ctx.HighContrast)
+        {
+            AddValueLayers(ctx, scene, sigma, fade);
+        }
 
         var idle = ctx.HighContrast ? ctx.Contrast.WindowText : ctx.Tokens.IdleValueText;
         var value = ctx.HighContrast ? ctx.Contrast.WindowText : ctx.Tokens.ValueText;
@@ -232,6 +269,16 @@ public sealed class OrbReadoutDraw
         var total = RunWidth(text, size, cell, sigma) + prefix;
         var x = ctx.CenterX - total / 2 + jitterX;
         ValueWidth = total;
+        if (allowRoll && !unavailable)
+        {
+            RecordCells(ctx, text, x - jitterX + prefix, line + slide, size, cell, sigma);
+        }
+
+        if (layout.ValueEffects && colors.Shadow is null && glow is { } heatGlow && sigma > 0)
+        {
+            AddWideGlow(list, scene, heatGlow, sigma, x + prefix, total - prefix, baseline, size, fade, clip);
+        }
+
         if (atLeast && _glyphs.TryGet(OrbTextKey.Create(AtLeastSign, OrbFont.Value, size * PrefixScale), out var sign))
         {
             list.AddText(sign, x, baseline, (colors.Unit ?? Secondary(ctx)).MultiplyAlpha(fade), colors.Shadow?.MultiplyAlpha(fade), clip, shear,
@@ -303,13 +350,93 @@ public sealed class OrbReadoutDraw
     private void Char(OrbDrawList list, char ch, double x, double cellWidth, double baseline, double size, double sigma, Rgba color,
         Rgba? glow, double alpha, double shear, double shearPivot, OrbTextClip clip)
     {
-        if (alpha <= 0.01 || !_glyphs.TryGet(OrbTextKey.Create(CharText(ch), OrbFont.Value, size, 0, glow is null ? 0 : sigma), out var glyph))
+        if (alpha <= 0.01)
+        {
+            return;
+        }
+
+        var text = CharText(ch);
+        for (var k = 0; k < _layerCount; k++)
+        {
+            ref readonly var layer = ref _layers[k];
+            if (_glyphs.TryGet(OrbTextKey.Create(text, OrbFont.Value, size, 0, layer.Sigma), out var under))
+            {
+                list.AddText(under, x + (cellWidth - under.Advance) / 2 + layer.Dx, baseline + layer.Dy, layer.Color.MultiplyAlpha(alpha),
+                    layer.Glow?.MultiplyAlpha(alpha), clip, shear, shearPivot);
+            }
+        }
+
+        if (!_glyphs.TryGet(OrbTextKey.Create(text, OrbFont.Value, size, 0, glow is null ? 0 : sigma), out var glyph))
         {
             return;
         }
 
         list.AddText(glyph, x + (cellWidth - glyph.Advance) / 2, baseline, color.MultiplyAlpha(alpha), glow?.MultiplyAlpha(alpha), clip, shear,
             shearPivot);
+    }
+
+    /// <summary>
+    /// The layers under the value's glyphs (DESIGN 2.1, Readout), bottom to top as the prototype's text shadows: in dark a drop
+    /// shadow (0.006 S down, σ 0.006 S, black 60 %) and a backing (σ 0.0125 S, black 70 %) from 0.5 tok/s; at the redline in
+    /// dark the chromatic split.
+    /// </summary>
+    private void AddValueLayers(OrbGpuContext ctx, OrbScene scene, double sigma, double fade)
+    {
+        var s = ctx.Size;
+        if (ctx.Dark && scene.Value >= 0.5)
+        {
+            _layers[_layerCount++] = new ValueLayer(0, 0.006 * s, 0.006 * s, Rgba.Transparent, Rgba.Black.WithAlpha(0.6 * CssGlow * fade));
+            _layers[_layerCount++] = new ValueLayer(0, 0, 0.0125 * s, Rgba.Transparent, Rgba.Black.WithAlpha(0.7 * CssGlow * fade));
+        }
+
+        if (ctx.Dark && scene.Tier == SpeedTier.Redline && scene.Effects.Level >= Settings.EffectsIntensity.Standard)
+        {
+            var offset = (0.6 + 1.6 * Math.Round(scene.Overdrive * 16) / 16) * s / 300;
+            _layers[_layerCount++] = new ValueLayer(offset, 0, sigma, SplitRight.MultiplyAlpha(fade), null);
+            _layers[_layerCount++] = new ValueLayer(-offset, 0, sigma, SplitLeft.MultiplyAlpha(fade), null);
+        }
+    }
+
+    /// <summary>
+    /// From overdrive the value's second glow, 2.4 × wider at 45 % (light 20 %). At that width the blurred glyphs are a blurred
+    /// box of their ink density, so it is one soft rounded rectangle under the value instead of a wide atlas entry per digit.
+    /// </summary>
+    private void AddWideGlow(OrbDrawList list, OrbScene scene, Rgba glow, double sigma, double x, double width, double baseline,
+        double size, double fade, OrbTextClip clip)
+    {
+        var alpha = _glow.Value * (_context!.Dark ? 0.45 : 0.2) * InkDensity * fade;
+        if (scene.Tier < SpeedTier.Overdrive || alpha <= 0.004 || clip.Mode != OrbTextClipMode.None)
+        {
+            return;
+        }
+
+        var wide = 2.4 * sigma;
+        var halfWidth = Math.Max(0, width / 2 - 1.59 * wide);
+        var halfHeight = Math.Max(0, 0.36 * size - 1.59 * wide);
+        list.Add(OrbGpuInstance.RoundedRect(x + width / 2, baseline - 0.36 * size, halfWidth, halfHeight, 0, Math.Min(halfWidth, halfHeight),
+            glow.WithAlpha(alpha), core: 1, glow: 1.91 * wide, glowAlpha: 1));
+    }
+
+    /// <summary>Notes where each character of the value sits (the digit lightning starts there).</summary>
+    private void RecordCells(OrbGpuContext ctx, string text, double x, double baseline, double size, double cell, double sigma)
+    {
+        var s = ctx.Size;
+        var y = (baseline - CellCenter * size - ctx.CenterY) / s;
+        var height = CellHeight * size / s;
+        _cellCount = 0;
+        foreach (var ch in text)
+        {
+            if (_cellCount == _cells.Length)
+            {
+                break;
+            }
+
+            var width = CellWidth(ch, size, cell, sigma);
+            _cells[_cellCount++] = new LedDigitCell((x + width / 2 - ctx.CenterX) / s, y, width / s, height);
+            x += width;
+        }
+
+        ValueCellsText = text;
     }
 
     private double CellWidth(char ch, double size, double cell, double sigma) =>
@@ -582,6 +709,9 @@ public sealed class OrbReadoutDraw
         var wd = omega * Math.Sqrt(1 - damping * damping);
         return 1 - Math.Exp(-damping * omega * t) * (Math.Cos(wd * t) + damping * omega / wd * Math.Sin(wd * t));
     }
+
+    /// <summary>A copy of the value drawn under it: offset (points), glow σ, glyph color and glow color.</summary>
+    private readonly record struct ValueLayer(double Dx, double Dy, double Sigma, Rgba Color, Rgba? Glow);
 
     /// <summary>A one-character string without allocating for ASCII and the en dash.</summary>
     public static string CharText(char ch) => ch < 128 ? Ascii[ch] : ch == '–' ? Dash : ch == '≥' ? AtLeastSign : ch.ToString();

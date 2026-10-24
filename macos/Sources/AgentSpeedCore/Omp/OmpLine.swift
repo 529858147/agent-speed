@@ -9,6 +9,7 @@ struct OmpCall: Equatable, Sendable {
     var tokens: TokenUsage
     /// One of `input`, `output`, `cacheRead`, `cacheWrite` is above 0.
     var hasUsage: Bool
+    var modes: ExecutionModes = .empty
 }
 
 /// `message.stopReason`; a missing or non-string value counts as `aborted`.
@@ -48,6 +49,7 @@ enum OmpRecord: Equatable, Sendable {
     case modelUsage(OmpCall)
     /// `custom` with `customType == "session_exit"`.
     case sessionExit
+    case modeChange([String: String])
     /// Anything else, including calls that fail the guard: only `lastLineMs`.
     case other
 }
@@ -63,7 +65,7 @@ enum OmpLine: Equatable, Sendable {
     /// A `session` line.
     case header(OmpSession)
     /// An entry with a string `id` and a parseable `timestamp`.
-    case entry(id: String, timestampMs: Int64, record: OmpRecord)
+    case entry(id: String, timestampMs: Int64, record: OmpRecord, parentId: String? = nil)
     /// The title slot, and entries without a string `id` or a parseable `timestamp`.
     case ignored
 }
@@ -71,7 +73,7 @@ enum OmpLine: Equatable, Sendable {
 /// Decodes omp session lines. Conversation content is skipped (only validated). Repeated members resolve like
 /// Python's `json.loads`: the last one wins.
 enum OmpLineExtractor {
-    private static let types: [StaticString] = ["title", "session", "message", "model_usage", "custom"]
+    private static let types: [StaticString] = ["title", "session", "message", "model_usage", "custom", "service_tier_change"]
     private static let roles: [StaticString] = ["user", "developer", "assistant", "toolResult"]
     private static let stopReasons: [StaticString] = ["aborted", "error", "stop", "toolUse", "length"]
 
@@ -109,6 +111,7 @@ enum OmpLineExtractor {
         var provider: String?
         var hasApi = false
         var usage: Usage?
+        var serviceTier: String?
 
         func call() -> OmpCall? {
             guard let model, hasProvider, hasApi, let usage else { return nil }
@@ -120,7 +123,8 @@ enum OmpLineExtractor {
                 reasoning: usage.reasoning
             )
             let hasUsage = usage.input > 0 || usage.output > 0 || usage.cacheRead > 0 || usage.cacheWrite > 0
-            return OmpCall(model: model, provider: provider, tokens: tokens, hasUsage: hasUsage)
+            return OmpCall(model: model, provider: provider, tokens: tokens, hasUsage: hasUsage,
+                           modes: ExecutionModeAdapters.omp(serviceTier, provider: provider, evidence: .recorded, scope: .response))
         }
     }
 
@@ -178,6 +182,8 @@ enum OmpLineExtractor {
     private struct TopLevel {
         var type: Int?
         var id: String?
+        var parentId: String?
+        var tiers: [String: String] = [:]
         var timestampMs: Int64?
         var cwd: String?
         var message: MessageMembers?
@@ -198,9 +204,10 @@ enum OmpLineExtractor {
             case 2: message?.record() ?? .other
             case 3: call.call().map(OmpRecord.modelUsage) ?? .other
             case 4: isSessionExit ? .sessionExit : .other
+            case 5: .modeChange(tiers)
             default: .other
             }
-            return .entry(id: id, timestampMs: timestampMs, record: record)
+            return .entry(id: id, timestampMs: timestampMs, record: record, parentId: parentId)
         }
     }
 
@@ -213,6 +220,17 @@ enum OmpLineExtractor {
                 top.type = try scanner.readStringMatch(types)
             } else if scanner.key(key, is: "id") {
                 top.id = try scanner.readString()
+            } else if scanner.key(key, is: "parentId") {
+                top.parentId = try scanner.readString()
+            } else if scanner.key(key, is: "serviceTier") {
+                top.tiers = [:]
+                guard try scanner.beginObjectIfPresent() else { continue }
+                while let tierKey = try scanner.nextMember() {
+                    let family: String? = scanner.key(tierKey, is: "openai") ? "openai"
+                        : scanner.key(tierKey, is: "anthropic") ? "anthropic" : scanner.key(tierKey, is: "google") ? "google" : nil
+                    if let family { top.tiers[family] = try scanner.readString() }
+                    else { try scanner.skipValue() }
+                }
             } else if scanner.key(key, is: "timestamp") {
                 top.timestampMs = try scanner.readTimestamp()
             } else if scanner.key(key, is: "cwd") {
@@ -273,6 +291,8 @@ enum OmpLineExtractor {
             call.provider = value.flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
         } else if scanner.key(key, is: "api") {
             call.hasApi = try scanner.readStringIsNonEmpty() != nil
+        } else if scanner.key(key, is: "serviceTier") {
+            call.serviceTier = try scanner.readString()
         } else if scanner.key(key, is: "usage") {
             call.usage = try scanUsage(&scanner)
         } else {

@@ -62,6 +62,7 @@ internal struct WorkBuddyLine
 
     /// <summary>The call's model without a <c>custom:</c> / <c>custom-local:</c> prefix; null when none is named.</summary>
     public string? Model;
+    public string? RequestModelId;
 
     /// <summary><c>custom</c> for a model of the user's own provider (METRICS 3.2).</summary>
     public string? Provider;

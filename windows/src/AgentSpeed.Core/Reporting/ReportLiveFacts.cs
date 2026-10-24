@@ -44,20 +44,23 @@ public readonly record struct ReportModelKey(string ModelId, SourceKind Source);
 public sealed class ReportCounters
 {
     private readonly Dictionary<ReportModelKey, ReportUsage> _byModel;
+    private readonly Dictionary<ReportModeKey, ReportUsage> _byMode;
 
     public ReportCounters()
-        : this(new Dictionary<ReportModelKey, ReportUsage>())
+        : this(new Dictionary<ReportModelKey, ReportUsage>(), new Dictionary<ReportModeKey, ReportUsage>())
     {
     }
 
-    private ReportCounters(Dictionary<ReportModelKey, ReportUsage> byModel)
+    private ReportCounters(Dictionary<ReportModelKey, ReportUsage> byModel, Dictionary<ReportModeKey, ReportUsage> byMode)
     {
         _byModel = byModel;
+        _byMode = byMode;
     }
 
     public static ReportCounters Zero { get; } = new();
 
     public IReadOnlyDictionary<ReportModelKey, ReportUsage> ByModel => _byModel;
+    public IReadOnlyDictionary<ReportModeKey, ReportUsage> ByMode => _byMode;
 
     /// <summary>Changes with every non-zero <see cref="Add"/>, so an owner copies only after a change.</summary>
     public long Version { get; private set; }
@@ -89,7 +92,13 @@ public sealed class ReportCounters
             }
         }
 
-        return new ReportCounters(delta);
+        var modes = new Dictionary<ReportModeKey, ReportUsage>();
+        foreach (var (key, value) in _byMode)
+        {
+            var change = value - baseline._byMode.GetValueOrDefault(key);
+            if (!change.IsZero) modes[key] = change;
+        }
+        return new ReportCounters(delta, modes);
     }
 
     /// <summary>Whether any token field differs from <paramref name="baseline"/>.</summary>
@@ -106,17 +115,23 @@ public sealed class ReportCounters
         return false;
     }
 
-    public void Add(ReportUsage usage, ReportModelKey key)
+    public void Add(ReportUsage usage, ReportModelKey key, ExecutionModes? modes = null)
     {
         if (!usage.IsZero)
         {
             _byModel[key] = _byModel.GetValueOrDefault(key) + usage;
+            foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+            {
+                var mode = (modes ?? ExecutionModes.Empty).Attribute(kind);
+                var modeKey = new ReportModeKey(key.ModelId, key.Source, kind, mode.Mode, mode.Evidence, mode.Provider);
+                _byMode[modeKey] = _byMode.GetValueOrDefault(modeKey) + usage;
+            }
             Version++;
         }
     }
 
     /// <summary>An immutable copy, for a snapshot.</summary>
-    public ReportCounters Copy() => new(new Dictionary<ReportModelKey, ReportUsage>(_byModel));
+    public ReportCounters Copy() => new(new Dictionary<ReportModelKey, ReportUsage>(_byModel), new Dictionary<ReportModeKey, ReportUsage>(_byMode));
 }
 
 /// <summary>Agents of the base set of METRICS 6.7 (staleness applied, no ancestor closure) of one source.</summary>

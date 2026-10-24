@@ -1,6 +1,7 @@
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Orb.Gpu;
 using AgentSpeed.Presentation.Orb.Gpu.Styles;
+using AgentSpeed.Presentation.Orb.Styles;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Tests.TestSupport;
 
@@ -30,12 +31,13 @@ public class LedDrawTests
     }
 
     [Fact]
-    public void IdleDrawsTheUnlitSegmentsAndTicksOnly()
+    public void IdleDrawsTheSilkTheUnlitSegmentsAndTicksOnly()
     {
         var harness = Create();
         harness.Run(0.5);
         Assert.Equal(40, harness.List.Count);
-        Assert.Equal(1, harness.List.BatchCount);
+        Assert.Equal(2, harness.List.BatchCount);
+        Assert.Equal(new OrbBatch(OrbPass.Led, OrbBlend.Over, 0, 0, 0, 0, LedDraw.SilkMode), harness.List.Batches[0]);
     }
 
     [Fact]
@@ -74,16 +76,21 @@ public class LedDrawTests
     }
 
     [Fact]
-    public void RedlineAtMaxAddsBloomHazeEdgeCometSparksAndEmbers()
+    public void RedlineAtMaxAddsTheArcGlowHazeEdgeTwoCometsSparksEmbersAndArcs()
     {
         var harness = Create(240, level: EffectsIntensity.Max);
         harness.Speed(2);
         harness.Run(2.5);
-        var counts = new int[9];
+        var counts = new int[Enum.GetValues<OrbShape>().Length];
         var additive = 0;
+        var modes = new HashSet<int>();
         foreach (var batch in harness.List.Batches)
         {
             additive += batch.Blend == OrbBlend.Additive ? batch.Count : 0;
+            if (batch.Pass == OrbPass.Led)
+            {
+                modes.Add(batch.Mode);
+            }
         }
 
         foreach (var instance in harness.List.Instances)
@@ -91,11 +98,15 @@ public class LedDrawTests
             counts[(int)instance.Shape]++;
         }
 
-        Assert.True(counts[(int)OrbShape.Capsule] > 54 + 20, $"{counts[(int)OrbShape.Capsule]} haze strands and sparks");
-        Assert.True(counts[(int)OrbShape.Circle] > 4 + 1 + 20, $"{counts[(int)OrbShape.Circle]} ticks, comet head and embers");
-        Assert.Equal(2, counts[(int)OrbShape.Arc]);
-        Assert.InRange(counts[(int)OrbShape.RoundedRect], 72, 73);
+        Assert.Equal(new HashSet<int> { LedDraw.SilkMode, LedDraw.FlareMode }, modes);
+        Assert.True(counts[(int)OrbShape.Capsule] > 54 + 20, $"{counts[(int)OrbShape.Capsule]} haze strands and spark streaks");
+        Assert.True(counts[(int)OrbShape.Circle] > 4 + 2 + 20, $"{counts[(int)OrbShape.Circle]} ticks, comet heads, spark heads and embers");
+        Assert.Equal(3, counts[(int)OrbShape.Arc]);
+        Assert.Equal(1, counts[(int)OrbShape.BandArc]);
+        Assert.InRange(counts[(int)OrbShape.RoundedRect], 37, 40);
+        Assert.True(counts[(int)OrbShape.Stroke] >= LedArcs.PointCount - 1, $"{counts[(int)OrbShape.Stroke]} arc strokes");
         Assert.True(additive > 100);
+        Assert.True(harness.List.HasLed);
     }
 
     [Fact]

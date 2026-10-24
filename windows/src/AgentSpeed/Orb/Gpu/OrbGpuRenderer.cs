@@ -9,7 +9,8 @@ namespace AgentSpeed.Orb.Gpu;
 
 /// <summary>
 /// Encodes an <see cref="OrbDrawList"/> into a render target with the shared device: instance buffers mapped once per frame,
-/// one instanced draw per batch, the liquid passes, then every text quad in one draw. Allocates nothing on a warm frame.
+/// one instanced draw per batch, the liquid and led passes, then every text quad in one draw, then the batches above the text.
+/// Allocates nothing on a warm frame.
 /// </summary>
 internal static class OrbGpuRenderer
 {
@@ -49,6 +50,11 @@ internal static class OrbGpuRenderer
             return false;
         }
 
+        if (list.HasLed && !Upload(context, r.LedParams, MemoryMarshal.AsBytes(new ReadOnlySpan<OrbLedUniforms>(in list.Led))))
+        {
+            return false;
+        }
+
         var atlas = device.Atlas.Upload(r.Device, context);
         context.OMSetRenderTargets(target);
         context.RSSetViewport(0, 0, pixelWidth, pixelHeight);
@@ -65,7 +71,10 @@ internal static class OrbGpuRenderer
         context.PSSetConstantBuffer(0, r.Uniforms);
         context.VSSetConstantBuffer(1, r.LiquidParams);
         context.PSSetConstantBuffer(1, r.LiquidParams);
+        context.VSSetConstantBuffer(2, r.LiquidPass);
         context.PSSetConstantBuffer(2, r.LiquidPass);
+        context.VSSetConstantBuffer(3, r.LedParams);
+        context.PSSetConstantBuffer(3, r.LedParams);
 
         var canvas = (float)list.Canvas;
         var scale = canvas > 0 ? pixelWidth / canvas : 1;
@@ -77,8 +86,21 @@ internal static class OrbGpuRenderer
         };
         var written = false;
         var layout = 0;
-        foreach (ref readonly var batch in list.Batches)
+        var batches = list.Batches;
+        var overlayAt = list.OverlayBatchStart >= 0 ? list.OverlayBatchStart : batches.Length;
+        for (var index = 0; index <= batches.Length; index++)
         {
+            if (index == overlayAt && !DrawOverlayText(context, r, list, ref uniforms, ref written, ref layout))
+            {
+                return false;
+            }
+
+            if (index == batches.Length)
+            {
+                break;
+            }
+
+            ref readonly var batch = ref batches[index];
             if (!written || uniforms.Viewport.W != batch.Clip || uniforms.Transform.W != batch.Feather)
             {
                 uniforms.Viewport.W = batch.Clip;
@@ -91,19 +113,20 @@ internal static class OrbGpuRenderer
                 written = true;
             }
 
-            if (batch.Pass == OrbPass.Liquid)
+            if (batch.Pass is OrbPass.Liquid or OrbPass.Led)
             {
-                Span<int> mode = [batch.LiquidMode, 0, 0, 0];
+                Span<int> mode = [batch.Mode, 0, 0, 0];
                 if (!Upload(context, r.LiquidPass, MemoryMarshal.AsBytes(mode)))
                 {
                     return false;
                 }
 
+                var led = batch.Pass == OrbPass.Led;
                 context.IASetInputLayout(null);
-                context.VSSetShader(r.LiquidVertex);
-                context.PSSetShader(r.LiquidPixel);
-                context.OMSetBlendState(r.Over);
-                context.Draw(6, 0);
+                context.VSSetShader(led ? r.LedVertex : r.LiquidVertex);
+                context.PSSetShader(led ? r.LedPixel : r.LiquidPixel);
+                context.OMSetBlendState(batch.Blend == OrbBlend.Additive ? r.Additive : r.Over);
+                context.Draw(led ? (uint)OrbLedUniforms.VertexCount(batch.Mode) : 6, 0);
                 layout = 0;
                 continue;
             }
@@ -142,27 +165,38 @@ internal static class OrbGpuRenderer
             context.DrawInstanced(6, (uint)batch.Count, 0, (uint)batch.Start);
         }
 
-        if (list.TextCount > list.OverlayTextStart)
-        {
-            if (!written || uniforms.Viewport.W != 0 || uniforms.Transform.W != 0)
-            {
-                uniforms.Viewport.W = 0;
-                uniforms.Transform.W = 0;
-                if (!Upload(context, r.Uniforms, MemoryMarshal.AsBytes(new ReadOnlySpan<Uniforms>(in uniforms))))
-                {
-                    return false;
-                }
-            }
+        Timer?.End(r);
+        return true;
+    }
 
-            context.IASetInputLayout(r.TextLayout);
-            context.IASetVertexBuffer(0, r.Texts!, OrbTextInstance.Stride);
-            context.VSSetShader(r.TextVertex);
-            context.PSSetShader(r.TextPixel);
-            context.OMSetBlendState(r.Over);
-            context.DrawInstanced(6, (uint)(list.TextCount - list.OverlayTextStart), 0, (uint)list.OverlayTextStart);
+    /// <summary>Every text quad of the overlay in one draw (the readout above every effect added before it).</summary>
+    private static bool DrawOverlayText(ID3D11DeviceContext context, GpuDevice.Resources r, OrbDrawList list, ref Uniforms uniforms, ref bool written,
+        ref int layout)
+    {
+        if (list.TextCount <= list.OverlayTextStart)
+        {
+            return true;
         }
 
-        Timer?.End(r);
+        if (!written || uniforms.Viewport.W != 0 || uniforms.Transform.W != 0)
+        {
+            uniforms.Viewport.W = 0;
+            uniforms.Transform.W = 0;
+            if (!Upload(context, r.Uniforms, MemoryMarshal.AsBytes(new ReadOnlySpan<Uniforms>(in uniforms))))
+            {
+                return false;
+            }
+
+            written = true;
+        }
+
+        context.IASetInputLayout(r.TextLayout);
+        context.IASetVertexBuffer(0, r.Texts!, OrbTextInstance.Stride);
+        context.VSSetShader(r.TextVertex);
+        context.PSSetShader(r.TextPixel);
+        context.OMSetBlendState(r.Over);
+        context.DrawInstanced(6, (uint)(list.TextCount - list.OverlayTextStart), 0, (uint)list.OverlayTextStart);
+        layout = 2;
         return true;
     }
 

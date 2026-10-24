@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import SwiftUI
 
 /// Colors of the readout; styles that put text on their own lit surfaces override them (DESIGN 2a.3, readout split).
@@ -33,12 +34,17 @@ final class OrbReadoutBuilder {
     private var current: ContiguousArray<OrbTextTexture> = []
     private var previous: ContiguousArray<OrbTextTexture> = []
     private var currentX: ContiguousArray<CGFloat> = []
+    /// The character cells of the value drawn last (canvas points: advance × ascent + descent at the baseline), for
+    /// effects that hang off the digits (`led` lightning); `valueCellsText` is the text they belong to.
+    private(set) var valueCells: ContiguousArray<CGRect> = []
+    private(set) var valueCellsText = ""
 
     init(textCache: OrbTextCache = .shared) {
         self.textCache = textCache
         current.reserveCapacity(16)
         previous.reserveCapacity(16)
         currentX.reserveCapacity(16)
+        valueCells.reserveCapacity(16)
     }
 
     /// Feeds the shown money value (called every frame; only changes start a roll).
@@ -243,17 +249,34 @@ final class OrbReadoutBuilder {
             let strength = valueGlowStrength * (frame.dark ? 0.85 : 0.45)
             if strength > 0.01 {
                 glow = tokens.heat(max(frame.heat, 0.2)).opacity(strength)
-                glowRadius = 0.035 * s
+                glowRadius = 0.035 * s * (layout.silkValue ? LedMath.glowScale(overdrive: frame.overdrive) : 1)
             }
         }
-        let lean = frame.effects.skew && layout.valueMotion && !unavailable ? tan(6 * frame.heat * leanAmount * .pi / 180) : 0
+        let leanDegrees = layout.silkValue ? LedMath.leanDegrees(heat: frame.heat) : 6 * frame.heat
+        let lean = frame.effects.skew && layout.valueMotion && !unavailable ? tan(leanDegrees * leanAmount * .pi / 180) : 0
         var jitter = CGSize.zero
         if frame.effects.jitter, layout.valueMotion, frame.tier == .redline, frame.redlineAmount > 0.01, !unavailable {
             let tick = Int((frame.time * 30).rounded(.down))
-            let amplitude = 0.6 * frame.redlineAmount * frame.unit
+            let base = layout.silkValue ? LedMath.jitter(overdrive: frame.overdrive) : 0.6
+            let amplitude = base * frame.redlineAmount * frame.unit
             jitter = CGSize(width: (Noise.hash(tick, 3) - 0.5) * 2 * amplitude, height: (Noise.hash(tick, 7) - 0.5) * 2 * amplitude)
         }
         let baseline = line + jitter.height + slide
+        let extras = layout.silkValue && !unavailable && !unpriced
+            ? ledValueExtras(&scene, frame, size: style.size, total: total, baseline: baseline,
+                             glowStrength: glow == nil ? 0 : valueGlowStrength, fade: fade)
+            : nil
+        if shown == nil {
+            valueCells.removeAll(keepingCapacity: true)
+            for index in current.indices {
+                let texture = current[index]
+                let ascent = texture.baseline - texture.padding
+                let descent = texture.size.height - texture.baseline - texture.padding
+                valueCells.append(CGRect(x: currentX[index] + jitter.width, y: baseline - ascent, width: texture.advance,
+                                         height: ascent + descent))
+            }
+            if valueCellsText != text { valueCellsText = text }
+        }
         let rolls = layout.rolls && frame.effects.level > .off && !frame.effects.reduceMotion && s >= 80 && !unavailable
             && shown == nil
         let progress = rolls ? odometer.progress(at: frame.time) : 1
@@ -275,9 +298,12 @@ final class OrbReadoutBuilder {
                 case .band: textClip = .rect(cell)
                 }
             }
-            scene.add(OrbTextDraw(texture, x: x + jitter.width, baseline: baseline + offset, color: color.opacity(alpha),
-                                  glow: glow?.opacity(alpha), glowRadius: glowRadius, shear: lean, shearPivot: baseline,
-                                  clip: textClip))
+            let draw = OrbTextDraw(texture, x: x + jitter.width, baseline: baseline + offset, color: color.opacity(alpha),
+                                   glow: glow?.opacity(alpha), glowRadius: glowRadius, shear: lean, shearPivot: baseline,
+                                   clip: textClip)
+            scene.add(layout.silkValue
+                ? ledGlyph(draw, texture: texture, glowRadius: glow == nil ? 0 : glowRadius, alpha: alpha, extras: extras)
+                : draw)
         }
 
         guard progress < 1, let old = odometer.previous, !unavailable else {

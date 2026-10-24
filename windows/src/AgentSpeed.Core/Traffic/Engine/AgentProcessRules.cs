@@ -162,6 +162,21 @@ internal sealed class AgentProcessRules
             return SourceKind.Codex;
         }
 
+        if (name is "zcode" or "zcode-cli" || script.Contains("/@zcode/cli/", StringComparison.Ordinal))
+        {
+            return SourceKind.ZCode;
+        }
+
+        if (name is "kimi" or "kimi-code" || script.Contains("/@moonshot-ai/kimi-code/", StringComparison.Ordinal))
+        {
+            return SourceKind.Kimi;
+        }
+
+        if (name is "grok" or "grok-build" or "xai-grok-pager")
+        {
+            return SourceKind.GrokBuild;
+        }
+
         if (name == "dsh" || _platform.IsUnder(executable, _deepseekApp) || (_platform.IsWindows && name == "deepseek harness"))
         {
             return SourceKind.DeepSeek;

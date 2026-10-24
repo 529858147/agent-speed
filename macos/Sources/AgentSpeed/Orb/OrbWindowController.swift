@@ -451,7 +451,10 @@ final class OrbWindowController {
             cursor.set()
         }
         host.removeAllToolTips()
-        if hovered, let rect = unitHitRect { host.addToolTip(rect, owner: model.l10n("orbs.unit.toggleHint") as NSString, userData: nil) }
+        let mode = ExecutionModeText.orb(agents: model.snapshot.agents.filter { config.sources.tracks($0.source) }, model.l10n)
+        let hint = hovered ? model.l10n("orbs.unit.toggleHint") + "\n" : ""
+        host.addToolTip(hovered ? (unitHitRect ?? host.bounds) : host.bounds,
+                        owner: (hint + mode.summary + "\n" + mode.detail) as NSString, userData: nil)
         let readout = presenter.animator.readout
         let start = readout.unitHoverAmount
         let target = hovered ? 1.0 : 0.0

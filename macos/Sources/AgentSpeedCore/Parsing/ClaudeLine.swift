@@ -30,6 +30,7 @@ struct ClaudeLine: Equatable, Sendable {
     var usage: TokenUsage = .zero
     /// `message.usage.speed == "fast"` (METRICS 3.2).
     var fast = false
+    var modes: ExecutionModes = .empty
     /// A user line whose content starts with `[Request interrupted by user`.
     var isInterrupt = false
     /// `message.content` contains a block of type `tool_use`.
@@ -111,7 +112,7 @@ enum ClaudeLineExtractor {
                     }
                 }
             } else if scanner.key(key, is: "usage") {
-                (line.usage, line.fast) = try scanUsage(&scanner)
+                (line.usage, line.fast, line.modes) = try scanUsage(&scanner)
             } else if scanner.key(key, is: "content") {
                 (line.isInterrupt, line.hasToolUse) = try scanContent(&scanner)
             } else {
@@ -120,8 +121,8 @@ enum ClaudeLineExtractor {
         }
     }
 
-    private static func scanUsage(_ scanner: inout JSONScanner) throws(JSONScanError) -> (TokenUsage, fast: Bool) {
-        guard try scanner.beginObjectIfPresent() else { return (.zero, false) }
+    private static func scanUsage(_ scanner: inout JSONScanner) throws(JSONScanError) -> (TokenUsage, fast: Bool, modes: ExecutionModes) {
+        guard try scanner.beginObjectIfPresent() else { return (.zero, false, .empty) }
         var input = 0
         var cacheCreation = 0
         var cacheCreation1h = 0
@@ -129,6 +130,7 @@ enum ClaudeLineExtractor {
         var output = 0
         var thinking = 0
         var fast = false
+        var speed: String?
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "input_tokens") {
                 input = TokenCount.clamp(try scanner.readInteger())
@@ -143,7 +145,8 @@ enum ClaudeLineExtractor {
             } else if scanner.key(key, is: "cache_creation") {
                 cacheCreation1h = try scanNestedCount(&scanner, "ephemeral_1h_input_tokens")
             } else if scanner.key(key, is: "speed") {
-                fast = try scanner.readStringMatch(["fast"]) == 0
+                speed = try scanner.readString()
+                fast = speed == "fast"
             } else {
                 try scanner.skipValue()
             }
@@ -156,7 +159,7 @@ enum ClaudeLineExtractor {
             output: output,
             reasoning: thinking
         )
-        return (usage, fast)
+        return (usage, fast, ExecutionModeAdapters.claude(speed))
     }
 
     /// One integer member of a nested object (`output_tokens_details.thinking_tokens`,

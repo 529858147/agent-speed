@@ -26,6 +26,8 @@ public sealed record DailyUsage(
     double? Peak,
     IReadOnlyList<ModelUsage> Models)
 {
+    public IReadOnlyList<ExecutionModeUsage> Modes { get; init; } = [];
+
     /// <summary>API-equivalent cost (METRICS 9.7); null when the day's logs were gone before costs existed.</summary>
     public CostTally? Cost { get; init; }
 

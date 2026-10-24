@@ -8,6 +8,18 @@ permissions:
   contents: read
 
 jobs:
+  spec:
+    name: Release contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check version and contracts
+        run: |
+          test "$(cat VERSION)" = "${GITHUB_REF_NAME#v}"
+          python3 spec/tools/report_reference.py
+          python3 spec/tools/execution_modes_reference.py
+          python3 spec/tools/test_reporting_extensions.py
+
   macos:
     name: macOS
     runs-on: macos-26
@@ -54,7 +66,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [macos, windows]
+    needs: [spec, macos, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -67,10 +79,19 @@ jobs:
       - name: Checksums
         working-directory: dist
         run: sha256sum AgentSpeed-* > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - name: Create release
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          existing="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [ "$existing" = "true" ]; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            echo "Assets uploaded to the existing draft; publication remains manual."
+            exit 0
+          elif [ "$existing" = "false" ]; then
+            echo "Release is already published; leaving its assets unchanged."
+            exit 0
+          fi
           : > notes.md
           if [ -f "docs/releases/${GITHUB_REF_NAME}.md" ]; then
             cat "docs/releases/${GITHUB_REF_NAME}.md" >> notes.md

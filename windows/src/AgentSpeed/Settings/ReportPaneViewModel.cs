@@ -61,7 +61,7 @@ internal sealed record ReportOtherRow(string Origin, string Host, string Usernam
 /// what is sent, the status line, this device and the other registered services. Everything applies at once; opening the
 /// pane never touches the network.
 /// </summary>
-internal sealed class ReportPaneViewModel : ObservableObject
+internal sealed class ReportPaneViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan UrlDebounce = TimeSpan.FromMilliseconds(500);
 
@@ -77,6 +77,9 @@ internal sealed class ReportPaneViewModel : ObservableObject
     private string _usernameText;
     private bool _usernameEditing;
     private bool _apiKeyRejected;
+    private ReportProfileWindow? _profileWindow;
+    internal ReportProfileWindow? DeviceManagerWindow => _profileWindow;
+    private bool _visible;
 
     /// <param name="confirmForget">Asks <c>report.forget.confirm</c> (heading, body); true to forget.</param>
     /// <param name="openPreview">Opens the preview window.</param>
@@ -90,6 +93,7 @@ internal sealed class ReportPaneViewModel : ObservableObject
         _openPreview = openPreview;
         _customUrlText = report.Preferences.CustomUrl;
         _usernameText = report.FieldUsername;
+        Profile = new ReportProfileViewModel(report, localizer);
         _urlTimer = new DispatcherTimer(UrlDebounce, DispatcherPriority.Background, (_, _) => ValidateUrl(), dispatcher);
         _urlTimer.Stop();
         Sections =
@@ -127,6 +131,7 @@ internal sealed class ReportPaneViewModel : ObservableObject
         PauseIndefiniteCommand = new RelayCommand(() => _report.Pause(null));
         ResumeCommand = new RelayCommand(() => _report.Resume());
         ProfileCommand = new RelayCommand(() => ReportLinks.Open(_report.Identity?.ProfileUrl));
+        ManageDevicesCommand = new RelayCommand(OpenDeviceManager, () => Profile.CanIdentity);
         ForgetCommand = new RelayCommand(() => Forget(null), () => NetworkEnabled && _report.ForgetState != ReportForgetKind.Working);
         ForgetLocalCommand = new RelayCommand(() => _report.ForgetLocally());
         ResetCommand = new RelayCommand(() => _report.ResetDevice(), () => NetworkEnabled);
@@ -142,6 +147,9 @@ internal sealed class ReportPaneViewModel : ObservableObject
     }
 
     public ReportController Report => _report;
+    public ReportProfileViewModel Profile { get; }
+    public bool ShowsInlineProfile => _report.Identity?.IsRegistered == true && _report.Discovery?.Extensions.HasProfile == true;
+    public bool ShowsLegacyUsername => !ShowsInlineProfile;
 
     public bool NetworkEnabled => _report.NetworkEnabled;
 
@@ -422,6 +430,18 @@ internal sealed class ReportPaneViewModel : ObservableObject
 
     public ICommand ProfileCommand { get; }
 
+    public ICommand ManageDevicesCommand { get; }
+
+    public string? ManageProfileHint => _report.CanManageProfile ? null : _loc["profile.unavailable"];
+
+    internal void OpenDeviceManager()
+    {
+        if (_profileWindow is { } open) { open.Activate(); return; }
+        _profileWindow = new ReportProfileWindow(Profile) { Owner = System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive) };
+        _profileWindow.Closed += (_, _) => _profileWindow = null;
+        _profileWindow.Show();
+    }
+
     public ICommand ForgetCommand { get; }
 
     public ICommand ForgetLocalCommand { get; }
@@ -431,6 +451,7 @@ internal sealed class ReportPaneViewModel : ObservableObject
     public void SetLocalizer(Localizer localizer)
     {
         _loc = localizer;
+        Profile.SetLocalizer(localizer);
         Refresh();
     }
 
@@ -442,10 +463,26 @@ internal sealed class ReportPaneViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusNeedsUser));
     }
 
-    public void Closed() => _report.PaneClosed();
+    public void Opened()
+    {
+        _visible = true;
+        if (ShowsInlineProfile) Profile.Activate();
+    }
+
+    public void Closed()
+    {
+        _visible = false;
+        _profileWindow?.Close();
+        Profile.Deactivate();
+        _report.PaneClosed();
+    }
+
+    public void Dispose() { Closed(); Profile.Dispose(); }
 
     private void Refresh()
     {
+        if (_visible && ShowsInlineProfile) Profile.Activate();
+        else Profile.Deactivate();
         if (!_usernameEditing)
         {
             _usernameText = _report.FieldUsername;

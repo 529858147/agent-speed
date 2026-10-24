@@ -8,10 +8,13 @@ shared fixtures in `spec/fixtures/`.
 
 | Term | Meaning |
 | --- | --- |
-| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (DeepSeek Harness, `dsh`), `opencode`, `gemini` (Gemini CLI), `omp` (oh-my-pi), `antigravity` (Google Antigravity), `workbuddy` (Tencent WorkBuddy, China edition), `workbuddyAi` (WorkBuddy AI, international edition). This is the *source order*. |
+| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (display name **DSH**, DeepSeek Harness), `opencode`, `gemini` (Gemini CLI), `omp` (oh-my-pi), `antigravity` (Google Antigravity), `workbuddy` (Tencent WorkBuddy, China edition), `workbuddyAi` (WorkBuddy AI, international edition), `zcode` (ZCode), `kimi` (Kimi Code CLI), `grokBuild` (Grok Build). This is the append-only *source order*. |
 | Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. (OpenCode: one per session row, 4.5; Antigravity: one per conversation database, 4.8.) |
 | Response | One model API call that produced a usage record. |
 | Phase | `generating` (a request is in flight), `tools` (model finished, waiting for tool results), `idle` |
+
+Parsers normally emit one record per response. A native Grok model batch is one record with `requestCount` underlying
+responses (4.12); the speed engine still processes its normalized tokens and duration with the same equations.
 
 ## 2. Locations
 
@@ -26,6 +29,9 @@ shared fixtures in `spec/fixtures/`.
 | Antigravity (CLI `agy`, desktop app, IDE, IDE extensions) | three store folders: `~/.gemini/antigravity-cli`, `~/.gemini/antigravity`, `~/.gemini/antigravity-ide` (each contains `conversations`) | user setting (one store folder, or its `conversations` folder; replaces all three) |
 | WorkBuddy (desktop app `WorkBuddy`, China edition) | `~/.workbuddy/projects` (4.9) | user setting (the data folder or its `projects` folder) |
 | WorkBuddy AI (desktop app `WorkBuddy AI`, international edition) | `~/.workbuddy-ai/projects` (4.9) | user setting (the data folder or its `projects` folder) |
+| ZCode | `~/.zcode/cli/db/db.sqlite`; `$ZCODE_DATA_BASE_DIR` replaces the home base, with `.zcode/cli/db` underneath | user setting (data directory, database folder, or `db.sqlite`) |
+| Kimi Code CLI (TypeScript v2) | `$KIMI_CODE_HOME/sessions`, else `~/.kimi-code/sessions` | user setting (data directory or its `sessions` folder) |
+| Grok Build | `$GROK_HOME/sessions`, else `~/.grok/sessions` | user setting (data directory or its `sessions` folder) |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
@@ -37,6 +43,8 @@ maximum depth 6, never follow symlinks, at most 20 000 files per root.
 A source is *detected* when its root (Antigravity: any store; WorkBuddy: the data folder) exists or it has data today;
 what an undetected source shows is DESIGN 2b (unavailable sources), 4 and 5.
 The app never writes inside these folders.
+For ZCode, Kimi Code CLI and Grok Build, the source's session count includes today's main sessions only;
+subagents remain visible in the agent tree and ordinary forks remain separate sessions, as with WorkBuddy.
 
 ## 3. Common rules
 
@@ -1049,6 +1057,80 @@ hits are often only in `rawUsage`). `totalTokens`, `requests`, `credit` and the 
 - Calls without transcript lines are not counted: prompt enhancement, titles and replays run in a runtime without
   session persistence. Cloud conversations are not counted.
 
+### 4.10 ZCode
+
+Read the native SQLite store with short, read-only transactions using the same WAL/immutable safeguards as OpenCode.
+The `session` table supplies identity, directory and parent links. Every session is one agent whose id is
+`<database path>#<session id>`. `model_usage` is the sole token source; `message`, `part`, `turn_usage` and the app's
+task index must not be added to its totals. A source with unsupported tables or columns is not parsed as another harness.
+
+A terminal `model_usage` row with `completed_at` emits `key = "zcode:" + id`, `startMs = started_at`,
+`endMs = completed_at`, `model = model_id`, `provider = provider_id`, `final = true`. Rows still running do not emit
+responses. Input is `input_tokens` (already includes cache); cache read/write and reasoning are separate details,
+not extra input/output. All numeric normalization follows 3.2. Startup includes calls that started before midnight
+but completed today. The latest native user/assistant message and pending tool parts supply in-flight phase when
+usage is not written until completion. Reading never creates or migrates the upstream database.
+
+### 4.11 Kimi Code CLI
+
+Discover only `sessions/<workDirKey>/<sessionId>/agents/<agentId>/wire.jsonl`, without following symlinks. `main`
+is the main agent; other agent folders are children. Each file is its own agent. Metadata comes from native
+`state.json` and `config.update.environmentDisclosure.cwd`; no credential file or conversation body is retained.
+This adapter targets the TypeScript v2 wire journal; the old Python `kimi-cli` layout is not assumed compatible.
+
+Wire records are flat objects with millisecond `time`. The adapter accepts `context.append_message`,
+`agent.message.appended`, `human.agent.message.appended`, and `context.append_loop_event` / `step.end`.
+Assistant usage may be on the message, its nested history entry's `meta.usage`, or the step-end event.
+Identity is the provider/message id (or step uuid); `key = "kimi:" + identity`. A mirror of the same response
+updates that key instead of counting another request. The shared deduper also excludes copied fork history.
+`usage.record`, context token counters and parent `subagent.completed.usage` are not additional responses.
+
+`input = inputOther + inputCacheRead + inputCacheCreation`, `cachedInput = inputCacheRead`,
+`cacheWriteInput = inputCacheCreation`, `output = output`; absent details use the existing 3.2 rules.
+`llm.request.time` is the pending start. Where it is absent, first-token latency plus stream duration can reconstruct
+the interval; it includes time to first token. Streaming partial messages do not count as completed responses.
+Turn, tool and request events drive the existing phase state machine; all speed calculations remain sections 3 and 6.
+
+### 4.12 Grok Build
+
+Discover only `sessions/<encoded-cwd>/<sessionId>/updates.jsonl`. Native `summary.json` supplies the working directory,
+current model, session kind and parent relationship. The persisted JSONL envelope is
+`{timestamp: <Unix seconds>, method, params: {sessionId, update, _meta}}`; prefer
+`params._meta.agentTimestampMs` over the second-resolution envelope time.
+When the native summary is not readable yet, activity can be tracked but numeric batches wait for metadata so a
+late child relationship cannot cause double-counting. The live parser keeps at most 256 pending numeric batches;
+the history reader can replay the full journal once metadata becomes available.
+
+The canonical token record is the persisted `turn_completed` update's `usage`. Prefer its `modelUsage` buckets;
+when there are none, use the flat usage (or its compatible `totals` object) with the current model. Do not also add
+the companion cumulative `usage.json`, `signals.json`, turn-level totals or context-window counters. Buffered
+`response_started` / `response_completed` messages are not assumed to be persisted.
+
+For each model bucket:
+
+- `key = "grok:" + prompt_id + ":" + model`, with native event id as the fallback identity.
+- `input = inputTokens`, already including `cachedReadTokens` and `cacheCreationTokens`;
+  `output = outputTokens` includes `reasoningTokens`. Provider remains null because the native record does not name one.
+- `endMs` is the completion event time. A positive `apiDurationMs` within the existing 15-minute interval limit gives
+  `startMs = endMs - apiDurationMs`; otherwise `startMs = null`, as for any other response without a valid interval.
+- `requestCount` is native `modelCalls`, clamped to 1–100000. Other sources default to 1. Totals, model breakdowns,
+  history, unpriced-request counts and reporting use this multiplicity; no per-call token values are fabricated.
+- A later version of the same key is an upsert, including changes to its request count.
+
+Grok folds child usage into its parent ledger. A session explicitly marked `subagent` or `subagent_fork` with a
+parent id therefore contributes activity/parent links, while the parent's native batch is the single accounting
+source. Ordinary forks remain independent, with copied prompt/model keys deduplicated. This avoids counting the
+same child twice or retracting usage already sent by the append-only report ledger. Background usage missing from
+an upstream incomplete parent batch cannot be reconstructed from that batch.
+
+Batch normalization changes neither the existing speed formula, rolling window, interval validation, estimator,
+missing-number rules nor pricing formula. The upstream file does not preserve each call's separate timeline: a
+batch's API duration is represented as one interval ending at its completion. Intra-batch concurrency cannot be
+reconstructed; independent sessions still add through the normal engine. API-equivalent cost is calculated by the
+existing price book on the native model batch, so tier selection and rounding can differ from individual-call bills.
+Evidence and executable checks: `spec/research/harnesses.md`, `spec/tools/harness_reference.py`, and
+`spec/fixtures/harness-expected.json`.
+
 ## 5. Reading files
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
@@ -1851,6 +1933,10 @@ translated. Cases: `spec/fixtures/traffic-cases.json` `format`.
   rules derived from the 5.8 code, not yet from a running app.
 
 ## 11. Live reporting
+
+Execution modes are additive metadata specified in [EXECUTION-MODES.md](EXECUTION-MODES.md); they do not change
+any token, request, speed, duration or price formula. Optional per-model Harness/mode breakdowns and separate
+profile APIs are defined in [REPORTING-EXTENSIONS.md](REPORTING-EXTENSIONS.md).
 
 When the user turns on live reporting (DESIGN 11), the app sends the values below to a service of the user's choice
 with the protocol of `spec/REPORTING.md`. This section defines how every reported value comes from the engine, the

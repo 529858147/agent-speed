@@ -11,6 +11,8 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
     public var startMs: Int64?
     public var endMs: Int64
     public var usage: TokenUsage
+    public var requestCount: Int
+    public var modes: ExecutionModes
     /// False while only a streaming snapshot of the usage was written (METRICS 3.3). Codex usage is always final.
     public var isFinal: Bool
     /// The API provider the agent says it used, only for pricing (METRICS 3.2); never empty.
@@ -34,7 +36,9 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
         isFinal: Bool = true,
         provider: String? = nil,
         fast: Bool = false,
-        costMicroUsd: Int64? = nil
+        costMicroUsd: Int64? = nil,
+        requestCount: Int = 1,
+        modes: ExecutionModes = .empty
     ) {
         self.key = key
         self.source = source
@@ -43,6 +47,8 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
         self.startMs = startMs
         self.endMs = endMs
         self.usage = usage
+        self.modes = modes
+        self.requestCount = min(100_000, max(1, requestCount))
         self.isFinal = isFinal
         self.provider = provider.flatMap { $0.isEmpty ? nil : $0 }
         self.fast = fast
@@ -71,6 +77,7 @@ struct AgentState: Equatable, Sendable {
     /// The full working directory the transcript names (METRICS 4, 10.6); metadata only.
     var cwdPath: String?
     var model: String?
+    var modes: ExecutionModes = .empty
     var isSubagent: Bool
     /// Codex and DeepSeek only; set once by the first `session_meta` or header.
     var thread: SessionThread?

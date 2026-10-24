@@ -106,6 +106,7 @@ enum OrbSceneBuilder {
             frame.readoutShift = animator.traffic.stackShift(frame, placement: renderer.trafficPlacement,
                                                              layout: renderer.readoutLayout)
         }
+        frame.auraFlare = animator.flare.value
         renderer.step(frame)
         scene.alphaScale = Float(frame.alpha)
         guard frame.alpha > 0.002 else { return }

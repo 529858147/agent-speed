@@ -16,8 +16,14 @@ public enum OrbPass
 {
     Shapes,
 
-    /// <summary>The liquid volume shader (<see cref="OrbBatch.LiquidMode"/> 0 the volume, 1 the meniscus).</summary>
+    /// <summary>The liquid volume shader (<see cref="OrbBatch.Mode"/> 0 the volume, 1 the meniscus).</summary>
     Liquid,
+
+    /// <summary>
+    /// The <c>led</c> style's per-pixel layers (DESIGN 2.1, <see cref="OrbLedUniforms"/>): <see cref="OrbBatch.Mode"/> 0 the
+    /// corona and warp streaks, 1 the silk core, 2 the tip flare and new-peak flash, ring and rays.
+    /// </summary>
+    Led,
 
     /// <summary>Text quads drawn in sequence with the shapes (under what follows), <see cref="OrbBatch.Start"/> into the texts.</summary>
     Text,
@@ -26,11 +32,13 @@ public enum OrbPass
 /// <summary>A run of instances drawn with one pipeline state.</summary>
 /// <param name="Clip">Clip radius around the canvas center in points (0: none).</param>
 /// <param name="Feather">Width of a soft clip edge inside <paramref name="Clip"/> (0: an anti-aliased hard edge).</param>
-public readonly record struct OrbBatch(OrbPass Pass, OrbBlend Blend, float Clip, float Feather, int Start, int Count, int LiquidMode = 0);
+/// <param name="Mode">The pass's mode (<see cref="OrbPass.Liquid"/>, <see cref="OrbPass.Led"/>).</param>
+public readonly record struct OrbBatch(OrbPass Pass, OrbBlend Blend, float Clip, float Feather, int Start, int Count, int Mode = 0);
 
 /// <summary>
 /// One frame of GPU work for one orb, back to front: shape batches, then every text quad on top (DESIGN 2a: the readout is
-/// always drawn above every effect). The storage is reused frame after frame, so a warm list never allocates.
+/// always drawn above every effect), then the batches added after <see cref="BeginOverlay"/> (the digit lightning, DESIGN
+/// 2.1). The storage is reused frame after frame, so a warm list never allocates.
 /// </summary>
 public sealed class OrbDrawList
 {
@@ -62,6 +70,14 @@ public sealed class OrbDrawList
     public OrbLiquidUniforms Liquid;
 
     public bool HasLiquid { get; private set; }
+
+    /// <summary>Parameters of the <c>led</c> passes when one is present.</summary>
+    public OrbLedUniforms Led;
+
+    public bool HasLed { get; private set; }
+
+    /// <summary>The first batch drawn after the overlay text, or −1 when every batch is drawn before it.</summary>
+    public int OverlayBatchStart { get; private set; } = -1;
 
     /// <summary>Canvas side (points) and pixels per point of the target.</summary>
     public double Canvas { get; set; }
@@ -96,7 +112,9 @@ public sealed class OrbDrawList
         BatchCount = 0;
         TextCount = 0;
         OverlayTextStart = 0;
+        OverlayBatchStart = -1;
         HasLiquid = false;
+        HasLed = false;
         AlphaScale = 1;
         ClipRadius = 0;
         ClipFeather = 0;
@@ -124,7 +142,7 @@ public sealed class OrbDrawList
         {
             ref var last = ref _batches[BatchCount - 1];
             if (last.Pass == OrbPass.Shapes && last.Blend == blend && last.Clip == clip && last.Feather == feather
-                && last.Start + last.Count == Count)
+                && last.Start + last.Count == Count && BatchCount - 1 >= OverlayBatchStart)
             {
                 last = last with { Count = last.Count + 1 };
                 Count++;
@@ -141,6 +159,22 @@ public sealed class OrbDrawList
     {
         HasLiquid = true;
         AddBatch(new OrbBatch(OrbPass.Liquid, OrbBlend.Over, 0, 0, Count, 0, mode));
+    }
+
+    /// <summary>Adds a pass of the <c>led</c> shader in <paramref name="mode"/> using <see cref="Led"/>.</summary>
+    public void AddLed(int mode, OrbBlend blend)
+    {
+        HasLed = true;
+        AddBatch(new OrbBatch(OrbPass.Led, blend, 0, 0, Count, 0, mode));
+    }
+
+    /// <summary>What is added from now on is drawn above the readout text (once per frame; later calls keep the first start).</summary>
+    public void BeginOverlay()
+    {
+        if (OverlayBatchStart < 0)
+        {
+            OverlayBatchStart = BatchCount;
+        }
     }
 
     /// <summary>
@@ -244,7 +278,12 @@ public sealed class OrbDrawList
             hash = Mix(hash, MemoryMarshal.AsBytes(new ReadOnlySpan<OrbLiquidUniforms>(in Liquid)));
         }
 
-        Span<double> globals = [Canvas, Scale, CenterX, CenterY, ContentScale, Opacity];
+        if (HasLed)
+        {
+            hash = Mix(hash, MemoryMarshal.AsBytes(new ReadOnlySpan<OrbLedUniforms>(in Led)));
+        }
+
+        Span<double> globals = [Canvas, Scale, CenterX, CenterY, ContentScale, Opacity, OverlayBatchStart];
         return Mix(hash, MemoryMarshal.AsBytes(globals));
     }
 

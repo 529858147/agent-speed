@@ -57,6 +57,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
         switch (line.Kind)
         {
             case ClaudeLineKind.ApiRequest:
+                Modes = ExecutionModes.Empty;
                 _pendingStartMs = ts;
                 _preciseStart = true;
                 SetPhase(AgentPhase.Generating, ts, ts);
@@ -67,6 +68,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
                 SetPhase(AgentPhase.Idle, ts, null);
                 break;
             case ClaudeLineKind.User:
+                Modes = ExecutionModes.Empty;
                 if (!_preciseStart)
                 {
                     _pendingStartMs = ts;
@@ -109,6 +111,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
                 Model = line.Model ?? previous.Model,
                 Final = previous.Final || line.StopReason != StopReasonKind.Missing,
                 Fast = previous.Fast || line.Fast,
+                Modes = previous.Modes.Merge(ExecutionModeNative.ClaudeSpeed(line.Speed)),
             };
             isCompletion = false;
         }
@@ -121,6 +124,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
 
         Remember(response);
         SetModel(response.Model);
+        Modes = response.Modes;
         sink.OnResponse(response, isCompletion);
 
         switch (line.StopReason)
@@ -142,7 +146,7 @@ internal sealed class ClaudeParser : TranscriptParser<ClaudeLine>
     {
         var response = new ParsedResponse(
             key, Source, AgentId, line.Model, _pendingStartMs, ts, line.Usage, line.StopReason != StopReasonKind.Missing,
-            Fast: line.Fast);
+            Fast: line.Fast) { Modes = ExecutionModeNative.ClaudeSpeed(line.Speed) };
         _pendingStartMs = null;
         _preciseStart = false;
         return response;

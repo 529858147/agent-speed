@@ -204,7 +204,7 @@ internal sealed partial class ReportController
         var settings = _settings.Current;
         return new ReportOptions(
             switches.Where(document.Sections.Contains).ToHashSet(), document.Limits.MaxModels, document.Limits.SendLimitBytes,
-            settings.Metric, settings.Redline, _priceBook.ReportPriceVersion(UnixMs));
+            settings.Metric, settings.Redline, _priceBook.ReportPriceVersion(UnixMs)) { Extensions = document.Extensions };
     }
 
     private void Send(ReportTicket ticket)
@@ -359,7 +359,7 @@ internal sealed partial class ReportController
                 if (!_renamedForMismatch && Identity?.Username is { } name)
                 {
                     _renamedForMismatch = true;
-                    Rename(name);
+                    _ = Rename(name);
                 }
 
                 break;

@@ -1,5 +1,6 @@
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Settings.Orbs;
@@ -19,7 +20,8 @@ public static class OrbMenuModel
     /// <summary>The menu of <paramref name="orbId"/>; null when no such orb exists.</summary>
     /// <param name="sources">Source availability (split, the sources' secondary text and faded dots).</param>
     /// <param name="sourceTraffic">Per-process traffic can be measured now (else the sources choice says it is unavailable).</param>
-    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer, bool sourceTraffic = true)
+    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer, bool sourceTraffic = true,
+        IReadOnlyList<AgentStatus>? agents = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(localizer);
@@ -30,6 +32,7 @@ public static class OrbMenuModel
         }
 
         var id = orb.Id;
+        var modeAgents = agents?.Where(a => orb.Sources.Tracks(a.Source)).ToArray();
         var limit = localizer.Format("orbs.limit", OrbsDocument.MaxOrbs);
         var canAdd = document.CanAdd;
         var canSplit = OrbEditing.CanSplit(document, id, sources.Available);
@@ -42,6 +45,15 @@ public static class OrbMenuModel
         return new MenuLevel(
         [
             new MenuRow(OrbNaming.DisplayName(orb, localizer)) { Icon = DotsOf(orb, sources), IsHeader = true, IsEnabled = false },
+            .. (modeAgents is { Length: > 0 } ? new MenuEntry[]
+            {
+                new MenuRow(localizer["mode.label"] + ": " + ExecutionModeText.Aggregate(modeAgents.Select(a => a.Modes), localizer))
+                {
+                    IsEnabled = false,
+                    ToolTip = string.Join(Environment.NewLine, modeAgents.Select(a => (a.Model ?? localizer[DisplayText.SourceKey(a.Source)])
+                        + ": " + ExecutionModeText.Detail(a.Modes, localizer))),
+                },
+            } : []),
             MenuSeparator.Instance,
             StyleMenu(orb, localizer),
             SourcesMenu(orb, sources, localizer),

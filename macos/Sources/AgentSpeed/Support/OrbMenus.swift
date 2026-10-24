@@ -19,6 +19,7 @@ enum OrbMenus {
         header.image = dotsImage(orbs.dots(of: id))
         header.isEnabled = false
         menu.addItem(header)
+        menu.addItem(modeItem(model: model, orb: orb))
         menu.addItem(.separator())
         menu.addItem(styleItem(model: model, orb: orb))
         menu.addItem(sourcesItem(model: model, orb: orb))
@@ -73,6 +74,14 @@ enum OrbMenus {
         menu.addItem(ActionMenuItem(l10n("menu.dashboard")) { [weak model] in model?.commands?.showDashboard() })
         menu.addItem(MenuFactory.quitItem(model: model))
         return menu
+    }
+
+    private static func modeItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
+        let mode = ExecutionModeText.orb(agents: model.snapshot.agents.filter { orb.sources.tracks($0.source) }, model.l10n)
+        let item = NSMenuItem(title: mode.summary, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        item.toolTip = mode.detail
+        return item
     }
 
     private static func styleItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {

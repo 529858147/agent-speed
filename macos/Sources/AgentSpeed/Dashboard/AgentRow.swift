@@ -53,6 +53,16 @@ struct AgentRow: View {
                 .foregroundStyle(.dashboardSecondary)
             }
 
+            Text(ExecutionModeText.summary(agent.modes, l10n))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.primary.opacity(0.055), in: Capsule())
+                .help(ExecutionModeText.detail(agent.modes, l10n))
+                .accessibilityLabel(l10n("mode.label") + ": " + ExecutionModeText.summary(agent.modes, l10n))
+
             Spacer(minLength: Spacing.xs)
 
             LiveSpeedValue(
@@ -65,8 +75,8 @@ struct AgentRow: View {
         .frame(height: DashboardLayout.rowHeight)
         .padding(.leading, CGFloat(depth) * DashboardLayout.subagentIndent)
         .contentShape(Rectangle())
-        .help(traffic.map { "\(project) · \(status)\n" + l10n("traffic.agent.tooltip", TrafficText(model: model).pair($0)) }
-            ?? "\(project) · \(status)")
+        .help((traffic.map { "\(project) · \(status)\n" + l10n("traffic.agent.tooltip", TrafficText(model: model).pair($0)) }
+            ?? "\(project) · \(status)") + "\n" + ExecutionModeText.detail(agent.modes, l10n))
         .accessibilityElement(children: .combine)
         .accessibilityValue(status)
     }

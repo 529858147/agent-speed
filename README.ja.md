@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop・DeepSeek Harness・OpenCode・Gemini CLI・omp・Antigravity・WorkBuddy・WorkBuddy AI のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
+**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop・DSH（DeepSeek Harness）・OpenCode・Gemini CLI・omp・Antigravity・WorkBuddy・WorkBuddy AI・ZCode・Kimi Code CLI・Grok Build のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -53,6 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **称号テーマ**——9 種類のスピード称号：「乗り物」「動物」「風力階級」「宇宙」「仙道修行」「武芸の道」「魔法の位階」「ゲームランク」「エンジニアの道」。自分だけの称号も最大 8 個まで作れます。乗り物以外のテーマでは、ダッシュボードのメーターに光る称号バッジが表示されます。
 - **使用履歴**——最も古い記録から毎日の出力・入力トークン、リクエスト数、平均速度とピーク、費用と通信量を、ソース別に今日・昨日・任意の期間でグラフ表示。モデルごとの速度も確認でき、CSV に書き出せます。保存するのは日ごとの集計だけなので、ツールが古い記録を削除しても履歴は残ります。
 - **ライブ送信（任意）**——初期設定はオフ。参加したいときは、選んだユーザー名で、[Codex Radar](https://codexradar.com/) のスピードランキングなど好きな API にライブの数値を共有できます。会話の内容、ファイル、プロジェクト名は一切送りません。詳しくは[プライバシー](#プライバシー)へ。
+- **実行モード**——信頼できる記録から Standard／Fast／Ultrafast や各 agent のアクセラレーター、モデルバリアント、ルーティングを表示。既定値と不明を区別し、履歴は専用 CSV に出力できます。速度の計算式は変わりません。
+- **アバターと複数デバイス（任意の API 拡張）**——アバターのプレビュー・変更・削除と、既存デバイスの承認が必要なワンタイムコードによる連携。各デバイスの鍵は独立し、連携解除後も計上済みの履歴は残ります。受信サービスには[拡張 API のスキーマ](spec/report-schema.json)の対応が必要です。
 - **完全ネイティブ**——macOS は SwiftUI + AppKit、Windows は WPF と Fluent／Mica。ライト・ダーク・自動テーマ。English、繁體中文、简体中文、日本語。
 - **人にやさしい**——エフェクトの強さは「オフ」から「全開」まで。「視差効果を減らす」やハイコントラストに対応し、クリック透過、画面端へのスナップ、ディスプレイごとの位置記憶、ログイン時の自動起動を備えています。
 - **常に最新**——バックグラウンドで GitHub Releases を確認し、ワンクリックでアップデート。SHA-256 で検証します。
@@ -76,13 +78,18 @@ Agent Speed は、agent がすでにローカルに書き出している記録�
 | Codex（CLI・IDE・デスクトップ） | `~/.codex/sessions` と `archived_sessions`、圧縮された記録を含む（または `$CODEX_HOME`） |
 | Claude Code（CLI・IDE） | `~/.claude/projects`（または `$CLAUDE_CONFIG_DIR/projects`） |
 | Claude Desktop（Code と agent セッション） | `~/.claude/projects`（自動で区別） |
-| DeepSeek Harness（`dsh`、デスクトップと CLI） | `~/.dsh/sessions`（または `$DSH_HOME/sessions`） |
+| DSH（`dsh`、デスクトップと CLI） | `~/.dsh/sessions`（または `$DSH_HOME/sessions`） |
 | OpenCode（CLI とデスクトップ） | `~/.local/share/opencode/opencode.db`（または `$XDG_DATA_HOME/opencode`） |
 | Gemini CLI | `~/.gemini/tmp`（または `$GEMINI_CLI_HOME/.gemini/tmp`） |
 | omp（oh-my-pi） | `~/.omp/agent/sessions` と `~/.omp/profiles` 内の各プロファイル（または `$PI_CODING_AGENT_DIR/sessions`） |
 | Antigravity（`agy` CLI・デスクトップアプリ・IDE・拡張機能） | `~/.gemini/antigravity-cli`、`~/.gemini/antigravity`、`~/.gemini/antigravity-ide`（それぞれの `conversations` フォルダ） |
 | WorkBuddy（Tencent、中国版） | `~/.workbuddy/projects` |
 | WorkBuddy AI（国際版） | `~/.workbuddy-ai/projects` |
+| ZCode | `~/.zcode/cli/db/db.sqlite`（または `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`） |
+| Kimi Code CLI（TypeScript v2） | `~/.kimi-code/sessions`（または `$KIMI_CODE_HOME/sessions`） |
+| Grok Build | `~/.grok/sessions`（または `$GROK_HOME/sessions`） |
+
+Grok Build のターン別・モデル別バッチに保存されたトークン数、API 所要時間、実際の呼び出し回数を、既存の速度エンジンで計算します。サブエージェントの使用量は親に集約されるため一度だけ計上し、子の動作状態も表示します。個々の呼び出しのタイムラインは保存されないため、バッチ内の並列実行速度は復元できません。
 
 **速度＝出力トークン ÷ モデルが実際にそれらに費やした時間**——リクエスト送信から応答完了まで、最初のトークンを待つ時間を含みます。複数の agent は合算されます。ストリーミング中の応答はその agent の最近の実測速度で推定し、完了した瞬間に実測値で補正します。「総スループット」（入力＋出力）にも切り替えられます。
 
@@ -97,6 +104,8 @@ Claude Desktop の通常のチャット会話はローカルに保存されな�
 通信量：Agent Speed はこのコンピューター上で、プログラムが送受信したバイト数だけを数えます。内容・アドレス・接続先は一切読みません。このうち agent のバイト数を送信するのは、オンにしたライブ送信（下記）だけで、送信先は選んだサービスです。Windows で agent ごとの通信量を表示するには、任意のヘルパーサービスが必要です。権限の少ない「ローカル サービス」アカウントで動作し、プロセスごとのバイト数だけを数えます。インストールと削除のときに、それぞれ一度だけ管理者の承認が必要です（[詳細](spec/WINDOWS-SERVICE.md)）。
 
 ライブ送信（任意・初期設定はオフ。ダッシュボードで一度だけ案内します）：API（公開ランキングサービスなど。組み込みの選択肢は Codex Radar のスピードランキング `deng.codexradar.com`）に対してオンにすると、Agent Speed は現在の速度、直近数秒に使った token 数、そしてオンのままにした項目——米ドル建ての API 換算費用、agent の通信量、使用中のモデル、ツールごとの内訳——を、選んだユーザー名（初期値はコンピューター名。ワンクリックでランダムな名前にできます）と一緒にそのサービスへ送信します。agent が作業している間は数秒ごとに送信し、休んでいる間は止まります。会話の内容、プロンプト、ファイル・フォルダー・プロジェクトの名前、使用履歴は一切送信せず、送信に失敗したデータを後から送り直すこともありません。各送信はこのコンピューターから出ない鍵で署名されます。サービスは同じデバイスからの送信であることは確認できますが、数値が正しいかどうかは確認できません。設定から一時停止・オフにしたり、サービスにデバイスの削除を依頼したりできます。
+
+モデル共有を有効にした場合、任意の API 拡張でモデル別の Harness リクエスト数と実行モードも送信します。アバターのアップロードとワンタイムコードによるデバイス連携は明示的な操作のみで、受信側の[拡張 API のスキーマ](spec/report-schema.json)対応が必要です。定期レポートに画像は含めず、秘密鍵はデバイスごとに独立しています。ネットワーク全体のスイッチを切ると、プロフィール関連の通信も停止します。
 
 Agent Speed が接続する可能性のあるホストとそのタイミングは、すべて [`spec/NETWORK.md`](spec/NETWORK.md) に記載しています。
 

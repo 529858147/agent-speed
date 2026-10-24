@@ -8,7 +8,7 @@ import Foundation
 final class HistoryAnalyzer {
     /// Bumped whenever a parser change alters results; stored files of other versions are analysed again.
     /// 2: per-model measured output and time (METRICS 8). 3: cost (METRICS 9.7).
-    static let analysisVersion: Int64 = 3
+    static let analysisVersion: Int64 = 4
     /// The current price table version of the last complete run; when it changes, files with unpriced responses are
     /// analysed again (METRICS 9.7).
     static let priceVersionKey = "priceTableVersion"
@@ -98,11 +98,20 @@ final class HistoryAnalyzer {
         var previous: HistoryDatabase.Entry?
     }
 
+    private struct PlannedZcodeSession {
+        var path: String
+        var records: [ResponseRecord]
+        var modified: Int64
+        var previous: HistoryDatabase.Entry?
+    }
+
     private struct Plan {
         var files: [PlannedFile] = []
         var discovered = 0
         var opencode: (database: OpencodeDatabase, sessions: [PlannedSession], identity: String)?
         var opencodeIdentity: String?
+        var zcode: [PlannedZcodeSession] = []
+        var zcodeIdentity: String?
 
         var bytes: Int64 { files.reduce(0) { $0 + $1.stat.size } }
     }
@@ -136,7 +145,31 @@ final class HistoryAnalyzer {
         if configuration.readsOpencode {
             try planOpencode(configuration: configuration, options: options, zoneChanged: zoneChanged, repricing: repricing, into: &plan)
         }
+        if configuration.readsZcode {
+            try planZcode(configuration: configuration, options: options, zoneChanged: zoneChanged, repricing: repricing, into: &plan)
+        }
         return plan
+    }
+
+    private func planZcode(configuration: MonitorConfiguration, options: Options, zoneChanged: Bool,
+                           repricing: Bool, into plan: inout Plan) throws {
+        let path = ZcodeDatabase.databasePath(forRoot: configuration.resolvedZcodeRoot)
+        guard let stat = FileStat.stat(path), stat.isRegularFile else { return }
+        plan.discovered += 1
+        let wal = FileStat.stat(path + "-wal")
+        let identity = [path, "\(stat.identity.device):\(stat.identity.inode)", "\(stat.size):\(stat.modifiedNs)",
+                        wal.map { "\($0.size):\($0.modifiedNs)" } ?? "-", "v\(options.analysisVersion)"].joined(separator: "|")
+        let reprices = repricing && entries.values.contains { $0.family == "zcode" && $0.hasUnpriced }
+        if !zoneChanged, !reprices, try database.meta("zcode") == identity { return }
+        guard let source = try? ZcodeDatabase(path: path), let batch = try? source.read() else { return }
+        plan.zcodeIdentity = identity
+        let grouped = Dictionary(grouping: batch.rows, by: \.sessionId)
+        for session in batch.sessions.sorted(by: { $0.id < $1.id }) {
+            let key = source.agentId(session.id)
+            let records = (grouped[session.id] ?? []).compactMap(source.record)
+            plan.zcode.append(PlannedZcodeSession(path: key, records: records,
+                                                  modified: max(stat.modifiedNs, wal?.modifiedNs ?? 0), previous: entries[key]))
+        }
     }
 
     private func planOpencode(
@@ -207,18 +240,18 @@ final class HistoryAnalyzer {
         let plan = try plan(configuration: configuration, options: options, zoneChanged: zoneChanged, repricing: repricing)
         report.filesDiscovered = plan.discovered
         let sessions = plan.opencode?.sessions ?? []
-        var state = Progress(filesTotal: plan.files.count + sessions.count, bytesTotal: plan.bytes)
+        var state = Progress(filesTotal: plan.files.count + sessions.count + plan.zcode.count, bytesTotal: plan.bytes)
         progress(state)
         func elapsedMs() -> Double { Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000 }
 
-        if plan.files.isEmpty && sessions.isEmpty {
+        if plan.files.isEmpty && sessions.isEmpty && plan.zcode.isEmpty {
             try finish(plan: plan, zone: zone, priceVersion: priceVersion)
             report.durationMs = elapsedMs()
             return report
         }
 
         var deduper = Deduper.hashed()
-        let replaced = Set(plan.files.compactMap(\.previous?.id) + sessions.compactMap(\.previous?.id))
+        let replaced = Set(plan.files.compactMap(\.previous?.id) + sessions.compactMap(\.previous?.id) + plan.zcode.compactMap(\.previous?.id))
         try database.loadKeys(excluding: replaced, into: &deduper)
         var labeler = DayLabeler(timeZone: options.timeZone)
         var pending: [(path: String, entry: HistoryDatabase.Entry, keys: [UInt64])] = []
@@ -267,7 +300,8 @@ final class HistoryAnalyzer {
                         of: latest.values, source: parser.state.source, labeler: &labeler, pricing: pricing)
                     return (days, deduper.finishFile())
                 }
-                let stat = output.read.stat ?? file.stat
+                let stat = file.family == .grokBuild ? file.family.stat(file.path) ?? output.read.stat ?? file.stat
+                    : output.read.stat ?? file.stat
                 let entry = HistoryDatabase.Entry(
                     id: file.previous?.id,
                     family: file.family.rawValue,
@@ -325,6 +359,23 @@ final class HistoryAnalyzer {
             }
         }
 
+        if !report.cancelled {
+            for session in plan.zcode {
+                if isCancelled() { report.cancelled = true; break }
+                let records = session.records.filter { deduper.claim($0.key, for: TranscriptSession.zcodeFileID) != .otherFile }
+                let keys = deduper.finishFile()
+                let entry = HistoryDatabase.Entry(id: session.previous?.id, family: "zcode", size: Int64(records.count),
+                                                  modified: session.modified, version: options.analysisVersion,
+                                                  days: DayAggregate.contributions(of: records, source: .zcode, labeler: &labeler, pricing: pricing))
+                entries[session.path] = entry
+                pending.append((session.path, entry, keys))
+                report.sessionsAnalyzed += 1
+                state.filesDone += 1
+                try flush(force: false)
+                progress(state)
+            }
+        }
+
         try flush(force: true)
         try saveBindings()
         if !report.cancelled {
@@ -338,6 +389,7 @@ final class HistoryAnalyzer {
         try database.setMeta("timeZone", zone)
         try database.setMeta(Self.priceVersionKey, priceVersion)
         if opencodeComplete, let identity = plan.opencodeIdentity { try database.setMeta("opencode", identity) }
+        if let identity = plan.zcodeIdentity { try database.setMeta("zcode", identity) }
     }
 
     // MARK: - Results

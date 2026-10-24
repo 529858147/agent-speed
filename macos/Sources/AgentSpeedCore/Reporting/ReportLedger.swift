@@ -7,6 +7,8 @@ struct ReportLedger: Sendable {
 
     /// The values a counted response has added so far, field by field.
     private struct Reported: Sendable {
+        var requests: Int64
+        var unpricedRequests: Int64
         var output: Int64
         var input: Int64
         var cachedInput: Int64
@@ -16,6 +18,7 @@ struct ReportLedger: Sendable {
         var measuredMs: Int64
         var costMicroUsd: Int64
         var endMs: Int64
+        var modes: [ExecutionModeAttribution]
     }
 
     private var counted: [String: Reported] = [:]
@@ -36,12 +39,12 @@ struct ReportLedger: Sendable {
         }
         let values = Self.values(of: record)
         var usage = ReportUsage(
-            requests: 1, output: values.output, input: values.input, cachedInput: values.cachedInput,
+            requests: values.requests, output: values.output, input: values.input, cachedInput: values.cachedInput,
             cacheWriteInput: values.cacheWriteInput, reasoning: values.reasoning, measuredOutput: values.measuredOutput,
             measuredMs: values.measuredMs, costMicroUsd: values.costMicroUsd
         )
-        if record.costMicroUsd == nil { usage.unpricedRequests = 1 }
-        counters.add(usage, to: ReportModelKey(modelId: modelId, source: record.source))
+        usage.unpricedRequests = values.unpricedRequests
+        counters.add(usage, to: ReportModelKey(modelId: modelId, source: record.source), modes: values.modes)
         counted[record.key] = values
         order.append(record.key)
         evictOverflow()
@@ -57,6 +60,8 @@ struct ReportLedger: Sendable {
             old = max(old, new)
             return added
         }
+        usage.requests = step(values.requests, &reported.requests)
+        usage.unpricedRequests = step(values.unpricedRequests, &reported.unpricedRequests)
         usage.output = step(values.output, &reported.output)
         usage.input = step(values.input, &reported.input)
         usage.cachedInput = step(values.cachedInput, &reported.cachedInput)
@@ -67,7 +72,7 @@ struct ReportLedger: Sendable {
         usage.costMicroUsd = step(values.costMicroUsd, &reported.costMicroUsd)
         reported.endMs = max(reported.endMs, record.endMs)
         counted[record.key] = reported
-        counters.add(usage, to: ReportModelKey(modelId: modelId, source: record.source))
+        counters.add(usage, to: ReportModelKey(modelId: modelId, source: record.source), modes: reported.modes)
     }
 
     /// Forgets counted keys whose response left the engine's retention (by its latest end).
@@ -93,10 +98,12 @@ struct ReportLedger: Sendable {
         let usage = record.usage
         let measured = record.isFinal ? TimedResponse(record) : nil
         return Reported(
+            requests: Int64(record.requestCount), unpricedRequests: record.costMicroUsd == nil ? Int64(record.requestCount) : 0,
             output: Int64(usage.output), input: Int64(usage.input), cachedInput: Int64(usage.cachedInput),
             cacheWriteInput: Int64(usage.cacheWriteInput), reasoning: Int64(usage.reasoning),
             measuredOutput: measured == nil ? 0 : Int64(usage.output), measuredMs: measured?.durationMs ?? 0,
-            costMicroUsd: record.costMicroUsd ?? 0, endMs: record.endMs
+            costMicroUsd: record.costMicroUsd ?? 0, endMs: record.endMs,
+            modes: record.modes.attributed
         )
     }
 }

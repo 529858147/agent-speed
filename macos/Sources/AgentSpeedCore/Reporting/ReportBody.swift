@@ -73,15 +73,17 @@ public struct ReportOptions: Equatable, Sendable {
     public var metric: SpeedMetric
     public var redline: Double
     public var priceVersion: Int
+    public var extensions: ReportExtensions
 
     public init(sections: Set<ReportSection>, maxModels: Int = 16, bodyLimit: Int = 16_384, metric: SpeedMetric = .output,
-                redline: Double = 2000, priceVersion: Int = 1) {
+                redline: Double = 2000, priceVersion: Int = 1, extensions: ReportExtensions = .none) {
         self.sections = sections
         self.maxModels = maxModels
         self.bodyLimit = bodyLimit
         self.metric = metric
         self.redline = redline
         self.priceVersion = priceVersion
+        self.extensions = extensions
     }
 }
 
@@ -103,6 +105,11 @@ public enum ReportBody {
         var options = options
         var document = json(envelope, content, sample, options)
         var data = document.compactData
+        if data.count > options.bodyLimit, options.extensions != .none {
+            options.extensions = .none
+            document = json(envelope, content, sample, options)
+            data = document.compactData
+        }
         for section in [ReportSection.models, .sources] where data.count > options.bodyLimit {
             options.sections.remove(section)
             document = json(envelope, content, sample, options)
@@ -164,7 +171,7 @@ public enum ReportBody {
         }
         if sections.contains(.models), options.maxModels > 0 {
             members.append(.init("models", .array(modelEntries(content, sample, maxModels: options.maxModels,
-                                                                withCost: sections.contains(.cost)))))
+                                                                withCost: sections.contains(.cost), extensions: options.extensions))))
         }
         return .object(members)
     }
@@ -252,16 +259,23 @@ public enum ReportBody {
         var sources: Set<SourceKind> = []
         var usage = ReportUsage()
         var generating = 0
+        var usageBySource: [SourceKind: ReportUsage] = [:]
+        var modes: [ReportModeGroup: ReportUsage] = [:]
     }
 
     /// One entry per model with any increment in the window (a late price included) or a generating agent, by output
     /// then id, `other` last (REPORTING 6.6.4, METRICS 11.3, 11.7).
     private static func modelEntries(_ content: ReportWindowContent, _ sample: ReportSample, maxModels: Int,
-                                     withCost: Bool) -> [ReportJSON] {
+                                     withCost: Bool, extensions: ReportExtensions) -> [ReportJSON] {
         var byId: [String: ModelEntry] = [:]
         for (key, value) in content.usage.byModel {
             byId[key.modelId, default: ModelEntry(id: key.modelId)].usage += value
             byId[key.modelId]?.sources.insert(key.source)
+            byId[key.modelId]?.usageBySource[key.source, default: .zero] += value
+        }
+        for (key, value) in content.usage.byMode {
+            let group = ReportModeGroup(source: key.model.source, attribution: key.attribution)
+            byId[key.model.modelId]?.modes[group, default: .zero] += value
         }
         for (key, count) in sample.facts.generatingModels where count > 0 {
             byId[key.modelId, default: ModelEntry(id: key.modelId)].generating += count
@@ -276,6 +290,8 @@ public enum ReportBody {
                 other.usage += entry.usage
                 other.generating += entry.generating
                 other.sources.formUnion(entry.sources)
+                for (source, usage) in entry.usageBySource { other.usageBySource[source, default: .zero] += usage }
+                for (key, usage) in entry.modes { other.modes[key, default: .zero] += usage }
             }
             entries = Array(entries.prefix(maxModels - 1)) + [other]
         }
@@ -290,6 +306,12 @@ public enum ReportBody {
                 .init("generating", .int(min(entry.generating, maxCount))),
             ]
             if withCost { members.append(.init("deltaMicroUsd", .int(entry.usage.costMicroUsd))) }
+            if extensions.modelHarnessRequests, let rows = ReportModelBreakdown.harness(entry.usageBySource, total: entry.usage) {
+                members.append(.init("harnessRequests", rows))
+            }
+            if extensions.executionModes, let rows = ReportModelBreakdown.modes(entry.usageBySource, groups: entry.modes) {
+                members.append(.init("modeUsage", rows))
+            }
             return .object(members)
         }
     }

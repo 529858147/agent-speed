@@ -103,9 +103,10 @@ internal sealed class GlyphAtlas
     {
         if (_texture is null || _view is null)
         {
+            // Every path that drops the texture (first use, growth, device loss) cleared the entries already: what was
+            // rasterized since is pending for this new texture and must not be dropped (a frame without text).
             _texture = device.CreateTexture2D(Vortice.DXGI.Format.R8G8_UNorm, (uint)_side, (uint)_side, 1, 1, null, BindFlags.ShaderResource);
             _view = device.CreateShaderResourceView(_texture);
-            Clear();
         }
 
         foreach (var (x, y, width, height, pixels) in _pending)

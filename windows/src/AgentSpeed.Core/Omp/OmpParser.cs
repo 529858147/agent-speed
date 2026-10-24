@@ -17,6 +17,8 @@ internal sealed class OmpParser : TranscriptParser<OmpLine>
 
     private readonly HashSet<string> _pendingToolCalls = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ParsedResponse> _responses = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ExecutionModes> _modeBranches = new(StringComparer.Ordinal);
+    private ExecutionModes _branchModes = ExecutionModes.Empty;
     private bool _headerSeen;
     private bool _headerProbed;
 
@@ -44,6 +46,8 @@ internal sealed class OmpParser : TranscriptParser<OmpLine>
         base.Reset();
         _pendingToolCalls.Clear();
         _responses.Clear();
+        _modeBranches.Clear();
+        _branchModes = ExecutionModes.Empty;
         _headerSeen = false;
         _headerProbed = false;
         HeaderMs = null;
@@ -93,6 +97,11 @@ internal sealed class OmpParser : TranscriptParser<OmpLine>
         }
 
         Touch(ts);
+        _branchModes = line.SelectedModes ?? (line.ParentId is { } parent && _modeBranches.TryGetValue(parent, out var inherited)
+            ? inherited : ExecutionModes.Empty);
+        if (_modeBranches.Count >= 65536) _modeBranches.Clear();
+        _modeBranches[line.Id] = _branchModes;
+        Modes = _branchModes;
         switch (line.Kind)
         {
             case OmpEntryKind.Message:
@@ -261,7 +270,13 @@ internal sealed class OmpParser : TranscriptParser<OmpLine>
     private void Emit(string key, long? startMs, long endMs, in OmpCall call, IResponseSink sink)
     {
         var isCompletion = Deduper.TryClaim(key, AgentId, out _);
-        var response = new ParsedResponse(key, SourceKind.Omp, AgentId, call.Model, startMs, endMs, call.Tokens, Final: true, Provider: call.Provider);
+        var family = call.Provider is "openai-codex" ? "openai" : call.Provider;
+        var selected = new ExecutionModes(_branchModes.Facts.Where(f => f.Provider == family));
+        var recorded = call.DisabledPriority ? ExecutionModes.Empty
+            : ExecutionModeNative.OmpTier(call.ServiceTier, family, ExecutionModeEvidence.Recorded, ExecutionModeScope.Response);
+        var response = new ParsedResponse(key, SourceKind.Omp, AgentId, call.Model, startMs, endMs, call.Tokens, Final: true, Provider: call.Provider)
+        { Modes = selected.Merge(recorded) };
+        Modes = response.Modes;
         if (_responses.TryGetValue(key, out var previous) && previous == response)
         {
             return;

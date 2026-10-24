@@ -21,7 +21,7 @@ internal sealed record SeedReport(long ElapsedMs, int FilesDiscovered, int Files
 /// Owns discovery, tailing, parsing and the engine for one configuration (METRICS 2 and 5). Single-threaded:
 /// every public member must be called from the monitor thread; only seeding fans file reads out to the pool.
 /// </summary>
-internal sealed class MonitorCore : IDisposable
+internal sealed partial class MonitorCore : IDisposable
 {
     public const long BacklogWindowMs = 15 * 60_000;
     public const long LargeFileBytes = 256L * 1024 * 1024;
@@ -93,6 +93,7 @@ internal sealed class MonitorCore : IDisposable
             OpenCodeRoot = new SourceRoot(RootFamily.OpenCode, _openCode.WatchDirectory, enabled: true);
         }
 
+        InitializeZCode(locations);
         OpenCodeRootPath = locations.OpenCodeRoot;
         _ompAutomatic = locations.OmpAutomatic;
         RefreshAvailability();
@@ -132,9 +133,10 @@ internal sealed class MonitorCore : IDisposable
     public IReadOnlyList<SourceRoot> Roots => _roots;
 
     /// <summary>Every folder a file watcher should observe, including the OpenCode database folder.</summary>
-    public IEnumerable<SourceRoot> WatchRoots => OpenCodeRoot is { } openCode ? _roots.Append(openCode) : _roots;
+    public IEnumerable<SourceRoot> WatchRoots => (_zcodeRoot is { } zcode ? _roots.Append(zcode) : _roots)
+        .Concat(OpenCodeRoot is { } openCode ? [openCode] : []);
 
-    public bool AnyEnabledRootAvailable => _roots.Any(r => r.Enabled && r.Available) || OpenCodeRoot?.Available == true;
+    public bool AnyEnabledRootAvailable => _roots.Any(r => r.Enabled && r.Available) || OpenCodeRoot?.Available == true || _zcodeRoot?.Available == true;
 
     public int TrackedFileCount => _files.Count;
 
@@ -146,6 +148,7 @@ internal sealed class MonitorCore : IDisposable
 
     public void RefreshAvailability()
     {
+        RefreshZCodeAvailability();
         foreach (var root in _roots)
         {
             root.Available = SafeDirectoryExists(root.DetectionPath);
@@ -283,6 +286,7 @@ internal sealed class MonitorCore : IDisposable
             _openCodeSeeded = true;
         }
 
+        SeedZCode(todayStartMs);
         return new SeedReport(stopwatch.ElapsedMilliseconds, discovered, filesRead, bytesRead, _responsesSeen);
     }
 
@@ -291,8 +295,24 @@ internal sealed class MonitorCore : IDisposable
     {
         var changed = false;
         var openCodeChanged = false;
-        foreach (var path in paths)
+        var zcodeChanged = false;
+        foreach (var incoming in paths)
         {
+            var path = incoming;
+            if (Path.GetFileName(path) == "summary.json")
+            {
+                var updates = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, "updates.jsonl");
+                if (_roots.Any(root => root.Family == RootFamily.GrokBuild
+                    && TranscriptDiscovery.IsAcceptablePath(root.Path, updates, TranscriptNaming.GrokBuildSession)))
+                {
+                    path = updates;
+                }
+            }
+            if (_zcode?.IsWatchedPath(path) == true)
+            {
+                zcodeChanged = true;
+                continue;
+            }
             if (_openCode?.IsWatchedPath(path) == true)
             {
                 openCodeChanged = true;
@@ -325,6 +345,11 @@ internal sealed class MonitorCore : IDisposable
             }
         }
 
+        if (zcodeChanged && _zcodeSeeded)
+        {
+            changed |= RefreshZCode();
+        }
+
         if (openCodeChanged && _openCodeSeeded && _openCode is { } openCode)
         {
             changed |= ApplyOpenCode(openCode.Refresh(), seeded: false);
@@ -338,11 +363,12 @@ internal sealed class MonitorCore : IDisposable
     {
         var cutoff = DateTime.UnixEpoch.AddMilliseconds(nowMs - RecentWriteWindowMs);
         var changed = _openCodeSeeded && _openCode?.RefreshIfChanged() is { } update && ApplyOpenCode(update, seeded: false);
+        changed |= _zcodeSeeded && RefreshZCode();
         _connections.CloseIdle();
         List<TrackedFile>? due = null;
         foreach (var tracked in _files.Values)
         {
-            if (tracked.KnownWriteUtc >= cutoff || tracked.Dirty)
+            if (tracked.KnownWriteUtc >= cutoff || tracked.Dirty || tracked.Parser is GrokBuild.GrokParser { PendingUsageCount: > 0 })
             {
                 (due ??= []).Add(tracked);
             }
@@ -380,6 +406,12 @@ internal sealed class MonitorCore : IDisposable
             OpenCodeRoot.Available = available;
             var update = openCode.Rediscover(nowMs, todayStartMs);
             changed |= ApplyOpenCode(update, seeded: update.Reset);
+        }
+
+        RefreshZCodeAvailability();
+        if (_zcodeSeeded)
+        {
+            changed |= RefreshZCode();
         }
 
         AddNewOmpRoots();
@@ -437,7 +469,12 @@ internal sealed class MonitorCore : IDisposable
             return _openCode?.ActiveSessionCount(todayStartMs) ?? 0;
         }
 
-        var mainOnly = WorkBuddyPaths.IsWorkBuddy(kind);
+        if (kind == SourceKind.ZCode)
+        {
+            return _zcode?.ActiveSessionCount(todayStartMs) ?? 0;
+        }
+
+        var mainOnly = WorkBuddyPaths.IsWorkBuddy(kind) || kind is SourceKind.Kimi or SourceKind.GrokBuild;
         var count = 0;
         foreach (var tracked in _files.Values)
         {
@@ -476,6 +513,11 @@ internal sealed class MonitorCore : IDisposable
             warnings.Add(new MonitorWarning.UnfinalizedUsage(unfinalizedToday));
         }
 
+        if (_zcode?.Unsupported == true)
+        {
+            warnings.Add(new MonitorWarning.UnsupportedFormat(SourceKind.ZCode));
+        }
+
         if (_openCode?.Status == OpenCodeStatus.Unsupported)
         {
             warnings.Add(new MonitorWarning.UnsupportedFormat(SourceKind.OpenCode));
@@ -495,7 +537,7 @@ internal sealed class MonitorCore : IDisposable
     public long OversizedLineCount => _removedOversizedLines + _files.Values.Sum(f => f.Tailer.OversizedLines);
 
     public int UnreadableFileCount =>
-        _files.Values.Count(f => f.Unreadable) + (_openCode?.Status == OpenCodeStatus.Unreadable ? 1 : 0);
+        _files.Values.Count(f => f.Unreadable) + (_openCode?.Status == OpenCodeStatus.Unreadable ? 1 : 0) + (_zcode?.Unreadable == true ? 1 : 0);
 
     public bool PartialHistory => _partialHistory;
 
@@ -516,7 +558,7 @@ internal sealed class MonitorCore : IDisposable
                 a.Live,
                 a.RecentSpeed,
                 UnixTime.FromMs(a.Info.LastLineMs ?? nowMs),
-                a.ParentId) { LiveCost = a.LiveCost })
+                a.ParentId) { LiveCost = a.LiveCost, Modes = a.Info.Modes })
             .ToList();
 
         var sources = Enum.GetValues<SourceKind>()
@@ -549,6 +591,7 @@ internal sealed class MonitorCore : IDisposable
             LiveCost = frame.LiveCost,
             TodayCost = frame.TodayCost,
             Report = frame.Report,
+            TodayModes = frame.TodayModes,
         };
         return (snapshot, frame.Events);
     }
@@ -562,6 +605,7 @@ internal sealed class MonitorCore : IDisposable
             LiveCost = frame.SourceLiveCost[index],
             TodayCost = frame.SourceTodayCost[index],
             UnpricedModels = frame.SourceUnpricedModels[index],
+            TodayModes = frame.TodayModes.Where(m => m.Source == status.Kind).ToArray(),
         };
     }
 
@@ -598,7 +642,13 @@ internal sealed class MonitorCore : IDisposable
         var enabled = _enabled.Contains(kind);
         string path;
         bool available, rootEnabled;
-        if (kind == SourceKind.OpenCode)
+        if (kind == SourceKind.ZCode)
+        {
+            path = _zcodeRootPath;
+            available = _zcodeRoot?.Available ?? File.Exists(ZCode.ZCodeDatabase.DatabasePath(_zcodeRootPath));
+            rootEnabled = _zcodeRoot is not null;
+        }
+        else if (kind == SourceKind.OpenCode)
         {
             path = OpenCodeRootPath;
             available = OpenCodeRoot?.Available ?? SafeFileExists(OpenCodeDatabase.DatabasePath(OpenCodeRootPath));
@@ -622,7 +672,8 @@ internal sealed class MonitorCore : IDisposable
             enabled ? live : Rate.Zero,
             enabled ? today : TokenTotals.Zero,
             enabled ? activeAgents : 0,
-            enabled ? liveEstimated : Rate.Zero);
+            enabled ? liveEstimated : Rate.Zero)
+        { ConfiguredModes = kind == SourceKind.Codex ? CodexConfiguredModes.Read(path) : ExecutionModes.Empty };
     }
 
     private ReadPlan? PlanInitialRead(TrackedFile tracked, DiscoveredFile file, long todayStartMs)
@@ -780,7 +831,7 @@ internal sealed class MonitorCore : IDisposable
 
         _collector.Items.Clear();
         prepared.Batch.ApplyTo(_collector);
-        _partialHistory |= tracked.Tailer is DocumentTailer { Oversized: true };
+        _partialHistory |= tracked.Tailer is DocumentTailer { Oversized: true } || tracked.Parser is GrokBuild.GrokParser { PendingOverflow: true };
         tracked.KnownLength = prepared.Result.Length;
         tracked.KnownWriteUtc = prepared.Result.LastWriteUtc;
         tracked.Unreadable = false;
@@ -834,9 +885,10 @@ internal sealed class MonitorCore : IDisposable
 
         try
         {
+            var previousVersion = tracked.Parser.Version;
             var prepared = Prepare(tracked, CancellationToken.None);
             return TryCommit(tracked, prepared, seeded: false)
-                && (prepared.Result.BytesRead > 0 || prepared.Result.WasReset);
+                && (prepared.Result.BytesRead > 0 || prepared.Result.WasReset || tracked.Parser.Version != previousVersion);
         }
         catch (Exception e)
         {
@@ -940,7 +992,7 @@ internal sealed class MonitorCore : IDisposable
             parser.Phase,
             parser.InFlightStartMs,
             parser.LastLineMs,
-            _parents.GetValueOrDefault(parser.AgentId)));
+            _parents.GetValueOrDefault(parser.AgentId)) { Modes = parser.Modes });
     }
 
     /// <summary>Applies one read of the OpenCode database; true when anything changed.</summary>
@@ -991,7 +1043,7 @@ internal sealed class MonitorCore : IDisposable
             state.Phase,
             state.InFlightStartMs,
             state.LastLineMs,
-            _parents.GetValueOrDefault(state.Id)));
+            _parents.GetValueOrDefault(state.Id)) { Modes = state.Modes });
     }
 
     /// <summary>
@@ -1068,7 +1120,8 @@ internal sealed class MonitorCore : IDisposable
         try
         {
             var info = new FileInfo(tracked.Path);
-            return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
+            return info.Exists ? (info.Length, tracked.Parser is GrokBuild.GrokParser
+                ? GrokBuild.GrokFiles.Modified(tracked.Path, info.LastWriteTimeUtc) : info.LastWriteTimeUtc) : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {

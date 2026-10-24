@@ -46,6 +46,7 @@ extension ReportController {
 
     /// Switching services pauses the old one (its identity stays) and opens the consent sheet for the new one.
     private func switchService(_ change: (inout ReportPreferences) -> Void) {
+        profile.reset()
         let wasEnabled = preferences.enabled
         if run != nil { post(.stop) }
         endRun()
@@ -581,6 +582,7 @@ extension ReportController {
 
     /// Deletes the key and the device id here only (`report.forget.localOnly`).
     func forgetLocally(_ origin: String? = nil) {
+        profile.reset()
         guard let target = preferences.identities.first(where: { $0.id == (origin ?? identity?.id) }) else { return }
         let selected = target.id == identity?.id
         if selected { endRun() }
@@ -603,6 +605,7 @@ extension ReportController {
 
     /// `report.reset` after a key mismatch: a new key and device id, registered again with the same name.
     func resetDevice() {
+        profile.reset()
         guard let old = identity, let name = old.username ?? consent?.username else { return }
         endRun()
         keyStore.deleteAll(deviceId: old.deviceId)

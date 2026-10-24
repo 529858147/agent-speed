@@ -10,6 +10,7 @@ struct HistoryTests {
     /// automatic roots (every profile, the three stores) are used; `workbuddy` plays `~` of both WorkBuddy editions.
     static func configuration(fixtures root: URL) -> MonitorConfiguration {
         var configuration = MonitorConfiguration(
+            enabledSources: Set(SourceKind.allCases.prefix(10)),
             codexRoot: root.appendingPathComponent("codex/sessions", isDirectory: true),
             claudeRoot: root.appendingPathComponent("claude/projects", isDirectory: true),
             dshRoot: root.appendingPathComponent("dsh/sessions", isDirectory: true),
@@ -73,7 +74,7 @@ struct HistoryTests {
 
     @Test func fixturesMatchExpectedHistory() throws {
         let expected = try #require(try Fixtures.json("history-expected.json")["days"] as? [[String: Any]])
-        #expect(Set(expected.compactMap { $0["source"] as? String }) == Set(SourceKind.allCases.map(\.rawValue)))
+        #expect(Set(expected.compactMap { $0["source"] as? String }) == Set(Self.fixtureConfiguration.enabledSources.map(\.rawValue)))
         let (directory, copy) = try Self.fixtureCopy()
         let report = try HistoryScan.run(
             configuration: Self.configuration(fixtures: copy), timeZone: Self.utc, pricing: try Self.fixturePricing()

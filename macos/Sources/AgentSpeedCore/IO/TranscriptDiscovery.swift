@@ -23,9 +23,13 @@ enum TranscriptNames: Sendable {
     /// `*.jsonl` not starting with `.`, only at `<slug>/<file>` and `<slug>/<dir>/subagents/<file>`; `<slug>` and
     /// `<dir>` do not start with `.` and `<slug>` is not `cloud` (WorkBuddy).
     case workbuddySession
+    case kimiSession
+    case grokBuildSession
 
     func matches(_ name: String) -> Bool {
         switch self {
+        case .kimiSession: return name == "wire.jsonl"
+        case .grokBuildSession: return name == "updates.jsonl"
         case .jsonl:
             return name.hasSuffix(".jsonl")
         case .codexSession:
@@ -54,6 +58,8 @@ enum TranscriptNames: Sendable {
         case .ompSession: depth >= 1
         case .antigravityDatabase: depth == 0
         case .workbuddySession: depth == 1 || depth == 3
+        case .kimiSession: depth == 4
+        case .grokBuildSession: depth == 2
         case .jsonl, .codexSession, .dshSession: true
         }
     }
@@ -78,6 +84,10 @@ enum TranscriptNames: Sendable {
             case 2: return name == "subagents"
             default: return false
             }
+        case .kimiSession:
+            return depth < 4 && (depth != 2 || name == "agents") && !name.hasPrefix(".")
+        case .grokBuildSession:
+            return depth < 2 && !name.hasPrefix(".")
         case .jsonl, .codexSession, .dshSession:
             return true
         }
@@ -99,6 +109,10 @@ enum TranscriptNames: Sendable {
             guard !slug.hasPrefix("."), slug != "cloud" else { return false }
             return components.count == 2
                 || (components.count == 4 && components[2] == "subagents" && !components[1].hasPrefix("."))
+        case .kimiSession:
+            return components.count == 5 && components[2] == "agents" && !components.contains { $0.hasPrefix(".") }
+        case .grokBuildSession:
+            return components.count == 3 && !components.contains { $0.hasPrefix(".") }
         case .jsonl, .codexSession, .dshSession:
             return components.count <= TranscriptDiscovery.maxDepth + 1
         }

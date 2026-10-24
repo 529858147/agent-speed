@@ -22,6 +22,11 @@ jobs:
         run: command -v zstd || (sudo apt-get update && sudo apt-get install -y zstd)
       - name: Check fixtures with the reference implementation
         run: python3 spec/tools/reference.py --check-fixtures
+      - name: Check reporting and profile contracts
+        run: |
+          python3 spec/tools/report_reference.py
+          python3 spec/tools/execution_modes_reference.py
+          python3 spec/tools/test_reporting_extensions.py
       - name: Validate vehicle art
         run: python3 spec/tools/vehicles.py
       - name: Lint installer
@@ -82,6 +87,8 @@ jobs:
             grep -E -A2 '^\s*Failed [A-Za-z]' "$RUNNER_TEMP/presentation.log" | grep -E 'Error Message' -A1 | grep -vE 'Error Message|^--' | sed -E 's/[0-9a-f]{32}//g' | sort | uniq -c | sort -rn | head -8 | while IFS= read -r line; do echo "::error::${line:0:600}"; done
             exit 1
           }
+      - name: Test traffic helper
+        run: dotnet test windows/tests/AgentSpeed.TrafficHelper.Tests -c Release
       - name: Publish
         shell: pwsh
         run: ./windows/scripts/publish.ps1

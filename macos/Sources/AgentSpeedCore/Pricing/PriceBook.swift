@@ -14,11 +14,11 @@ public struct CostTally: Equatable, Hashable, Sendable {
     public static let zero = CostTally()
 
     /// Adds (`sign` 1) or removes (`sign` -1) one response's cost; nil counts as unpriced.
-    public mutating func add(_ cost: Int64?, sign: Int = 1) {
+    public mutating func add(_ cost: Int64?, sign: Int = 1, requestCount: Int = 1) {
         if let cost {
             costMicroUsd += Int64(sign) * cost
         } else {
-            unpricedRequests += sign
+            unpricedRequests += sign * requestCount
         }
     }
 

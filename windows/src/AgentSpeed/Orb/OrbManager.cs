@@ -750,6 +750,7 @@ internal sealed class OrbManager : IDisposable
         var money = unavailableTitle is null ? feed.Money : null;
         surface.Scene.SetMoney(money);
         var info = money?.HoverLine ?? _loc.Format("today.summary", SpeedFormat.Tokens(reading.Today.Output), reading.Agents.Count);
+        if (reading.Agents.Count > 0) info += " · " + _loc["mode.label"] + ": " + ExecutionModeText.Aggregate(reading.Agents.Select(a => a.Modes), _loc);
         surface.SetData(feed.Value, feed.Tier, feed.Title, reading.GeneratingSources, info, unavailableTitle);
         surface.SetIdentity(orb.TrackedSources?.ToArray(), UnavailableOf(entry));
         entry.Window.SetDimmed(unavailableTitle is not null);

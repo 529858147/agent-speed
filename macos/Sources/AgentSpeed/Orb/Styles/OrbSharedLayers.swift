@@ -9,11 +9,13 @@ enum OrbSharedLayers {
 
     // MARK: Aura
 
-    static func addAura(_ scene: inout OrbScene, _ frame: OrbFrame, flare: Double) {
+    /// `scale` and `hot` (a share of white-hot by overdrive) tune it per style (`led` v1.4: 0.8, 0.25).
+    static func addAura(_ scene: inout OrbScene, _ frame: OrbFrame, flare: Double, scale: Double = 1, hot: Double = 0) {
         let heat = frame.instrumentHeat
-        let alpha = frame.tokens.auraOpacity * heat * frame.breath * (1 + 0.7 * flare) + (frame.dark ? 0.05 : 0.03) * flare
+        let alpha = (frame.tokens.auraOpacity * heat * frame.breath * (1 + 0.7 * flare) + (frame.dark ? 0.05 : 0.03) * flare) * scale
         guard alpha > 0.004 else { return }
-        let color = frame.tokens.heat(max(heat, 0.12))
+        var color = frame.tokens.heat(max(heat, 0.12))
+        if hot > 0 { color = color.mix(HeatPalette.whiteHot, hot * frame.overdrive) }
         scene.add(.radial(center: frame.center, inner: 0.5 * frame.s, outer: frame.reach * frame.s, color: color, alpha: min(1, alpha)),
                   blend: frame.glowBlend)
     }

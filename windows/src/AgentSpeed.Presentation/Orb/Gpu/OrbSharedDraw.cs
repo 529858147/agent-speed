@@ -77,15 +77,18 @@ public static class OrbSharedDraw
         }
     }
 
-    /// <summary>The aura (DESIGN 2, layer 1): a radial halo in the heat color from the disc edge to 0.75 S.</summary>
-    public static void Aura(OrbDrawList list, OrbGpuContext ctx, OrbScene scene, double heat)
+    /// <summary>
+    /// The aura (DESIGN 2, layer 1): a radial halo in the heat color from the disc edge to 0.75 S, at <paramref name="scale"/> ×
+    /// its opacity and moved toward white-hot by <paramref name="hotMix"/> (the floating <c>led</c>, DESIGN 2.1).
+    /// </summary>
+    public static void Aura(OrbDrawList list, OrbGpuContext ctx, OrbScene scene, double heat, double scale = 1, double hotMix = 0)
     {
         if (ctx.HighContrast)
         {
             return;
         }
 
-        var alpha = Math.Min(1, scene.AuraIntensity * ctx.Tokens.AuraOpacityScale);
+        var alpha = Math.Min(1, scene.AuraIntensity * ctx.Tokens.AuraOpacityScale * scale);
         if (alpha <= 0.004)
         {
             return;
@@ -93,6 +96,11 @@ public static class OrbSharedDraw
 
         var h = Math.Max(heat, 0.12);
         var color = ctx.Dark ? HeatPalette.Sample(h) : ctx.Label(h);
+        if (hotMix > 0.001)
+        {
+            color = OkLab.Mix(color, HeatPalette.WhiteHot, Math.Min(1, hotMix));
+        }
+
         list.Add(OrbGpuInstance.Radial(ctx.CenterX, ctx.CenterY, 0.5 * ctx.Size, 0.75 * ctx.Size, color, alpha), ctx.GlowBlend);
     }
 

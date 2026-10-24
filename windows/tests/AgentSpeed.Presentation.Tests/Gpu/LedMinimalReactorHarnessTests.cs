@@ -30,6 +30,7 @@ internal sealed class LedMinimalReactorHarness
             Redline = HeatMath.ReferenceRedline,
             SharedSignOfLife = true,
             LedEffects = style == OrbStyle.Led,
+            SilkEffects = style == OrbStyle.Led,
             SignOfLifeDuration = style == OrbStyle.Minimal ? 0 : 0.9,
         };
         Draw = OrbStyleDraws.Create(style, Scene, (uint)seed);
@@ -200,7 +201,17 @@ internal static class DrawListChecks
         var total = 0;
         foreach (var batch in list.Batches)
         {
-            Assert.Equal(OrbPass.Shapes, batch.Pass);
+            if (batch.Pass == OrbPass.Led)
+            {
+                Assert.True(list.HasLed);
+                Assert.Equal(0, batch.Count);
+                Assert.InRange(batch.Mode, 0, 2);
+            }
+            else
+            {
+                Assert.Equal(OrbPass.Shapes, batch.Pass);
+            }
+
             Assert.Equal(0f, batch.Clip);
             if (!dark || highContrast)
             {

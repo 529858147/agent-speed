@@ -35,6 +35,9 @@ internal enum LinkKind : byte
 
     /// <summary>WorkBuddy AI: by the <c>subagents</c> folder layout, within the international edition only.</summary>
     WorkBuddyAiPath,
+    ZCodeSession,
+    KimiSession,
+    GrokBuildSession,
 }
 
 /// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
@@ -45,6 +48,8 @@ internal readonly record struct AgentLink(
 {
     public static AgentLink Of(TranscriptParser parser) => parser switch
     {
+        GrokBuild.GrokParser grok => new AgentLink(grok.AgentId, LinkKind.GrokBuildSession, grok.SessionId, grok.ParentSessionId, grok.CreatedMs),
+        Kimi.KimiParser kimi => new AgentLink(kimi.AgentId, LinkKind.KimiSession, kimi.AgentId, kimi.ParentPath, kimi.CreatedMs),
         CodexParser codex => new AgentLink(codex.AgentId, LinkKind.CodexThread, codex.MetaThreadId, codex.ParentThreadId, codex.CreatedMs),
         DshParser dsh => new AgentLink(dsh.AgentId, LinkKind.DshSession, dsh.SessionId, dsh.ParentSession, dsh.CreatedMs),
         GeminiParser gemini => OfGemini(gemini),
@@ -109,6 +114,7 @@ internal static class ParentLinks
         var byPath = new Dictionary<string, AgentLink>(agents.Count, pathComparer);
         var byThread = new Dictionary<(LinkKind, string), AgentLink>();
         var conversations = new Dictionary<string, List<AgentLink>>(StringComparer.Ordinal);
+        var grokSessions = new Dictionary<string, List<AgentLink>>(StringComparer.Ordinal);
         foreach (var agent in agents)
         {
             byPath.TryAdd(agent.Id, agent);
@@ -123,6 +129,15 @@ internal static class ParentLinks
 
                     copies.Add(agent);
                 }
+            }
+            else if (agent.Kind == LinkKind.GrokBuildSession && agent.ThreadId is { Length: > 0 } grok)
+            {
+                if (!grokSessions.TryGetValue(grok, out var copies))
+                {
+                    grokSessions[grok] = copies = [];
+                }
+
+                copies.Add(agent);
             }
             else if (!IsPathKind(agent.Kind) && agent.ThreadId is { Length: > 0 } thread
                 && (!byThread.TryGetValue((agent.Kind, thread), out var known) || CreatedBefore(agent, known)))
@@ -156,6 +171,13 @@ internal static class ParentLinks
                     if (agent.ParentThreadId is { } main && byPath.TryGetValue(main, out var mainSession) && mainSession.Kind == agent.Kind)
                     {
                         parent = mainSession.Id;
+                    }
+
+                    break;
+                case LinkKind.GrokBuildSession:
+                    if (agent.ParentThreadId is { Length: > 0 } grok && grokSessions.TryGetValue(grok, out var sessions))
+                    {
+                        parent = PreferredCopy(sessions, agent.Id, group: true).Id;
                     }
 
                     break;
@@ -206,9 +228,9 @@ internal static class ParentLinks
         kind is LinkKind.Path or LinkKind.OmpPath or LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath;
 
     // Copies of one conversation in several stores: the one in the child's own conversations folder, then ordinal path.
-    private static AgentLink PreferredCopy(List<AgentLink> copies, string child)
+    private static AgentLink PreferredCopy(List<AgentLink> copies, string child, bool group = false)
     {
-        var folder = FolderOf(child);
+        var folder = group ? FolderOf(FolderOf(child)) : FolderOf(child);
         AgentLink? best = null;
         foreach (var copy in copies)
         {
@@ -218,8 +240,8 @@ internal static class ParentLinks
                 continue;
             }
 
-            var sameFolder = string.Equals(FolderOf(copy.Id), folder, StringComparison.Ordinal);
-            var currentSameFolder = string.Equals(FolderOf(current.Id), folder, StringComparison.Ordinal);
+            var sameFolder = string.Equals(group ? FolderOf(FolderOf(copy.Id)) : FolderOf(copy.Id), folder, StringComparison.Ordinal);
+            var currentSameFolder = string.Equals(group ? FolderOf(FolderOf(current.Id)) : FolderOf(current.Id), folder, StringComparison.Ordinal);
             if (sameFolder != currentSameFolder ? sameFolder : string.CompareOrdinal(copy.Id, current.Id) < 0)
             {
                 best = copy;

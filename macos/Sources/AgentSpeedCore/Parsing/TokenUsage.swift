@@ -60,8 +60,8 @@ enum TokenCount {
 }
 
 extension TokenTotals {
-    mutating func add(_ usage: TokenUsage, sign: Int) {
-        requests = requests.saturatingAdd(sign)
+    mutating func add(_ usage: TokenUsage, sign: Int, requestCount: Int = 1) {
+        requests = requests.saturatingAdd(sign * requestCount)
         input = input.saturatingAdd(sign * usage.input)
         cachedInput = cachedInput.saturatingAdd(sign * usage.cachedInput)
         cacheWriteInput = cacheWriteInput.saturatingAdd(sign * usage.cacheWriteInput)

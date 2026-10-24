@@ -157,6 +157,12 @@ public sealed record AppSettings
 
     public bool WorkBuddyAiEnabled { get; init; } = true;
 
+    public bool ZCodeEnabled { get; init; } = true;
+
+    public bool KimiEnabled { get; init; } = true;
+
+    public bool GrokBuildEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
@@ -183,6 +189,12 @@ public sealed record AppSettings
 
     /// <summary>The WorkBuddy AI data folder (or its <c>projects</c> folder); null uses <c>~/.workbuddy-ai</c>.</summary>
     public string? WorkBuddyAiRoot { get; init; }
+
+    public string? ZCodeRoot { get; init; }
+
+    public string? KimiRoot { get; init; }
+
+    public string? GrokBuildRoot { get; init; }
 
     public int ChartSeconds { get; init; } = 120;
 
@@ -243,6 +255,9 @@ public sealed record AppSettings
         SourceKind.Antigravity => AntigravityEnabled,
         SourceKind.WorkBuddy => WorkBuddyEnabled,
         SourceKind.WorkBuddyAi => WorkBuddyAiEnabled,
+        SourceKind.ZCode => ZCodeEnabled,
+        SourceKind.Kimi => KimiEnabled,
+        SourceKind.GrokBuild => GrokBuildEnabled,
         _ => false,
     };
 
@@ -273,6 +288,9 @@ public sealed record AppSettings
         SourceKind.Antigravity => this with { AntigravityEnabled = enabled },
         SourceKind.WorkBuddy => this with { WorkBuddyEnabled = enabled },
         SourceKind.WorkBuddyAi => this with { WorkBuddyAiEnabled = enabled },
+        SourceKind.ZCode => this with { ZCodeEnabled = enabled },
+        SourceKind.Kimi => this with { KimiEnabled = enabled },
+        SourceKind.GrokBuild => this with { GrokBuildEnabled = enabled },
         _ => this,
     };
 
@@ -280,7 +298,8 @@ public sealed record AppSettings
     {
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
         return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot,
-            WorkBuddyRoot: WorkBuddyRoot, WorkBuddyAiRoot: WorkBuddyAiRoot);
+            WorkBuddyRoot: WorkBuddyRoot, WorkBuddyAiRoot: WorkBuddyAiRoot,
+            ZCodeRoot: ZCodeRoot, KimiRoot: KimiRoot, GrokBuildRoot: GrokBuildRoot);
     }
 
     /// <summary>The master switch; turning it on while every orb is individually hidden makes them all visible.</summary>
@@ -326,6 +345,9 @@ public sealed record AppSettings
         AntigravityRoot = CleanPath(AntigravityRoot),
         WorkBuddyRoot = CleanPath(WorkBuddyRoot),
         WorkBuddyAiRoot = CleanPath(WorkBuddyAiRoot),
+        ZCodeRoot = CleanPath(ZCodeRoot),
+        KimiRoot = CleanPath(KimiRoot),
+        GrokBuildRoot = CleanPath(GrokBuildRoot),
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),

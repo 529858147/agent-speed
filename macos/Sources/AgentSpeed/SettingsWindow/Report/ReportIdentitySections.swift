@@ -79,50 +79,6 @@ struct ReportInlineMessage: View {
     }
 }
 
-/// `report.username` in the pane, always shown (DESIGN 11, Username): registered, a committed edit renames; before
-/// that it is the name the next registration uses, kept locally. Esc restores the previous name.
-struct ReportUsernameSection: View {
-    let model: AppModel
-
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        let l10n = model.l10n
-        let report = model.report
-        let rules = report.usernameRules
-        let current = report.fieldUsername
-        Section {
-            ReportUsernameField(model: model, text: $text, rules: rules, onSubmit: commit, onCancel: restore,
-                                focused: $focused)
-            if let message = ReportUsernameField.problem(text, rules: rules, l10n: l10n) {
-                ReportInlineMessage(text: message)
-            } else {
-                switch report.renameState {
-                case .updated: ReportInlineMessage(text: l10n("report.username.updated"), isError: false)
-                case .failed(let key): ReportInlineMessage(text: l10n(key))
-                case .working, .idle: EmptyView()
-                }
-            }
-        }
-        .onAppear { text = current }
-        .onChange(of: current) { _, name in if !focused { text = name } }
-        .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
-        .animation(model.accessibility.reduceMotion ? nil : Motion.fade, value: report.renameState)
-    }
-
-    private func commit() {
-        let report = model.report
-        guard ReportUsername.normalized(text) != report.fieldUsername else { return }
-        guard ReportUsernameField.problem(text, rules: report.usernameRules, l10n: model.l10n) == nil else { return }
-        report.commitUsername(text)
-    }
-
-    private func restore() {
-        text = model.report.fieldUsername
-    }
-}
-
 /// `report.apiKey` (REPORTING 5.6): a secure field, or the saved key as `••••` and its last 4 characters with Clear.
 struct ReportAPIKeySection: View {
     let model: AppModel

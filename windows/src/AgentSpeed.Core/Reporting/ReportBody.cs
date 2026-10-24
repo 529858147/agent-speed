@@ -76,7 +76,10 @@ public sealed record ReportOptions(
     int BodyLimit = 16_384,
     SpeedMetric Metric = SpeedMetric.Output,
     double Redline = 2000,
-    int PriceVersion = 1);
+    int PriceVersion = 1)
+{
+    public ReportExtensions Extensions { get; init; } = new();
+}
 
 /// <summary>The report body of REPORTING 6 from a window, the tick's values and the options (METRICS 11.2, 11.7).</summary>
 public static class ReportBody
@@ -96,6 +99,12 @@ public static class ReportBody
     {
         var document = Json(envelope, content, sample, options);
         var data = document.ToCompactBytes();
+        if (data.Length > options.BodyLimit && (options.Extensions.ExecutionModes || options.Extensions.ModelHarnessRequests))
+        {
+            options = options with { Extensions = options.Extensions with { ExecutionModes = false, ModelHarnessRequests = false } };
+            document = Json(envelope, content, sample, options);
+            data = document.ToCompactBytes();
+        }
         foreach (var section in new[] { ReportSection.Models, ReportSection.Sources })
         {
             if (data.Length <= options.BodyLimit)
@@ -172,7 +181,7 @@ public static class ReportBody
 
         if (sections.Contains(ReportSection.Models) && options.MaxModels > 0)
         {
-            members.Add(("models", ReportJson.Array(ModelEntries(content, sample, options.MaxModels, sections.Contains(ReportSection.Cost)))));
+            members.Add(("models", ReportJson.Array(ModelEntries(content, sample, options.MaxModels, sections.Contains(ReportSection.Cost), options.Extensions))));
         }
 
         return ReportJson.Object(members);
@@ -196,7 +205,11 @@ public static class ReportBody
         SourceKind.Omp => "omp",
         SourceKind.Antigravity => "antigravity",
         SourceKind.WorkBuddy => "workbuddy",
-        _ => "workbuddyAi",
+        SourceKind.WorkBuddyAi => "workbuddyAi",
+        SourceKind.ZCode => "zcode",
+        SourceKind.Kimi => "kimi",
+        SourceKind.GrokBuild => "grokBuild",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
     private static ReportJson Traffic(ReportTrafficSample traffic, TrafficRate? peak, TrafficBytes bytes)
@@ -301,7 +314,7 @@ public static class ReportBody
     /// One entry per model with any increment in the window (a late price included) or a generating agent, by output then
     /// id, <c>other</c> last (REPORTING 6.6.4, METRICS 11.3, 11.7).
     /// </summary>
-    private static List<ReportJson> ModelEntries(ReportWindowContent content, ReportSample sample, int maxModels, bool withCost)
+    private static List<ReportJson> ModelEntries(ReportWindowContent content, ReportSample sample, int maxModels, bool withCost, ReportExtensions extensions)
     {
         var byId = new Dictionary<string, ModelEntry>(StringComparer.Ordinal);
         ModelEntry Entry(string id) => byId.TryGetValue(id, out var entry) ? entry : byId[id] = new ModelEntry(id);
@@ -310,7 +323,10 @@ public static class ReportBody
             var entry = Entry(key.ModelId);
             entry.Usage += value;
             entry.Sources.Add(key.Source);
+            entry.HarnessRequests[key.Source] = entry.HarnessRequests.GetValueOrDefault(key.Source) + value.Requests;
         }
+
+        foreach (var (key, value) in content.Usage.ByMode) Entry(key.ModelId).AddMode(key, value);
 
         foreach (var (key, count) in sample.Facts.GeneratingModels)
         {
@@ -334,6 +350,9 @@ public static class ReportBody
                 other.Usage += entry.Usage;
                 other.Generating += entry.Generating;
                 other.Sources.UnionWith(entry.Sources);
+                foreach (var (source, requests) in entry.HarnessRequests)
+                    other.HarnessRequests[source] = other.HarnessRequests.GetValueOrDefault(source) + requests;
+                foreach (var (mode, usage) in entry.Modes) other.AddMode(mode, usage);
             }
 
             entries = [.. entries.Take(maxModels - 1), other];
@@ -355,6 +374,12 @@ public static class ReportBody
             {
                 members.Add(("deltaMicroUsd", ReportJson.Of(entry.Usage.CostMicroUsd)));
             }
+
+            if (extensions.ModelHarnessRequests && entry.HarnessRequests.Count <= 8
+                && entry.HarnessRequests.Values.All(IsSafeCount) && entry.HarnessRequests.Values.Sum() == entry.Usage.Requests)
+                members.Add(("harnessRequests", ReportJson.Array(entry.HarnessRequests.OrderBy(p => p.Key)
+                    .Where(p => p.Value > 0).Select(p => ReportJson.Object(("source", ReportJson.Of(SourceId(p.Key))), ("requests", ReportJson.Of(p.Value)))))));
+            if (extensions.ExecutionModes && ModesJson(entry) is { } modes) members.Add(("modeUsage", modes));
 
             return ReportJson.Object(members);
         }).ToList();
@@ -388,5 +413,46 @@ public static class ReportBody
         public ReportUsage Usage { get; set; }
 
         public int Generating { get; set; }
+        public Dictionary<SourceKind, long> HarnessRequests { get; } = [];
+        public Dictionary<ReportModeKey, ReportUsage> Modes { get; } = [];
+        public void AddMode(ReportModeKey key, ReportUsage usage)
+        {
+            key = key with { ModelId = Id };
+            Modes[key] = Modes.GetValueOrDefault(key) + usage;
+        }
+    }
+
+    private static bool IsSafeCount(long value) => value is >= 0 and <= 9_007_199_254_740_991;
+
+    private static ReportJson? ModesJson(ModelEntry entry)
+    {
+        if (entry.Modes.Count > 64 || !IsSafeCount(entry.Usage.Requests) || !IsSafeCount(entry.Usage.Output)
+            || !IsSafeCount(entry.Usage.MeasuredOutput) || !IsSafeCount(entry.Usage.MeasuredMs)) return null;
+        if (entry.Modes.Count == 0 && (entry.Usage.Requests > 0 || entry.Usage.Output > 0 || entry.Usage.MeasuredOutput > 0 || entry.Usage.MeasuredMs > 0)) return null;
+        foreach (var group in entry.Modes.GroupBy(p => p.Key.Kind))
+        {
+            var sum = group.Aggregate(ReportUsage.Zero, (total, p) => total + p.Value);
+            if ((sum.Requests, sum.Output, sum.MeasuredOutput, sum.MeasuredMs)
+                != (entry.Usage.Requests, entry.Usage.Output, entry.Usage.MeasuredOutput, entry.Usage.MeasuredMs)) return null;
+        }
+        var rows = new List<ReportJson>();
+        foreach (var (key, usage) in entry.Modes.OrderBy(p => p.Key.Source).ThenBy(p => p.Key.Kind)
+            .ThenBy(p => p.Key.Mode, StringComparer.Ordinal).ThenBy(p => p.Key.Evidence, StringComparer.Ordinal).ThenBy(p => p.Key.Provider, StringComparer.Ordinal))
+        {
+            if (!entry.Sources.Contains(key.Source) || !Enum.IsDefined(key.Kind) || !ExecutionModes.IsIdentifier(key.Mode, 64)
+                || key.Evidence is not ("served" or "recorded" or "selected" or "unknown")
+                || ((key.Mode == "unknown") != (key.Evidence == "unknown"))
+                || (key.Provider is not null && !ExecutionModes.IsIdentifier(key.Provider, 32))
+                || !IsSafeCount(usage.Requests) || !IsSafeCount(usage.Output) || !IsSafeCount(usage.MeasuredOutput) || !IsSafeCount(usage.MeasuredMs)) return null;
+            var members = new List<(string, ReportJson)>
+            {
+                ("source", ReportJson.Of(SourceId(key.Source))), ("kind", ReportJson.Of(ExecutionModes.Name(key.Kind))),
+                ("mode", ReportJson.Of(key.Mode)), ("evidence", ReportJson.Of(key.Evidence)), ("requests", ReportJson.Of(usage.Requests)),
+                ("output", ReportJson.Of(usage.Output)), ("measuredOutput", ReportJson.Of(usage.MeasuredOutput)), ("measuredMs", ReportJson.Of(usage.MeasuredMs)),
+            };
+            if (key.Provider is { } provider) members.Insert(1, ("provider", ReportJson.Of(provider)));
+            rows.Add(ReportJson.Object(members));
+        }
+        return ReportJson.Array(rows);
     }
 }

@@ -1,44 +1,18 @@
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Gauge;
+using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Orb.Styles;
-using AgentSpeed.Presentation.Particles;
 
 namespace AgentSpeed.Presentation.Orb.Gpu.Styles;
 
-/// <summary>The moving parts of the <c>led</c> instrument: redline edge glow and heat haze, the comet, sparks and embers.</summary>
+/// <summary>The moving parts of the <c>led</c> instrument: redline edge glow and heat haze, the comets and the response waves.</summary>
 public sealed partial class LedDraw
 {
     private const int HazeStrands = 9;
     private const int HazeSteps = 6;
-
-    /// <summary>Particle colors per heat bucket, so a frame never mixes in OKLab: hot (low and high mix) and cool ends.</summary>
-    private const int ParticleBuckets = 32;
+    private const int MaxWaves = 4;
 
     private static readonly double[] HazeSeeds = BuildHazeSeeds();
-
-    private readonly Rgba[] _sparkHotLow = new Rgba[ParticleBuckets + 1];
-    private readonly Rgba[] _sparkHotHigh = new Rgba[ParticleBuckets + 1];
-    private readonly Rgba[] _sparkCool = new Rgba[ParticleBuckets + 1];
-    private readonly Rgba[] _emberHotLow = new Rgba[ParticleBuckets + 1];
-    private readonly Rgba[] _emberHotHigh = new Rgba[ParticleBuckets + 1];
-    private readonly Rgba[] _emberCool = new Rgba[ParticleBuckets + 1];
-
-    private void ConfigureEffects(OrbGpuContext context)
-    {
-        var hot = context.Dark ? HeatPalette.WhiteHot : HeatPalette.LightSparkHot;
-        for (var i = 0; i <= ParticleBuckets; i++)
-        {
-            var h = i / (double)ParticleBuckets;
-            var spark = HeatPalette.Sample(Math.Max(0.05, h));
-            _sparkHotLow[i] = OkLab.Mix(spark, hot, context.Dark ? 0.35 : 0);
-            _sparkHotHigh[i] = OkLab.Mix(spark, hot, context.Dark ? 0.9 : 0.35);
-            _sparkCool[i] = context.Dark ? spark : OkLab.Darken(spark, 0.08);
-            var ember = HeatPalette.Sample(h);
-            _emberHotLow[i] = OkLab.Mix(ember, hot, 0.2);
-            _emberHotHigh[i] = OkLab.Mix(ember, hot, 0.6);
-            _emberCool[i] = HeatPalette.Sample(h - (context.Dark ? 0.08 : 0.04));
-        }
-    }
 
     /// <summary>
     /// The scene's eased redline amount (0..1), recovered from <see cref="OrbScene.EdgeGlow"/>, which is that amount times
@@ -136,8 +110,11 @@ public sealed partial class LedDraw
         return 0.3 + 0.7 * StyleMath.SmoothStep(18, 52, Math.Abs(delta));
     }
 
-    /// <summary>A 40° tapered arc (heat → white-hot head) travelling just outside the gauge, and its glowing head.</summary>
-    private void AddComet(OrbDrawList list, OrbGpuContext ctx, OrbScene scene, in OrbFrame frame)
+    /// <summary>
+    /// The comet (DESIGN 2.1): a tapered arc of <c>40° + 60° h</c> (heat → white-hot head) travelling just outside the gauge, and
+    /// from <c>h &gt; 0.55</c> (Standard and Max) a second one half a turn behind at 70 %.
+    /// </summary>
+    private void AddComets(OrbDrawList list, OrbGpuContext ctx, OrbScene scene, in OrbFrame frame)
     {
         var opacity = scene.CometOpacity;
         if (opacity <= 0.003)
@@ -145,71 +122,70 @@ public sealed partial class LedDraw
             return;
         }
 
-        var head = scene.CometDegrees;
+        var tail = 40 + 60 * StyleMath.Clamp01(frame.Heat);
+        AddComet(list, ctx, frame, scene.CometDegrees, tail, opacity);
+        if (_effects.Gates.Motion && frame.Heat > 0.55)
+        {
+            AddComet(list, ctx, frame, scene.CometDegrees - 180, tail, opacity * 0.7);
+        }
+    }
+
+    private void AddComet(OrbDrawList list, OrbGpuContext ctx, in OrbFrame frame, double head, double tail, double opacity)
+    {
         var alpha = opacity * CometGapFade(head);
         var s = ctx.Size;
         var bloom = frame.Effects.Bloom;
         var heat = ctx.Label(Math.Max(frame.Heat, 0.1));
         var hot = _dark ? HeatPalette.WhiteHot : heat;
         var radius = GaugeLayout.CometRadius * s;
-        list.Add(OrbGpuInstance.Arc(ctx.CenterX, ctx.CenterY, radius, 0.0125 * s, head - 40, 40, hot.WithAlpha(alpha),
+        list.Add(OrbGpuInstance.Arc(ctx.CenterX, ctx.CenterY, radius, 0.0125 * s, head - tail, tail, hot.WithAlpha(alpha),
             heat.WithAlpha(alpha * 0.6), glow: 0.012 * s * bloom, glowAlpha: 0.55), ctx.GlowBlend);
         var (x, y) = ctx.Polar(head, GaugeLayout.CometRadius);
         list.Add(OrbGpuInstance.Circle(x, y, 0.0085 * s, hot.WithAlpha(alpha), glow: 0.022 * s * bloom, glowAlpha: 0.8), ctx.GlowBlend);
     }
 
-    /// <summary>Sparks streak outward from the lit arc; embers rise and flicker; both fade behind the readout.</summary>
-    private void AddParticles(OrbDrawList list, OrbGpuContext ctx, OrbScene scene, in OrbFrame frame)
+    /// <summary>
+    /// The response waves (DESIGN 2.1, layer 7; prototype "shockwaves"): a Gaussian ring from the rim to 0.74 S in the heat of the
+    /// response, mixed 30 % toward white-hot in dark, and a soft wake ring 3.5 × wider to 0.66 S, over 0.85 s; the newest four.
+    /// With Reduce Motion the ring fades in place.
+    /// </summary>
+    private void AddWaves(OrbDrawList list, OrbGpuContext ctx, OrbScene scene)
     {
-        var particles = scene.Particles.Particles;
-        if (particles.IsEmpty)
-        {
-            return;
-        }
-
+        var count = scene.PulseCount;
         var s = ctx.Size;
-        var size = ctx.Tokens.ParticleSizeScale * ctx.Unit * 0.5;
-        var blend = ctx.GlowBlend;
-        var t = frame.Time;
-        for (var i = 0; i < particles.Length; i++)
+        var expands = scene.Effects.PulseExpands;
+        for (var i = Math.Max(0, count - MaxWaves); i < count; i++)
         {
-            ref readonly var p = ref particles[i];
-            var life = (double)p.Progress;
-            var bucket = (int)Math.Round(StyleMath.Clamp01(p.Heat) * ParticleBuckets);
-            var x = ctx.CenterX + p.X * s;
-            var y = ctx.CenterY + p.Y * s;
-            var zone = ReadoutZone.Fade(p.X, p.Y - frame.ReadoutShift);
-            if (p.Kind == ParticleKind.Spark)
+            var wave = scene.PulseAt(i);
+            var x = wave.Progress;
+            if (x >= 1)
             {
-                var alpha = Math.Pow(1 - life, 1.25) * zone;
-                if (alpha <= 0.01)
-                {
-                    continue;
-                }
-
-                var hot = Rgba.Lerp(_sparkHotLow[bucket], _sparkHotHigh[bucket], p.Seed);
-                var color = Rgba.Lerp(hot, _sparkCool[bucket], Math.Min(1, life * 1.3));
-                var radius = p.Size * size * (1 - 0.45 * life);
-                list.Add(OrbGpuInstance.Capsule(x - p.VelocityX * 0.045 * s, y - p.VelocityY * 0.045 * s, x, y, radius * 1.3,
-                    color.WithAlpha(alpha), color.WithAlpha(alpha * 0.35), glow: _dark ? radius * 1.4 : 0, glowAlpha: 0.45), blend);
+                continue;
             }
-            else
+
+            var strength = Math.Clamp(wave.Strength, 0.3, 1);
+            var heat = HeatPalette.Sample(wave.Heat);
+            var ring = _dark ? Rgba.Lerp(heat, HeatPalette.WhiteHot, 0.3) : Ink(heat);
+            var width = (0.005 + 0.005 * strength) * (1 - x) + 0.001;
+            if (!expands)
             {
-                var flicker = 0.7 + 0.3 * Math.Sin(t * 23 + p.Seed * 50);
-                var alpha = Math.Pow(Math.Sin(Math.PI * Math.Min(1, life)), 0.7) * flicker * zone;
-                if (alpha <= 0.01)
-                {
-                    continue;
-                }
-
-                var hot = Rgba.Lerp(_emberHotLow[bucket], _emberHotHigh[bucket], p.Seed);
-                var color = Rgba.Lerp(hot, _emberCool[bucket], Math.Min(1, life * 1.3));
-                var radius = p.Size * size * (1 - 0.35 * life);
-                list.Add(OrbGpuInstance.Circle(x, y, radius, color.WithAlpha(alpha), glow: radius * (_dark ? 1.9 : 1.2),
-                    glowAlpha: _dark ? 0.5 : 0.3), blend);
+                var fade = Math.Sin(Math.PI * x) * 0.5 * strength * (_dark ? 1 : 0.6);
+                list.Add(OrbGpuInstance.Ring(ctx.CenterX, ctx.CenterY, 0.53 * s, 0, ring.WithAlpha(fade), core: 0, glow: 0.006 * s, glowAlpha: 1),
+                    ctx.GlowBlend);
+                continue;
             }
+
+            var radius = 0.5 + 0.24 * Easing.OutCubic(x);
+            list.Add(OrbGpuInstance.Ring(ctx.CenterX, ctx.CenterY, radius * s, 0, ring.WithAlpha((1 - x) * 0.7 * strength * (_dark ? 1 : 0.6)),
+                core: 0, glow: width * s, glowAlpha: 1), ctx.GlowBlend);
+            var wake = 0.5 + 0.16 * Easing.OutCubic(Math.Min(1, x * 1.3));
+            list.Add(OrbGpuInstance.Ring(ctx.CenterX, ctx.CenterY, wake * s, 0, (_dark ? heat : Ink(heat)).WithAlpha((1 - x) * 0.3 * strength),
+                core: 0, glow: width * 3.5 * s, glowAlpha: 1), ctx.GlowBlend);
         }
     }
+
+    /// <summary>The prototype's porcelain ink: <c>pow(c, 1.55)</c> deepens a color without muddying it.</summary>
+    internal static Rgba Ink(Rgba color) => new(Math.Pow(color.R, 1.55), Math.Pow(color.G, 1.55), Math.Pow(color.B, 1.55), color.A);
 
     private static double[] BuildHazeSeeds()
     {

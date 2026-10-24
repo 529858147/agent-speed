@@ -16,6 +16,9 @@ public enum OrbShape
     BandArc = 6,
     Ellipse = 7,
     Blade = 8,
+
+    /// <summary>One segment of a stroked polyline (DESIGN 2.1 bolts and arcs), see <see cref="OrbGpuInstance.Stroke"/>.</summary>
+    Stroke = 9,
 }
 
 /// <summary>How a shape is colored across its area.</summary>
@@ -25,6 +28,9 @@ public enum OrbFill
     Linear = 1,
     Radial = 2,
     Palette = 3,
+
+    /// <summary>Circle: color at the center → color2 at q0 × the radius → transparent at the radius.</summary>
+    RadialStops = 4,
 }
 
 /// <summary>
@@ -164,6 +170,50 @@ public struct OrbGpuInstance
         var copy = this;
         copy.Color2 = ToVector(end);
         copy.Extra2 = new Vector4((float)OrbFill.Radial, (float)offsetX, (float)offsetY, (float)radius);
+        return copy;
+    }
+
+    /// <summary>
+    /// One segment of a stroked polyline from (<paramref name="x0"/>, <paramref name="y0"/>) to (<paramref name="x1"/>,
+    /// <paramref name="y1"/>), drawn as up to three concentric round-capped layers like canvas strokes: the glow and the body in
+    /// <paramref name="color"/>, the core in <paramref name="core"/>, each with its half width and alpha, summed when
+    /// <paramref name="additive"/> and laid over each other otherwise. At a joint the segment keeps only its side of the
+    /// bisector with its neighbor (<paramref name="startCut"/> and <paramref name="endCut"/>: the bisector's direction along the
+    /// path, zero at the ends of the path), so a jagged path is covered once.
+    /// </summary>
+    /// <remarks>
+    /// Layout: a = (mid x, mid y, direction (rad), 9); b = (half length, glow, body and core half widths); color = glow and body
+    /// color with the stroke's alpha; color2 = core color; extra = (glow, body, core alpha, additive); extra2 = (start cut x, y,
+    /// end cut x, y).
+    /// </remarks>
+    public static OrbGpuInstance Stroke(double x0, double y0, double x1, double y1, double glowHalfWidth, double bodyHalfWidth,
+        double coreHalfWidth, Rgba color, Rgba core, double glowAlpha, double bodyAlpha, double coreAlpha, bool additive, Vector2 startCut,
+        Vector2 endCut)
+    {
+        var dx = x1 - x0;
+        var dy = y1 - y0;
+        return new OrbGpuInstance
+        {
+            A = new Vector4((float)((x0 + x1) / 2), (float)((y0 + y1) / 2), (float)Math.Atan2(dy, dx), (float)OrbShape.Stroke),
+            B = new Vector4((float)(Math.Sqrt(dx * dx + dy * dy) / 2), (float)Math.Max(0, glowHalfWidth), (float)Math.Max(0, bodyHalfWidth),
+                (float)Math.Max(0, coreHalfWidth)),
+            Color = ToVector(color),
+            Color2 = ToVector(core),
+            Extra = new Vector4((float)glowAlpha, (float)bodyAlpha, (float)coreAlpha, additive ? 1 : 0),
+            Extra2 = new Vector4(startCut.X, startCut.Y, endCut.X, endCut.Y),
+        };
+    }
+
+    /// <summary>
+    /// Three-stop radial fill of a circle (a canvas radial gradient with stops 0, <paramref name="stop"/>, 1): this color at the
+    /// center → <paramref name="middle"/> at <paramref name="stop"/> × the radius → <paramref name="middle"/> transparent at the
+    /// radius.
+    /// </summary>
+    public readonly OrbGpuInstance RadialStops(Rgba middle, double stop)
+    {
+        var copy = this;
+        copy.Color2 = ToVector(middle);
+        copy.Extra2 = new Vector4((float)OrbFill.RadialStops, (float)Math.Clamp(stop, 0.001, 0.999), 0, 1);
         return copy;
     }
 

@@ -8,6 +8,11 @@ cbuffer Uniforms : register(b0)
     float4 globals;   // opacity of the whole orb, unused x3
 };
 
+cbuffer PassParams : register(b2)
+{
+    int4 pass_mode;   // x: the mode of a liquid or led pass
+};
+
 static const float2 corners[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
 static const float orb_tau = 6.28318530718;
 

@@ -59,6 +59,8 @@ struct CodexParser: Sendable {
             return
         }
         state.noteLine(at: timestamp)
+        if line.hasModeSelection { state.modes = line.modes }
+        else if !line.modes.facts.isEmpty { state.modes = state.modes.merging(line.modes) }
 
         switch line.kind {
         case .sessionMeta:
@@ -136,9 +138,11 @@ struct CodexParser: Sendable {
             startMs: pendingStartMs,
             endMs: timestamp,
             usage: usage,
-            provider: provider
+            provider: provider,
+            modes: state.modes
         )
         finishWithoutUsage(at: timestamp)
+        state.modes = ExecutionModes(state.modes.facts.filter { $0.evidence == .selected })
         emit(ResponseUpsert(record: record, isCompletion: true))
     }
 }

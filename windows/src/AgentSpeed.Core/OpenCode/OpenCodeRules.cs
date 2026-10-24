@@ -14,7 +14,10 @@ internal sealed record OpenCodeAgentState(
     AgentPhase Phase,
     long? InFlightStartMs,
     long? LastLineMs,
-    long MalformedRows);
+    long MalformedRows)
+{
+    public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
+}
 
 /// <summary>OpenCode rules of METRICS 4.5, shared by the live source and the daily history.</summary>
 internal static class OpenCodeRules
@@ -59,7 +62,8 @@ internal static class OpenCodeRules
                 return null;
         }
 
-        return new ParsedResponse(row.Id, SourceKind.OpenCode, AgentId(session.Id), data.Model, startMs, endMs, data.Tokens, Provider: data.Provider);
+        return new ParsedResponse(row.Id, SourceKind.OpenCode, AgentId(session.Id), data.Model, startMs, endMs, data.Tokens, Provider: data.Provider)
+        { Modes = ExecutionModeNative.OpenAiTier(data.ServiceTier, provider: data.Provider) };
     }
 
     /// <summary>Agent state after replaying a session's rows in <c>seq</c> order.</summary>
@@ -70,6 +74,7 @@ internal static class OpenCodeRules
         long? inFlight = null;
         long? lastLine = null;
         long malformed = 0;
+        var modes = ExecutionModes.Empty;
         foreach (var row in rows)
         {
             if (row.Data is not { } data)
@@ -86,6 +91,7 @@ internal static class OpenCodeRules
                 }
 
                 model = data.Model ?? model;
+                modes = ExecutionModeNative.OpenAiTier(data.ServiceTier, provider: data.Provider);
                 if (data.Streamed is null)
                 {
                     phase = AgentPhase.Generating;
@@ -118,6 +124,6 @@ internal static class OpenCodeRules
             phase,
             inFlight,
             lastLine,
-            malformed);
+            malformed) { Modes = modes };
     }
 }

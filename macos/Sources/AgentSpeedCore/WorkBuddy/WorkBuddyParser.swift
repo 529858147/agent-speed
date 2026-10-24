@@ -118,17 +118,19 @@ struct WorkBuddyParser: Sendable {
         if var existing = responses[key] {
             existing.endMs = max(existing.endMs, timestamp)
             existing.usage = existing.usage.merged(with: tokens)
+            existing.modes = existing.modes.merging(call.modes)
             if let model = call.model { existing.model = model }
             if let provider = call.provider { existing.provider = provider }
             record = existing
         } else {
             record = ResponseRecord(key: key, source: state.source, agentId: agentId, model: call.model,
                                     startMs: pendingStartMs, endMs: timestamp, usage: tokens, isFinal: true,
-                                    provider: call.provider)
+                                    provider: call.provider, modes: call.modes)
             pendingStartMs = nil
             remember(key)
         }
         responses[key] = record
+        state.modes = record.modes
         if let model = record.model { state.model = model }
         emit(ResponseUpsert(record: record, isCompletion: claim == .new && !isMerge))
     }
