@@ -77,9 +77,11 @@ repository: whatever is committed on `main` reaches every running app within abo
   On launch the stored copy is validated again; an invalid copy is deleted (logged) and the bundled table is used.
 - **Current table** = the higher `version` of the bundled table and the stored copy, so a newer app build with a
   newer bundled table wins over an older download.
-- **Effect**: the new table prices every day that is not yet bound (METRICS 9.7). Today keeps the table it was bound
-  to; the change shows from the next day. Days already in the history never change. No notification; Settings shows
-  the new status.
+- **Effect**: known costs keep the table bound to their day (METRICS 9.7); new rates therefore apply to days not yet
+  bound. A response the bound table could not price may use the newer table instead. Files with unpriced history
+  are re-analysed when their local logs are still available, and retained live responses may acquire a known cost.
+  This does not replay old reports or guarantee that previously omitted receiver costs can all be recovered.
+  No notification; Settings shows the new status.
 - **Maintenance** (repository): edit `spec/assets/prices.json`, increase `version` by one, set `updated` and every
   changed entry's `checked`, add a `tests` row for any new id form, run `python3 spec/tools/prices.py`, commit to
   `main`. Never decrease or reuse a version.

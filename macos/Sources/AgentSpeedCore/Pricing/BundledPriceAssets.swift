@@ -7,8 +7,8 @@ enum BundledPriceAssets {
 {
   "_comment": "API list prices for API-equivalent costs (METRICS 9). USD per million tokens. Edit by hand: raise version by one, set updated and each changed entry's checked date, add tests for new id forms, run python3 spec/tools/prices.py. Apps sync this file from main daily (spec/NETWORK.md).",
   "schema": 1,
-  "version": 1,
-  "updated": "2026-10-23",
+  "version": 2,
+  "updated": "2026-10-24",
   "currency": "USD",
   "unit": "perMillionTokens",
   "providers": {
@@ -1676,10 +1676,11 @@ enum BundledPriceAssets {
       "aliases": [
         "gemini 4 argon (low)",
         "gemini 4 argon (medium)",
-        "gemini 4 argon (high)"
+        "gemini 4 argon (high)",
+        "gemini 4 argon"
       ],
       "source": "https://ai.google.dev/gemini-api/docs/pricing",
-      "checked": "2026-10-22",
+      "checked": "2026-10-24",
       "note": "Announced price change on 2026-12-01."
     },
     {
@@ -1705,10 +1706,11 @@ enum BundledPriceAssets {
       "aliases": [
         "gemini 3.8 flash (low)",
         "gemini 3.8 flash (medium)",
-        "gemini 3.8 flash (high)"
+        "gemini 3.8 flash (high)",
+        "gemini 3.8 flash"
       ],
       "source": "https://ai.google.dev/gemini-api/docs/pricing",
-      "checked": "2026-10-22",
+      "checked": "2026-10-24",
       "note": "Announced price change on 2027-01-01."
     },
     {
@@ -3046,10 +3048,11 @@ enum BundledPriceAssets {
       "aliases": [
         "deepseek-v4-flash",
         "deepseek-v4-flash-vision-exp",
-        "deepseek-v4.1-flash"
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017"
       ],
       "source": "https://api-docs.deepseek.com/quick_start/pricing",
-      "checked": "2026-10-22",
+      "checked": "2026-10-24",
       "note": "Peak = 01:00-04:00 and 06:00-10:00 UTC, Monday-Friday except Chinese public holidays; off-peak is half price. offPeakDates: the weekday holidays of the 2026 State Council schedule (Mid-Autumn, National Day; https://www.news.cn/politics/20251104/88bcffd88ae249e58c699b8772548e3d/c.html); weekend make-up workdays are treated as off-peak. Earlier periods: V4 Flash prices before the 2026-09-10 switch; the 2026-08 period assumes the later Monday-Friday rule."
     },
     {
@@ -4650,6 +4653,18 @@ enum BundledPriceAssets {
     {
       "model": "default-1.2",
       "expect": "unknown"
+    },
+    {
+      "model": "deepseek-v4.1-flash-1017",
+      "expect": "deepseek-flash"
+    },
+    {
+      "model": "gemini 3.8 flash",
+      "expect": "gemini-3.8-flash"
+    },
+    {
+      "model": "gemini 4 argon",
+      "expect": "gemini-4-argon"
     }
   ]
 }

@@ -1,18 +1,18 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using System.Text.Json.Nodes;
 using AgentSpeed.Core.Network;
 using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Core.Tests;
 
-public sealed partial class PriceTableSyncTests
+public sealed class PriceTableSyncTests
 {
     private static readonly Uri Raw = PriceTableSync.Urls[0];
     private static readonly Uri Mirror = PriceTableSync.Urls[1];
 
-    /// <summary>2026-10-22T12:00Z, the bundled table's <c>updated</c> date.</summary>
+    /// <summary>2026-10-22T12:00Z, the reference clock for synchronization and future-date checks.</summary>
     private static readonly DateTimeOffset Noon = DateTimeOffset.FromUnixTimeSeconds(1_792_670_400);
 
     private static readonly Lazy<string> Bundled = new(() => Encoding.UTF8.GetString(RepoSpec.Embedded("AgentSpeed.Prices.json")));
@@ -196,9 +196,10 @@ public sealed partial class PriceTableSyncTests
     {
         using var harness = new Harness();
         harness.Transport.Reply(Raw, body: new byte[PriceTable.MaxBytes + 1]);
-        var broken = Bundled.Value.Replace("\"version\": 1,", "\"version\": 2,", StringComparison.Ordinal)
-            .Replace("\"input\": 4,", "\"input\": 4.0000001,", StringComparison.Ordinal);
-        harness.Transport.Reply(Mirror, body: Encoding.UTF8.GetBytes(broken));
+        var broken = JsonNode.Parse(Table(version: 2))!.AsObject();
+        var model = broken["models"]!.AsArray().First(m => m!["prices"] is JsonObject)!;
+        model["prices"]!["input"] = 4.0000001;
+        harness.Transport.Reply(Mirror, body: Encoding.UTF8.GetBytes(broken.ToJsonString()));
         var result = await harness.Sync.RunAsync(currentVersion: 1);
         var failed = Assert.IsType<PriceSyncOutcome.Failed>(result.Outcome);
         Assert.Equal("invalid table", failed.Reason);
@@ -288,19 +289,24 @@ public sealed partial class PriceTableSyncTests
         Assert.Equal(new PriceSyncState(), store.LoadState());
     }
 
-    /// <summary>The bundled table with another version, schema or <c>updated</c> date (null keeps the bundled date).</summary>
+    /// <summary>The bundled contents with explicit test metadata, independent of future bundled-table updates.</summary>
     private static byte[] Table(int version, int schema = 1, string? updated = null)
     {
-        var text = Bundled.Value
-            .Replace("\"schema\": 1,", $"\"schema\": {schema},", StringComparison.Ordinal)
-            .Replace("\"version\": 1,", $"\"version\": {version},", StringComparison.Ordinal);
-        if (updated is not null)
-            text = UpdatedField().Replace(text, $"\"updated\": \"{updated}\",", 1);
-        return Encoding.UTF8.GetBytes(text);
-    }
+        var table = JsonNode.Parse(Bundled.Value)!.AsObject();
+        var date = updated ?? Noon.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        table["schema"] = schema;
+        table["version"] = version;
+        table["updated"] = date;
+        foreach (var model in table["models"]!.AsArray().Select(m => m!.AsObject()))
+        {
+            if (string.CompareOrdinal((string?)model["checked"], date) > 0)
+            {
+                model["checked"] = date;
+            }
+        }
 
-    [GeneratedRegex("\"updated\": \"\\d{4}-\\d{2}-\\d{2}\",")]
-    private static partial Regex UpdatedField();
+        return Encoding.UTF8.GetBytes(table.ToJsonString());
+    }
 
     private sealed class Harness(DateTimeOffset? start = null) : IDisposable
     {
