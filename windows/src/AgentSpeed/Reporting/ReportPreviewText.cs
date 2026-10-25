@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Media;
 using AgentSpeed.Core.Reporting;
+using AgentSpeed.Theme;
 
 namespace AgentSpeed.Reporting;
 
@@ -13,8 +13,6 @@ namespace AgentSpeed.Reporting;
 /// </summary>
 internal static class ReportPreviewText
 {
-    public static readonly FontFamily Monospace = new("Cascadia Mono, Consolas, Courier New");
-
     /// <summary>A read-only rich text box for the preview, labelled for assistive technology.</summary>
     public static RichTextBox Create(string accessibleName)
     {
@@ -23,7 +21,7 @@ internal static class ReportPreviewText
             IsReadOnly = true,
             IsReadOnlyCaretVisible = false,
             IsDocumentEnabled = false,
-            FontFamily = Monospace,
+            FontFamily = AppFonts.Monospace,
             FontSize = 12,
             Padding = new Thickness(6, 8, 6, 8),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -31,7 +29,7 @@ internal static class ReportPreviewText
             Document = new FlowDocument(new Paragraph())
             {
                 PagePadding = new Thickness(0),
-                FontFamily = Monospace,
+                FontFamily = AppFonts.Monospace,
                 FontSize = 12,
                 LineHeight = 17,
             },
