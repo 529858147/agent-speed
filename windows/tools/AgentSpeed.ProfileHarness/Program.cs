@@ -21,7 +21,8 @@ internal static class Program
         Environment.SetEnvironmentVariable("AGENT_SPEED_REPORT_DIR", Path.Combine(output, "keys"));
         Environment.SetEnvironmentVariable("AGENT_SPEED_LOGS_DIR", Path.Combine(output, "logs"));
         Environment.SetEnvironmentVariable("AGENT_SPEED_REPORT_LOOPBACK_ONLY", "1");
-        var nativePassed = NativeTests.Run(output, Option(args, "--native-filter"));
+        var settingsBenchmark = args.Contains("--settings-benchmark", StringComparer.Ordinal);
+        var nativePassed = settingsBenchmark || NativeTests.Run(output, Option(args, "--native-filter"));
         if (args.Contains("--no-ui", StringComparer.Ordinal)) return nativePassed ? 0 : 1;
         var service = ReportServiceUrl.Parse(Option(args, "--service") ?? "http://127.0.0.1:18789");
         if (service is null || !service.DiscoveryUrl.IsLoopback) return 2;
@@ -36,7 +37,12 @@ internal static class Program
         app.Startup += async (_, _) =>
         {
             var success = false;
-            try { await ProfileFlow.Run(app, service, output, loc, hold); success = true; }
+            try
+            {
+                if (settingsBenchmark) await SettingsBenchmark.Run(output, args.Contains("--eager", StringComparer.Ordinal));
+                else await ProfileFlow.Run(app, service, output, loc, hold);
+                success = true;
+            }
             catch (Exception error)
             {
                 File.WriteAllText(Path.Combine(output, "ui-error.json"), JsonSerializer.Serialize(new { step = ProfileFlow.Step, error = error.GetBaseException().Message, type = error.GetBaseException().GetType().Name }));

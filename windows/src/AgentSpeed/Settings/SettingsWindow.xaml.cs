@@ -51,13 +51,7 @@ internal sealed partial class SettingsWindow : Window
         }
 
         _shownPage = key;
-        foreach (UIElement page in new UIElement[] { GeneralPage, TaskbarPage, OrbPage, EffectsPage, CostPage, TrafficPage, ReportPage, SourcesPage, AboutPage })
-        {
-            var name = ((FrameworkElement)page).Name;
-            page.Visibility = string.Equals(name, key + "Page", StringComparison.OrdinalIgnoreCase)
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-        }
+        PagesHost.ShowPage(key);
 
         PageScroller.ScrollToTop();
     }
