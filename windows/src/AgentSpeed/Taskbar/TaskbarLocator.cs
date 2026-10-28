@@ -63,7 +63,12 @@ internal static class TaskbarLocator
             return false;
         }
 
-        var m = monitor.Bounds;
+        return IsAutoHidden(geometry, monitor.Bounds);
+    }
+
+    internal static bool IsAutoHidden(TaskbarGeometry geometry, RECT monitorBounds)
+    {
+        var m = monitorBounds;
         var b = geometry.TaskbarRect;
         var visibleWidth = Math.Min(b.Right, m.Right) - Math.Max(b.Left, m.Left);
         var visibleHeight = Math.Min(b.Bottom, m.Bottom) - Math.Max(b.Top, m.Top);

@@ -3,6 +3,25 @@ namespace AgentSpeed.Presentation.Layout;
 /// <summary>Window placement rules for the orb, the dashboard flyout and the taskbar widget (physical pixels).</summary>
 public static class PlacementMath
 {
+    /// <summary>Places a taskbar detail card next to its anchor and keeps it within its monitor's work area.</summary>
+    public static PointD TaskbarTooltip(RectD anchor, RectD work, TaskbarEdge edge, double width, double height, double gap)
+    {
+        var x = edge switch
+        {
+            TaskbarEdge.Left => anchor.Right + gap,
+            TaskbarEdge.Right => anchor.X - gap - width,
+            _ => anchor.X + (anchor.Width - width) / 2,
+        };
+        var y = edge switch
+        {
+            TaskbarEdge.Top => anchor.Bottom + gap,
+            TaskbarEdge.Bottom => anchor.Y - gap - height,
+            _ => anchor.Y + (anchor.Height - height) / 2,
+        };
+        return new PointD(Math.Clamp(x, work.X, Math.Max(work.X, work.Right - width)),
+            Math.Clamp(y, work.Y, Math.Max(work.Y, work.Bottom - height)));
+    }
+
     /// <summary>Keeps the disc fully inside the work area with a margin.</summary>
     public static PointD ClampDisc(PointD center, double radius, RectD work, double margin = 0)
     {

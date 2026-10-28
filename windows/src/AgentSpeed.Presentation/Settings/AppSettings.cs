@@ -106,6 +106,9 @@ public sealed record AppSettings
     /// </summary>
     public bool BarSecondary { get; init; }
 
+    /// <summary>Windows compact readout: speed and today's API-equivalent cost, with details on hover.</summary>
+    public bool BarCompact { get; init; } = true;
+
     /// <summary>
     /// The single orb's visibility before multiple orbs (<c>orb.show</c>). Read and written back unchanged so a downgrade
     /// restores it; the app uses <see cref="ShowOrbs"/>. The same holds for the other <c>Orb*</c> values below.

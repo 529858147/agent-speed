@@ -153,7 +153,7 @@ internal sealed class CostPaneViewModel : ObservableObject
 
     public bool BarValueTokens
     {
-        get => S.Cost.LiveUnit == LiveUnit.Tokens && !S.BarSecondary;
+        get => S.Cost.LiveUnit == LiveUnit.Tokens && !S.BarSecondary && !S.BarCompact;
         set => SetBarValue(value, LiveUnit.Tokens, secondary: false);
     }
 
@@ -165,15 +165,21 @@ internal sealed class CostPaneViewModel : ObservableObject
 
     public bool BarValueBoth
     {
-        get => S.Cost.LiveUnit == LiveUnit.Tokens && S.BarSecondary;
+        get => S.Cost.LiveUnit == LiveUnit.Tokens && S.BarSecondary && !S.BarCompact;
         set => SetBarValue(value, LiveUnit.Tokens, secondary: true);
     }
 
-    private void SetBarValue(bool selected, LiveUnit unit, bool secondary)
+    public bool BarValueCompact
+    {
+        get => S.Cost.LiveUnit == LiveUnit.Tokens && S.BarCompact;
+        set => SetBarValue(value, LiveUnit.Tokens, secondary: false, compact: true);
+    }
+
+    private void SetBarValue(bool selected, LiveUnit unit, bool secondary, bool compact = false)
     {
         if (selected)
         {
-            _settings.Update(s => s with { BarSecondary = secondary, Cost = s.Cost with { LiveUnit = unit } });
+            _settings.Update(s => s with { BarSecondary = secondary, BarCompact = compact, Cost = s.Cost with { LiveUnit = unit } });
         }
     }
 
@@ -239,7 +245,7 @@ internal sealed class CostPaneViewModel : ObservableObject
         foreach (var name in new[]
                  {
                      nameof(LiveUnitIsTokens), nameof(LiveUnitIsCost), nameof(IncludeSubscriptions), nameof(AutoSyncPrices),
-                     nameof(BarValueTokens), nameof(BarValueCost), nameof(BarValueBoth),
+                     nameof(BarValueTokens), nameof(BarValueCost), nameof(BarValueBoth), nameof(BarValueCompact),
                      nameof(NetworkOff), nameof(NetworkOffTooltip),
                  })
         {

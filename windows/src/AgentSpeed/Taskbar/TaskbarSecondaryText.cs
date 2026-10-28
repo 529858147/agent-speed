@@ -13,10 +13,10 @@ namespace AgentSpeed.Taskbar;
 /// </summary>
 internal sealed class TaskbarSecondaryText
 {
-    public const double TextSize = 10;
+    public const double TextSize = 11.5;
 
     /// <summary>Baseline distance of the two lines.</summary>
-    public const double Pitch = 12;
+    public const double Pitch = 14;
 
     /// <summary>Before the block, after the unit (or the value when the unit is hidden).</summary>
     public const double Gap = 8;
@@ -36,14 +36,16 @@ internal sealed class TaskbarSecondaryText
     public double NumberWidth(BarSecondary block, double scale, Color primary, Color secondary)
     {
         Ensure(scale, primary, secondary);
-        return Math.Max(Tabular(block.Live.Number), Tabular(block.Today.Number));
+        return block.Compact ? Math.Max(Tabular(block.Today.Number), Tabular("≈US$999.99"))
+            : Math.Max(Tabular(block.Live.Number), Tabular(block.Today.Number));
     }
 
     /// <summary>The block's width with its gap, for a number cell of <paramref name="cell"/> DIP.</summary>
     public double Width(BarSecondary block, double cell, double scale, Color primary, Color secondary)
     {
         var number = Math.Max(cell, NumberWidth(block, scale, primary, secondary));
-        return Gap + LabelWidth(block) + LabelGap + number + UnitGap + Math.Max(Text(block.Live.Unit).Width, Text(block.Today.Unit).Width);
+        return Gap + LabelWidth(block) + LabelGap + number
+            + (block.Compact ? 0 : UnitGap + Math.Max(Text(block.Live.Unit).Width, Text(block.Today.Unit).Width));
     }
 
     /// <summary>Draws the block starting at <paramref name="x"/> (its gap included), the two lines centered on <paramref name="centerY"/>.</summary>
@@ -53,6 +55,15 @@ internal sealed class TaskbarSecondaryText
         var left = x + Gap;
         var numberRight = left + LabelWidth(block) + LabelGap + Math.Max(cell, numberWidth);
         var capHeight = (_face.CapsHeight > 0 ? _face.CapsHeight : 0.7) * TextSize;
+        if (block.Compact)
+        {
+            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(50, primary.R, primary.G, primary.B)), 1),
+                new Point(Snap(x + Gap / 2, scale), Snap(centerY - 9, scale)),
+                new Point(Snap(x + Gap / 2, scale), Snap(centerY + 9, scale)));
+            DrawLine(dc, block.Today, left, numberRight, Snap(centerY + capHeight / 2, scale), scale);
+            return;
+        }
+
         var first = Math.Round((centerY - Pitch / 2 + capHeight / 2) * scale) / scale;
         DrawLine(dc, block.Live, left, numberRight, first, scale);
         DrawLine(dc, block.Today, left, numberRight, first + Pitch, scale);
@@ -79,7 +90,8 @@ internal sealed class TaskbarSecondaryText
         dc.DrawText(unit, new Point(Snap(numberRight + UnitGap, scale), baseline - unit.Baseline));
     }
 
-    private double LabelWidth(BarSecondary block) => Math.Max(Text(block.Live.Label).Width, Text(block.Today.Label).Width);
+    private double LabelWidth(BarSecondary block) => block.Compact ? Text(block.Today.Label).Width
+        : Math.Max(Text(block.Live.Label).Width, Text(block.Today.Label).Width);
 
     private double Tabular(string text)
     {

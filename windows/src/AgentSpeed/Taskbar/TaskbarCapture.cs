@@ -12,9 +12,9 @@ internal static class TaskbarCapture
 {
     private const double BarHeight = 48;
 
-    public static BitmapSource Render(TaskbarState state, double value, SpeedTier tier, double redline)
+    public static BitmapSource Render(TaskbarState state, double value, SpeedTier tier, double redline, double? captureScale = null)
     {
-        var scale = Monitors.All().FirstOrDefault(m => m.IsPrimary)?.Scale ?? 1;
+        var scale = captureScale ?? Monitors.All().FirstOrDefault(m => m.IsPrimary)?.Scale ?? 1;
         var renderer = new TaskbarRenderer();
         var scene = new BarScene { Redline = redline };
         scene.SetTarget(value, tier);

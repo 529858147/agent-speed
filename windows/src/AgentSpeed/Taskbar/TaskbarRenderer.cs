@@ -50,6 +50,18 @@ internal sealed class TaskbarRenderer
     /// </summary>
     public double SecondaryCell { get; set; }
 
+    public double PrimaryCell { get; set; }
+
+    /// <summary>Reserve common numeric formats and localized activity labels before the first update.</summary>
+    public double PrimaryNumberWidth(TaskbarState state, double scale)
+    {
+        var colors = Palette(state);
+        EnsureCache(scale, colors.Primary, colors.Secondary, state.UnitText);
+        var unit = state.ShowUnit && _unit is not null ? UnitGap + _unit.WidthIncludingTrailingWhitespace : 0;
+        return Math.Max(TabularWidth(ValueText(state), 0) + (state.HideUnit ? 0 : unit),
+            Math.Max(TabularWidth("999.9k", 0) + unit, TabularWidth(state.ReservationText, 0)));
+    }
+
     /// <summary>Width (DIP) the second value's number needs now, for the host's governor; 0 without one.</summary>
     public double SecondaryNumberWidth(TaskbarState state, double scale)
     {
@@ -101,11 +113,7 @@ internal sealed class TaskbarRenderer
                 width += GlyphGap;
             }
 
-            width += TabularWidth(ValueText(state), 0);
-            if (state.ShowUnit && _unit is not null)
-            {
-                width += UnitGap + _unit.WidthIncludingTrailingWhitespace;
-            }
+            width += Math.Max(PrimaryCell, PrimaryNumberWidth(state, _cacheScale));
 
             if (ShowsSecondary(state))
             {
@@ -191,6 +199,7 @@ internal sealed class TaskbarRenderer
             return;
         }
 
+        var primaryLeft = x;
         var valueText = ValueText(state);
         var idle = state.Tier == SpeedTier.Idle || state.Value <= 0 || state.ValueMuted;
         var role = idle ? 1 : 0;
@@ -199,12 +208,14 @@ internal sealed class TaskbarRenderer
         DrawTabular(dc, valueText, x + valueWidth, baseline, role, scale);
         x += valueWidth;
 
-        if (state.ShowUnit && _unit is not null)
+        if (state.ShowUnit && !state.HideUnit && _unit is not null)
         {
             x += UnitGap;
             dc.DrawText(_unit, new Point(Snap(x, scale), baseline - _unit.Baseline));
             x += _unit.WidthIncludingTrailingWhitespace;
         }
+
+        x = primaryLeft + Math.Max(PrimaryCell, PrimaryNumberWidth(state, scale));
 
         if (ShowsSecondary(state))
         {
@@ -240,7 +251,7 @@ internal sealed class TaskbarRenderer
         var sample = Glyph('8', role);
         DrawTabular(dc, text, (width + total) / 2, y + sample.Baseline, role, 1);
         y += sample.Height;
-        if (state.ShowUnit && _unit is not null)
+        if (state.ShowUnit && !state.HideUnit && _unit is not null)
         {
             dc.DrawText(_unit, new Point((width - _unit.WidthIncludingTrailingWhitespace) / 2, y - 2));
             y += 14;

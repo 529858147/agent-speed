@@ -1265,6 +1265,28 @@ Glanceable and calm; it must never jitter in width.
 - Click: open/close the dashboard. Right-click (Windows) / ⌥-click (macOS): quick menu.
 - The widget follows the system/taskbar light or dark theme for text; the glyph keeps heat colors.
 
+### Windows fork: compact taskbar
+
+The Windows fork defaults to a compact speed + today's API-equivalent estimate (`taskbar.compact`, default true).
+The live-value selector retains tokens only, money only and the original two-line money block. Selecting one of
+those clears compact mode. Existing currency, subscription marks, source switches and traffic settings still apply.
+Compact money uses the dashboard's today's-cost calculation, a currency prefix and `≈` for known estimates;
+unknown prices keep `–`, partial prices keep `≥`. The taskbar reserves common numeric widths and localized state
+labels; width governors never shrink while the pointer is over the widget.
+
+An active measured/estimated speed remains numeric even when another session runs a tool or has a read warning.
+Without a visible speed, generating sessions say Waiting, tool sessions say Tools, and genuine idle says a muted
+`0 tok/s`. Starting is Reading; no sources or read warnings without other known activity show `–`, with reasons in
+the tooltip. These labels describe recorded phases and never infer an activity from wall-clock silence.
+
+The read-only hover card gives the selected speed metric, known activity counts, per-source contributions,
+today's cost, live cost rate, included cost sources, subscription handling and data warnings. It says Includes
+estimates only when the selected metric has an estimated component. Its cost disclaimer identifies API list-price
+equivalence, not an actual bill. Hidden cards do not build details or update controls, unchanged visible strings
+do not rewrite text, and idle or auto-hidden taskbars stop animating. Placement is clamped to the anchor monitor's
+work area, including monitors with negative virtual-screen coordinates. Windows tests cover 100/125/150/200% rendering
+and the profile harness can capture these states and measure an isolated invisible taskbar host.
+
 ## 4. Dashboard
 
 macOS: popover-style panel under the menu bar item. Windows: flyout above the taskbar with Mica. Width 368 pt/DIP.

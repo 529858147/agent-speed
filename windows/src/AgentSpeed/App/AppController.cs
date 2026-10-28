@@ -564,10 +564,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         UpdateTaskbar();
         _tray?.Update(TrayState());
 
-        if (_tooltipShown)
-        {
-            _tooltip?.SetText(LiveLine(), LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(snapshot, _loc));
-        }
+        RefreshTaskbarTooltip();
 
         if (!_historyStarted && snapshot.State.Kind != MonitorStateKind.Starting && _historyStartFallback is not null)
         {
@@ -704,7 +701,11 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         var title = _titles.Text(_speed.Title, _titles.General);
         var money = LiveMoney();
         var bar = money is null ? ((string?)null, _loc["unit.tokS"]) : CostDisplay.BarValue(money, s.BarShowUnit);
-        var accessible = money is null ? DisplayText.Accessibility(_speed.Value, title, _loc) : _cost.Display.LiveAccessibility(money, title);
+        var readout = TaskbarReadout.From(_speed.Snapshot, s.Metric, _loc);
+        var valueText = money is null || readout.Activity != TaskbarActivity.Generating && readout.Activity != TaskbarActivity.Idle
+            ? readout.Value : bar.Item1;
+        var accessible = readout.HideUnit || readout.Activity == TaskbarActivity.Unavailable
+            ? readout.Status : money is null ? DisplayText.Accessibility(_speed.Value, title, _loc) : _cost.Display.LiveAccessibility(money, title);
         var secondary = BarSecondaryValue();
         if (secondary is not null)
         {
@@ -730,10 +731,12 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
             _theme.ReduceMotion,
             bar.Item2,
             $"{_loc["app.name"]}: {accessible}",
-            bar.Item1,
-            money?.Unknown ?? false,
+            valueText,
+            readout.Muted || (money?.Unknown ?? false),
             secondary,
-            traffic);
+            traffic,
+            readout.HideUnit,
+            _loc["win.taskbar.reserve"]);
         _taskbar.Update(_lastTaskbarState);
     }
 
@@ -741,7 +744,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
     private BarSecondary? BarSecondaryValue()
     {
         var s = Settings;
-        return s.BarSecondary && s.Cost.LiveUnit == LiveUnit.Tokens ? BarSecondary.From(s, _speed.Snapshot, _cost.Display) : null;
+        return (s.BarSecondary || s.BarCompact) && s.Cost.LiveUnit == LiveUnit.Tokens ? BarSecondary.From(s, _speed.Snapshot, _cost.Display) : null;
     }
 
     /// <summary>Joins spoken parts: <c>、</c> in Japanese, <c>, </c> in English, <c>，</c> in Chinese.</summary>
@@ -781,10 +784,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         if (Settings.Traffic.Bar != BarTraffic.Off)
         {
             UpdateTaskbar();
-            if (_tooltipShown)
-            {
-                _tooltip?.SetText(LiveLine(), LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(_speed.Snapshot, _loc));
-            }
+            RefreshTaskbarTooltip();
         }
 
         UpdateTrafficDemand();
@@ -936,8 +936,18 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
 
         _tooltipShown = true;
         _tooltip.Language = AppFonts.XmlLanguageFor(_loc.LanguageCode);
-        var summary = LiveMoney() is { } money ? money.HoverLine : DisplayText.TodaySummary(_speed.Snapshot, _loc);
-        _tooltip.ShowFor(bounds, LiveLine(), summary, _theme.ReduceMotion);
+        _tooltip.ShowFor(bounds, TaskbarTooltipDetails(), _theme.ReduceMotion);
+    }
+
+    private TaskbarDetails TaskbarTooltipDetails() => TaskbarDetails.From(_speed.Snapshot, Settings, _cost.Display) with
+    {
+        Traffic = BarTrafficBlock.From(Settings, _traffic.Snapshot, _loc)?.Spoken ?? string.Empty,
+    };
+
+    private void RefreshTaskbarTooltip()
+    {
+        if (_tooltipShown && _tooltip is { IsVisible: true } tooltip)
+            tooltip.SetDetails(TaskbarTooltipDetails());
     }
 
     private void HideTooltip()
@@ -1069,6 +1079,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         _orbs?.UpdateTraffic(_traffic.Snapshot);
         UpdateTaskbar();
         UpdateTrafficDemand();
+        RefreshTaskbarTooltip();
         _tray?.Update(TrayState());
         _dashboard?.SetOrbVisible(current.ShowOrbs);
         if (previous.ChartSeconds != current.ChartSeconds)
@@ -1187,6 +1198,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         UpdateTaskbar();
         _tray?.Update(TrayState());
         _dashboardDirty = true;
+        RefreshTaskbarTooltip();
         FlushDashboard();
     }
 
@@ -1250,6 +1262,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
 
     private void OnDisplayChanged()
     {
+        HideTooltip();
         _orbs?.OnDisplayChanged();
         _taskbar?.Reposition();
         _tray?.Refresh();

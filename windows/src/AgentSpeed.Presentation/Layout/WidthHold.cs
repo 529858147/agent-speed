@@ -17,8 +17,9 @@ public sealed class WidthHold(long delayMs = 6000)
     /// <summary>Time at which a pending shrink becomes due.</summary>
     public long? DueAt => PendingSince + DelayMs;
 
-    public int Resolve(int desired, long nowMs, bool force = false)
+    public int Resolve(int desired, long nowMs, bool force = false, bool holdShrink = false)
     {
+        if (!force && holdShrink && Applied > 0 && desired < Applied) return Applied;
         if (force || Applied <= 0 || desired >= Applied || (PendingSince is { } since && nowMs - since >= DelayMs))
         {
             PendingSince = null;
@@ -31,8 +32,8 @@ public sealed class WidthHold(long delayMs = 6000)
     }
 
     /// <summary>The width that would be used now, without changing any state.</summary>
-    public int Peek(int desired, long nowMs) =>
-        Applied <= 0 || desired >= Applied || (PendingSince is { } since && nowMs - since >= DelayMs) ? desired : Applied;
+    public int Peek(int desired, long nowMs, bool holdShrink = false) =>
+        Applied <= 0 || desired >= Applied || (!holdShrink && PendingSince is { } since && nowMs - since >= DelayMs) ? desired : Applied;
 
     public void Reset()
     {

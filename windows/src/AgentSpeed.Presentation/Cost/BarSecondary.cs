@@ -8,38 +8,47 @@ namespace AgentSpeed.Presentation.Cost;
 public sealed record BarMoneyLine(string Label, string Number, string Unit, bool Dim);
 
 /// <summary>
-/// The taskbar money block (DESIGN 3, live value "tok/s + cost"): after a tok/s value, <c>bar.money.now</c> with the live
-/// money rate of the billable sources over <c>bar.money.today</c> with today's billable total (the dashboard's 今日費用),
-/// with the <c>≥</c> / <c>–</c> rules of section 9. The numbers share one right-aligned cell whose width grows at once
-/// and shrinks only after the widget's delay.
+/// The taskbar cost block: a compact daily estimate or the original live-rate + daily-total pair.
+/// Both use the dashboard's billable sources and preserve the lower-bound / unknown-price rules.
 /// </summary>
 /// <param name="Spoken"><c>a11y.bar.money</c>: read after the value by UI Automation and the tooltip.</param>
 public sealed record BarSecondary(BarMoneyLine Live, BarMoneyLine Today, string Spoken)
 {
+    public bool Compact { get; init; }
+    private static readonly BarMoneyLine HiddenLive = new(string.Empty, string.Empty, string.Empty, true);
+
     /// <summary>
-    /// Null unless the live value is "tok/s + cost" (<c>liveUnit</c> tokens with <c>barSecondary</c>) and the widget shows
-    /// a value (not glyph only).
+    /// Null unless compact or secondary costs are selected alongside tokens, with a visible value.
     /// </summary>
     public static BarSecondary? From(AppSettings settings, SpeedSnapshot snapshot, CostDisplay cost)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(cost);
-        if (!settings.BarSecondary || settings.Cost.LiveUnit != LiveUnit.Tokens || settings.BarMode == BarDisplayMode.GlyphOnly)
+        if ((!settings.BarSecondary && !settings.BarCompact) || settings.Cost.LiveUnit != LiveUnit.Tokens || settings.BarMode == BarDisplayMode.GlyphOnly)
         {
             return null;
         }
 
         var loc = cost.Localizer;
+        var summary = TodayCostSummary.From(snapshot, cost);
+        var unknown = summary.Total.IsUnknown(summary.Requests);
+        var atLeast = summary.Requests > 0 && summary.Total.UnpricedRequests > 0;
+        if (settings.BarCompact)
+        {
+            var text = summary.AmountText;
+            if (!unknown && !atLeast && summary.Requests > 0) text = "≈" + text;
+            var compact = new BarMoneyLine(loc["bar.money.today"], text, string.Empty,
+                unknown || summary.Total.CostMicroUsd == 0);
+            return new BarSecondary(HiddenLive, compact, loc.Format("win.taskbar.today.spoken", summary.Spoken)) { Compact = true };
+        }
+
         var money = cost.Live(snapshot);
         var live = new BarMoneyLine(
             loc["bar.money.now"],
             money.Unknown ? CostDisplay.Dash : (money.AtLeast ? CostDisplay.AtLeastSign : string.Empty) + money.Number,
             money.Unit,
             money.Unknown || money.Value == 0);
-        var summary = TodayCostSummary.From(snapshot, cost);
-        var unknown = summary.Total.IsUnknown(summary.Requests);
-        var atLeast = summary.Requests > 0 && summary.Total.UnpricedRequests > 0;
         var amount = cost.Amount(summary.Requests == 0 ? 0 : summary.Total.CostMicroUsd).Number;
         var today = new BarMoneyLine(
             loc["bar.money.today"],

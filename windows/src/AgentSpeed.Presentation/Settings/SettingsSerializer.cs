@@ -42,6 +42,7 @@ public static class SettingsSerializer
             w.WriteBoolean("coloredGlyph", s.BarColoredGlyph);
             w.WriteBoolean("showUnit", s.BarShowUnit);
             w.WriteBoolean("secondary", s.BarSecondary);
+            w.WriteBoolean("compact", s.BarCompact);
             w.WriteEndObject();
 
             w.WriteStartObject("orb");
@@ -225,6 +226,7 @@ public static class SettingsSerializer
             BarColoredGlyph = ReadBool(taskbar, "coloredGlyph", d.BarColoredGlyph),
             BarShowUnit = ReadBool(taskbar, "showUnit", d.BarShowUnit),
             BarSecondary = ReadBool(taskbar, "secondary", d.BarSecondary),
+            BarCompact = ReadBool(taskbar, "compact", d.BarCompact),
             ShowOrb = ReadBool(orb, "show", d.ShowOrb),
             ShowOrbs = ReadBool(root, "showOrbs", ReadBool(orb, "show", d.ShowOrb)),
             OrbNames = OrbNamesModes.Parse(ReadString(root, "orbNames")),

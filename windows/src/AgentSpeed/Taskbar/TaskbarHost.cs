@@ -35,6 +35,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
     private static bool s_classRegistered;
 
     private readonly Action<TaskbarSignal> _signal;
+    private readonly Func<TaskbarGeometry?> _geometry;
     private readonly Dispatcher _dispatcher;
     private readonly TaskbarRenderer _renderer = new();
     private readonly LayeredSurface _surface = new();
@@ -71,12 +72,14 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
     /// <summary>The second value's number cell (DESIGN 3): grows at once, shrinks only after the same delay.</summary>
     private readonly WidthHold _secondaryCell = new(ShrinkDelayMs);
+    private readonly WidthHold _primaryCell = new(ShrinkDelayMs);
     private readonly DispatcherTimer _secondaryTimer;
     private double _secondaryScale;
 
-    public TaskbarHost(Action<TaskbarSignal> signal)
+    public TaskbarHost(Action<TaskbarSignal> signal, Func<TaskbarGeometry?>? geometry = null)
     {
         _signal = signal;
+        _geometry = geometry ?? TaskbarLocator.Find;
         _dispatcher = Dispatcher.CurrentDispatcher;
         _animation = new DispatcherTimer(TimeSpan.FromMilliseconds(1000.0 / BarScene.AnimatedFps), DispatcherPriority.Render,
             (_, _) => Animate(), _dispatcher);
@@ -100,9 +103,10 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
     public void Apply(TaskbarState state)
     {
+        if (state == _state && _hwnd != 0) return;
         var layoutChanged = state.LayoutDiffers(_state) || state.TaskbarDark != _state.TaskbarDark;
         _state = state;
-        UpdateSecondaryCell(_scale > 0 ? _scale : 1);
+        UpdateCells(_scale > 0 ? _scale : 1);
         _scene.Redline = state.Redline;
         _scene.ReduceMotion = state.ReduceMotion;
         _scene.SetTarget(state.Value, state.Tier);
@@ -192,7 +196,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
             return;
         }
 
-        var geometry = TaskbarLocator.Find();
+        var geometry = _geometry();
         if (geometry is not { } geo)
         {
             Teardown();
@@ -201,7 +205,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         }
 
         var scaleChanged = Math.Abs(geo.Scale - _scale) > 0.001 || geo.Vertical != _vertical;
-        UpdateSecondaryCell(geo.Scale);
+        UpdateCells(geo.Scale);
         var length = ResolveLength(_renderer.MeasureLength(_state, geo.Scale, geo.Vertical), forceLength || scaleChanged || _hwnd == 0);
         if (TaskbarLocator.WidgetRect(geo, length) is not { } rect)
         {
@@ -246,7 +250,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
         if (_presence == TaskbarPresence.Embedded)
         {
-            PlaceEmbedded(geo.Taskbar, rect);
+            PlaceEmbedded(geo, rect);
         }
         else
         {
@@ -336,15 +340,22 @@ internal sealed unsafe class TaskbarHost : IDisposable
         return true;
     }
 
-    private void PlaceEmbedded(nint taskbar, RECT screen)
+    private void PlaceEmbedded(TaskbarGeometry geometry, RECT screen)
     {
+        var taskbar = geometry.Taskbar;
+        _hiddenForFullscreen = !User32.IsWindowVisible(taskbar) || TaskbarLocator.IsAutoHidden(geometry);
+        if (_hiddenForFullscreen) EndHover();
         var client = ToClient(taskbar, screen);
         var sizeChanged = screen.Width != _screenRect.Width || screen.Height != _screenRect.Height;
         _screenRect = screen;
         void Move() => User32.SetWindowPos(_hwnd, HWND.TOP, client.Left, client.Top, screen.Width, screen.Height,
             SWP.NOACTIVATE | SWP.SHOWWINDOW | (sizeChanged ? SWP.NOREDRAW : 0));
 
-        if (sizeChanged)
+        if (_hiddenForFullscreen)
+        {
+            Move();
+        }
+        else if (sizeChanged)
         {
             // New content is ready before the window moves, so the resize and the new pixels land together.
             RenderAndPresent(force: true, beforePresent: Move);
@@ -356,6 +367,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         }
 
         SignalBounds();
+        UpdateAnimation();
     }
 
     private void PlaceFloating(TaskbarGeometry geometry, RECT screen)
@@ -366,6 +378,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         _screenRect = screen;
         if (hide)
         {
+            EndHover();
             if (!_hiddenForFullscreen)
             {
                 User32.ShowWindow(_hwnd, SW.HIDE);
@@ -409,15 +422,22 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
             if (_presence == TaskbarPresence.Embedded)
             {
-                var geometry = TaskbarLocator.Find();
+                var geometry = _geometry();
                 if (geometry is null || geometry.Value.Taskbar != _parent)
                 {
                     Reembed();
                     return;
                 }
 
+                var hidden = !User32.IsWindowVisible(_parent) || TaskbarLocator.IsAutoHidden(geometry.Value);
+                if (hidden != _hiddenForFullscreen)
+                {
+                    Ensure();
+                    return;
+                }
+
                 var desired = _renderer.MeasureLength(_state, geometry.Value.Scale, geometry.Value.Vertical);
-                var length = Math.Abs(geometry.Value.Scale - _scale) > 0.001 ? desired : _width.Peek(desired, Environment.TickCount64);
+                var length = Math.Abs(geometry.Value.Scale - _scale) > 0.001 ? desired : _width.Peek(desired, Environment.TickCount64, holdShrink: _hovered);
                 var rect = TaskbarLocator.WidgetRect(geometry.Value, length);
                 if (rect is not { } r || !RectEquals(r, _screenRect) || Math.Abs(geometry.Value.Scale - _scale) > 0.001)
                 {
@@ -479,31 +499,37 @@ internal sealed unsafe class TaskbarHost : IDisposable
     }
 
     /// <summary>
-    /// Sizes the second value's number cell (DESIGN 3): the number is right-aligned in a cell that grows at once and
-    /// shrinks only after a narrower number has held for 6 s, so the widget never jitters while the numbers change.
+    /// Both cells retain their widths across digit boundaries. Shrinking waits for the pointer to leave.
     /// </summary>
-    private void UpdateSecondaryCell(double scale)
+    private void UpdateCells(double scale)
     {
         var needed = _renderer.SecondaryNumberWidth(_state, scale);
+        var force = Math.Abs(scale - _secondaryScale) > 0.001;
+        _secondaryScale = scale;
+        var primary = (int)Math.Ceiling(_renderer.PrimaryNumberWidth(_state, scale) * scale);
+        _primaryCell.Resolve(primary, Environment.TickCount64, force, holdShrink: _hovered);
+        _renderer.PrimaryCell = _primaryCell.Applied / scale;
         if (needed <= 0)
         {
             _secondaryCell.Reset();
             _renderer.SecondaryCell = 0;
-            _secondaryTimer.Stop();
-            return;
+        }
+        else
+        {
+            var secondary = (int)Math.Ceiling(needed * scale);
+            _secondaryCell.Resolve(secondary, Environment.TickCount64, force, holdShrink: _hovered);
+            _renderer.SecondaryCell = _secondaryCell.Applied / scale;
         }
 
-        var force = Math.Abs(scale - _secondaryScale) > 0.001;
-        _secondaryScale = scale;
-        var applied = _secondaryCell.Resolve((int)Math.Ceiling(needed * scale), Environment.TickCount64, force);
-        _renderer.SecondaryCell = applied / scale;
-        if (_secondaryCell.PendingSince is null)
+        var due = _primaryCell.DueAt;
+        if (_secondaryCell.DueAt is { } secondaryDue && (due is null || secondaryDue < due)) due = secondaryDue;
+        if (_hovered || due is null)
         {
             _secondaryTimer.Stop();
         }
         else if (!_secondaryTimer.IsEnabled)
         {
-            var wait = Math.Max(50, (_secondaryCell.DueAt ?? 0) - Environment.TickCount64 + 50);
+            var wait = Math.Max(50, due.Value - Environment.TickCount64 + 50);
             _secondaryTimer.Interval = TimeSpan.FromMilliseconds(wait);
             _secondaryTimer.Start();
         }
@@ -512,8 +538,8 @@ internal sealed unsafe class TaskbarHost : IDisposable
     /// <summary>The widget grows at once but shrinks only after the shorter width has held for 6 s.</summary>
     private int ResolveLength(int desired, bool force)
     {
-        var length = _width.Resolve(desired, Environment.TickCount64, force);
-        if (_width.PendingSince is null)
+        var length = _width.Resolve(desired, Environment.TickCount64, force, holdShrink: _hovered);
+        if (_hovered || _width.PendingSince is null)
         {
             _shrinkTimer.Stop();
         }
@@ -532,7 +558,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         var width = Math.Max(1, _screenRect.Width);
         var height = Math.Max(1, _screenRect.Height);
         var key = string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{width}x{height}|{_scale:F3}|{_state.ValueText ?? SpeedFormat.Speed(_state.Value)}|{_state.ValueMuted}|{_state.Secondary?.Live.Number}|{_state.Secondary?.Today.Number}|{_state.Secondary?.Live.Dim}|{_state.Secondary?.Today.Dim}|{_renderer.SecondaryCell:F2}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}|{_state.Traffic?.Rx?.Text}|{_state.Traffic?.Tx?.Text}|{_state.Traffic?.Bits}");
+            $"{width}x{height}|{_scale:F3}|{_state.ValueText ?? SpeedFormat.Speed(_state.Value)}|{_state.ValueMuted}|{_state.Secondary?.Live.Number}|{_state.Secondary?.Today.Number}|{_state.Secondary?.Live.Dim}|{_state.Secondary?.Today.Dim}|{_state.Secondary?.Compact}|{_state.HideUnit}|{_renderer.PrimaryCell:F2}|{_renderer.SecondaryCell:F2}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}|{_state.Traffic?.Rx?.Text}|{_state.Traffic?.Tx?.Text}|{_state.Traffic?.Bits}");
         if (!force && key == _renderKey)
         {
             beforePresent?.Invoke();
@@ -572,7 +598,18 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
         _presentFailures = 0;
         _renderKey = key;
+        PresentCount++;
         return true;
+    }
+
+    internal int PresentCount { get; private set; }
+    internal bool IsAnimating => _animation.IsEnabled;
+
+    private void EndHover()
+    {
+        if (!_hovered && !_tracking) return;
+        _hovered = _tracking = _pressed = false;
+        _signal(new TaskbarSignal.Hover(false, _screenRect));
     }
 
     /// <summary>Follows the taskbar and notification area as the shell moves or resizes them (icons added, auto-hide).</summary>
@@ -610,6 +647,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
 
     private void Teardown()
     {
+        EndHover();
         _animation.Stop();
         if (_foregroundHook != 0)
         {
@@ -709,6 +747,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
                 _pressed = false;
                 Render();
                 _signal(new TaskbarSignal.Hover(false, CurrentBounds()));
+                QueueEnsure();
                 return 0;
             case WM.LBUTTONDOWN:
                 _pressed = true;

@@ -187,8 +187,8 @@ public class CostDisplayTests
                 Source(SourceKind.Codex, 100, new LiveCost(2000, 50), new CostTally(128_400_000, 1)),
             ],
         };
-        var both = AppSettings.Default with { BarSecondary = true };
-        Assert.Null(BarSecondary.From(AppSettings.Default, snapshot, display));
+        var both = AppSettings.Default with { BarSecondary = true, BarCompact = false };
+        Assert.Null(BarSecondary.From(AppSettings.Default with { BarCompact = false }, snapshot, display));
         Assert.Null(BarSecondary.From(both with { BarMode = BarDisplayMode.GlyphOnly }, snapshot, display));
         Assert.Null(BarSecondary.From(both with { Cost = CostSettings.Default with { LiveUnit = LiveUnit.Cost } }, snapshot, display));
 

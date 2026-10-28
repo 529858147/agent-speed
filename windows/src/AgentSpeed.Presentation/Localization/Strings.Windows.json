@@ -312,6 +312,150 @@
     "en": "Dashboard",
     "ja": "ダッシュボード"
   },
+  "win.taskbar.compact": {
+    "en": "Compact",
+    "zh-Hans": "简洁",
+    "zh-Hant": "簡潔",
+    "ja": "シンプル"
+  },
+  "win.taskbar.compactHint": {
+    "en": "Speed and today's estimated cost; hover for the live rate and scope.",
+    "zh-Hans": "显示速度和今日估算费用；悬停查看实时费用和统计范围。",
+    "zh-Hant": "顯示速度和今日估算費用；停留以查看即時費用與統計範圍。",
+    "ja": "速度と今日の推定費用を表示。ホバーで毎秒の費用と集計範囲を確認できます。"
+  },
+  "win.taskbar.reading": {
+    "en": "Reading",
+    "zh-Hans": "读取中",
+    "zh-Hant": "讀取中",
+    "ja": "読み込み中"
+  },
+  "win.taskbar.waiting": {
+    "en": "Waiting",
+    "zh-Hans": "等待响应",
+    "zh-Hant": "等待回應",
+    "ja": "応答待ち"
+  },
+  "win.taskbar.tools": {
+    "en": "Tools",
+    "zh-Hans": "工具中",
+    "zh-Hant": "工具中",
+    "ja": "ツール実行中"
+  },
+  "win.taskbar.reserve": {
+    "en": "Reading",
+    "zh-Hans": "等待响应",
+    "zh-Hant": "等待回應",
+    "ja": "ツール実行中"
+  },
+  "win.taskbar.unavailable": {
+    "en": "Unavailable",
+    "zh-Hans": "暂不可读",
+    "zh-Hant": "暫不可讀",
+    "ja": "取得不可"
+  },
+  "win.taskbar.noSources": {
+    "en": "No readable enabled source was found. Today's amount retains recorded usage.",
+    "zh-Hans": "未发现可读取的已启用来源。今日金额保留已记录的用量汇总。",
+    "zh-Hant": "未發現可讀取的已啟用來源。今日金額保留已記錄的用量彙總。",
+    "ja": "有効なソースを読み取れません。今日の費用は記録済みの使用量です。"
+  },
+  "win.taskbar.output": {
+    "en": "Output speed",
+    "zh-Hans": "输出速度",
+    "zh-Hant": "輸出速度",
+    "ja": "出力速度"
+  },
+  "win.taskbar.total": {
+    "en": "Input + output",
+    "zh-Hans": "输入＋输出",
+    "zh-Hant": "輸入＋輸出",
+    "ja": "入力＋出力"
+  },
+  "win.taskbar.window": {
+    "en": "Trailing 3 seconds",
+    "zh-Hans": "近 3 秒",
+    "zh-Hant": "近 3 秒",
+    "ja": "直近 3 秒"
+  },
+  "win.taskbar.estimated": {
+    "en": "Includes estimates",
+    "zh-Hans": "含估算",
+    "zh-Hant": "含估算",
+    "ja": "推定を含む"
+  },
+  "win.taskbar.activity": {
+    "en": "Generating %d · Tools %d",
+    "zh-Hans": "生成中 %d · 工具中 %d",
+    "zh-Hant": "生成中 %d · 工具中 %d",
+    "ja": "生成中 %d · ツール %d"
+  },
+  "win.taskbar.today": {
+    "en": "Today's estimate",
+    "zh-Hans": "今日估算",
+    "zh-Hant": "今日估算",
+    "ja": "今日の推定費用"
+  },
+  "win.taskbar.live": {
+    "en": "Live estimate",
+    "zh-Hans": "实时估算",
+    "zh-Hant": "即時估算",
+    "ja": "毎秒の推定費用"
+  },
+  "win.taskbar.today.spoken": {
+    "en": "Today's API-equivalent estimate: %@",
+    "zh-Hans": "今日 API 等值估算：%@",
+    "zh-Hant": "今日 API 等值估算：%@",
+    "ja": "今日の API 換算費用：%@"
+  },
+  "win.taskbar.speedScope": {
+    "en": "Speed: all enabled sources",
+    "zh-Hans": "速度范围：全部已启用来源",
+    "zh-Hant": "速度範圍：全部已啟用來源",
+    "ja": "速度：有効な全ソース"
+  },
+  "win.taskbar.costScope": {
+    "en": "Today's cost includes: %@",
+    "zh-Hans": "今日费用计入：%@",
+    "zh-Hant": "今日費用計入：%@",
+    "ja": "今日の費用に含むソース：%@"
+  },
+  "win.taskbar.noCostSources": {
+    "en": "none with billable usage today",
+    "zh-Hans": "暂无计入费用的用量",
+    "zh-Hant": "暫無計入費用的用量",
+    "ja": "今日の費用対象の使用量なし"
+  },
+  "win.taskbar.subscriptions.none": {
+    "en": "Subscriptions: no sources marked",
+    "zh-Hans": "订阅来源：尚未标记",
+    "zh-Hant": "訂閱來源：尚未標記",
+    "ja": "サブスク：指定なし"
+  },
+  "win.taskbar.subscriptions.included": {
+    "en": "Subscriptions included: %@",
+    "zh-Hans": "订阅来源已计入：%@",
+    "zh-Hant": "訂閱來源已計入：%@",
+    "ja": "サブスクを含む：%@"
+  },
+  "win.taskbar.subscriptions.excluded": {
+    "en": "Subscriptions excluded: %@",
+    "zh-Hans": "订阅来源未计入：%@",
+    "zh-Hant": "訂閱來源未計入：%@",
+    "ja": "サブスクを除外：%@"
+  },
+  "win.taskbar.costHint": {
+    "en": "Estimated at API list prices, not your actual bill.",
+    "zh-Hans": "按 API 标价折算，非实际账单。",
+    "zh-Hant": "按 API 牌價折算，非實際帳單。",
+    "ja": "API 定価での推定値です。実際の請求額ではありません。"
+  },
+  "win.taskbar.actions": {
+    "en": "Left: dashboard · Right: menu",
+    "zh-Hans": "左键：仪表盘 · 右键：快捷菜单",
+    "zh-Hant": "左鍵：儀表板 · 右鍵：快捷選單",
+    "ja": "左クリック：ダッシュボード · 右クリック：メニュー"
+  },
   "win.quota.setting": {
     "en": "Codex quota on orbs",
     "zh-Hans": "悬浮球显示 Codex 额度",

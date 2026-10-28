@@ -41,9 +41,11 @@
                 <ComboBoxItem Content="{loc:Loc settings.bar.traffic.agents}" />
             </ComboBox>
         </controls:SettingsCard>
-        <controls:SettingsCard Header="{loc:Loc settings.liveUnit}" Icon="&#xEC4A;" Description="{loc:Loc settings.liveUnit.hint}">
+        <controls:SettingsCard Header="{loc:Loc settings.liveUnit}" Icon="&#xEC4A;" Description="{loc:Loc win.taskbar.compactHint}">
             <Border Style="{StaticResource SegmentedContainer}">
                 <StackPanel Orientation="Horizontal">
+                    <RadioButton Style="{StaticResource SegmentedItem}" GroupName="TaskbarLiveUnit" MinWidth="64"
+                                 Content="{loc:Loc win.taskbar.compact}" IsChecked="{Binding Cost.BarValueCompact, Mode=TwoWay}" />
                     <!-- DESIGN 3: tok/s, money, or tok/s with the money rate after it -->
                     <RadioButton Style="{StaticResource SegmentedItem}" GroupName="TaskbarLiveUnit" MinWidth="64"
                                  Content="{loc:Loc settings.liveUnit.tokens}" IsChecked="{Binding Cost.BarValueTokens, Mode=TwoWay}" />
