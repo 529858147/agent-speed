@@ -23,7 +23,7 @@ FORGET_AFTER = 3
 MAX_BYTES_PER_SECOND = 12_500_000_000
 SCRIPT_HOSTS = {"node", "nodejs", "bun", "deno"}
 SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
-           "workbuddyAi", "zcode", "kimi", "grokBuild")
+           "workbuddyAi", "zcode", "kimi", "grokBuild", "pi")
 
 
 # ---------------------------------------------------------------------------------------------------- formatting
@@ -181,6 +181,8 @@ def match_source(env: Env, proc: dict, ancestors: list[dict]) -> str | None:
         return "kimi"
     if name in ("grok", "grok-build", "xai-grok-pager"):
         return "grokBuild"
+    if name == "pi" or "/@earendil-works/pi-coding-agent/" in script or "/@mariozechner/pi-coding-agent/" in script:
+        return "pi"
     edition = WORKBUDDY_APPS[env.platform].get(proc.get("bundle") if env.platform == "macos" else name)
     if edition and any(WORKBUDDY_CLI in env.norm(a) for a in args[1:]):
         return edition

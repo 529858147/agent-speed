@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code, Claude Desktop, DSH (DeepSeek Harness), OpenCode, Gemini CLI, omp, Antigravity, WorkBuddy, WorkBuddy AI, ZCode, Kimi Code CLI and Grok Build — calm when idle, on fire at the redline.
+**Feel your AI agents run.** A native racing instrument for the live token speed of Codex, Claude Code, Claude Desktop, DSH (DeepSeek Harness), OpenCode, Gemini CLI, omp, Antigravity, WorkBuddy, WorkBuddy AI, ZCode, Kimi Code CLI, Grok Build and pi — calm when idle, on fire at the redline.
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -94,6 +94,7 @@ Agent Speed reads the transcripts your agents already write on your disk:
 | ZCode | `~/.zcode/cli/db/db.sqlite` (or `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`) |
 | Kimi Code CLI (TypeScript v2) | `~/.kimi-code/sessions` (or `$KIMI_CODE_HOME/sessions`) |
 | Grok Build | `~/.grok/sessions` (or `$GROK_HOME/sessions`) |
+| pi | `~/.pi/agent/sessions` (or `$PI_CODING_AGENT_SESSION_DIR`; `$PI_CODING_AGENT_DIR` moves the `agent` folder) |
 
 Grok Build supplies native per-turn model batches: token counts, API duration and the actual number of model calls enter the same speed engine. Child usage is already included in its parent and is counted once; child activity remains visible. Its individual-call timeline is not stored, so intra-batch concurrency cannot be reconstructed.
 

@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop、DSH（DeepSeek Harness）、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy、WorkBuddy AI、ZCode、Kimi Code CLI 与 Grok Build 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
+**看见你的 AI agent 全速奔跑。** 为 Codex、Claude Code、Claude Desktop、DSH（DeepSeek Harness）、OpenCode、Gemini CLI、omp、Antigravity、WorkBuddy、WorkBuddy AI、ZCode、Kimi Code CLI、Grok Build 与 pi 打造的原生实时 token 速度仪表——空闲时安静，冲到红线时全面燃烧。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -89,6 +89,7 @@ Agent Speed 只读取 agent 本来就写在你电脑上的记录：
 | ZCode | `~/.zcode/cli/db/db.sqlite`（或 `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`） |
 | Kimi Code CLI（TypeScript v2） | `~/.kimi-code/sessions`（或 `$KIMI_CODE_HOME/sessions`） |
 | Grok Build | `~/.grok/sessions`（或 `$GROK_HOME/sessions`） |
+| pi | `~/.pi/agent/sessions`（或 `$PI_CODING_AGENT_SESSION_DIR`；`$PI_CODING_AGENT_DIR` 可移动 `agent` 文件夹） |
 
 Grok Build 提供每回合、每模型的原生批次记录：Token、API 耗时与实际调用数交给同一套速度引擎计算。子 agent 用量已合并在父会话中，因此只计算一次，仍会显示子 agent 的活动状态；上游未保存每次调用的独立时间线，无法重建批次内的并行速度。
 

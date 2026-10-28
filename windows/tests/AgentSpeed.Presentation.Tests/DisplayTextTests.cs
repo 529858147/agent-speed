@@ -163,6 +163,7 @@ public class DisplayTextTests
     [InlineData(SourceKind.ZCode, "source.zcode", "ZCode")]
     [InlineData(SourceKind.Kimi, "source.kimi", "Kimi Code CLI")]
     [InlineData(SourceKind.GrokBuild, "source.grokBuild", "Grok Build")]
+    [InlineData(SourceKind.Pi, "source.pi", "pi")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));

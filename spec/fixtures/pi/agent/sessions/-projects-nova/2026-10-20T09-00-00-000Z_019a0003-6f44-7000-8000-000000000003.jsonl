@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"019a0003-6f44-7000-8000-000000000003","timestamp":"2026-10-20T09:00:00.000Z","cwd":"/projects/nova"}
+{"type":"message","parentId":null,"timestamp":"2026-10-20T09:00:05.000Z","message":{"role":"user","content":"go","timestamp":1792486805000},"id":"d4aa0001"}
+{"type":"message","parentId":null,"timestamp":"2026-10-20T09:00:15.000Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"api":"anthropic-messages","provider":"anthropic","model":"claude-opus-4-5","timestamp":1792486805500,"usage":{"input":800,"output":120,"cacheRead":0,"cacheWrite":0,"totalTokens":920},"stopReason":"stop","durationMs":9500},"id":"d4ab0001"}

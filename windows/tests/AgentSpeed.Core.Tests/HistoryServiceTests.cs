@@ -137,7 +137,8 @@ public sealed class HistoryServiceTests : IDisposable
         WorkBuddyAiRoot: _temp.Combine("home", ".workbuddy-ai"),
         ZCodeRoot: _temp.Combine("zcode"),
         KimiRoot: _temp.Combine("kimi", "sessions"),
-        GrokBuildRoot: _temp.Combine("grok", "sessions"));
+        GrokBuildRoot: _temp.Combine("grok", "sessions"),
+        PiRoot: _temp.Combine("pi", "sessions"));
 
     private string WriteClaude(string relative, long ms, string id, long output) =>
         _temp.WriteFile("claude/projects/" + relative,

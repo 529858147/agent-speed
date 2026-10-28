@@ -33,6 +33,9 @@ internal enum TranscriptNaming
     ZCodeDatabase,
     KimiSession,
     GrokBuildSession,
+
+    /// <summary><c>&lt;bucket&gt;/*.jsonl</c> and <c>&lt;bucket&gt;/&lt;name&gt;/*/*/session.jsonl</c> (pi, METRICS 4.13).</summary>
+    PiSession,
 }
 
 /// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
@@ -56,6 +59,7 @@ internal static class TranscriptDiscovery
             TranscriptNaming.KimiSession => fileName.SequenceEqual("wire.jsonl"),
             TranscriptNaming.GrokBuildSession => fileName.SequenceEqual("updates.jsonl"),
             TranscriptNaming.OmpSession => Omp.OmpDiscovery.IsSessionFileName(fileName),
+            TranscriptNaming.PiSession => Pi.PiDiscovery.IsTranscriptName(fileName),
             TranscriptNaming.AntigravityDatabase => Antigravity.AntigravityPaths.IsDatabaseName(fileName),
             TranscriptNaming.WorkBuddySession => WorkBuddy.WorkBuddyDiscovery.IsSessionFileName(fileName),
             _ => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
@@ -102,6 +106,11 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.OmpSession)
         {
             return Omp.OmpDiscovery.Enumerate(root, limit, cancellationToken);
+        }
+
+        if (naming == TranscriptNaming.PiSession)
+        {
+            return Pi.PiDiscovery.Enumerate(root, limit, cancellationToken);
         }
 
         if (naming == TranscriptNaming.AntigravityDatabase)
@@ -184,6 +193,11 @@ internal static class TranscriptDiscovery
         if (naming == TranscriptNaming.OmpSession)
         {
             return Omp.OmpDiscovery.IsSessionPath(root, path);
+        }
+
+        if (naming == TranscriptNaming.PiSession)
+        {
+            return Pi.PiDiscovery.IsSessionPath(root, path);
         }
 
         if (naming == TranscriptNaming.AntigravityDatabase)

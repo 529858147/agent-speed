@@ -4602,6 +4602,12 @@
     "en": "Grok Build",
     "ja": "Grok Build"
   },
+  "source.pi": {
+    "zh-Hant": "pi",
+    "zh-Hans": "pi",
+    "en": "pi",
+    "ja": "pi"
+  },
   "settings.sources.zcodeHint": {
     "zh-Hant": "讀取 ZCode 的本機工作階段資料庫；可選擇資料目錄或包含 db.sqlite 的資料夾。",
     "zh-Hans": "读取 ZCode 的本地会话数据库；可选择数据目录或包含 db.sqlite 的文件夹。",
@@ -4619,6 +4625,12 @@
     "zh-Hans": "读取 Grok Build 的 sessions 文件夹，包括各会话的更新记录。",
     "en": "Reads Grok Build’s sessions folder and its session update records.",
     "ja": "Grok Build の sessions フォルダと各セッションの更新記録を読み取ります。"
+  },
+  "settings.sources.piHint": {
+    "zh-Hant": "讀取 pi 的 sessions 資料夾，通常是 ~/.pi/agent/sessions；子 agent 的紀錄也包含在內。",
+    "zh-Hans": "读取 pi 的 sessions 文件夹，通常是 ~/.pi/agent/sessions；子 agent 的记录也包含在内。",
+    "en": "Reads pi’s sessions folder, usually ~/.pi/agent/sessions, including subagent runs.",
+    "ja": "pi の sessions フォルダを読み取ります。通常は ~/.pi/agent/sessions で、サブエージェントの記録も含まれます。"
   },
   "mode.label": {
     "zh-Hant": "執行模式",

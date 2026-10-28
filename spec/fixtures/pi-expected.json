@@ -1,0 +1,383 @@
+{
+  "_comment": "pi: the folder `pi/agent` plays `~/.pi/agent`, so the only automatic root is pi/agent/sessions. Session A carries one measured response of every shape (durationMs, entry-timestamp fallback, error, aborted, a missing and a non-string stopReason, a zero-usage placeholder, a durationMs of 0), three side usages that count in totals only plus a tool result with usage, entries that never affect measurement, one entry without an id and two malformed lines. Session B is a clone: the copied entry older than the header minus 2 s is skipped by the copy cutoff, the copied entry inside that window is deduplicated by key, and only B's own response counts. Session C is an extension run sub-session; it attaches to A (`parentFile`) and counts as its own agent. `tailReads` start reading at byte `offset` (after two lines), so the header must still be read first. This file is separate from parser-expected.json because only the Windows tests read it until the macOS reader exists (METRICS 4.13).",
+  "order": [
+    "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_019a0003-6f44-7000-8000-000000000003.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-20-00-000Z_019a0002-6f44-7000-8000-000000000002.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl"
+  ],
+  "mtimes": {
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl": 1792491240000,
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-20-00-000Z_019a0002-6f44-7000-8000-000000000002.jsonl": 1792491610000,
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl": 1792492215000,
+    "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_019a0003-6f44-7000-8000-000000000003.jsonl": 1792486815000,
+    "pi/agent/sessions/stray.jsonl": 1792492800000,
+    "pi/agent/sessions/-projects-pulsar/ollama.json": 1792492801000,
+    "pi/agent/sessions/-projects-pulsar/notes/draft.jsonl": 1792492802000,
+    "pi/agent/sessions/.hidden/session.jsonl": 1792492803000,
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl.bak": 1792492804000
+  },
+  "discover": [
+    "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_019a0003-6f44-7000-8000-000000000003.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl",
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-20-00-000Z_019a0002-6f44-7000-8000-000000000002.jsonl"
+  ],
+  "files": {
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl": {
+      "source": "pi",
+      "project": "pulsar",
+      "model": "claude-opus-4-5",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "generating",
+      "inFlightStartMs": 1792491240000,
+      "lastLineMs": 1792491240000,
+      "malformedLines": 2,
+      "responses": [
+        {
+          "key": "pi:a1ab0001:1792491010500",
+          "startMs": 1792491010500,
+          "endMs": 1792491020000,
+          "input": 1150,
+          "cachedInput": 100,
+          "cacheWriteInput": 50,
+          "cacheWrite1hInput": 0,
+          "output": 200,
+          "reasoning": 30,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0002:1792491021500",
+          "startMs": 1792491021500,
+          "endMs": 1792491030000,
+          "input": 1200,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 300,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0003:1792491035000",
+          "startMs": 1792491035000,
+          "endMs": 1792491040000,
+          "input": 1300,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 150,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0004:1792491045000",
+          "startMs": null,
+          "endMs": 1792491050000,
+          "input": 1400,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 10,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0005:1792491055000",
+          "startMs": null,
+          "endMs": 1792491060000,
+          "input": 1450,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 5,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0006:1792491065000",
+          "startMs": 1792491065000,
+          "endMs": 1792491065000,
+          "input": 1500,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 400,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0007:1792491075000",
+          "startMs": null,
+          "endMs": 1792491080000,
+          "input": 1600,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 20,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ab0008:1792491085000",
+          "startMs": null,
+          "endMs": 1792491090000,
+          "input": 1650,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 25,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ad0001:1792491110000",
+          "startMs": null,
+          "endMs": 1792491110000,
+          "input": 5000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 0,
+          "reasoning": 0,
+          "model": "claude-haiku-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ad0002:1792491120000",
+          "startMs": null,
+          "endMs": 1792491120000,
+          "input": 2000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 300,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ad0003:1792491130000",
+          "startMs": null,
+          "endMs": 1792491130000,
+          "input": 3000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 200,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi:a1ac0004:1792491140000",
+          "startMs": null,
+          "endMs": 1792491140000,
+          "input": 700,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 50,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": null,
+          "fast": false,
+          "final": true
+        },
+        {
+          "key": "pi::1792491205000",
+          "startMs": 1792491205000,
+          "endMs": 1792491210000,
+          "input": 1700,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 90,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-20-00-000Z_019a0002-6f44-7000-8000-000000000002.jsonl": {
+      "source": "pi",
+      "project": "pulsar",
+      "model": "claude-opus-4-5",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792491610000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "pi:b2ab0001:1792491605000",
+          "startMs": 1792491605000,
+          "endMs": 1792491610000,
+          "input": 2000,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 120,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl": {
+      "source": "pi",
+      "project": "pulsar",
+      "model": "claude-opus-4-5",
+      "isSubagent": true,
+      "parentFile": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792492215000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "pi:c3ab0001:1792492205500",
+          "startMs": 1792492205500,
+          "endMs": 1792492215000,
+          "input": 900,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 250,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        }
+      ]
+    },
+    "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_019a0003-6f44-7000-8000-000000000003.jsonl": {
+      "source": "pi",
+      "project": "nova",
+      "model": "claude-opus-4-5",
+      "isSubagent": false,
+      "parentFile": null,
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792486815000,
+      "malformedLines": 0,
+      "responses": [
+        {
+          "key": "pi:d4ab0001:1792486805500",
+          "startMs": 1792486805500,
+          "endMs": 1792486815000,
+          "input": 800,
+          "cachedInput": 0,
+          "cacheWriteInput": 0,
+          "cacheWrite1hInput": 0,
+          "output": 120,
+          "reasoning": 0,
+          "model": "claude-opus-4-5",
+          "provider": "anthropic",
+          "fast": false,
+          "final": true
+        }
+      ]
+    }
+  },
+  "traces": [
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "afterLine": 4,
+      "phase": "generating",
+      "inFlightStartMs": 1792491010000
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "afterLine": 5,
+      "phase": "tools",
+      "inFlightStartMs": null
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "afterLine": 6,
+      "phase": "generating",
+      "inFlightStartMs": 1792491021000
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "afterLine": 7,
+      "phase": "idle",
+      "inFlightStartMs": null
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001.jsonl",
+      "afterLine": 27,
+      "phase": "generating",
+      "inFlightStartMs": 1792491240000
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl",
+      "afterLine": 2,
+      "phase": "idle",
+      "inFlightStartMs": null
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl",
+      "afterLine": 3,
+      "phase": "generating",
+      "inFlightStartMs": 1792492205000
+    },
+    {
+      "file": "pi/agent/sessions/-projects-pulsar/2026-10-20T10-10-00-000Z_019a0001-6f44-7000-8000-000000000001/019a0001-6f44-7000-8000-0000000000aa/run-0/session.jsonl",
+      "afterLine": 4,
+      "phase": "idle",
+      "inFlightStartMs": null
+    }
+  ],
+  "tailReads": [
+    {
+      "file": "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_019a0003-6f44-7000-8000-000000000003.jsonl",
+      "offset": 293,
+      "project": "nova",
+      "phase": "idle",
+      "inFlightStartMs": null,
+      "lastLineMs": 1792486815000,
+      "responseKeys": [
+        "pi:d4ab0001:1792486805500"
+      ]
+    }
+  ]
+}

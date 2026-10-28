@@ -63,6 +63,13 @@ public sealed class ParserFixtureTests
             expectedResponses.Select(r => r.GetProperty("key").GetString()!).ToList(),
             responses.Select(r => r.Key).ToList());
 
+        AssertResponses(expectedResponses, responses, relative, parser);
+    }
+
+    /// <summary>Every field of every expected response, in first-emission order.</summary>
+    internal static void AssertResponses(IReadOnlyList<JsonElement> expectedResponses, IReadOnlyList<ParsedResponse> responses,
+        string relative, TranscriptParser parser)
+    {
         for (var i = 0; i < expectedResponses.Count; i++)
         {
             var e = expectedResponses[i];
@@ -126,6 +133,7 @@ public sealed class ParserFixtureTests
         SourceKind.Antigravity => "antigravity",
         SourceKind.WorkBuddy => "workbuddy",
         SourceKind.WorkBuddyAi => "workbuddyAi",
+        SourceKind.Pi => "pi",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -148,6 +156,12 @@ public sealed class ParserFixtureTests
         if (relative.StartsWith("claude/", StringComparison.Ordinal))
         {
             return FeedLines(new ClaudeParser(path, deduper), content, sink, maxLines);
+        }
+
+        if (relative.StartsWith("pi/", StringComparison.Ordinal))
+        {
+            return FeedLines(new Pi.PiParser(path, deduper, Path.Combine(FixtureLocator.FixturesDirectory, "pi", "agent", "sessions")),
+                content, sink, maxLines);
         }
 
         if (relative.StartsWith("codex/", StringComparison.Ordinal))

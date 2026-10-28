@@ -209,6 +209,7 @@ public static class ReportBody
         SourceKind.ZCode => "zcode",
         SourceKind.Kimi => "kimi",
         SourceKind.GrokBuild => "grokBuild",
+        SourceKind.Pi => "pi",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

@@ -69,6 +69,7 @@ public static class DisplayText
         SourceKind.ZCode => "source.zcode",
         SourceKind.Kimi => "source.kimi",
         SourceKind.GrokBuild => "source.grokBuild",
+        SourceKind.Pi => "source.pi",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 

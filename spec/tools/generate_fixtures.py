@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import antigravity_fixtures  # noqa: E402
 import gemini_fixtures  # noqa: E402
 import omp_fixtures  # noqa: E402
+import pi_fixtures  # noqa: E402
 import workbuddy_fixtures  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
@@ -501,6 +502,13 @@ assert min(workbuddy["mtimes"].values()) > max(mtimes.values())
 order += workbuddy["order"]
 files.update(workbuddy["files"])
 mtimes.update(workbuddy["mtimes"])
+
+# --- pi: its own expectations file ----------------------------------------------
+# Deliberately not merged into parser-expected.json: that file is read by both platforms' conformance tests and only
+# the Windows reader exists so far (METRICS 4.13). The module writes spec/fixtures/pi and spec/fixtures/pi-expected.json
+# itself, so it can also run alone (`python3 spec/tools/pi_fixtures.py spec/fixtures`); `discover`, `traces` and
+# `tailReads` work as the omp ones.
+pi_fixtures.write_fixtures(ROOT)
 
 with open(os.path.join(ROOT, "parser-expected.json"), "w", encoding="utf-8") as f:
     json.dump({"_comment": "Process files in `order` with one shared dedupe set, then the OpenCode database, then the "

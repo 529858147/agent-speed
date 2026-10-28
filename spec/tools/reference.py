@@ -202,6 +202,11 @@ class FileState:
             self.source_decided = True
             rel = os.path.relpath(path, root) if root else path
             self.is_subagent = len([p for p in re.split(r"[\\/]", rel) if p]) >= 3
+        # pi: the same header-first read and pending tool calls as omp, three levels down for a sub-agent run
+        if source == "pi":
+            self.source_decided = True
+            rel = os.path.relpath(path, root) if root else path
+            self.is_subagent = len([p for p in re.split(r"[\\/]", rel) if p]) >= 3
         # workbuddy
         self.cwd = None
         self.open_calls = OrderedDict()
@@ -520,10 +525,12 @@ def zst_stream_lines(path):
 def process_file(state, dedupe, start_offset=0, max_lines=None):
     if state.source == "gemini" and state.path.endswith(".json"):
         return gemini_legacy(state, dedupe)
-    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record, "omp": omp_line,
+    handler = {"codex": codex_line, "deepseek": dsh_event, "gemini": gemini_record, "omp": omp_line, "pi": pi_line,
                "workbuddy": workbuddy_line, "workbuddyAi": workbuddy_line}.get(state.source, claude_line)
     if state.source == "omp" and start_offset > 0:
         omp_read_header(state, dedupe)
+    if state.source == "pi" and start_offset > 0:
+        pi_read_header(state, dedupe)
     if state.path.endswith(".zstd"):
         lines = zstd_lines(state.path, start_offset)
     elif state.path.endswith(".jsonl.zst"):
@@ -1146,6 +1153,155 @@ def discover_omp(root, limit=20_000):
         for name in filenames:
             path = os.path.join(dirpath, name)
             if name.endswith(".jsonl") and not name.startswith(".") and not os.path.islink(path):
+                found.append(path)
+    found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return found[:limit]
+
+
+# ----------------------------------------------------------------------------- pi (METRICS 4.13)
+
+PI_COPY_MS = 2000
+
+
+def pi_touch(state, ts):
+    state.last_line = ts if state.last_line is None else max(state.last_line, ts)
+
+
+def pi_tokens(usage):
+    cr, cw = num(usage.get("cacheRead")), num(usage.get("cacheWrite"))
+    return dict(input=cap(num(usage.get("input")) + cr + cw), cachedInput=cr, cacheWriteInput=cw,
+                output=num(usage.get("output")), reasoning=num(usage.get("reasoning")),
+                cacheWrite1hInput=num(usage.get("cacheWrite1h")))
+
+
+def pi_has_usage(usage):
+    return any(num(usage.get(f)) > 0 for f in ("input", "output", "cacheRead", "cacheWrite"))
+
+
+def pi_guard(msg):
+    return (all(isinstance(msg.get(f), str) for f in ("model", "provider", "api"))
+            and isinstance(msg.get("usage"), dict))
+
+
+def pi_entry_id(obj):
+    return obj.get("id") if isinstance(obj.get("id"), str) else ""
+
+
+def pi_line(state, obj, dedupe):
+    """One line of a pi session file (METRICS 4.13)."""
+    kind = obj.get("type")
+    if kind == "session":
+        if state.header_seen:
+            return
+        state.header_seen = True
+        state.file_created = parse_ts(obj.get("timestamp"))
+        state.project = basename(obj.get("cwd"))
+        if state.file_created is not None:
+            pi_touch(state, state.file_created)
+        return
+    ts = parse_ts(obj.get("timestamp"))
+    if not state.header_seen or ts is None or (state.file_created is not None and ts < state.file_created - PI_COPY_MS):
+        return
+    pi_touch(state, ts)
+    if kind == "message" and isinstance(obj.get("message"), dict):
+        msg = obj["message"]
+        role = msg.get("role")
+        if role == "user":
+            state.phase, state.in_flight = "generating", ts
+            state.pending_calls.clear()
+        elif role == "assistant":
+            pi_assistant(state, pi_entry_id(obj), msg, ts, dedupe)
+        elif role == "toolResult":
+            state.pending_calls.discard(msg.get("toolCallId"))
+            if isinstance(msg.get("usage"), dict) and pi_has_usage(msg["usage"]):
+                pi_side_usage(state, pi_entry_id(obj), ts, msg, dedupe)
+            if state.phase == "tools" and not state.pending_calls:
+                state.phase, state.in_flight = "generating", ts
+    elif kind in ("usage", "compaction", "branch_summary") and isinstance(obj.get("usage"), dict) \
+            and pi_has_usage(obj["usage"]):
+        pi_side_usage(state, pi_entry_id(obj), ts, obj, dedupe)
+
+
+def pi_assistant(state, entry_id, msg, ts, dedupe):
+    if not pi_guard(msg):
+        return
+    started = trunc64(msg["timestamp"]) if finite(msg.get("timestamp")) and msg["timestamp"] > 0 else None
+    key = "pi:%s:%d" % (entry_id, started if started is not None else ts)
+    if dedupe.owner(key) not in (None, state.path):
+        return
+    stop = msg.get("stopReason") if isinstance(msg.get("stopReason"), str) else "aborted"
+    duration = msg.get("durationMs")
+    end = min(started + trunc64(duration), INT64_MAX) if started is not None and finite(duration) and duration >= 0 else ts
+    if pi_has_usage(msg["usage"]):
+        dedupe.claim(key, state.path)
+        emit(state, key, None if stop in ("error", "aborted") else started, end, pi_tokens(msg["usage"]),
+             msg["model"], provider=msg["provider"] or None)
+        state.model = msg["model"]
+    content = msg.get("content") if isinstance(msg.get("content"), list) else []
+    calls = {b["id"] for b in content if isinstance(b, dict) and b.get("type") == "toolCall"
+             and isinstance(b.get("id"), str)}
+    if stop in ("error", "aborted"):
+        state.phase, state.in_flight = "idle", None
+        state.pending_calls.clear()
+    elif calls:
+        state.phase, state.in_flight, state.pending_calls = "tools", None, calls
+    else:
+        state.phase, state.in_flight = "idle", None
+
+
+def pi_side_usage(state, entry_id, ts, obj, dedupe):
+    """usage, compaction, branch_summary and tool-result usage: totals only, never the agent's model (METRICS 4.13)."""
+    key = "pi:%s:%d" % (entry_id, ts)
+    if dedupe.owner(key) not in (None, state.path):
+        return
+    dedupe.claim(key, state.path)
+    model = obj.get("model") if isinstance(obj.get("model"), str) else state.model
+    provider = obj.get("provider") if isinstance(obj.get("provider"), str) else None
+    emit(state, key, None, ts, pi_tokens(obj["usage"]), model, provider=provider or None)
+
+
+def pi_read_header(state, dedupe):
+    """Reading that starts mid-file first takes the header from the first two lines (METRICS 4.13)."""
+    with open(state.path, "rb") as f:
+        for _ in range(2):
+            raw = f.readline(MAX_LINE)
+            try:
+                obj = loads(raw)
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                continue
+            if isinstance(obj, dict) and obj.get("type") == "session":
+                pi_line(state, obj, dedupe)
+                return
+
+
+def pi_roots(env=None, platform=None, home=None):
+    """The automatic pi root (METRICS 2, 4.13): $PI_CODING_AGENT_SESSION_DIR, else <agent dir>/sessions."""
+    env = os.environ if env is None else env
+    home = home or os.path.expanduser("~")
+    if env.get("PI_CODING_AGENT_SESSION_DIR"):
+        return [env["PI_CODING_AGENT_SESSION_DIR"]]
+    agent = env.get("PI_CODING_AGENT_DIR") or os.path.join(home, ".pi", "agent")
+    return [os.path.join(agent, "sessions")]
+
+
+def discover_pi(root, limit=20_000):
+    """Main sessions two levels below the root, sub-agent runs (`session.jsonl`) three or more (METRICS 4.13)."""
+    found = []
+    if not os.path.isdir(root):
+        return found
+    base_depth = root.rstrip(os.sep).count(os.sep)
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
+        dirnames[:] = [] if depth >= 6 else [d for d in dirnames if not d.startswith(".")
+                                              and not os.path.islink(os.path.join(dirpath, d))]
+        if depth < 1:
+            continue
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            file_depth = depth + 1
+            main = file_depth == 2 and name.endswith(".jsonl") and not name.startswith(".")
+            subagent = file_depth >= 3 and name == "session.jsonl"
+            if (main or subagent) and not os.path.islink(path):
                 found.append(path)
     found.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return found[:limit]
@@ -1934,6 +2090,16 @@ def check_fixtures():
         failures += check_traces(root, expected, om["traces"])
         failures += check_tail_reads(root, expected, om.get("tailReads", []))
         failures += check_omp_roots()
+        failures += check_pi_fixtures(root)
+    pm = expected.get("pi")
+    if pm:
+        found = sorted(os.path.relpath(p, root).replace(os.sep, "/")
+                       for r in fixture_pi_roots(root) for p in discover_pi(r))
+        if found != pm["discover"]:
+            failures.append("pi discover: expected %r got %r" % (pm["discover"], found))
+        failures += check_traces(root, expected, pm["traces"])
+        failures += check_tail_reads(root, expected, pm.get("tailReads", []))
+    failures += check_pi_roots()
     ag = expected.get("antigravity")
     if ag:
         failures += check_antigravity(root, ag, dedupe)
@@ -2072,6 +2238,40 @@ def check_omp_roots():
     return failures
 
 
+def check_pi_fixtures(root):
+    """The pi expectations live in their own file (METRICS 4.13): discover, traces and tail reads."""
+    path = os.path.join(root, "pi-expected.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        pi = json.load(f)
+    failures = []
+    found = sorted(os.path.relpath(p, root).replace(os.sep, "/")
+                   for r in fixture_pi_roots(root) for p in discover_pi(r))
+    if found != pi["discover"]:
+        failures.append("pi discover: expected %r got %r" % (pi["discover"], found))
+    failures += check_traces(root, pi, pi["traces"])
+    failures += check_tail_reads(root, pi, pi.get("tailReads", []))
+    return failures
+
+
+def check_pi_roots():
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        home = os.path.join(tmp, "home")
+        cases = [
+            ({}, "win32", [os.path.join(home, ".pi", "agent", "sessions")]),
+            ({"PI_CODING_AGENT_DIR": "/agent"}, "linux", ["/agent/sessions"]),
+            ({"PI_CODING_AGENT_SESSION_DIR": "/store"}, "darwin", ["/store"]),
+            ({"PI_CODING_AGENT_DIR": "/agent", "PI_CODING_AGENT_SESSION_DIR": "/store"}, "linux", ["/store"]),
+        ]
+        for env, platform, want in cases:
+            got = pi_roots(env, platform, home)
+            if [os.path.normpath(p) for p in got] != [os.path.normpath(p) for p in want]:
+                failures.append("pi roots %r %s: expected %r got %r" % (env, platform, want, got))
+    return failures
+
+
 def check_antigravity(root, ag, dedupe):
     failures = []
     tree = os.path.join(root, "antigravity")
@@ -2142,7 +2342,8 @@ def fixture_wb_roots(root):
 
 def fixture_source(rel):
     for prefix, source in (("codex/", "codex"), ("dsh/", "deepseek"), ("gemini/", "gemini"), ("omp/", "omp"),
-                           ("workbuddy/.workbuddy/", "workbuddy"), ("workbuddy/.workbuddy-ai/", "workbuddyAi")):
+                           ("pi/", "pi"), ("workbuddy/.workbuddy/", "workbuddy"),
+                           ("workbuddy/.workbuddy-ai/", "workbuddyAi")):
         if rel.startswith(prefix):
             return source
     return "claudeCode"
@@ -2153,11 +2354,22 @@ def fixture_omp_roots(root):
     return omp_roots({"PI_CONFIG_DIR": "omp"}, "linux", root)
 
 
+def fixture_pi_roots(root):
+    """The fixture folder `pi/agent` plays `~/.pi/agent` (pinned through `PI_CODING_AGENT_DIR`)."""
+    return pi_roots({"PI_CODING_AGENT_DIR": os.path.join(root, "pi", "agent")}, "linux", root)
+
+
 def fixture_state(root, rel):
     path = os.path.join(root, rel)
     source = fixture_source(rel)
     if source in WB_FOLDERS:
         return FileState(path, source, next((r for _, r in fixture_wb_roots(root) if path.startswith(r + os.sep)), None))
+    if source == "pi":
+        # Separator-agnostic: the fixture rels use `/` while os.path.join mixes in os.sep (Windows).
+        native = os.path.normpath(path)
+        return FileState(path, source,
+                         next((r for r in fixture_pi_roots(root) if native.startswith(os.path.normpath(r) + os.sep)),
+                              None))
     omp_root = next((r for r in fixture_omp_roots(root) if path.startswith(r + os.sep)), None)
     return FileState(path, source, omp_root if source == "omp" else None)
 
@@ -2222,9 +2434,9 @@ def discover(root, limit=20_000, deepseek=False, codex=False):
 
 
 def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
-                  limit=20_000, include_archived=False):
+                  limit=20_000, include_archived=False, pi_dirs=()):
     """(time, path, source, root) of every discovered file and Antigravity database, in startup order (5); the root
-    (omp root or WorkBuddy `projects`) decides sub-agents by folder structure."""
+    (omp or pi root, WorkBuddy `projects`) decides sub-agents by folder structure."""
     files = [(p, "codex", None) for p in discover(codex_root, limit=limit, codex=True)]
     if include_archived:
         archived = os.path.join(os.path.dirname(codex_root.rstrip(os.sep)), "archived_sessions")
@@ -2233,6 +2445,7 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
     files += [(p, "deepseek", None) for p in discover(dsh_root, limit=limit, deepseek=True)]
     files += [(p, "gemini", None) for d in gemini_dirs for p in discover_gemini(d, limit=limit)]
     files += [(p, "omp", r) for r in OrderedDict.fromkeys(omp_dirs) for p in discover_omp(r, limit=limit)]
+    files += [(p, "pi", r) for r in OrderedDict.fromkeys(pi_dirs) for p in discover_pi(r, limit=limit)]
     files += [(p, "antigravity", None) for s in ag_stores for p in discover_antigravity(s, limit=limit)]
     files += [(p, s, r) for s, r in wb_roots for p in discover_workbuddy(r, limit=limit)]
     timed = {(ag_mtime(p) if s == "antigravity" else os.path.getmtime(p), p, s, r) for p, s, r in files}
@@ -2240,12 +2453,12 @@ def startup_files(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=()
 
 
 def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), ag_stores=(), wb_roots=(),
-               table=pricing.TABLE, zcode_root=None, kimi_root=None, grok_root=None):
+               table=pricing.TABLE, zcode_root=None, kimi_root=None, grok_root=None, pi_dirs=()):
     started = time.time()
     index = pricing.Index(pricing.load(table))
     now = datetime.now().astimezone()
     today_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots)
+    files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots, pi_dirs=pi_dirs)
     dedupe = Deduper()
     rows, read_files, read_bytes = [], 0, 0
     for mtime, path, source, root in files:
@@ -2295,10 +2508,10 @@ def dump_today(codex_root, claude_root, dsh_root, gemini_dirs=(), omp_dirs=(), a
 
 
 def collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs=(), omp_dirs=(), ag_stores=(),
-                wb_roots=(), include_archived=True, zcode_root=None, kimi_root=None, grok_root=None):
+                wb_roots=(), include_archived=True, zcode_root=None, kimi_root=None, grok_root=None, pi_dirs=()):
     """Parses every log completely (METRICS 8) and returns all responses with their source and agent."""
     files = startup_files(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots,
-                          limit=10 ** 9, include_archived=include_archived)
+                          limit=10 ** 9, include_archived=include_archived, pi_dirs=pi_dirs)
     dedupe = Deduper(limit=10 ** 9)
     out = []
     for _, path, source, root in files:
@@ -2383,6 +2596,7 @@ def main():
     parser.add_argument("--grok", default=None, help="Grok Build sessions folder")
     parser.add_argument("--gemini", action="append", default=None, help="Gemini CLI tmp folder (repeatable)")
     parser.add_argument("--omp", action="append", default=None, help="omp sessions folder (repeatable)")
+    parser.add_argument("--pi", action="append", default=None, help="pi sessions folder (repeatable)")
     parser.add_argument("--antigravity", action="append", default=None,
                         help="Antigravity store folder or its conversations folder (repeatable)")
     parser.add_argument("--workbuddy", default=None, help="WorkBuddy data folder (~/.workbuddy) or its projects folder")
@@ -2402,6 +2616,7 @@ def main():
                                                 "opencode", "opencode.db")
     gemini_dirs = args.gemini or gemini_roots()
     omp_dirs = args.omp or omp_roots()
+    pi_dirs = args.pi or pi_roots()
     ag_stores = ([s for a in args.antigravity for s in antigravity_stores(setting=a)] if args.antigravity
                  else antigravity_stores())
     wb_roots = workbuddy_roots(settings={"workbuddy": args.workbuddy, "workbuddyAi": args.workbuddy_ai})
@@ -2414,7 +2629,7 @@ def main():
     if args.dump_history:
         rows = daily_history(collect_all(codex_root, claude_root, dsh_root, opencode_db, gemini_dirs, omp_dirs,
                                          ag_stores, wb_roots, zcode_root=zcode_root, kimi_root=kimi_root,
-                                         grok_root=grok_root), tz=timezone.utc if args.utc else None,
+                                         grok_root=grok_root, pi_dirs=pi_dirs), tz=timezone.utc if args.utc else None,
                              day_pricing=pricing.DayPricing([pricing.load(args.prices)]))
         for row in rows:
             print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
@@ -2423,7 +2638,7 @@ def main():
         check_fixtures()
     elif args.dump_today:
         dump_today(codex_root, claude_root, dsh_root, gemini_dirs, omp_dirs, ag_stores, wb_roots, args.prices,
-                   zcode_root, kimi_root, grok_root)
+                   zcode_root, kimi_root, grok_root, pi_dirs=pi_dirs)
     else:
         parser.print_help()
 

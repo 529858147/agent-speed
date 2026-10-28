@@ -29,6 +29,9 @@ internal enum RootFamily
     ZCode,
     Kimi,
     GrokBuild,
+
+    /// <summary>pi (upstream) sessions, METRICS 4.13.</summary>
+    Pi,
 }
 
 /// <summary>Per-family file rules: names, parser and the sources it can produce (METRICS 2 and 4).</summary>
@@ -38,7 +41,7 @@ internal static class Families
     public static readonly RootFamily[] FileFamilies =
         [
             RootFamily.Codex, RootFamily.Claude, RootFamily.DeepSeek, RootFamily.Gemini, RootFamily.Omp, RootFamily.Antigravity,
-            RootFamily.WorkBuddy, RootFamily.WorkBuddyAi, RootFamily.Kimi, RootFamily.GrokBuild,
+            RootFamily.WorkBuddy, RootFamily.WorkBuddyAi, RootFamily.Kimi, RootFamily.GrokBuild, RootFamily.Pi,
         ];
 
     public static TranscriptNaming Naming(RootFamily family) => family switch
@@ -53,6 +56,7 @@ internal static class Families
         RootFamily.ZCode => TranscriptNaming.ZCodeDatabase,
         RootFamily.Kimi => TranscriptNaming.KimiSession,
         RootFamily.GrokBuild => TranscriptNaming.GrokBuildSession,
+        RootFamily.Pi => TranscriptNaming.PiSession,
         _ => TranscriptNaming.Jsonl,
     };
 
@@ -69,6 +73,7 @@ internal static class Families
         RootFamily.WorkBuddyAi => new WorkBuddyParser(path, deduper, SourceKind.WorkBuddyAi, root),
         RootFamily.Kimi => new Kimi.KimiParser(path, deduper),
         RootFamily.GrokBuild => new GrokBuild.GrokParser(path, deduper),
+        RootFamily.Pi => new Pi.PiParser(path, deduper, root),
         _ => throw new ArgumentOutOfRangeException(nameof(family)),
     };
 
@@ -92,6 +97,7 @@ internal static class Families
         RootFamily.ZCode => enabled.Contains(SourceKind.ZCode),
         RootFamily.Kimi => enabled.Contains(SourceKind.Kimi),
         RootFamily.GrokBuild => enabled.Contains(SourceKind.GrokBuild),
+        RootFamily.Pi => enabled.Contains(SourceKind.Pi),
         _ => false,
     };
 
@@ -108,6 +114,7 @@ internal static class Families
         SourceKind.ZCode => RootFamily.ZCode,
         SourceKind.Kimi => RootFamily.Kimi,
         SourceKind.GrokBuild => RootFamily.GrokBuild,
+        SourceKind.Pi => RootFamily.Pi,
         _ => RootFamily.Claude,
     };
 }

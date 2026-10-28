@@ -161,6 +161,12 @@ public sealed class LiveMonitor : IDisposable
     public static string DefaultGrokBuildRoot => Path.Combine(
         Environment.GetEnvironmentVariable("GROK_HOME") is { Length: > 0 } home ? home : Path.Combine(UserHome, ".grok"), "sessions");
 
+    /// <summary>
+    /// The default pi <c>sessions</c> folder (<c>%PI_CODING_AGENT_SESSION_DIR%</c>, else the <c>sessions</c> folder of
+    /// <c>%PI_CODING_AGENT_DIR%</c>, else <c>~/.pi/agent/sessions</c>); METRICS 2, 4.13.
+    /// </summary>
+    public static string DefaultPiRoot => Pi.PiPaths.DefaultRoot();
+
     private static string GeminiHome
     {
         get

@@ -169,6 +169,8 @@ public sealed record AppSettings
 
     public bool GrokBuildEnabled { get; init; } = true;
 
+    public bool PiEnabled { get; init; } = true;
+
     /// <summary>Null uses the default Codex sessions folder.</summary>
     public string? CodexRoot { get; init; }
 
@@ -201,6 +203,9 @@ public sealed record AppSettings
     public string? KimiRoot { get; init; }
 
     public string? GrokBuildRoot { get; init; }
+
+    /// <summary>One pi <c>sessions</c> folder; null uses <c>PI_CODING_AGENT_SESSION_DIR</c> or the default root.</summary>
+    public string? PiRoot { get; init; }
 
     public int ChartSeconds { get; init; } = 120;
 
@@ -264,6 +269,7 @@ public sealed record AppSettings
         SourceKind.ZCode => ZCodeEnabled,
         SourceKind.Kimi => KimiEnabled,
         SourceKind.GrokBuild => GrokBuildEnabled,
+        SourceKind.Pi => PiEnabled,
         _ => false,
     };
 
@@ -297,6 +303,7 @@ public sealed record AppSettings
         SourceKind.ZCode => this with { ZCodeEnabled = enabled },
         SourceKind.Kimi => this with { KimiEnabled = enabled },
         SourceKind.GrokBuild => this with { GrokBuildEnabled = enabled },
+        SourceKind.Pi => this with { PiEnabled = enabled },
         _ => this,
     };
 
@@ -305,7 +312,7 @@ public sealed record AppSettings
         var enabled = Enum.GetValues<SourceKind>().Where(IsSourceEnabled).ToHashSet();
         return new MonitorConfiguration(enabled, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot,
             WorkBuddyRoot: WorkBuddyRoot, WorkBuddyAiRoot: WorkBuddyAiRoot,
-            ZCodeRoot: ZCodeRoot, KimiRoot: KimiRoot, GrokBuildRoot: GrokBuildRoot);
+            ZCodeRoot: ZCodeRoot, KimiRoot: KimiRoot, GrokBuildRoot: GrokBuildRoot, PiRoot: PiRoot);
     }
 
     /// <summary>The master switch; turning it on while every orb is individually hidden makes them all visible.</summary>
@@ -354,6 +361,7 @@ public sealed record AppSettings
         ZCodeRoot = CleanPath(ZCodeRoot),
         KimiRoot = CleanPath(KimiRoot),
         GrokBuildRoot = CleanPath(GrokBuildRoot),
+        PiRoot = CleanPath(PiRoot),
         HistoryWindow = WindowFrame.ValidHistory(HistoryWindow),
         ChartSeconds = ChartMath.NormalizeRange(ChartSeconds),
         HeroLastTitle = VehicleArt.NormalizeKey(HeroLastTitle),

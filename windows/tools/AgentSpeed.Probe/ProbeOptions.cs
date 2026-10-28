@@ -43,12 +43,13 @@ internal sealed record ProbeOptions(
     string? WorkBuddyAiRoot = null,
     string? ZCodeRoot = null,
     string? KimiRoot = null,
-    string? GrokBuildRoot = null)
+    string? GrokBuildRoot = null,
+    string? PiRoot = null)
 {
     public const string Usage =
         "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N | --sync-prices DIR | --sync-rates DIR CURRENCY) [--prices PATH] " +
         "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]... " +
-        "[--workbuddy PATH] [--workbuddy-ai PATH] [--zcode PATH] [--kimi PATH] [--grok-build PATH]";
+        "[--workbuddy PATH] [--workbuddy-ai PATH] [--zcode PATH] [--kimi PATH] [--grok-build PATH] [--pi PATH]";
 
     public MonitorConfiguration Configuration => new(
         new HashSet<SourceKind>(Enum.GetValues<SourceKind>()),
@@ -60,7 +61,7 @@ internal sealed record ProbeOptions(
         OmpRoots is { Count: > 0 } omp ? omp[0] : null,
         AntigravityRoots is { Count: > 0 } antigravity ? antigravity[0] : null,
         WorkBuddyRoot,
-        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot);
+        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot, PiRoot);
 
     /// <summary>Resolved roots; several <c>--gemini</c>, <c>--omp</c> or <c>--antigravity</c> folders are all read (like the reference).</summary>
     public SourceLocations Locations
@@ -122,7 +123,7 @@ internal sealed record ProbeOptions(
         var seconds = 0;
         var utc = false;
         string? codex = null, claude = null, dsh = null, opencode = null, store = null, prices = null, sync = null, currency = null;
-        string? workBuddy = null, workBuddyAi = null, zcode = null, kimi = null, grokBuild = null;
+        string? workBuddy = null, workBuddyAi = null, zcode = null, kimi = null, grokBuild = null, pi = null;
         long? since = null;
         var gemini = new List<string>();
         var omp = new List<string>();
@@ -181,6 +182,9 @@ internal sealed record ProbeOptions(
                 case "--grok-build" when i + 1 < args.Length:
                     grokBuild = args[++i];
                     break;
+                case "--pi" when i + 1 < args.Length:
+                    pi = args[++i];
+                    break;
                 case "--store" when i + 1 < args.Length:
                     store = args[++i];
                     break;
@@ -214,6 +218,6 @@ internal sealed record ProbeOptions(
 
         return new ProbeOptions(
             mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity, prices, sync, currency,
-            workBuddy, workBuddyAi, zcode, kimi, grokBuild);
+            workBuddy, workBuddyAi, zcode, kimi, grokBuild, pi);
     }
 }

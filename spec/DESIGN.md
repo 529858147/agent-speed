@@ -291,8 +291,14 @@ White-hot core for highlights: `#FFF7D6`. With overdrive `o > 0`, highlights ble
 | Antigravity | `#EC4899` pink |
 | WorkBuddy | `#11A68B` jade |
 | WorkBuddy AI | `#007AB4` ocean |
+| pi | `#A855F7` violet |
 
 Pink is `#EC4899`, not the lighter `#F472B6` (too close to coral and lilac); lime is `#84CC16`, not the lighter `#A3E635`, which nearly vanishes on light backgrounds.
+
+Violet is pi's own default-theme accent hue (`okhsl(295 50% 67%)` in the packaged `dark.json`), taken deeper for the
+same reason WorkBuddy's teal is: at the accent's own lightness it sits too close to lilac. `#A855F7` is 0.14 from its
+nearest neighbour (DeepSeek blue) and 0.15 from lilac, well inside the 0.12 rule below, and reads on both appearances
+(contrast against `#1E1E1E`: 4.2; against white: 4.0).
 
 The two WorkBuddy editions share one app icon, teal-green (`#0EC8A8` → `#05C890`), which is nearly Codex mint (OKLab
 distance about 0.04; the closest existing pair, coral and amber, is 0.11 apart). So both take a darker member of that teal family,

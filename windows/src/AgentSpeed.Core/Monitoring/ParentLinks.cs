@@ -38,6 +38,9 @@ internal enum LinkKind : byte
     ZCodeSession,
     KimiSession,
     GrokBuildSession,
+
+    /// <summary>pi: <c>&lt;bucket&gt;/&lt;name&gt;/&lt;uuid&gt;/run-N/session.jsonl</c> belongs to <c>&lt;bucket&gt;/&lt;name&gt;.jsonl</c>.</summary>
+    PiPath,
 }
 
 /// <summary>What one transcript says about its parent (METRICS 6.7).</summary>
@@ -54,6 +57,7 @@ internal readonly record struct AgentLink(
         DshParser dsh => new AgentLink(dsh.AgentId, LinkKind.DshSession, dsh.SessionId, dsh.ParentSession, dsh.CreatedMs),
         GeminiParser gemini => OfGemini(gemini),
         OmpParser omp => new AgentLink(omp.AgentId, LinkKind.OmpPath, null, omp.ParentPath, omp.HeaderMs),
+        Pi.PiParser pi => new AgentLink(pi.AgentId, LinkKind.PiPath, null, pi.ParentPath, pi.HeaderMs),
         AntigravityParser antigravity => new AgentLink(
             antigravity.AgentId,
             LinkKind.AntigravityConversation,
@@ -166,6 +170,13 @@ internal static class ParentLinks
                     }
 
                     break;
+                case LinkKind.PiPath:
+                    if (agent.ParentThreadId is { } piMain && byPath.TryGetValue(piMain, out var piSession) && piSession.Kind == LinkKind.PiPath)
+                    {
+                        parent = piSession.Id;
+                    }
+
+                    break;
                 case LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath:
                     // Nested sub-agents are stored flat under the main session, so they attach to it.
                     if (agent.ParentThreadId is { } main && byPath.TryGetValue(main, out var mainSession) && mainSession.Kind == agent.Kind)
@@ -225,7 +236,7 @@ internal static class ParentLinks
     }
 
     private static bool IsPathKind(LinkKind kind) =>
-        kind is LinkKind.Path or LinkKind.OmpPath or LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath;
+        kind is LinkKind.Path or LinkKind.OmpPath or LinkKind.PiPath or LinkKind.WorkBuddyPath or LinkKind.WorkBuddyAiPath;
 
     // Copies of one conversation in several stores: the one in the child's own conversations folder, then ordinal path.
     private static AgentLink PreferredCopy(List<AgentLink> copies, string child, bool group = false)

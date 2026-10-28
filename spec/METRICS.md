@@ -8,7 +8,7 @@ shared fixtures in `spec/fixtures/`.
 
 | Term | Meaning |
 | --- | --- |
-| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (display name **DSH**, DeepSeek Harness), `opencode`, `gemini` (Gemini CLI), `omp` (oh-my-pi), `antigravity` (Google Antigravity), `workbuddy` (Tencent WorkBuddy, China edition), `workbuddyAi` (WorkBuddy AI, international edition), `zcode` (ZCode), `kimi` (Kimi Code CLI), `grokBuild` (Grok Build). This is the append-only *source order*. |
+| Source | `codex`, `claudeCode`, `claudeDesktop`, `deepseek` (display name **DSH**, DeepSeek Harness), `opencode`, `gemini` (Gemini CLI), `omp` (oh-my-pi), `antigravity` (Google Antigravity), `workbuddy` (Tencent WorkBuddy, China edition), `workbuddyAi` (WorkBuddy AI, international edition), `zcode` (ZCode), `kimi` (Kimi Code CLI), `grokBuild` (Grok Build), `pi` (pi). This is the append-only *source order*. |
 | Agent | One transcript file. Agent id = absolute file path. Sub-agents have their own files and are separate agents. (OpenCode: one per session row, 4.5; Antigravity: one per conversation database, 4.8.) |
 | Response | One model API call that produced a usage record. |
 | Phase | `generating` (a request is in flight), `tools` (model finished, waiting for tool results), `idle` |
@@ -32,18 +32,19 @@ responses (4.12); the speed engine still processes its normalized tokens and dur
 | ZCode | `~/.zcode/cli/db/db.sqlite`; `$ZCODE_DATA_BASE_DIR` replaces the home base, with `.zcode/cli/db` underneath | user setting (data directory, database folder, or `db.sqlite`) |
 | Kimi Code CLI (TypeScript v2) | `$KIMI_CODE_HOME/sessions`, else `~/.kimi-code/sessions` | user setting (data directory or its `sessions` folder) |
 | Grok Build | `$GROK_HOME/sessions`, else `~/.grok/sessions` | user setting (data directory or its `sessions` folder) |
+| pi | `$PI_CODING_AGENT_SESSION_DIR`, else the `sessions` folder of `$PI_CODING_AGENT_DIR`, else `~/.pi/agent/sessions` (4.13) | user setting (one `sessions` folder) |
 
 `~` is `HOME` on macOS and `%USERPROFILE%` on Windows. Claude Code and Claude Desktop share one root; each file is
 assigned to a source by its `entrypoint` field (section 4.1). Ordinary Claude Desktop chat conversations are not stored
 locally and are out of scope.
 
 Discovery: recursive enumeration of `*.jsonl` (Codex also `*.jsonl.zst`, 5.3; DeepSeek: `session.v<N>.jsonl.zstd` or `session.v<N>.jsonl`; Gemini CLI:
-fixed depths, see 4.6; omp: see 4.7; Antigravity: conversation databases, see 4.8; WorkBuddy: fixed depths, see 4.9),
+fixed depths, see 4.6; omp: see 4.7; Antigravity: conversation databases, see 4.8; WorkBuddy: fixed depths, see 4.9; pi: fixed depths, see 4.13),
 maximum depth 6, never follow symlinks, at most 20 000 files per root.
 A source is *detected* when its root (Antigravity: any store; WorkBuddy: the data folder) exists or it has data today;
 what an undetected source shows is DESIGN 2b (unavailable sources), 4 and 5.
 The app never writes inside these folders.
-For ZCode, Kimi Code CLI and Grok Build, the source's session count includes today's main sessions only;
+For ZCode, Kimi Code CLI, Grok Build and pi, the source's session count includes today's main sessions only;
 subagents remain visible in the agent tree and ordinary forks remain separate sessions, as with WorkBuddy.
 
 ## 3. Common rules
@@ -1131,6 +1132,59 @@ existing price book on the native model batch, so tier selection and rounding ca
 Evidence and executable checks: `spec/research/harnesses.md`, `spec/tools/harness_reference.py`, and
 `spec/fixtures/harness-expected.json`.
 
+### 4.13 pi
+
+Discover `<bucket>/<name>.jsonl` exactly two levels below the `sessions` root, and `session.jsonl` three or more levels
+below it — an extension's run sub-sessions live at `<bucket>/<name>/<uuid>/run-N/session.jsonl` and attach to
+`<bucket>/<name>.jsonl`. Nothing else below the root is a session file. The header (always the first line) supplies
+`cwd`; the project name comes from it, never from the bucket folder. An entry is a tree node (`id`/`parentId`) whose
+`timestamp` is ISO 8601, while a nested `message.timestamp` is a Unix timestamp in milliseconds (3.1).
+
+Every entry with a parseable `timestamp` advances the file's last-line time. Entries older than the header by more than
+2 seconds were copied from another session (`/fork`, `/clone`) and are skipped; copied keys are also deduplicated
+against the file that owns them (3.4), so a copy contributes no tokens of its own.
+
+An assistant message is one response when `model`, `provider` and `api` are strings, `usage` is an object, and at least
+one of `input`, `output`, `cacheRead`, `cacheWrite` is above 0 — the same guard as omp (4.7):
+
+- `key = "pi:" + id + ":" + firstStart`, where `id` is the entry `id` (the empty string when it is missing, as in
+  pre-v2 files) and `firstStart` is `message.timestamp` when it is a finite number above 0, else the entry timestamp.
+- `startMs = message.timestamp` (null when missing or 0). `endMs = startMs + durationMs` when `durationMs` is a finite
+  number of at least 0; otherwise the entry timestamp. pi writes the entry when the stream ends, so the two agree
+  within a few milliseconds.
+- `stopReason` is pi's own vocabulary: `stop`, `length`, `toolUse`, `error`, `aborted` or `deferred`; a missing or
+  non-string value counts as `aborted`. `error` and `aborted` responses keep their totals and count no interval (as in
+  4.7); `length` and `deferred` complete normally.
+- Tokens: `input = input + cacheRead + cacheWrite` (pi stores the input that was not read from cache),
+  `cachedInput = cacheRead`, `cacheWriteInput = cacheWrite`, `cacheWrite1hInput = cacheWrite1h`, `output = output`
+  (thinking included) and `reasoning = reasoning`, a subset of `output` that is never added again.
+
+Side usage counts in totals only and never sets the agent's model, exactly like omp's `model_usage` (4.7): a `usage`
+entry (any `kind`, for instance `cache_warm`) and a `compaction` or `branch_summary` entry carrying `usage`; the same
+rule covers a `toolResult` message that carries `usage` (nested model work a tool performed). Their key is
+`"pi:" + id + ":" + entry timestamp`, their interval is empty, and a side entry without a `model` of its own is
+attributed to the session's current model — the last assistant message's `model`. A side entry names no provider of
+its own, so none is recorded for it.
+
+Phases are inferred from neighbouring entries, because pi persists an assistant message only when its stream ends: a
+`user` message starts `generating` with `message.timestamp` as the in-flight start; an assistant message whose content
+holds `toolCall` blocks enters `tools` and remembers their ids; a `toolResult` clears its own id and returns to
+`generating` when the last pending call is answered; an `error` or `aborted` assistant message returns to `idle`.
+`model_change`, `thinking_level_change`, `custom`, `custom_message`, `label`, `session_info`, `context_edit` and
+compaction entries only advance the file's last-line time.
+
+pi records no execution-mode evidence: `thinkingLevel` is a reasoning level, not a speed tier, so its responses carry
+no modes and its files are not read by the mode adapters (EXECUTION-MODES).
+
+Known approximations, to revisit with real files: whether `/clone` rewrites entry ids (the 2-second copy cutoff and
+3.4 both assume it does not), nested sub-agent runs (a run inside a run) attach to the outer session, and
+`--session-dir` / `PI_CODING_AGENT_SESSION_DIR` folders outside the watched root are reachable only through the user
+setting, as omp's custom session files are (4.7).
+
+Evidence: `spec/research/pi.md`. Executable checks today: `spec/tools/reference.py --pi` (compare its `--dump-today`
+against either app's probe with `spec/tools/compare_dumps.py`). Fixtures in `spec/fixtures/parser-expected.json` join
+this section once the macOS reader exists, because that file is shared by both platforms' conformance tests.
+
 ## 5. Reading files
 
 - Startup reading order (it decides which file owns a duplicated key): files sorted by modification time ascending,
@@ -1741,6 +1795,7 @@ desktop app that runs its agent on its own executable, so its row needs the argu
 | `opencode` | `name` in `opencode`, `opencode-cli` (desktop sidecar `opencode-cli serve`), or starting with `opencode-` followed by an OS and architecture (npm-vendored); or a script host running `opencode-ai/bin/opencode`. |
 | `gemini` | A script host whose arguments contain `/@google/gemini-cli/` (npm, Homebrew `…/libexec/lib/node_modules/@google/gemini-cli/…`), or `name == gemini` for a native build. Gemini CLI relaunches itself as a child; the child is a descendant either way. |
 | `omp` | `name == omp`, or a script host whose arguments contain `/@oh-my-pi/` or `/oh-my-pi/`. |
+| `pi` | `name == pi`, or a script host whose arguments contain `/@earendil-works/pi-coding-agent/` or its earlier scope `/@mariozechner/pi-coding-agent/`. |
 | `antigravity` | `name == agy`, or `name` starts with `language_server_` (the Antigravity language server, started by the CLI, the desktop app and the IDE with `--app_data_dir`). |
 | `workbuddy`, `workbuddyAi` | The embedded CodeBuddy Code CLI, which makes the model calls itself: an executable of the edition — macOS: in the app with bundle id `com.tencent.workbuddy.mac` (WorkBuddy) or `com.workbuddy.workbuddy-ai` (WorkBuddy AI), whose main executable is named `Electron`; Windows: `name` `WorkBuddy` or `WorkBuddyAI` — whose arguments after the first contain a path with `/app.asar.unpacked/cli/` (the CLI entry `…/app.asar.unpacked/cli/bin/codebuddy`, run with `ELECTRON_RUN_AS_NODE`). Observed in the 5.8 code: pooled `--prewarm` processes that later serve one conversation each (`--serve --session-id <id>`; the command line does not change when one is taken from the pool), cold `--serve` starts, and the fallback `--acp` with first argument `wb-acp:<id>`. Not verified with a running app; the Windows install folder is unknown, so only the name is used. |
 

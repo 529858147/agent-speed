@@ -62,6 +62,8 @@ Mode changes affect their native scope and time, not earlier responses. Upserts 
   animation speed and effort are excluded. Unknown protobuf tier semantics remain unclassified.
 - Gemini CLI, DSH, Grok Build: expose the common unknown state until an explicit supported native field is present;
   a provider API's capability alone is not evidence that its harness selected it.
+- pi: records no mode evidence. Its `thinkingLevel` is a reasoning effort, not a speed tier, and it persists no
+  provider tier, so its responses carry no modes (METRICS 4.13).
 
 ## Local aggregates and history
 

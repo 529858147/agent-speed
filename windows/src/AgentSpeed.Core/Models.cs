@@ -25,6 +25,9 @@ public enum SourceKind
     ZCode,
     Kimi,
     GrokBuild,
+
+    /// <summary>pi (<c>@earendil-works/pi-coding-agent</c>), METRICS 4.13.</summary>
+    Pi,
 }
 
 public enum AgentPhase
@@ -230,6 +233,7 @@ public abstract record SpeedEvent
 /// <param name="AntigravityRoot">One Antigravity store folder (or its <c>conversations</c> folder); null reads all three stores.</param>
 /// <param name="WorkBuddyRoot">The WorkBuddy data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy</c>.</param>
 /// <param name="WorkBuddyAiRoot">The WorkBuddy AI data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy-ai</c>.</param>
+/// <param name="PiRoot">One pi <c>sessions</c> folder; null uses <c>$PI_CODING_AGENT_SESSION_DIR</c>, else the default root.</param>
 public sealed record MonitorConfiguration(
     IReadOnlySet<SourceKind> EnabledSources,
     string? CodexRoot = null,
@@ -243,7 +247,8 @@ public sealed record MonitorConfiguration(
     string? WorkBuddyAiRoot = null,
     string? ZCodeRoot = null,
     string? KimiRoot = null,
-    string? GrokBuildRoot = null)
+    string? GrokBuildRoot = null,
+    string? PiRoot = null)
 {
     public static MonitorConfiguration Default { get; } =
         new(new HashSet<SourceKind>(Enum.GetValues<SourceKind>()));
@@ -262,10 +267,11 @@ public sealed record MonitorConfiguration(
         && WorkBuddyAiRoot == other.WorkBuddyAiRoot
         && ZCodeRoot == other.ZCodeRoot
         && KimiRoot == other.KimiRoot
-        && GrokBuildRoot == other.GrokBuildRoot;
+        && GrokBuildRoot == other.GrokBuildRoot
+        && PiRoot == other.PiRoot;
 
     public override int GetHashCode() => HashCode.Combine(
         HashCode.Combine(EnabledSources.Count, CodexRoot, ClaudeRoot, DshRoot, OpenCodeRoot, GeminiRoot, OmpRoot, AntigravityRoot),
         WorkBuddyRoot,
-        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot);
+        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot, PiRoot);
 }

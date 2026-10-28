@@ -50,7 +50,7 @@ VECTORS_PATH = SPEC / "fixtures" / "report-vectors.json"
 EXAMPLES_DIR = SPEC / "fixtures" / "report-examples"
 
 SOURCES = ("codex", "claudeCode", "claudeDesktop", "deepseek", "opencode", "gemini", "omp", "antigravity", "workbuddy",
-           "workbuddyAi", "zcode", "kimi", "grokBuild")
+           "workbuddyAi", "zcode", "kimi", "grokBuild", "pi")
 
 
 def source_order(source):

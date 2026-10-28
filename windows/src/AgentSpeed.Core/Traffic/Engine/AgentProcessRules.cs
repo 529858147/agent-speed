@@ -177,6 +177,12 @@ internal sealed class AgentProcessRules
             return SourceKind.GrokBuild;
         }
 
+        if (name == "pi" || script.Contains("/@earendil-works/pi-coding-agent/", StringComparison.Ordinal)
+            || script.Contains("/@mariozechner/pi-coding-agent/", StringComparison.Ordinal))
+        {
+            return SourceKind.Pi;
+        }
+
         if (name == "dsh" || _platform.IsUnder(executable, _deepseekApp) || (_platform.IsWindows && name == "deepseek harness"))
         {
             return SourceKind.DeepSeek;

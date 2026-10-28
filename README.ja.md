@@ -4,7 +4,7 @@
 
 # Agent Speed
 
-**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop・DSH（DeepSeek Harness）・OpenCode・Gemini CLI・omp・Antigravity・WorkBuddy・WorkBuddy AI・ZCode・Kimi Code CLI・Grok Build のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
+**AI agent が全力で走る瞬間を、目で感じる。** Codex・Claude Code・Claude Desktop・DSH（DeepSeek Harness）・OpenCode・Gemini CLI・omp・Antigravity・WorkBuddy・WorkBuddy AI・ZCode・Kimi Code CLI・Grok Build・pi のトークン速度をリアルタイムに映し出すネイティブ計器。待機中は静かに、レッドラインでは燃え上がる。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
@@ -89,6 +89,7 @@ Agent Speed は、agent がすでにローカルに書き出している記録�
 | ZCode | `~/.zcode/cli/db/db.sqlite`（または `$ZCODE_DATA_BASE_DIR/.zcode/cli/db`） |
 | Kimi Code CLI（TypeScript v2） | `~/.kimi-code/sessions`（または `$KIMI_CODE_HOME/sessions`） |
 | Grok Build | `~/.grok/sessions`（または `$GROK_HOME/sessions`） |
+| pi | `~/.pi/agent/sessions`（または `$PI_CODING_AGENT_SESSION_DIR`。`$PI_CODING_AGENT_DIR` で `agent` フォルダーを移動できます） |
 
 Grok Build のターン別・モデル別バッチに保存されたトークン数、API 所要時間、実際の呼び出し回数を、既存の速度エンジンで計算します。サブエージェントの使用量は親に集約されるため一度だけ計上し、子の動作状態も表示します。個々の呼び出しのタイムラインは保存されないため、バッチ内の並列実行速度は復元できません。
 
