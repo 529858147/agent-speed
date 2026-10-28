@@ -50,6 +50,7 @@ struct CodexLegacyInfo: Equatable, Sendable {
 enum CodexLineKind: Equatable, Sendable {
     case sessionMeta(CodexSessionMeta)
     case turnContext(model: String?, cwd: String?)
+    case threadSettingsApplied(threadId: String?)
     case input
     case output
     case agentMessage(recipient: String?)
@@ -88,6 +89,7 @@ enum CodexLineExtractor {
         var modelProvider: String?
         var serviceTier: String?
         var serviceTierPresent = false
+        var threadModes: ExecutionModes?
         var responseId: String?
         var threadId: String?
         var usage: CodexRawUsage?
@@ -121,6 +123,9 @@ enum CodexLineExtractor {
                 line.modes = ExecutionModeAdapters.openAI(payload?.serviceTier, evidence: .selected, scope: .turn)
             } else if envelope == 2 {
                 line.modes = ExecutionModeAdapters.openAI(payload?.serviceTier, evidence: .recorded, scope: .request)
+            } else if envelope == 3, payload?.type == "thread_settings_applied", let modes = payload?.threadModes {
+                line.hasModeSelection = true
+                line.modes = modes
             }
             return .line(line)
         } catch {
@@ -148,6 +153,8 @@ enum CodexLineExtractor {
         case 3:
             guard let payload, let type = payload.type else { return .other }
             switch type {
+            case "thread_settings_applied":
+                return .threadSettingsApplied(threadId: payload.threadId)
             case "token_count":
                 return .legacyUsage(threadId: payload.threadId, info: payload.info)
             case "task_started", "user_message":
@@ -212,6 +219,8 @@ enum CodexLineExtractor {
                 payload.responseId = try scanner.readNonEmptyString()
             } else if scanner.key(key, is: "thread_id") {
                 payload.threadId = try scanner.readNonEmptyString()
+            } else if scanner.key(key, is: "thread_settings") {
+                payload.threadModes = try scanThreadModes(&scanner)
             } else if scanner.key(key, is: "usage") {
                 payload.usage = try scanUsage(&scanner)
             } else if scanner.key(key, is: "info") {
@@ -221,6 +230,26 @@ enum CodexLineExtractor {
             }
         }
         return payload
+    }
+
+    private static func scanThreadModes(_ scanner: inout JSONScanner) throws(JSONScanError) -> ExecutionModes? {
+        guard try scanner.beginObjectIfPresent() else { return nil }
+        var present = false
+        var tier: String?
+        var provider: String?
+        while let key = try scanner.nextMember() {
+            if scanner.key(key, is: "service_tier") {
+                present = true
+                tier = try scanner.readString()
+            } else if scanner.key(key, is: "model_provider_id") {
+                provider = try scanner.readString()
+            } else {
+                try scanner.skipValue()
+            }
+        }
+        guard present else { return nil }
+        guard provider == "openai" || provider == "azure" else { return .empty }
+        return ExecutionModeAdapters.openAI(tier, evidence: .selected, scope: .session)
     }
 
     /// `payload.source`: whether it names a sub-agent, and `subagent.thread_spawn.parent_thread_id`.

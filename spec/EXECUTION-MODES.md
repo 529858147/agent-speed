@@ -37,6 +37,11 @@ Mode changes affect their native scope and time, not earlier responses. Upserts 
   thread, attach to an unverified control interface, reconstruct all config layers, or promote recent-composer values.
   Only an unambiguous root string literal is accepted; multiline strings, duplicate declarations and unsupported
   syntax stay unknown. A declared default is not a claim about a running task's effective configuration.
+  `event_msg` / `thread_settings_applied` carries the applied session selection in
+  `thread_settings.service_tier`, with `thread_settings.model_provider_id` identifying `openai` or `azure`.
+  Record it as selected/session evidence, never served; ignore an explicit `thread_id` belonging to another
+  known session. Missing tier leaves the selection unchanged; null or unsupported values clear it. Subsequent
+  responses retain the selection at their emission, without changing earlier responses or pricing.
 - Claude Code/Desktop: retain explicit `message.usage.speed` `fast` and `standard` as served service-tier facts.
   Missing speed is not Standard. Preserve the existing pricing fast flag's compatibility behavior.
 - OpenCode: `session_message.data.native.serviceTier` is served OpenAI tier metadata for supported versions.

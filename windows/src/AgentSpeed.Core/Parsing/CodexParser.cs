@@ -81,6 +81,12 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
             return;
         }
 
+        if (line.Kind == CodexLineKind.EventMsg && line.PayloadKind == CodexPayloadKind.ThreadSettingsApplied
+            && line.ThreadId is { } thread && _metaThreadId is { } own && !string.Equals(thread, own, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         if (line.Kind == CodexLineKind.EventMsg && line.PayloadKind == CodexPayloadKind.TokenCount && line.Quota is { } quota
             && (LatestQuota is null || ts > LatestQuota.FetchedAt.ToUnixTimeMilliseconds()))
         {
@@ -167,6 +173,13 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     {
         switch (line.PayloadKind)
         {
+            case CodexPayloadKind.ThreadSettingsApplied:
+                if (line.SelectedModes is { } selected)
+                {
+                    Modes = selected;
+                }
+
+                break;
             case CodexPayloadKind.TaskStarted or CodexPayloadKind.UserMessage:
                 OnInput(ts);
                 break;
@@ -236,7 +249,8 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
 
     private void Emit(string key, TokenCounts tokens, long ts, IResponseSink sink)
     {
-        sink.OnResponse(new ParsedResponse(key, SourceKind.Codex, AgentId, Model, _pendingStartMs, ts, tokens, Provider: _provider), true);
+        sink.OnResponse(new ParsedResponse(key, SourceKind.Codex, AgentId, Model, _pendingStartMs, ts, tokens, Provider: _provider)
+            { Modes = Modes }, true);
         AfterUsage(ts);
     }
 

@@ -58,6 +58,8 @@ struct CodexParser: Sendable {
         if let created = state.thread?.createdMs, timestamp < created - Self.copiedHistoryToleranceMs {
             return
         }
+        if case .threadSettingsApplied(let threadId) = line.kind,
+           let threadId, let own = state.thread?.id, threadId != own { return }
         state.noteLine(at: timestamp)
         if line.hasModeSelection { state.modes = line.modes }
         else if !line.modes.facts.isEmpty { state.modes = state.modes.merging(line.modes) }
@@ -69,6 +71,9 @@ struct CodexParser: Sendable {
         case .turnContext(let model, let cwd):
             if let model { state.model = model }
             if let cwd { state.setProject(fromWorkingDirectory: cwd) }
+
+        case .threadSettingsApplied:
+            break
 
         case .input:
             markInput(at: timestamp)

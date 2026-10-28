@@ -66,6 +66,48 @@ struct ExecutionModeParserTests {
         #expect(other.first?.record.modes.facts.isEmpty == true)
     }
 
+    @Test func codexAppliedSessionSettingsPreserveTimingAndEarlierResponses() {
+        let meta = #"{"type":"session_meta","timestamp":"2026-10-28T10:00:00Z","payload":{"id":"one","model_provider":"openai"}}"#
+        func settings(_ second: String, _ tier: String, thread: String = "one") -> String {
+            #"{"type":"event_msg","timestamp":"2026-10-28T10:00:\#(second)Z","payload":{"type":"thread_settings_applied","thread_id":"\#(thread)","thread_settings":{"service_tier":\#(tier),"model_provider_id":"openai"}}}"#
+        }
+        func usage(_ second: String, _ id: String) -> String {
+            #"{"type":"token_usage_record","timestamp":"2026-10-28T10:00:\#(second)Z","payload":{"response_id":"\#(id)","usage":{"input_tokens":3,"output_tokens":40}}}"#
+        }
+        let start = #"{"type":"event_msg","timestamp":"2026-10-28T10:00:01Z","payload":{"type":"task_started"}}"#
+        var deduper = Deduper()
+        let (parser, records) = ParserBehaviorTests.run(.codex, [meta, settings("00", #""priority""#),
+            start, usage("03", "r1"), settings("04", #""default""#), usage("06", "r2"),
+            settings("07", "null"), usage("09", "r3")], deduper: &deduper)
+        #expect(records.map { $0.record.modes.attribution(for: .serviceTier).mode } == ["fast", "standard", "unknown"])
+        #expect(records.first?.record.modes.facts.first?.scope == .session)
+        #expect(records.first?.record.modes.facts.first?.evidence == .selected)
+        #expect(records.first?.record.startMs == 1_793_181_601_000)
+        #expect(records.allSatisfy { $0.record.usage.output == 40 })
+        #expect(parser.state.modes.facts.isEmpty)
+
+        var childDeduper = Deduper()
+        let (other, _) = ParserBehaviorTests.run(.codex, [meta, settings("00", #""priority""#, thread: "parent")], deduper: &childDeduper)
+        #expect(other.state.modes.facts.isEmpty)
+    }
+
+    @Test func codexAppliedSettingsRequireExplicitTierAndVerifiedProvider() {
+        let selected = #"{"type":"event_msg","timestamp":"2026-10-28T10:00:00Z","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority","model_provider_id":"openai"}}}"#
+        let missing = #"{"type":"event_msg","timestamp":"2026-10-28T10:00:01Z","payload":{"type":"thread_settings_applied","thread_settings":{"model_provider_id":"openai"}}}"#
+        var deduper = Deduper()
+        let (parser, _) = ParserBehaviorTests.run(.codex, [selected, missing], deduper: &deduper)
+        #expect(parser.state.modes.attribution(for: .serviceTier).mode == "fast")
+        for value in ["null", "true", "42", "[]", "{}", #""bad mode""#] {
+            var invalidDeduper = Deduper()
+            let invalid = selected.replacingOccurrences(of: #""priority""#, with: value)
+            let (invalidParser, _) = ParserBehaviorTests.run(.codex, [selected, invalid], deduper: &invalidDeduper)
+            #expect(invalidParser.state.modes.facts.isEmpty)
+        }
+        var customDeduper = Deduper()
+        let (custom, _) = ParserBehaviorTests.run(.codex, [selected.replacingOccurrences(of: "openai", with: "my-router")], deduper: &customDeduper)
+        #expect(custom.state.modes.facts.isEmpty)
+    }
+
     @Test func ompSelectionsFollowJournalBranchesAndDoNotInheritRecordedEchoes() throws {
         let header = #"{"type":"session","id":"session","timestamp":"2026-10-24T10:00:00Z"}"#
         func change(_ id: String, parent: String?, tier: String) -> String {
