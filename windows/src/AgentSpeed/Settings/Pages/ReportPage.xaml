@@ -5,6 +5,7 @@
              xmlns:loc="clr-namespace:AgentSpeed.Localization"
              xmlns:controls="clr-namespace:AgentSpeed.Controls"
              xmlns:reporting="clr-namespace:AgentSpeed.Reporting"
+             xmlns:theme="clr-namespace:AgentSpeed.Theme"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
@@ -261,7 +262,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
                                 Visibility="{Binding HasSavedApiKey, Converter={StaticResource Visible}}">
-                        <TextBlock Text="{Binding MaskedApiKey}" FontFamily="Cascadia Mono, Consolas" FontSize="13" VerticalAlignment="Center"
+                        <TextBlock Text="{Binding MaskedApiKey}" FontFamily="{x:Static theme:AppFonts.Monospace}" FontSize="13" VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.Name="{loc:Loc report.apiKey}" />
                         <Button Style="{StaticResource LinkButton}" Content="{loc:Loc report.apiKey.clear}" Command="{Binding ClearApiKeyCommand}" Margin="8,0,0,0" />
                     </StackPanel>
@@ -383,7 +384,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                 <TextBlock Text="{loc:Loc report.device.fingerprint}" Style="{StaticResource Footnote}" VerticalAlignment="Center" />
                                 <TextBox Text="{Binding FingerprintText, Mode=OneWay}" Style="{StaticResource SelectableText}" Margin="6,0,0,0"
-                                         FontFamily="Cascadia Mono, Consolas" FontSize="12" VerticalAlignment="Center"
+                                         FontFamily="{x:Static theme:AppFonts.Monospace}" FontSize="12" VerticalAlignment="Center"
                                          AutomationProperties.Name="{loc:Loc report.device.fingerprint}" />
                             </StackPanel>
                         </StackPanel>
