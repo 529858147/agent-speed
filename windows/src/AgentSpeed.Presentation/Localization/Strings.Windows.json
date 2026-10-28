@@ -325,34 +325,28 @@
     "ja": "速度と今日の推定費用を表示。ホバーで毎秒の費用と集計範囲を確認できます。"
   },
   "win.taskbar.reading": {
-    "en": "Reading",
-    "zh-Hans": "读取中",
-    "zh-Hant": "讀取中",
-    "ja": "読み込み中"
+    "en": "Reading local records",
+    "zh-Hans": "正在读取本地记录",
+    "zh-Hant": "正在讀取本機記錄",
+    "ja": "ローカルの記録を読み込んでいます"
   },
   "win.taskbar.waiting": {
-    "en": "Waiting",
-    "zh-Hans": "等待响应",
-    "zh-Hant": "等待回應",
-    "ja": "応答待ち"
+    "en": "Processing the request; no text output yet",
+    "zh-Hans": "AI 正在处理请求，暂时没有文字输出",
+    "zh-Hant": "AI 正在處理請求，暫時沒有文字輸出",
+    "ja": "リクエストを処理中です。まだテキスト出力はありません"
   },
   "win.taskbar.tools": {
-    "en": "Tools",
-    "zh-Hans": "工具中",
-    "zh-Hant": "工具中",
-    "ja": "ツール実行中"
-  },
-  "win.taskbar.reserve": {
-    "en": "Reading",
-    "zh-Hans": "等待响应",
-    "zh-Hant": "等待回應",
-    "ja": "ツール実行中"
+    "en": "Running commands, reading files or searching",
+    "zh-Hans": "AI 正在运行命令、读文件或搜索等操作",
+    "zh-Hant": "AI 正在執行命令、讀取檔案或搜尋等操作",
+    "ja": "コマンド実行、ファイル読み取り、検索などを処理しています"
   },
   "win.taskbar.unavailable": {
-    "en": "Unavailable",
-    "zh-Hans": "暂不可读",
-    "zh-Hant": "暫不可讀",
-    "ja": "取得不可"
+    "en": "Live data is temporarily unavailable",
+    "zh-Hans": "暂时无法读取实时数据",
+    "zh-Hant": "暫時無法讀取即時資料",
+    "ja": "現在のデータを読み取れません"
   },
   "win.taskbar.noSources": {
     "en": "No readable enabled source was found. Today's amount retains recorded usage.",
@@ -384,11 +378,23 @@
     "zh-Hant": "含估算",
     "ja": "推定を含む"
   },
-  "win.taskbar.activity": {
-    "en": "Generating %d · Tools %d",
-    "zh-Hans": "生成中 %d · 工具中 %d",
-    "zh-Hant": "生成中 %d · 工具中 %d",
-    "ja": "生成中 %d · ツール %d"
+  "win.taskbar.running": {
+    "en": "%d tasks running",
+    "zh-Hans": "%d 个任务正在运行",
+    "zh-Hant": "%d 個任務正在執行",
+    "ja": "%d 件のタスクを実行中"
+  },
+  "win.taskbar.recent": {
+    "en": "Recent activity in the last 3 seconds",
+    "zh-Hans": "近 3 秒有活动",
+    "zh-Hant": "近 3 秒有活動",
+    "ja": "直近 3 秒にアクティビティがありました"
+  },
+  "win.taskbar.idle": {
+    "en": "No tasks are running",
+    "zh-Hans": "当前没有运行中的任务",
+    "zh-Hant": "目前沒有執行中的任務",
+    "ja": "現在実行中のタスクはありません"
   },
   "win.taskbar.today": {
     "en": "Today's estimate",
@@ -425,12 +431,6 @@
     "zh-Hans": "暂无计入费用的用量",
     "zh-Hant": "暫無計入費用的用量",
     "ja": "今日の費用対象の使用量なし"
-  },
-  "win.taskbar.subscriptions.none": {
-    "en": "Subscriptions: no sources marked",
-    "zh-Hans": "订阅来源：尚未标记",
-    "zh-Hant": "訂閱來源：尚未標記",
-    "ja": "サブスク：指定なし"
   },
   "win.taskbar.subscriptions.included": {
     "en": "Subscriptions included: %@",

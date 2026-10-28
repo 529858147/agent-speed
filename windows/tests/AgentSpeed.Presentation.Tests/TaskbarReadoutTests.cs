@@ -18,17 +18,29 @@ public sealed class TaskbarReadoutTests
         { TodayCost = new CostTally(amount, unpriced), LiveCost = new LiveCost(9800, output) };
 
     [Theory]
-    [InlineData(0, 0, "0", false, TaskbarActivity.Idle)]
-    [InlineData(0, 1, "工具中", true, TaskbarActivity.Tools)]
-    [InlineData(1, 0, "等待响应", true, TaskbarActivity.Waiting)]
-    [InlineData(1, 1, "等待响应", true, TaskbarActivity.Waiting)]
-    public void ZeroSpeedUsesKnownActivity(int generating, int tools, string value, bool hideUnit, TaskbarActivity activity)
+    [InlineData(0, 0, "0", TaskbarActivity.Idle)]
+    [InlineData(0, 1, "0", TaskbarActivity.Tools)]
+    [InlineData(1, 0, "0", TaskbarActivity.Waiting)]
+    [InlineData(1, 1, "0", TaskbarActivity.Waiting)]
+    public void ActivityDoesNotReplaceTheTaskbarNumericReadout(int generating, int tools, string value, TaskbarActivity activity)
     {
         var result = TaskbarReadout.From(Running with { GeneratingCount = generating, ToolsCount = tools }, SpeedMetric.Output, Loc);
         Assert.Equal(value, result.Value);
-        Assert.Equal(hideUnit, result.HideUnit);
         Assert.Equal(activity, result.Activity);
         Assert.True(result.Muted);
+    }
+
+    [Fact]
+    public void ToolAndWaitingDetailsUsePlainExplanationsWithoutRoutineSubscriptionNoise()
+    {
+        var tools = TaskbarDetails.From(Running with { ToolsCount = 1 }, Settings, Display());
+        Assert.Equal("0", tools.Value);
+        Assert.Contains("命令", tools.Status);
+        Assert.DoesNotContain("工具中", tools.Status);
+        Assert.Empty(tools.Subscriptions);
+        var waiting = TaskbarDetails.From(Running with { GeneratingCount = 1 }, Settings, Display());
+        Assert.Contains("没有文字输出", waiting.Status);
+        Assert.Equal("–", TaskbarReadout.From(SpeedSnapshot.Empty, SpeedMetric.Output, Loc).Value);
     }
 
     [Fact]
@@ -37,7 +49,6 @@ public sealed class TaskbarReadoutTests
         var snapshot = Running with { Live = new Rate(71, 142), ToolsCount = 1, Warnings = [new MonitorWarning.UnreadableFiles(1)] };
         var result = TaskbarReadout.From(snapshot, SpeedMetric.Output, Loc);
         Assert.Equal("71", result.Value);
-        Assert.False(result.HideUnit);
         Assert.False(result.Muted);
         Assert.Contains("1", TaskbarDetails.From(snapshot, Settings, Display()).Notice);
     }

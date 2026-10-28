@@ -558,7 +558,7 @@ internal sealed unsafe class TaskbarHost : IDisposable
         var width = Math.Max(1, _screenRect.Width);
         var height = Math.Max(1, _screenRect.Height);
         var key = string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{width}x{height}|{_scale:F3}|{_state.ValueText ?? SpeedFormat.Speed(_state.Value)}|{_state.ValueMuted}|{_state.Secondary?.Live.Number}|{_state.Secondary?.Today.Number}|{_state.Secondary?.Live.Dim}|{_state.Secondary?.Today.Dim}|{_state.Secondary?.Compact}|{_state.HideUnit}|{_renderer.PrimaryCell:F2}|{_renderer.SecondaryCell:F2}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}|{_state.Traffic?.Rx?.Text}|{_state.Traffic?.Tx?.Text}|{_state.Traffic?.Bits}");
+            $"{width}x{height}|{_scale:F3}|{_state.ValueText ?? SpeedFormat.Speed(_state.Value)}|{_state.ValueMuted}|{_state.Secondary?.Live.Number}|{_state.Secondary?.Today.Number}|{_state.Secondary?.Live.Dim}|{_state.Secondary?.Today.Dim}|{_state.Secondary?.Compact}|{_renderer.PrimaryCell:F2}|{_renderer.SecondaryCell:F2}|{_state.Tier}|{Math.Round(_scene.Heat * 720)}|{Math.Round(_scene.FillOpacity * 40)}|{Math.Round(_scene.Glow * 40)}|{_hovered}|{_pressed}|{_state.TaskbarDark}|{_state.HighContrast}|{_state.ColoredGlyph}|{_state.Mode}|{_state.ShowUnit}|{_state.Traffic?.Rx?.Text}|{_state.Traffic?.Tx?.Text}|{_state.Traffic?.Bits}");
         if (!force && key == _renderKey)
         {
             beforePresent?.Invoke();

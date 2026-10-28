@@ -36,7 +36,7 @@ internal sealed class TaskbarSecondaryText
     public double NumberWidth(BarSecondary block, double scale, Color primary, Color secondary)
     {
         Ensure(scale, primary, secondary);
-        return block.Compact ? Math.Max(Tabular(block.Today.Number), Tabular("≈US$999.99"))
+        return block.Compact ? Tabular(block.Today.Number)
             : Math.Max(Tabular(block.Live.Number), Tabular(block.Today.Number));
     }
 
@@ -57,9 +57,6 @@ internal sealed class TaskbarSecondaryText
         var capHeight = (_face.CapsHeight > 0 ? _face.CapsHeight : 0.7) * TextSize;
         if (block.Compact)
         {
-            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(50, primary.R, primary.G, primary.B)), 1),
-                new Point(Snap(x + Gap / 2, scale), Snap(centerY - 9, scale)),
-                new Point(Snap(x + Gap / 2, scale), Snap(centerY + 9, scale)));
             DrawLine(dc, block.Today, left, numberRight, Snap(centerY + capHeight / 2, scale), scale);
             return;
         }

@@ -702,9 +702,9 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
         var money = LiveMoney();
         var bar = money is null ? ((string?)null, _loc["unit.tokS"]) : CostDisplay.BarValue(money, s.BarShowUnit);
         var readout = TaskbarReadout.From(_speed.Snapshot, s.Metric, _loc);
-        var valueText = money is null || readout.Activity != TaskbarActivity.Generating && readout.Activity != TaskbarActivity.Idle
-            ? readout.Value : bar.Item1;
-        var accessible = readout.HideUnit || readout.Activity == TaskbarActivity.Unavailable
+        var valueText = money is not null && readout.Activity is not (TaskbarActivity.Reading or TaskbarActivity.Unavailable)
+            ? bar.Item1 : readout.Value;
+        var accessible = readout.Activity is not (TaskbarActivity.Generating or TaskbarActivity.Idle)
             ? readout.Status : money is null ? DisplayText.Accessibility(_speed.Value, title, _loc) : _cost.Display.LiveAccessibility(money, title);
         var secondary = BarSecondaryValue();
         if (secondary is not null)
@@ -734,9 +734,7 @@ internal sealed partial class AppController : IAppCommands, IOrbHost, IDisposabl
             valueText,
             readout.Muted || (money?.Unknown ?? false),
             secondary,
-            traffic,
-            readout.HideUnit,
-            _loc["win.taskbar.reserve"]);
+            traffic);
         _taskbar.Update(_lastTaskbarState);
     }
 

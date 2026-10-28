@@ -32,6 +32,9 @@ internal static class TaskbarBenchmark
         };
         var idle = generating with { Live = Rate.Zero, LiveEstimatedShare = 0, GeneratingCount = 0,
             Sources = generating.Sources.Select(s => s with { Live = Rate.Zero, LiveEstimated = Rate.Zero, LiveCost = default, ActiveAgents = 0 }).ToArray() };
+        var tools = idle with { ToolsCount = 1, Sources = idle.Sources.Select((s, i) => s with { ActiveAgents = i == 0 ? 1 : 0 }).ToArray() };
+        var waiting = tools with { ToolsCount = 0, GeneratingCount = 1 };
+        var unreadable = idle with { Warnings = [new MonitorWarning.UnreadableFiles(1)] };
         if (!skipCaptures)
         {
             foreach (var dark in new[] { true, false })
@@ -41,9 +44,8 @@ internal static class TaskbarBenchmark
                 {
                     var variants = new[]
                     {
-                        ("generating", generating), ("tools", idle with { ToolsCount = 1 }),
-                        ("waiting", idle with { GeneratingCount = 1 }), ("idle", idle),
-                        ("unreadable", idle with { Warnings = [new MonitorWarning.UnreadableFiles(1)] }),
+                        ("generating", generating), ("tools", tools),
+                        ("waiting", waiting), ("idle", idle), ("unreadable", unreadable),
                     };
                     foreach (var (name, snapshot) in variants)
                     {
@@ -63,6 +65,19 @@ internal static class TaskbarBenchmark
                             96 * scale, 96 * scale, PixelFormats.Pbgra32);
                         bitmap.Render(card);
                         Save(bitmap, Path.Combine(output, $"tooltip-{(dark ? "dark" : "light")}-{scale:0.##}.png"));
+                        if (dark && scale == 2)
+                        {
+                            foreach (var (name, snapshot) in variants.Skip(1))
+                            {
+                                card.SetDetails(TaskbarDetails.From(snapshot, settings, cost));
+                                card.UpdateLayout();
+                                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                                var stateImage = new RenderTargetBitmap((int)Math.Ceiling(card.ActualWidth * scale), (int)Math.Ceiling(card.ActualHeight * scale),
+                                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                                stateImage.Render(card);
+                                Save(stateImage, Path.Combine(output, $"tooltip-dark-2-{name}.png"));
+                            }
+                        }
                     }
                     finally { card.Close(); }
                 }
@@ -115,7 +130,11 @@ internal static class TaskbarBenchmark
         try
         {
             host.Apply(stateIdle);
-            await Task.Delay(2000);
+            var child = User32.FindWindowEx(handle, 0, "AgentSpeed.TaskbarWidget", null);
+            if (child == 0) throw new InvalidOperationException("Taskbar benchmark did not embed in its surrogate.");
+            WindowEffects.AddExtendedStyle(child, WS_EX.TRANSPARENT);
+            // Let both six-second width governors settle before measuring steady-state idle work.
+            await Task.Delay(14000);
             using var process = Process.GetCurrentProcess();
             process.Refresh();
             var beforeCpu = process.TotalProcessorTime;
@@ -139,7 +158,7 @@ internal static class TaskbarBenchmark
             File.WriteAllText(Path.Combine(output, "taskbar-benchmark.json"), JsonSerializer.Serialize(new
             {
                 Scope = "Isolated WPF taskbar host in an invisible surrogate, no log monitor or real account; not whole-app memory",
-                DurationSeconds = duration, CpuSeconds = cpu, CpuPercentOfOneCore = cpu / duration * 100,
+                WarmupSeconds = 14, DurationSeconds = duration, CpuSeconds = cpu, CpuPercentOfOneCore = cpu / duration * 100,
                 WorkingSetBefore = beforeWorking, WorkingSetAfter = process.WorkingSet64,
                 PrivateBytesBefore = beforePrivate, PrivateBytesAfter = process.PrivateMemorySize64,
                 AllocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - beforeAllocation,
@@ -163,8 +182,8 @@ internal static class TaskbarBenchmark
         {
             Enabled = true, Value = snapshot.Live.Output, Tier = snapshot.Live.Output > 0 ? SpeedTier.Cruise : SpeedTier.Idle,
             TaskbarDark = dark, ReduceMotion = true, UnitText = cost.Localizer["unit.tokS"],
-            ValueText = readout.Value, ValueMuted = readout.Muted, HideUnit = readout.HideUnit,
-            ReservationText = cost.Localizer["win.taskbar.reserve"], Secondary = BarSecondary.From(settings, snapshot, cost),
+            ValueText = readout.Value, ValueMuted = readout.Muted,
+            Secondary = BarSecondary.From(settings, snapshot, cost),
         };
     }
 

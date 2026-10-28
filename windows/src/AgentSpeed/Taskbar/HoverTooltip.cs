@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using AgentSpeed.Controls;
 using AgentSpeed.Interop;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Layout;
@@ -16,10 +17,14 @@ namespace AgentSpeed.Taskbar;
 internal sealed class HoverTooltip : Window
 {
     private const double ShadowMargin = 14;
-    private readonly TextBlock _primary = Text(14, primary: true, bold: true);
+    private readonly TextBlock _value = Text(20, primary: true, bold: true);
+    private readonly TextBlock _unit = Text(12);
+    private readonly TextBlock _metric = Text(11.5);
+    private readonly DetailGauge _gauge = new() { Width = 22, Height = 22, Margin = new Thickness(0, 5, 10, 0) };
     private readonly TextBlock _status = Text(12);
     private readonly TextBlock _measurement = Text(11.5);
     private readonly Grid _sources = new();
+    private readonly Border _sourceDivider = Divider();
     private readonly List<(TextBlock Label, TextBlock Value)> _sourceRows = [];
     private readonly TextBlock _todayLabel = Text(12);
     private readonly TextBlock _today = Text(12, primary: true);
@@ -44,7 +49,7 @@ internal sealed class HoverTooltip : Window
         ShowActivated = false;
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
-        Width = 348;
+        Width = 320;
         SizeToContent = SizeToContent.Height;
         Focusable = false;
         IsHitTestVisible = false;
@@ -53,16 +58,35 @@ internal sealed class HoverTooltip : Window
         Title = "Agent Speed";
 
         var stack = new StackPanel();
-        var title = Text(12, primary: true, bold: true);
+        var title = Text(13, primary: true, bold: true);
         title.Text = "Agent Speed";
-        title.Margin = new Thickness(0, 0, 0, 6);
+        title.Margin = new Thickness(0, 0, 0, 8);
         stack.Children.Add(title);
-        stack.Children.Add(_primary);
-        stack.Children.Add(_measurement);
+        var summary = new Grid();
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        _gauge.VerticalAlignment = VerticalAlignment.Top;
+        summary.Children.Add(_gauge);
+        var readings = new StackPanel();
+        Grid.SetColumn(readings, 1);
+        var number = new StackPanel { Orientation = Orientation.Horizontal };
+        _value.Margin = new Thickness(0, 0, 5, 0);
+        _unit.Margin = new Thickness(0, 0, 5, 3);
+        _metric.Margin = new Thickness(0, 0, 0, 3);
+        _unit.VerticalAlignment = _metric.VerticalAlignment = VerticalAlignment.Bottom;
+        number.Children.Add(_value);
+        number.Children.Add(_unit);
+        number.Children.Add(_metric);
+        readings.Children.Add(number);
+        readings.Children.Add(_measurement);
+        summary.Children.Add(readings);
+        stack.Children.Add(summary);
+        _status.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(_status);
         _sources.ColumnDefinitions.Add(new ColumnDefinition());
         _sources.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _sources.Margin = new Thickness(0, 8, 0, 0);
+        _sources.Margin = new Thickness(0, 2, 0, 0);
+        stack.Children.Add(_sourceDivider);
         stack.Children.Add(_sources);
         stack.Children.Add(Divider());
         var costs = new Grid();
@@ -82,11 +106,11 @@ internal sealed class HoverTooltip : Window
         var border = new Border
         {
             CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(ShadowMargin), Child = _viewport,
+            Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(ShadowMargin), Child = _viewport,
             Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Direction = 270, Opacity = 0.18, Color = Colors.Black },
         };
         border.SetResourceReference(Border.BackgroundProperty, "ToolTipBackgroundBrush");
-        border.SetResourceReference(Border.BorderBrushProperty, "ToolTipBorderBrush");
+        border.BorderBrush = new SolidColorBrush(Color.FromArgb(96, 128, 128, 128));
         Content = border;
         SourceInitialized += (_, _) => WindowEffects.AddExtendedStyle(new WindowInteropHelper(this).Handle,
             WS_EX.TOOLWINDOW | WS_EX.NOACTIVATE | WS_EX.TRANSPARENT);
@@ -101,7 +125,7 @@ internal sealed class HoverTooltip : Window
         var monitor = Monitors.FromRect(anchor);
         var scale = monitor?.Scale ?? 1;
         var work = monitor?.WorkArea;
-        MaxWidth = work is { } w ? Math.Max(120, w.Width / scale) : 348;
+        MaxWidth = work is { } w ? Math.Max(120, w.Width / scale) : 320;
         _viewport.MaxHeight = work is { } h ? Math.Max(60, h.Height / scale - 2 * ShadowMargin - 40) : double.PositiveInfinity;
         if (!IsVisible)
         {
@@ -117,7 +141,8 @@ internal sealed class HoverTooltip : Window
     public bool SetDetails(TaskbarDetails details)
     {
         if (!IsVisible) return false;
-        var changed = Set(_primary, details.Primary) | Set(_status, details.Status) | Set(_measurement, details.Measurement)
+        var changed = Set(_value, details.Value) | Set(_unit, details.Unit) | Set(_metric, $"· {details.Metric}")
+            | _gauge.SetHeat(details.Heat) | Set(_status, details.Status) | Set(_measurement, details.Measurement)
             | Set(_todayLabel, details.TodayLabel) | Set(_today, details.Today) | Set(_liveLabel, details.LiveLabel) | Set(_live, details.Live)
             | Set(_speedScope, details.SpeedScope) | Set(_costScope, details.CostScope) | Set(_subscriptions, details.Subscriptions)
             | Set(_notice, details.Notice) | Set(_hint, details.Hint) | Set(_actions, details.Actions) | Set(_traffic, details.Traffic);
@@ -146,6 +171,7 @@ internal sealed class HoverTooltip : Window
         }
 
         _sources.Visibility = details.Sources.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _sourceDivider.Visibility = _sources.Visibility;
         if (changed) ContentUpdates++;
         return changed;
     }
@@ -179,9 +205,34 @@ internal sealed class HoverTooltip : Window
 
     private static Border Divider()
     {
-        var line = new Border { Height = 1, Margin = new Thickness(0, 8, 0, 8) };
-        line.SetResourceReference(Border.BackgroundProperty, "ToolTipBorderBrush");
+        var line = new Border { Height = 1, Margin = new Thickness(0, 8, 0, 8),
+            Opacity = SystemParameters.HighContrast ? 1 : 0.14 };
+        line.SetResourceReference(Border.BackgroundProperty, "ToolTipForegroundBrush");
         return line;
+    }
+
+    private sealed class DetailGauge : FrameworkElement
+    {
+        private static readonly DependencyProperty InkProperty = DependencyProperty.Register("Ink", typeof(Brush), typeof(DetailGauge),
+            new FrameworkPropertyMetadata(SystemColors.WindowTextBrush, FrameworkPropertyMetadataOptions.AffectsRender));
+        private double _heat;
+
+        public DetailGauge() => SetResourceReference(InkProperty, "ToolTipForegroundBrush");
+
+        public bool SetHeat(double heat)
+        {
+            if (_heat == heat) return false;
+            _heat = heat;
+            InvalidateVisual();
+            return true;
+        }
+
+        protected override void OnRender(DrawingContext dc)
+        {
+            var color = (GetValue(InkProperty) as SolidColorBrush)?.Color ?? SystemColors.WindowTextColor;
+            GaugeGlyphPainter.Draw(dc, new Rect(0, 0, ActualWidth, ActualHeight), _heat, color,
+                SystemParameters.HighContrast, strokeThickness: 2.5);
+        }
     }
 
     private static void AddRow(Grid grid, TextBlock label, TextBlock value, int row)

@@ -15,7 +15,7 @@ namespace AgentSpeed.Windows.Tests;
 public sealed class TaskbarTests
 {
     [Fact]
-    public void CommonDigitBoundariesAndActivityLabelsKeepTheSameWidthAtEveryScale() => OnSta(() =>
+    public void NumericReadoutIsCompactAndTabularAtEveryScale() => OnSta(() =>
     {
         foreach (var language in LanguageCodes.All)
         foreach (var scale in new[] { 1, 1.25, 1.5, 2 })
@@ -23,22 +23,23 @@ public sealed class TaskbarTests
         {
             var loc = new Localizer(Localizer.LoadEmbeddedTable(), language);
             var renderer = new TaskbarRenderer();
-            var widths = new List<int>();
             foreach (var value in new[] { 0, 9, 10, 99, 100, 999, 1000, 1001 })
             {
                 var state = State(loc, value, dark);
-                widths.Add(renderer.MeasureLength(state, scale, vertical: false));
                 Render(renderer, state, scale, vertical: false);
             }
 
-            foreach (var label in new[] { loc["win.taskbar.waiting"], loc["win.taskbar.tools"], loc["win.taskbar.reading"], "–" })
+            foreach (var group in new[] { new[] { 10, 11, 71, 99 }, new[] { 100, 101, 199, 999 }, new[] { 1000, 1234, 2345 } })
             {
-                var state = State(loc, 0, dark) with { ValueText = label, HideUnit = label != "–", ValueMuted = true };
-                widths.Add(renderer.MeasureLength(state, scale, vertical: false));
-                Render(renderer, state, scale, vertical: false);
+                var widths = group.Select(value => renderer.MeasureLength(State(loc, value, dark), scale, vertical: false));
+                Assert.Single(widths.Distinct());
             }
 
-            Assert.Single(widths.Distinct());
+            var normal = State(loc, 71, dark);
+            Assert.InRange(renderer.MeasureLength(normal, scale, vertical: false) / scale, 100, 190);
+            Assert.True(renderer.PrimaryNumberWidth(normal, scale) < renderer.PrimaryNumberWidth(State(loc, 999900, dark), scale));
+            var largeAmount = normal with { Secondary = normal.Secondary! with { Today = normal.Secondary.Today with { Number = "≈US$999.99" } } };
+            Assert.True(renderer.SecondaryNumberWidth(normal, scale) < renderer.SecondaryNumberWidth(largeAmount, scale));
         }
     });
 
@@ -98,7 +99,7 @@ public sealed class TaskbarTests
     private static TaskbarState State(Localizer loc, double value, bool dark) => TaskbarState.Initial with
     {
         Enabled = true, Value = value, Tier = value > 0 ? SpeedTier.Cruise : SpeedTier.Idle,
-        TaskbarDark = dark, UnitText = loc["unit.tokS"], ReservationText = loc["win.taskbar.reserve"],
+        TaskbarDark = dark, UnitText = loc["unit.tokS"],
         Secondary = new BarSecondary(new BarMoneyLine("", "", "", true),
             new BarMoneyLine(loc["bar.money.today"], "≈US$28.06", "", false), "today") { Compact = true },
     };

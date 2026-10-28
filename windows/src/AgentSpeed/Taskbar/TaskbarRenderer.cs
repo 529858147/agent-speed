@@ -52,14 +52,13 @@ internal sealed class TaskbarRenderer
 
     public double PrimaryCell { get; set; }
 
-    /// <summary>Reserve common numeric formats and localized activity labels before the first update.</summary>
+    /// <summary>Content width only; the host retains recent widths instead of reserving hypothetical large values.</summary>
     public double PrimaryNumberWidth(TaskbarState state, double scale)
     {
         var colors = Palette(state);
         EnsureCache(scale, colors.Primary, colors.Secondary, state.UnitText);
         var unit = state.ShowUnit && _unit is not null ? UnitGap + _unit.WidthIncludingTrailingWhitespace : 0;
-        return Math.Max(TabularWidth(ValueText(state), 0) + (state.HideUnit ? 0 : unit),
-            Math.Max(TabularWidth("999.9k", 0) + unit, TabularWidth(state.ReservationText, 0)));
+        return TabularWidth(ValueText(state), 0) + unit;
     }
 
     /// <summary>Width (DIP) the second value's number needs now, for the host's governor; 0 without one.</summary>
@@ -208,7 +207,7 @@ internal sealed class TaskbarRenderer
         DrawTabular(dc, valueText, x + valueWidth, baseline, role, scale);
         x += valueWidth;
 
-        if (state.ShowUnit && !state.HideUnit && _unit is not null)
+        if (state.ShowUnit && _unit is not null)
         {
             x += UnitGap;
             dc.DrawText(_unit, new Point(Snap(x, scale), baseline - _unit.Baseline));
@@ -251,7 +250,7 @@ internal sealed class TaskbarRenderer
         var sample = Glyph('8', role);
         DrawTabular(dc, text, (width + total) / 2, y + sample.Baseline, role, 1);
         y += sample.Height;
-        if (state.ShowUnit && !state.HideUnit && _unit is not null)
+        if (state.ShowUnit && _unit is not null)
         {
             dc.DrawText(_unit, new Point((width - _unit.WidthIncludingTrailingWhitespace) / 2, y - 2));
             y += 14;

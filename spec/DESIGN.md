@@ -1271,13 +1271,15 @@ The Windows fork defaults to a compact speed + today's API-equivalent estimate (
 The live-value selector retains tokens only, money only and the original two-line money block. Selecting one of
 those clears compact mode. Existing currency, subscription marks, source switches and traffic settings still apply.
 Compact money uses the dashboard's today's-cost calculation, a currency prefix and `≈` for known estimates;
-unknown prices keep `–`, partial prices keep `≥`. The taskbar reserves common numeric widths and localized state
-labels; width governors never shrink while the pointer is over the widget.
+unknown prices keep `–`, partial prices keep `≥`. Both number cells hug their content; only recently needed widths
+are retained by the governors. There is no permanent reservation for large numbers or activity labels. Width
+governors never shrink while the pointer is over the widget.
 
 An active measured/estimated speed remains numeric even when another session runs a tool or has a read warning.
-Without a visible speed, generating sessions say Waiting, tool sessions say Tools, and genuine idle says a muted
-`0 tok/s`. Starting is Reading; no sources or read warnings without other known activity show `–`, with reasons in
-the tooltip. These labels describe recorded phases and never infer an activity from wall-clock silence.
+The taskbar always shows numbers: without visible throughput it says a muted `0 tok/s`, including while an agent
+waits or runs an external operation. Starting, no sources, or read warnings without other known activity show `–`.
+Activity and read failures are explained only in the hover card, in plain sentences; there is no shorthand state
+vocabulary to learn on the taskbar. These explanations describe recorded phases, never wall-clock silence.
 
 The read-only hover card gives the selected speed metric, known activity counts, per-source contributions,
 today's cost, live cost rate, included cost sources, subscription handling and data warnings. It says Includes

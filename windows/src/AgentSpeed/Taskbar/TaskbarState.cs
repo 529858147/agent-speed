@@ -22,9 +22,7 @@ internal sealed record TaskbarState(
     string? ValueText = null,
     bool ValueMuted = false,
     BarSecondary? Secondary = null,
-    BarTrafficBlock? Traffic = null,
-    bool HideUnit = false,
-    string ReservationText = "Reading")
+    BarTrafficBlock? Traffic = null)
 {
     public static TaskbarState Initial { get; } = new(
         false, 0, SpeedTier.Idle, HeatMath.DefaultRedline, BarDisplayMode.GlyphAndValue, true, true, true, false, false,
@@ -34,7 +32,7 @@ internal sealed record TaskbarState(
     public bool LayoutDiffers(TaskbarState other) =>
         Mode != other.Mode || ShowUnit != other.ShowUnit || UnitText != other.UnitText || Enabled != other.Enabled
         || (Secondary is null) != (other.Secondary is null) || Secondary?.Live.Unit != other.Secondary?.Live.Unit
-        || Secondary?.Compact != other.Secondary?.Compact || ReservationText != other.ReservationText
+        || Secondary?.Compact != other.Secondary?.Compact
         || Secondary?.Today.Unit != other.Secondary?.Today.Unit || Secondary?.Live.Label != other.Secondary?.Live.Label
         || (Traffic is null) != (other.Traffic is null) || Traffic?.Bits != other.Traffic?.Bits;
 }
