@@ -63,18 +63,25 @@ internal static class OpenCodeRules
         }
 
         return new ParsedResponse(row.Id, SourceKind.OpenCode, AgentId(session.Id), data.Model, startMs, endMs, data.Tokens, Provider: data.Provider)
-        { Modes = ExecutionModeNative.OpenAiTier(data.ServiceTier, provider: data.Provider) };
+        { Modes = Modes(in data) };
     }
+
+    /// <summary>A row's effort variant (recorded, per request) and, for OpenAI providers, its served tier.</summary>
+    public static ExecutionModes Modes(in OpenCodeData data) =>
+        ExecutionModes.Of(ExecutionModeNative.Effort(data.Variant, ExecutionModeEvidence.Recorded, ExecutionModeScope.Request))
+            .Merge(ExecutionModeNative.OpenAiTier(data.ServiceTier, provider: data.Provider));
 
     /// <summary>Agent state after replaying a session's rows in <c>seq</c> order.</summary>
     /// <param name="model">The model known before these rows (rows of a quiet session may have been released).</param>
-    public static OpenCodeAgentState Replay(in OpenCodeSessionInfo session, IEnumerable<OpenCodeRow> rows, string? model = null)
+    /// <param name="modes">The facts of the latest assistant row before these rows, likewise.</param>
+    public static OpenCodeAgentState Replay(in OpenCodeSessionInfo session, IEnumerable<OpenCodeRow> rows, string? model = null,
+        ExecutionModes? modes = null)
     {
         var phase = AgentPhase.Idle;
         long? inFlight = null;
         long? lastLine = null;
         long malformed = 0;
-        var modes = ExecutionModes.Empty;
+        modes ??= ExecutionModes.Empty;
         foreach (var row in rows)
         {
             if (row.Data is not { } data)
@@ -91,7 +98,7 @@ internal static class OpenCodeRules
                 }
 
                 model = data.Model ?? model;
-                modes = ExecutionModeNative.OpenAiTier(data.ServiceTier, provider: data.Provider);
+                modes = Modes(in data);
                 if (data.Streamed is null)
                 {
                     phase = AgentPhase.Generating;

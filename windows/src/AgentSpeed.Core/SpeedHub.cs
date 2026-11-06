@@ -9,6 +9,7 @@ public sealed class SpeedHub
     private readonly SynchronizationContext? _context;
     private readonly object _gate = new();
     private SpeedSnapshot _latestLive = SpeedSnapshot.Empty;
+    private Reporting.ReportPerfWatch _perfWatch = Reporting.ReportPerfWatch.Off;
 
     public SpeedHub(SynchronizationContext? context = null)
     {
@@ -18,6 +19,16 @@ public sealed class SpeedHub
     public SpeedSnapshot Snapshot { get; private set; } = SpeedSnapshot.Empty;
 
     public bool IsPreviewing { get; private set; }
+
+    /// <summary>
+    /// Live reporting's statistics watch (METRICS 11.10): set on the UI thread, read by the live monitor before each read,
+    /// so the engine counts completions only while it is on.
+    /// </summary>
+    public Reporting.ReportPerfWatch PerfWatch
+    {
+        get => Volatile.Read(ref _perfWatch);
+        set => Volatile.Write(ref _perfWatch, value ?? Reporting.ReportPerfWatch.Off);
+    }
 
     public event EventHandler<SpeedSnapshot>? SnapshotChanged;
 

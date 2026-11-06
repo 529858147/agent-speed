@@ -65,6 +65,9 @@ struct LiveSpeedValue: View {
         return phase == .tools ? .hourglass : .dash
     }
 
+    /// What VoiceOver reads for the value: the speed, or the phase in its place.
+    var accessibilityText: String { accessibilityText(form) }
+
     private func accessibilityText(_ form: Form) -> String {
         switch form {
         case .number(let text): l10n("mac.settings.speedValue", text)

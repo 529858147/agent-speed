@@ -63,6 +63,8 @@ public sealed class OpenCodeTests : IDisposable
                 Assert.Equal(x.GetProperty("model").GetString(), r.Model);
                 Assert.Equal(x.GetProperty("final").GetBoolean(), r.Final);
             }
+
+            ParserFixtureTests.AssertModes(e, agent.Name, state.Modes, responses.Select(r => r.Response));
         }
     }
 

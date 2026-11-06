@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using AgentSpeed.Core;
+using AgentSpeed.Core.Intelligence;
 using AgentSpeed.Interop;
 using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
@@ -57,12 +58,28 @@ public sealed class TaskbarTests
     });
 
     [Fact]
+    public void CompactCostAndUpstreamIntelligenceRenderTogether() => OnSta(() =>
+    {
+        var loc = new Localizer(Localizer.LoadEmbeddedTable(), LanguageCodes.ZhHans);
+        var compact = State(loc, 71, dark: false);
+        var both = compact with { Intelligence = BarIntelligenceBlock.Of(IntelligenceSums.Zero, loc) };
+        foreach (var scale in new[] { 1, 1.5, 2 })
+        {
+            var renderer = new TaskbarRenderer();
+            Assert.True(renderer.MeasureLength(both, scale, vertical: false) > renderer.MeasureLength(compact, scale, vertical: false));
+            Assert.True(renderer.MeasureLength(both, scale, vertical: true) > renderer.MeasureLength(compact, scale, vertical: true));
+            Render(renderer, both, scale, vertical: false);
+            Render(renderer, both, scale, vertical: true);
+        }
+    });
+
+    [Fact]
     public void HiddenTooltipIgnoresUpdatesAndEqualVisibleDetailsDoNotRewriteText() => OnSta(() =>
     {
         var loc = new Localizer(Localizer.LoadEmbeddedTable(), LanguageCodes.ZhHans);
         var snapshot = SpeedSnapshot.Empty with { State = MonitorState.Running, Live = new Rate(71, 71), GeneratingCount = 1 };
         var details = TaskbarDetails.From(snapshot, AppSettings.Default, new CostDisplay(loc));
-        var tooltip = new HoverTooltip();
+        var tooltip = new TaskbarDetailTooltip();
         try
         {
             Assert.False(tooltip.SetDetails(details));

@@ -42,6 +42,36 @@
     "en": "%d pt",
     "ja": "%d pt"
   },
+  "mac.boards.tooltip.speed": {
+    "zh-Hant": "速度 %@ tok/s",
+    "zh-Hans": "速度 %@ tok/s",
+    "en": "Speed %@ tok/s",
+    "ja": "速度 %@ tok/s"
+  },
+  "mac.boards.tooltip.speedSubs": {
+    "zh-Hant": "速度 %@ tok/s（子 agent %@）",
+    "zh-Hans": "速度 %@ tok/s（子 agent %@）",
+    "en": "Speed %@ tok/s (sub-agents %@)",
+    "ja": "速度 %@ tok/s（サブ agent %@）"
+  },
+  "mac.boards.visible": {
+    "zh-Hant": "顯示這個看板",
+    "zh-Hans": "显示这个看板",
+    "en": "Show This Board",
+    "ja": "このボードを表示"
+  },
+  "mac.boards.empty": {
+    "zh-Hant": "排行看板依即時速度為你的 agent 排名，一眼看出誰最快。",
+    "zh-Hans": "排行看板按实时速度为你的 agent 排名，一眼看出谁最快。",
+    "en": "A leaderboard ranks your agents by live speed, so the fastest is clear at a glance.",
+    "ja": "ランキングボードはエージェントをライブ速度で順位付けし、最速がひと目で分かります。"
+  },
+  "mac.boards.sizeValue": {
+    "zh-Hant": "%@ · %d pt",
+    "zh-Hans": "%@ · %d pt",
+    "en": "%@ · %d pt",
+    "ja": "%@ · %d pt"
+  },
   "mac.settings.percentValue": {
     "zh-Hant": "%d%%",
     "zh-Hans": "%d%%",
@@ -503,5 +533,41 @@
     "zh-Hans": "选择 Grok Build 文件夹",
     "en": "Choose Grok Build Folder",
     "ja": "Grok Build フォルダを選択"
+  },
+  "mac.report.ws.milliseconds": {
+    "zh-Hant": "%@ ms",
+    "zh-Hans": "%@ ms",
+    "en": "%@ ms",
+    "ja": "%@ ms"
+  },
+  "mac.settings.sources.choosePi": {
+    "zh-Hant": "選擇 Pi 的 sessions 資料夾",
+    "zh-Hans": "选择 Pi 的 sessions 文件夹",
+    "en": "Choose the Pi sessions folder",
+    "ja": "Pi の sessions フォルダを選択"
+  },
+  "mac.settings.sources.chooseOpenClaw": {
+    "zh-Hant": "選擇 OpenClaw 的狀態資料夾、agent 資料夾或 openclaw-agent.sqlite",
+    "zh-Hans": "选择 OpenClaw 的状态文件夹、agent 文件夹或 openclaw-agent.sqlite",
+    "en": "Choose OpenClaw's state folder, an agent folder or openclaw-agent.sqlite",
+    "ja": "OpenClaw の状態フォルダ、エージェントのフォルダ、または openclaw-agent.sqlite を選択"
+  },
+  "mac.settings.sources.chooseHermes": {
+    "zh-Hant": "選擇 Hermes Agent 的主資料夾或 logs 資料夾",
+    "zh-Hans": "选择 Hermes Agent 的主文件夹或 logs 文件夹",
+    "en": "Choose Hermes Agent's home folder or a logs folder",
+    "ja": "Hermes Agent のホームフォルダまたは logs フォルダを選択"
+  },
+  "mac.settings.sources.chooseDroid": {
+    "zh-Hant": "選擇 Factory Droid 的 .factory 資料夾或 sessions 資料夾",
+    "zh-Hans": "选择 Factory Droid 的 .factory 文件夹或 sessions 文件夹",
+    "en": "Choose Factory Droid's .factory folder or its sessions folder",
+    "ja": "Factory Droid の .factory フォルダまたは sessions フォルダを選択"
+  },
+  "mac.update.relaunching": {
+    "zh-Hant": "正在重新啟動…",
+    "zh-Hans": "正在重新启动…",
+    "en": "Relaunching…",
+    "ja": "再起動中…"
   }
 }

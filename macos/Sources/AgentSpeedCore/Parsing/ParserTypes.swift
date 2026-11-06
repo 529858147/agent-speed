@@ -10,6 +10,8 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
     /// When the request was sent; nil when unknown.
     public var startMs: Int64?
     public var endMs: Int64
+    /// When the response's first content was written (METRICS 3.3); nil for sources whose logs do not say.
+    public var firstMs: Int64?
     public var usage: TokenUsage
     public var requestCount: Int
     public var modes: ExecutionModes
@@ -38,9 +40,11 @@ public struct ResponseRecord: Equatable, Hashable, Sendable {
         fast: Bool = false,
         costMicroUsd: Int64? = nil,
         requestCount: Int = 1,
-        modes: ExecutionModes = .empty
+        modes: ExecutionModes = .empty,
+        firstMs: Int64? = nil
     ) {
         self.key = key
+        self.firstMs = firstMs
         self.source = source
         self.agentId = agentId
         self.model = model
@@ -77,7 +81,12 @@ struct AgentState: Equatable, Sendable {
     /// The full working directory the transcript names (METRICS 4, 10.6); metadata only.
     var cwdPath: String?
     var model: String?
+    /// The agent's own facts: the *Current* of its source's rule (EXECUTION-MODES).
     var modes: ExecutionModes = .empty
+    /// A session-current fact, held apart from `modes`: it never reaches a response.
+    var sessionModes: ExecutionModes = .empty
+    /// Configured values: they reach the agent's current values and nothing else.
+    var configuredModes: ExecutionModes = .empty
     var isSubagent: Bool
     /// Codex and DeepSeek only; set once by the first `session_meta` or header.
     var thread: SessionThread?
@@ -86,6 +95,8 @@ struct AgentState: Equatable, Sendable {
     var inFlightStartMs: Int64?
     var lastLineMs: Int64?
     var malformedLines = 0
+    /// The file's tool calls (METRICS 6.10).
+    var actions = ActionLog()
 
     init(source: SourceKind, isSubagent: Bool = false) {
         self.source = source

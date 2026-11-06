@@ -13,7 +13,7 @@ internal sealed partial class TodayLedger
 
     private void ApplyModes(in Entry entry, int sign)
     {
-        foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+        foreach (var kind in ExecutionModes.BreakdownKinds)
         {
             var key = (entry.Source, ExecutionModeKey.Of(entry.Model, entry.Modes.Attribute(kind)));
             var measured = entry.Measured is not null;

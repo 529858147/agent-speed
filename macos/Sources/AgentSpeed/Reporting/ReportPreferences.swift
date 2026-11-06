@@ -34,6 +34,14 @@ enum ReportPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     #endif
 }
 
+/// How a service's reports travel (DESIGN 11, Transport): WebSocket by default, HTTP by the user's choice. Reports go
+/// over HTTP meanwhile when the service lacks the WebSocket capability (METRICS 11.9, effective transport).
+enum ReportTransportKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case http, websocket
+
+    var id: String { rawValue }
+}
+
 /// One service this device registered with (DESIGN 11, Storage): what the user confirmed, the device id, the
 /// registered name and the key's age. Keys themselves live in `ReportKeyStore`, never here.
 struct ReportIdentity: Codable, Equatable, Identifiable, Sendable {
@@ -47,7 +55,6 @@ struct ReportIdentity: Codable, Equatable, Identifiable, Sendable {
     /// The last valid discovery document and when it was fetched (REPORTING 3.4).
     var discovery: ReportDiscovery?
     var discoveryFetchedAt: Date?
-    var etag: String?
     var keyCreatedAt: Date
     /// A rotated key waits for the service's answer (REPORTING 4.5).
     var pendingKey = false
@@ -74,6 +81,11 @@ struct ReportPreferences: Codable, Equatable, Sendable {
     var invite: ReportInvite.Answer?
     /// The name for the next registration when the user typed one; nil means the computer name (DESIGN 11, Username).
     var username: String?
+    /// The origins whose transport the user set to HTTP, the latest choice last. Every other service uses WebSocket,
+    /// also those set up by earlier builds; their list of WebSocket origins (`webSocketServices`) is ignored.
+    var httpServices: [String] = []
+
+    static let maxHTTPServices = 16
 
     init() {}
 
@@ -89,6 +101,20 @@ struct ReportPreferences: Codable, Equatable, Sendable {
         identities = (try? container.decode([ReportIdentity].self, forKey: .identities)) ?? []
         invite = try? container.decode(ReportInvite.Answer.self, forKey: .invite)
         username = try? container.decode(String.self, forKey: .username)
+        httpServices = Array(((try? container.decode([String].self, forKey: .httpServices)) ?? [])
+            .filter { !$0.isEmpty && $0.count <= ReportServiceURL.maxLength }.suffix(Self.maxHTTPServices))
+    }
+
+    /// The user's choice for `service` (DESIGN 11, Transport): WebSocket unless HTTP was chosen.
+    func transport(for service: ReportServiceURL?) -> ReportTransportKind {
+        guard let service, httpServices.contains(service.origin) else { return .websocket }
+        return .http
+    }
+
+    mutating func setTransport(_ transport: ReportTransportKind, for origin: String) {
+        httpServices.removeAll { $0 == origin }
+        if transport == .http { httpServices.append(origin) }
+        httpServices = Array(httpServices.suffix(Self.maxHTTPServices))
     }
 
     /// An identity is registered with some service (the invitation is not offered then).

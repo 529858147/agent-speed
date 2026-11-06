@@ -7,6 +7,7 @@ using AgentSpeed.Controls;
 using AgentSpeed.Core;
 using AgentSpeed.Core.Network;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.Unpriced;
 using AgentSpeed.Cost;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Cost;
@@ -82,6 +83,7 @@ internal sealed class CostPaneViewModel : ObservableObject
     private string _currencyAccessibleName = string.Empty;
     private string _liveUnitCostLabel = string.Empty;
     private string _unknownToday = string.Empty;
+    private string _unknownTodayTooltip = string.Empty;
     private bool _hasSubscriptionRows;
 
     public CostPaneViewModel(SettingsService settings, CostService cost)
@@ -210,8 +212,11 @@ internal sealed class CostPaneViewModel : ObservableObject
 
     public RelayCommand ViewPriceSourceCommand { get; }
 
-    /// <summary><c>prices.unknownToday</c>; empty when every model of today has a price.</summary>
+    /// <summary><c>prices.unknownToday</c>; empty when every request of today has a price.</summary>
     public string UnknownToday { get => _unknownToday; private set => Set(ref _unknownToday, value); }
+
+    /// <summary>The whole list with each reason's hint once.</summary>
+    public string UnknownTodayTooltip { get => _unknownTodayTooltip; private set => Set(ref _unknownTodayTooltip, value); }
 
     // Network
 
@@ -225,10 +230,18 @@ internal sealed class CostPaneViewModel : ObservableObject
         _snapshot = snapshot;
         RefreshSubscriptions();
         RefreshPrices();
-        UnknownToday = CostPaneText.UnknownToday(CostPaneText.UnpricedModels(snapshot.Sources), Display.Localizer);
+        RefreshUnknownToday();
     }
 
     public void Relocalize() => Refresh();
+
+    /// <summary>Today's unpriced requests over every enabled source, with reasons under the current table (METRICS 9.10 <i>Live</i>).</summary>
+    private void RefreshUnknownToday()
+    {
+        var today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var live = UnpricedView.Build(UnpricedPart.Live(_snapshot.Sources, today), _cost.Book.Current, today, today);
+        (UnknownToday, UnknownTodayTooltip) = CostPaneText.UnknownToday(live, Display.Localizer);
+    }
 
     private void Refresh()
     {
@@ -241,7 +254,7 @@ internal sealed class CostPaneViewModel : ObservableObject
         Rate = RateStatusView.For(display, new RateStatusInput(S.NetworkEnabled, rates.IsRefreshing, rates.FailureReason, rates.IsStale));
         RefreshPrices();
         RefreshSubscriptions();
-        UnknownToday = CostPaneText.UnknownToday(CostPaneText.UnpricedModels(_snapshot.Sources), display.Localizer);
+        RefreshUnknownToday();
         foreach (var name in new[]
                  {
                      nameof(LiveUnitIsTokens), nameof(LiveUnitIsCost), nameof(IncludeSubscriptions), nameof(AutoSyncPrices),

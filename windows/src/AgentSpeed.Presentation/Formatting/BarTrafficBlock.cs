@@ -15,14 +15,14 @@ public sealed record BarTrafficBlock(TrafficFormat.Parts? Rx, TrafficFormat.Part
 {
     public const string Dash = "–";
 
-    /// <summary>Null unless measuring is on, the block is chosen and the widget shows a value (not glyph only).</summary>
+    /// <summary>Null unless measuring is on, a network block is chosen and the widget shows a value (not glyph only).</summary>
     public static BarTrafficBlock? From(AppSettings settings, TrafficSnapshot snapshot, Localizer localizer)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(localizer);
         var traffic = settings.Traffic;
-        if (!traffic.Enabled || traffic.Bar == BarTraffic.Off || settings.BarMode == BarDisplayMode.GlyphOnly)
+        if (!traffic.Enabled || !TrafficSettings.IsNetwork(traffic.Bar) || settings.BarMode == BarDisplayMode.GlyphOnly)
         {
             return null;
         }

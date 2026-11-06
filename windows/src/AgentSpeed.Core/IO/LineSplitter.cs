@@ -12,15 +12,21 @@ internal sealed class LineSplitter
 
     private byte[]? _partial;
     private int _partialLength;
+    private long _partialStart;
     private bool _skippingOversized;
 
     public long OversizedLines { get; private set; }
+
+    /// <summary>File offset of the next byte passed to <see cref="Consume"/>; line offsets for an <see cref="IPositionedLineSink"/>.</summary>
+    public long Position { get; set; }
 
     /// <summary>When set, bytes up to and including the next newline are dropped.</summary>
     public bool AlignToNextLine { get; set; }
 
     public void Consume(ReadOnlySpan<byte> data, ILineSink sink)
     {
+        var position = Position;
+        Position += data.Length;
         if (AlignToNextLine)
         {
             var first = data.IndexOf((byte)'\n');
@@ -31,6 +37,7 @@ internal sealed class LineSplitter
 
             AlignToNextLine = false;
             data = data[(first + 1)..];
+            position += first + 1;
         }
 
         while (!data.IsEmpty)
@@ -38,12 +45,14 @@ internal sealed class LineSplitter
             var newline = data.IndexOf((byte)'\n');
             if (newline < 0)
             {
-                AppendPartial(data);
+                AppendPartial(data, position);
                 return;
             }
 
             var segment = data[..newline];
             data = data[(newline + 1)..];
+            var start = position;
+            position += newline + 1;
             if (_skippingOversized)
             {
                 _skippingOversized = false;
@@ -53,7 +62,7 @@ internal sealed class LineSplitter
 
             if (_partialLength == 0)
             {
-                Emit(segment, sink);
+                Emit(segment, start, sink);
                 continue;
             }
 
@@ -63,8 +72,8 @@ internal sealed class LineSplitter
             }
             else
             {
-                AppendPartial(segment);
-                Emit(_partial.AsSpan(0, _partialLength), sink);
+                AppendPartial(segment, start);
+                Emit(_partial.AsSpan(0, _partialLength), _partialStart, sink);
             }
 
             _partialLength = 0;
@@ -89,7 +98,7 @@ internal sealed class LineSplitter
         }
     }
 
-    private void Emit(ReadOnlySpan<byte> line, ILineSink sink)
+    private void Emit(ReadOnlySpan<byte> line, long offset, ILineSink sink)
     {
         if (line.Length > MaxLineBytes)
         {
@@ -97,19 +106,32 @@ internal sealed class LineSplitter
             return;
         }
 
+        var length = line.Length;
         if (!line.IsEmpty && line[^1] == '\r')
         {
             line = line[..^1];
         }
 
-        sink.OnLine(line);
+        if (sink is IPositionedLineSink positioned)
+        {
+            positioned.OnLine(line, offset, length);
+        }
+        else
+        {
+            sink.OnLine(line);
+        }
     }
 
-    private void AppendPartial(ReadOnlySpan<byte> data)
+    private void AppendPartial(ReadOnlySpan<byte> data, long offset)
     {
         if (_skippingOversized)
         {
             return;
+        }
+
+        if (_partialLength == 0)
+        {
+            _partialStart = offset;
         }
 
         var needed = (long)_partialLength + data.Length;

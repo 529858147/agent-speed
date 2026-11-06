@@ -165,7 +165,10 @@ public sealed class LiveMonitorTests : IDisposable
         ZCodeRoot: _temp.Combine("zcode"),
         KimiRoot: _temp.Combine("kimi", "sessions"),
         GrokBuildRoot: _temp.Combine("grok", "sessions"),
-        PiRoot: _temp.Combine("pi", "sessions"));
+        PiRoot: _temp.Combine("pi", "sessions"),
+        OpenClawRoot: _temp.Combine("home", ".openclaw"),
+        HermesRoot: _temp.Combine("home", ".hermes"),
+        DroidRoot: _temp.Combine("home", ".factory"));
 
     private sealed class HubProbe
     {

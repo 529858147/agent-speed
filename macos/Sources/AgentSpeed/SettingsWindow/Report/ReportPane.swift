@@ -93,6 +93,9 @@ private struct ReportServiceSection: View {
                     .transition(reduceMotion ? .identity : .opacity)
             }
             ReportServiceState(model: model)
+            if report.selectedService != nil {
+                ReportTransportRow(model: model)
+            }
         }
         .animation(reduceMotion ? nil : Motion.fade, value: report.discovery?.name)
     }

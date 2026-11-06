@@ -1,9 +1,11 @@
 using System.Text.Json;
+using AgentSpeed.Core.Droid;
 using AgentSpeed.Core.Gemini;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Omp;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Pi;
 using AgentSpeed.Core.WorkBuddy;
 
 namespace AgentSpeed.Core.Tests;
@@ -63,13 +65,6 @@ public sealed class ParserFixtureTests
             expectedResponses.Select(r => r.GetProperty("key").GetString()!).ToList(),
             responses.Select(r => r.Key).ToList());
 
-        AssertResponses(expectedResponses, responses, relative, parser);
-    }
-
-    /// <summary>Every field of every expected response, in first-emission order.</summary>
-    internal static void AssertResponses(IReadOnlyList<JsonElement> expectedResponses, IReadOnlyList<ParsedResponse> responses,
-        string relative, TranscriptParser parser)
-    {
         for (var i = 0; i < expectedResponses.Count; i++)
         {
             var e = expectedResponses[i];
@@ -77,6 +72,7 @@ public sealed class ParserFixtureTests
             var label = relative + " " + r.Key;
             Assert.True(NullableLong(e.GetProperty("startMs")) == r.StartMs, $"{label} startMs: expected {e.GetProperty("startMs")}, got {r.StartMs}");
             Assert.True(e.GetProperty("endMs").GetInt64() == r.EndMs, $"{label} endMs: expected {e.GetProperty("endMs")}, got {r.EndMs}");
+            Assert.True(NullableLong(e.GetProperty("firstMs")) == r.FirstMs, $"{label} firstMs: expected {e.GetProperty("firstMs")}, got {r.FirstMs}");
             Assert.True(e.GetProperty("input").GetInt64() == r.Tokens.Input, $"{label} input: got {r.Tokens.Input}");
             Assert.True(e.GetProperty("cachedInput").GetInt64() == r.Tokens.CachedInput, $"{label} cachedInput: got {r.Tokens.CachedInput}");
             Assert.True(e.GetProperty("cacheWriteInput").GetInt64() == r.Tokens.CacheWriteInput, $"{label} cacheWriteInput: got {r.Tokens.CacheWriteInput}");
@@ -90,6 +86,37 @@ public sealed class ParserFixtureTests
             Assert.True(e.GetProperty("fast").GetBoolean() == r.Fast, $"{label} fast: got {r.Fast}");
             Assert.Equal(parser.Source, r.Source);
             Assert.Equal(parser.AgentId, r.AgentId);
+        }
+
+        var (session, configured) = Context(relative, parser);
+        AssertModes(expected, relative, parser.Modes, responses, session, configured);
+        AssertActions(expected, relative, parser.WorkActions);
+    }
+
+    /// <summary>
+    /// The actions of METRICS 6.10 (<c>actions</c>, listed for the files that have them): tool, digest, call time, the first
+    /// result's time and outcome, and the model of the response that issued the call.
+    /// </summary>
+    internal static void AssertActions(JsonElement expected, string label, IReadOnlyList<AgentSpeed.Core.Work.WorkAction> actions)
+    {
+        if (!expected.TryGetProperty("actions", out var list))
+        {
+            return;
+        }
+
+        Assert.True(list.GetArrayLength() == actions.Count, $"{label}: expected {list.GetArrayLength()} actions, got {actions.Count}");
+        var i = 0;
+        foreach (var e in list.EnumerateArray())
+        {
+            var a = actions[i];
+            var at = $"{label} action {i++}";
+            Assert.Equal(e.GetProperty("tool").GetString(), a.Tool);
+            Assert.True(e.GetProperty("digest").GetString() == AgentSpeed.Core.Work.ActionDigest.Hex(a.Digest), $"{at} digest");
+            Assert.True(e.GetProperty("callMs").GetInt64() == a.AtMs, $"{at} callMs: got {a.AtMs}");
+            Assert.True(NullableLong(e.GetProperty("resultMs")) == a.ResultMs, $"{at} resultMs: got {a.ResultMs}");
+            bool? failed = e.GetProperty("failed").ValueKind == JsonValueKind.Null ? null : e.GetProperty("failed").GetBoolean();
+            Assert.True(failed == a.Failed, $"{at} failed: got {a.Failed}");
+            Assert.True(e.GetProperty("model").GetString() == a.Model, $"{at} model: got {a.Model}");
         }
     }
 
@@ -134,6 +161,8 @@ public sealed class ParserFixtureTests
         SourceKind.WorkBuddy => "workbuddy",
         SourceKind.WorkBuddyAi => "workbuddyAi",
         SourceKind.Pi => "pi",
+        SourceKind.OpenClaw => "openclaw",
+        SourceKind.Droid => "droid",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
@@ -144,6 +173,64 @@ public sealed class ParserFixtureTests
         AgentPhase.Idle => "idle",
         _ => throw new ArgumentOutOfRangeException(nameof(phase)),
     };
+
+    /// <summary>
+    /// The current <c>effort</c> and <c>speed</c> (EXECUTION-MODES, Current values) and each response's <c>responseModes</c>
+    /// (Native rules); entries without these keys are not checked.
+    /// </summary>
+    internal static void AssertModes(JsonElement expected, string label, ExecutionModes current, IEnumerable<ParsedResponse> responses,
+        ExecutionModes? session = null, ExecutionModes? configured = null)
+    {
+        ExecutionModeAttribution? Current(ExecutionModeKind kind) =>
+            ExecutionModes.Current(kind, current, session ?? ExecutionModes.Empty, configured ?? ExecutionModes.Empty) is { IsKnown: true } known ? known : null;
+        if (expected.TryGetProperty("effort", out var effort))
+            Assert.True(Attribution(effort) == View(Current(ExecutionModeKind.Effort)), $"{label} effort: got {Current(ExecutionModeKind.Effort)}");
+        if (expected.TryGetProperty("speed", out var speed))
+            Assert.True(Attribution(speed) == View(Current(ExecutionModeKind.Speed)), $"{label} speed: got {Current(ExecutionModeKind.Speed)}");
+        if (!expected.TryGetProperty("responseModes", out var byKey)) return;
+        var latest = responses.GroupBy(r => r.Key).ToDictionary(g => g.Key, g => g.Last().Modes, StringComparer.Ordinal);
+        Assert.Equal(byKey.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal), latest.Keys.Order(StringComparer.Ordinal));
+        foreach (var item in byKey.EnumerateObject())
+        {
+            var modes = latest[item.Name];
+            Assert.True(Attribution(item.Value.GetProperty("effort")) == View(EffortAndSpeed.Effort(modes)),
+                $"{label} {item.Name} effort: got {EffortAndSpeed.Effort(modes)}");
+            Assert.True(Attribution(item.Value.GetProperty("speed")) == View(EffortAndSpeed.Speed(modes)),
+                $"{label} {item.Name} speed: got {EffortAndSpeed.Speed(modes)}");
+        }
+    }
+
+    /// <summary>
+    /// The session-current and configured facts of a fixture agent, read by the app's own readers from the homes the fixture
+    /// folders play, like the reference's <c>fixture_context</c>.
+    /// </summary>
+    private static (ExecutionModes Session, ExecutionModes Configured) Context(string relative, TranscriptParser parser)
+    {
+        var configured = new ConfiguredValues();
+        if (relative.StartsWith("workbuddy/", StringComparison.Ordinal))
+        {
+            var root = WorkBuddyFixture.RootOf(parser.Source);
+            var store = WorkBuddyPaths.Sessions(root);
+            var session = WorkBuddyPaths.SessionId(parser.AgentId);
+            store.Refresh([session]);
+            return (store.Of(session), configured.Of(parser.Source, root, parser.AgentId, parser.Model));
+        }
+
+        var folder = parser.Source switch
+        {
+            SourceKind.Codex => parser.AgentId[..(parser.AgentId.IndexOf(Path.DirectorySeparatorChar + "sessions" + Path.DirectorySeparatorChar, StringComparison.Ordinal) + 9)],
+            SourceKind.Gemini => FixtureLocator.PathOf("gemini/tmp"),
+            _ => string.Empty,
+        };
+        return (parser.SessionModes, configured.Of(parser.Source, folder, parser.AgentId, parser.Model));
+    }
+
+    private static (string, string, string?)? Attribution(JsonElement value) => value.ValueKind == JsonValueKind.Null ? null
+        : (value.GetProperty("mode").GetString()!, value.GetProperty("evidence").GetString()!,
+            value.TryGetProperty("provider", out var provider) ? provider.GetString() : null);
+
+    private static (string, string, string?)? View(ExecutionModeAttribution? value) =>
+        value is { } known ? (known.Mode, known.Evidence, known.Provider) : null;
 
     internal static long? NullableLong(JsonElement element) =>
         element.ValueKind == JsonValueKind.Null ? null : element.GetInt64();
@@ -158,13 +245,9 @@ public sealed class ParserFixtureTests
             return FeedLines(new ClaudeParser(path, deduper), content, sink, maxLines);
         }
 
-        if (relative.StartsWith("pi/", StringComparison.Ordinal))
-        {
-            return FeedLines(new Pi.PiParser(path, deduper, Path.Combine(FixtureLocator.FixturesDirectory, "pi", "agent", "sessions")),
-                content, sink, maxLines);
-        }
-
-        if (relative.StartsWith("codex/", StringComparison.Ordinal))
+        // OpenClaw's agent-scoped Codex home is a Codex root (METRICS 2, 4.14).
+        if (relative.StartsWith("codex/", StringComparison.Ordinal)
+            || (relative.StartsWith("openclaw/", StringComparison.Ordinal) && relative.Contains("/codex-home/sessions/", StringComparison.Ordinal)))
         {
             var codex = new CodexParser(path, deduper);
             if (!relative.EndsWith(".jsonl.zst", StringComparison.Ordinal))
@@ -204,6 +287,11 @@ public sealed class ParserFixtureTests
             return FeedLines(new OmpParser(path, deduper, OmpFixture.RootOf(path)), content, sink, maxLines);
         }
 
+        if (relative.StartsWith("pi/", StringComparison.Ordinal))
+        {
+            return FeedLines(PiParser.ForPath(path, deduper), content, sink, maxLines);
+        }
+
         if (relative.StartsWith("workbuddy/", StringComparison.Ordinal))
         {
             var source = WorkBuddyFixture.SourceOf(relative);
@@ -220,7 +308,41 @@ public sealed class ParserFixtureTests
             return workBuddy;
         }
 
+        // A Factory Droid session is read from its start with its sidecar, through the tailer like the app (METRICS 4.16).
+        if (relative.StartsWith("droid/", StringComparison.Ordinal))
+        {
+            var droid = new DroidParser(path, deduper);
+            if (maxLines is { } lines)
+            {
+                foreach (var (offset, raw) in PositionedLines(content).Take(lines))
+                {
+                    var length = raw.Length;
+                    var text = length > 0 && raw[^1] == (byte)'\r' ? raw.AsSpan(0, length - 1) : raw;
+                    droid.Feed(DroidLineReader.Read(text, offset, length));
+                }
+
+                return droid;
+            }
+
+            var batch = droid.NewBatch();
+            new DroidTailer(path).ReadAppended(batch);
+            batch.ApplyTo(sink);
+            return droid;
+        }
+
         throw new InvalidOperationException("Unknown fixture source: " + relative);
+    }
+
+    /// <summary>Newline-terminated lines with their byte offsets, as the reference's <c>droid_lines</c> yields them.</summary>
+    internal static IEnumerable<(long Offset, byte[] Line)> PositionedLines(byte[] content)
+    {
+        var start = 0;
+        int newline;
+        while ((newline = Array.IndexOf(content, (byte)'\n', start)) >= 0)
+        {
+            yield return (start, content.AsSpan(start, newline - start).ToArray());
+            start = newline + 1;
+        }
     }
 
     private static TranscriptParser FeedLines<TLine>(TranscriptParser<TLine> parser, byte[] content, IResponseSink sink, int? maxLines)

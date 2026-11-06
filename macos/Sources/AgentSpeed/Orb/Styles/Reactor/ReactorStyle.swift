@@ -8,7 +8,7 @@ import SwiftUI
 @MainActor
 final class ReactorStyle: OrbStyleRenderer {
     let kind = OrbStyleKind.reactor
-    let trafficPlacement = OrbTrafficPlacement.reactor
+    let linePlacement = OrbLinePlacement.reactor
     let readoutLayout = OrbReadoutLayout(
         valueSize: 0.205, valueBaseline: 0.03, valueMaxWidth: 0.46, unitSize: 0.062, unitGap: 0.08,
         title: .belowUnit(0.074), titleSize: 0.058, titleMaxWidth: 0.50, infoMaxWidth: 0.52, dots: 0.252, pillCenter: -0.172

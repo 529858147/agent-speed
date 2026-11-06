@@ -34,12 +34,16 @@ struct SnapshotContext: Sendable {
             } else if kind == .zcode {
                 let location = session.zcodeLocation
                 sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
+            } else if kind == .openclaw {
+                let location = session.openclawLocation
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
+            } else if kind == .hermes {
+                let location = session.hermesLocation
+                sources[kind] = SourceInfo(enabled: enabled, rootPath: location.path, available: location.available, sessionCount: counts[kind] ?? 0)
             } else {
                 sources[kind] = SourceInfo(enabled: enabled, rootPath: "", available: false, sessionCount: 0)
             }
-        }
-        if let info = sources[.codex] {
-            sources[.codex]?.configuredModes = ConfiguredModes.codex(sessionsRoot: info.rootPath)
+            sources[kind]?.configuredModes = session.configuredModes(of: kind)
         }
         self.sources = sources
         var warnings: [MonitorWarning] = []
@@ -62,7 +66,7 @@ struct SnapshotContext: Sendable {
 enum SnapshotBuilder {
     static func running(_ output: EngineOutput, context: SnapshotContext) -> SpeedSnapshot {
         let agents = output.agents.map { row in
-            AgentStatus(
+            var agent = AgentStatus(
                 id: row.agent.id,
                 source: row.agent.source,
                 project: row.agent.project,
@@ -73,10 +77,15 @@ enum SnapshotBuilder {
                 recentSpeed: row.recentSpeed,
                 lastActivity: date(row.agent.lastLineMs ?? 0),
                 parentId: row.parentId,
-                liveCost: row.liveCost,
                 cwdPath: row.agent.cwdPath,
-                modes: row.agent.modes
+                modes: row.agent.modes,
+                intelligence: row.intelligence,
+                perf: row.perf,
+                signals: row.signals
             )
+            agent.sessionModes = row.agent.sessionModes
+            agent.configuredModes = row.agent.configuredModes
+            return agent
         }
         let sources = SourceKind.allCases.map { kind in
             let info = context.sources[kind]
@@ -93,7 +102,9 @@ enum SnapshotBuilder {
                 liveCost: output.sourceLiveCost[kind] ?? .zero,
                 todayCost: output.todayCostBySource[kind] ?? .zero,
                 unpricedModels: unpricedModels(output.todayCostByModel[kind]),
-                configuredModes: info?.configuredModes ?? .empty
+                configuredModes: info?.configuredModes ?? .empty,
+                intelligence: output.sourceIntelligence[kind] ?? .zero,
+                unpricedFacts: output.todayUnpricedFacts[kind] ?? []
             )
         }
         return SpeedSnapshot(
@@ -116,6 +127,7 @@ enum SnapshotBuilder {
             dayStart: date(output.todayStartMs),
             liveCost: output.liveCost,
             todayCost: output.todayCost,
+            intelligence: output.intelligence,
             report: output.report
         )
     }

@@ -24,6 +24,10 @@ public sealed class DemoDriver : IDisposable
 
     private static readonly SourceKind[] Sources = Enum.GetValues<SourceKind>();
 
+    /// <summary>Every demo agent's grade: a flagship model at high effort.</summary>
+    /// <summary>Demo performance scores by agent position: one above the reference, one below it, one without a score yet.</summary>
+    private static readonly double?[] DemoScores = [1286.4, 742.25, null, 2140.75];
+
     private readonly SpeedHub _hub;
     private readonly object _gate = new();
     private readonly Random _random = new();
@@ -192,8 +196,12 @@ public sealed class DemoDriver : IDisposable
             var active = index < generating;
             var share = active ? speed * agent.Weight / activeWeight : 0;
             var phase = active ? AgentPhase.Generating : speed > 0.5 ? AgentPhase.Tools : AgentPhase.Idle;
+            var score = DemoScore(agent.Id, index, phase);
             return new AgentStatus(agent.Id, agent.Source, agent.Project, agent.Model, phase, agent.IsSubagent,
-                new Rate(share, share * 24), active ? share : null, now, agent.IsSubagent ? "demo-nova" : null);
+                new Rate(share, share * 24), active ? share : null, now, agent.IsSubagent ? "demo-nova" : null)
+            {
+                Intelligence = new Intelligence.AgentIntelligence(DemoIntelligence(share) with { Score = score }, score),
+            };
         }).ToList();
 
         var n = Sources.Length;
@@ -203,7 +211,13 @@ public sealed class DemoDriver : IDisposable
             return new SourceStatus(kind, true, string.Empty, true, 12, new Rate(live, live * 24),
                 new TokenTotals(_today.Requests / n, _today.Input / n, _today.CachedInput / n, 0, _today.Output / n),
                 agents.Count(a => a.Source == kind && a.Phase == AgentPhase.Generating),
-                new Rate(live * EstimatedShare, live * 24 * EstimatedShare));
+                new Rate(live * EstimatedShare, live * 24 * EstimatedShare))
+            {
+                Intelligence = DemoIntelligence(live) with
+                {
+                    Score = agents.Where(a => a.Source == kind).Aggregate(Perf.PerfSetValue.None, (best, a) => Perf.PerfSetValue.Merge(best, a.Intelligence.Score)),
+                },
+            };
         }).ToList();
 
         return new SpeedSnapshot(
@@ -222,6 +236,24 @@ public sealed class DemoDriver : IDisposable
             _history.ToList(),
             _lastResponse,
             []);
+    }
+
+    /// <summary>A model thinking 40 % of the time, for orbs and rows that preview the thinking line.</summary>
+    private static Intelligence.IntelligenceSums DemoIntelligence(double liveOutput)
+    {
+        var window = liveOutput * Engine.SpeedEngine.WindowMs / 1000.0;
+        return Intelligence.IntelligenceSums.Zero.Add(SourceKind.ClaudeCode, window, window * 0.4);
+    }
+
+    private static Perf.PerfSetValue DemoScore(string agentId, int index, AgentPhase phase)
+    {
+        if (DemoScores[index % DemoScores.Length] is not { } score)
+        {
+            return Perf.PerfSetValue.None;
+        }
+
+        var form = phase == AgentPhase.Idle ? Perf.PerfForm.Resting : Perf.PerfForm.Live;
+        return new Perf.PerfSetValue(form, score, agentId);
     }
 
     private sealed record FakeAgent(

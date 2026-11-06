@@ -10,6 +10,8 @@ struct JSONNumber: Equatable, Sendable {
     var isFinite: Bool
     var isPositive: Bool
     var isNonNegative: Bool
+    /// An integer literal (no fraction or exponent): Python reads it as an `int`.
+    var isInteger = false
 }
 
 /// A member key inside the scanned buffer.
@@ -300,6 +302,29 @@ struct JSONScanner {
         return Self.integerValue(base: base, start: start, end: position, isInteger: isInteger)
     }
 
+    /// Reads an integer literal from 0 through `Int64.max` (a Codex ordinal, METRICS 3.5). Anything else gives nil.
+    mutating func readOrdinal() throws(JSONScanError) -> Int64? {
+        skipWhitespace()
+        guard position < end else { throw JSONScanError() }
+        let first = base[position]
+        guard first == UInt8(ascii: "-") || Self.isDigit(first) else {
+            try skipValue()
+            return nil
+        }
+        let start = position
+        guard try skipNumber() else { return nil }
+        var index = first == UInt8(ascii: "-") ? start + 1 : start
+        var value: Int64 = 0
+        while index < position {
+            let (multiplied, overflow1) = value.multipliedReportingOverflow(by: 10)
+            let (added, overflow2) = multiplied.addingReportingOverflow(Int64(base[index] - UInt8(ascii: "0")))
+            if overflow1 || overflow2 { return nil }
+            value = added
+            index += 1
+        }
+        return first == UInt8(ascii: "-") && value != 0 ? nil : value
+    }
+
     /// Reads a number the way Python's `json` does: integer literals are exact (saturated here), every other literal
     /// is the nearest `Double`, so it can be `-0.0` or infinite. Non-numbers are skipped and give nil.
     mutating func readNumber() throws(JSONScanError) -> JSONNumber? {
@@ -317,7 +342,8 @@ struct JSONScanner {
             let isFinite = position - start <= 308
                 || Double(String(decoding: UnsafeBufferPointer(start: base + start, count: position - start), as: UTF8.self))?
                     .isFinite == true
-            return JSONNumber(truncated: value, isFinite: isFinite, isPositive: value > 0, isNonNegative: value >= 0)
+            return JSONNumber(truncated: value, isFinite: isFinite, isPositive: value > 0, isNonNegative: value >= 0,
+                              isInteger: true)
         }
         let text = String(decoding: UnsafeBufferPointer(start: base + start, count: position - start), as: UTF8.self)
         guard let value = Double(text) else { return nil }
@@ -329,6 +355,22 @@ struct JSONScanner {
             Int64(value.rounded(.towardZero))
         }
         return JSONNumber(truncated: truncated, isFinite: value.isFinite, isPositive: value > 0, isNonNegative: value >= 0)
+    }
+
+    /// Passes the current value as the document stores it to `body` and consumes it: a string's decoded UTF-8 text,
+    /// any other value's raw JSON text. Nothing is kept beyond the call.
+    mutating func withStoredText<Result>(_ body: (UnsafeRawBufferPointer) -> Result) throws(JSONScanError) -> Result {
+        skipWhitespace()
+        guard position < end else { throw JSONScanError() }
+        let start = position
+        guard base[start] == UInt8(ascii: "\"") else {
+            try skipValue()
+            return body(UnsafeRawBufferPointer(start: base + start, count: position - start))
+        }
+        let escaped = try skipString()
+        let count = position - 1 - (start + 1)
+        guard escaped else { return body(UnsafeRawBufferPointer(start: base + start + 1, count: count)) }
+        return (decodeString(start: start + 1, count: count) ?? []).withUnsafeBytes(body)
     }
 
     /// Reads `true`/`false`. Other values are skipped and give nil.

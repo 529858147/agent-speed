@@ -190,38 +190,6 @@ public class HistoryCostTests
         Assert.Equal(HistoryChartMetric.Output, new HistoryCostOptions().Metric);
     }
 
-    // Unknown prices.
-
-    [Fact]
-    public void UnpricedModelsListUnknownPricesOfTheCountedSources()
-    {
-        Assert.Equal([new UnpricedModel("m", SourceKind.Codex, 2)], HistoryAggregator.UnpricedModels(CostRecords, null, Week, Claude));
-        Assert.Equal(
-            [new UnpricedModel("m", SourceKind.Codex, 2), new UnpricedModel("mystery", SourceKind.ClaudeCode, 1)],
-            HistoryAggregator.UnpricedModels(CostRecords, null, Week));
-        Assert.Equal([new UnpricedModel("mystery", SourceKind.ClaudeCode, 1)],
-            HistoryAggregator.UnpricedModels(CostRecords, SourceKind.ClaudeCode, Week));
-        Assert.Empty(HistoryAggregator.UnpricedModels(CostRecords, null, DayRange.Single(D(2026, 10, 21))));
-    }
-
-    [Fact]
-    public void UnpricedModelsSkipRecordsWithoutCostDataAndKeepUnnamedRequests()
-    {
-        DailyUsage[] records =
-        [
-            Usage("2026-10-21", SourceKind.Codex, requests: 5, models: [new ModelUsage(" neko ", 2, 5) { Cost = new CostTally(0, 2) }])
-                with { Cost = new CostTally(1_000_000, 3) },
-            Usage("2026-10-21", SourceKind.ClaudeCode, requests: 4, models: [new ModelUsage("ghost", 4, 5) { Cost = new CostTally(0, 4) }]),
-            Usage("2026-10-01", SourceKind.Codex, requests: 7) with { Cost = new CostTally(0, 7) },
-        ];
-
-        Assert.Equal(
-            [new UnpricedModel("neko", SourceKind.Codex, 2), new UnpricedModel(string.Empty, SourceKind.Codex, 1)],
-            HistoryAggregator.UnpricedModels(records, null, Week));
-        Assert.Empty(HistoryAggregator.UnpricedModels(records, null, Week, SourceSet.Of(SourceKind.Codex)));
-        Assert.Empty(HistoryAggregator.UnpricedModels(records, SourceKind.ClaudeCode, Week));
-    }
-
     // Single-day breakdowns.
 
     [Fact]

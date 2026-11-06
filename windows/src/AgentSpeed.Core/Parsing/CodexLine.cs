@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentSpeed.Core.Quota;
+using AgentSpeed.Core.Work;
 
 namespace AgentSpeed.Core.Parsing;
 
@@ -64,12 +65,21 @@ internal readonly record struct CodexUsage(TokenCounts Tokens, long TotalTokens)
         || Tokens.Reasoning < 0 || TotalTokens < 0;
 }
 
+/// <summary>One member of <c>thread_settings</c>: missing changes nothing, any other value clears, a string replaces.</summary>
+internal readonly record struct CodexSetting(bool Present, string? Value);
+
 /// <summary>The facts of one Codex envelope line that the state machine needs (METRICS 4.2).</summary>
 internal struct CodexLine
 {
     public LineStatus Status;
     public bool HasTimestamp;
     public long TimestampMs;
+
+    /// <summary>The top-level <c>ordinal</c> of a paginated rollout line, when it is an ordinal (METRICS 3.5).</summary>
+    public long? Ordinal;
+
+    /// <summary><c>payload.subagent_history_start_ordinal</c> of a <c>session_meta</c>: lower ordinals are copied history.</summary>
+    public long? SubagentStartOrdinal;
     public CodexLineKind Kind;
     public CodexPayloadKind PayloadKind;
     public CodexRole Role;
@@ -89,13 +99,27 @@ internal struct CodexLine
     public string? ThreadId;
     public string? ResponseId;
     public CodexQuotaSnapshot? Quota;
-    public ExecutionModes? SelectedModes;
 
     /// <summary><c>payload.model_provider</c> of a <c>session_meta</c> (METRICS 3.2).</summary>
     public string? ModelProvider;
+
+    /// <summary><c>turn_context</c>: <c>payload.effort</c>, else <c>payload.collaboration_mode.settings.reasoning_effort</c>.</summary>
+    public string? Effort;
+    public string? CollaborationEffort;
+
+    /// <summary><c>payload.service_tier</c> of a <c>turn_context</c> or <c>token_usage_record</c>.</summary>
+    public string? ServiceTier;
+
+    /// <summary><c>thread_settings.service_tier</c> and <c>.reasoning_effort</c> of a <c>thread_settings_applied</c> event.</summary>
+    public CodexSetting TierSetting;
+    public CodexSetting EffortSetting;
+    public string? TierProvider;
     public TokenCounts Usage;
     public CodexUsage Total;
     public CodexUsage Last;
+
+    /// <summary>A <c>response_item</c>'s tool call or its output (METRICS 6.10).</summary>
+    public LineTools Tools;
 }
 
 /// <summary>Pure, thread-safe extraction of <see cref="CodexLine"/> from one JSONL line.</summary>
@@ -115,7 +139,8 @@ internal static class CodexLineReader
             line.IndexOf("\"agent_message\""u8) >= 0,
             line.IndexOf("\"token_usage_record\""u8) >= 0,
             line.IndexOf("\"token_count\""u8) >= 0,
-            line.IndexOf("\"thread_settings_applied\""u8) >= 0);
+            line.IndexOf("\"thread_settings_applied\""u8) >= 0,
+            CodexTools.MayHaveTools(line));
         try
         {
             var reader = new Utf8JsonReader(line, JsonScan.Options);
@@ -131,6 +156,11 @@ internal static class CodexLineReader
                     reader.Read();
                     result.HasTimestamp = JsonScan.TryReadTimestamp(ref reader, out result.TimestampMs);
                 }
+                else if (reader.ValueTextEquals("ordinal"u8))
+                {
+                    reader.Read();
+                    result.Ordinal = JsonScan.ReadOrdinal(ref reader);
+                }
                 else if (reader.ValueTextEquals("type"u8))
                 {
                     reader.Read();
@@ -142,7 +172,7 @@ internal static class CodexLineReader
                     reader.Read();
                     if (reader.TokenType == JsonTokenType.StartObject)
                     {
-                        ReadPayload(ref reader, ref result, hints);
+                        ReadPayload(ref reader, ref result, hints, line);
                     }
                     else
                     {
@@ -166,6 +196,11 @@ internal static class CodexLineReader
             return Malformed();
         }
 
+        if (result.Kind != CodexLineKind.ResponseItem)
+        {
+            result.Tools = default;
+        }
+
         return result;
     }
 
@@ -180,14 +215,16 @@ internal static class CodexLineReader
         : reader.ValueTextEquals("turn_context"u8) ? CodexLineKind.TurnContext
         : CodexLineKind.Other;
 
-    private static void ReadPayload(ref Utf8JsonReader reader, ref CodexLine result, Hints hints)
+    private static void ReadPayload(ref Utf8JsonReader reader, ref CodexLine result, Hints hints, ReadOnlySpan<byte> line)
     {
+        var tools = default(CodexTools);
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("type"u8))
             {
                 reader.Read();
                 result.PayloadKind = ClassifyPayload(ref reader);
+                tools.ReadType(ref reader);
                 JsonScan.SkipValue(ref reader);
             }
             else if (reader.ValueTextEquals("role"u8))
@@ -221,6 +258,11 @@ internal static class CodexLineReader
                 reader.Read();
                 result.ModelProvider = JsonScan.ReadString(ref reader);
             }
+            else if (hints.Meta && reader.ValueTextEquals("subagent_history_start_ordinal"u8))
+            {
+                reader.Read();
+                result.SubagentStartOrdinal = JsonScan.ReadOrdinal(ref reader);
+            }
             else if (hints.Meta && reader.ValueTextEquals("agent_path"u8))
             {
                 reader.Read();
@@ -248,15 +290,30 @@ internal static class CodexLineReader
                 reader.Read();
                 result.ParentThreadId = JsonScan.ReadString(ref reader);
             }
-            else if ((hints.UsageRecord || hints.TokenCount || hints.ThreadSettings) && reader.ValueTextEquals("thread_id"u8))
+            else if (hints.Meta && reader.ValueTextEquals("effort"u8))
             {
                 reader.Read();
-                result.ThreadId = JsonScan.ReadString(ref reader);
+                result.Effort = JsonScan.ReadToken(ref reader);
+            }
+            else if (hints.Meta && reader.ValueTextEquals("collaboration_mode"u8))
+            {
+                reader.Read();
+                result.CollaborationEffort = ReadCollaborationEffort(ref reader);
+            }
+            else if ((hints.Meta || hints.UsageRecord) && reader.ValueTextEquals("service_tier"u8))
+            {
+                reader.Read();
+                result.ServiceTier = JsonScan.ReadToken(ref reader);
             }
             else if (hints.ThreadSettings && reader.ValueTextEquals("thread_settings"u8))
             {
                 reader.Read();
-                result.SelectedModes = ReadThreadModes(ref reader);
+                ReadThreadSettings(ref reader, ref result);
+            }
+            else if ((hints.UsageRecord || hints.TokenCount || hints.ThreadSettings) && reader.ValueTextEquals("thread_id"u8))
+            {
+                reader.Read();
+                result.ThreadId = JsonScan.ReadString(ref reader);
             }
             else if (hints.UsageRecord && reader.ValueTextEquals("response_id"u8))
             {
@@ -294,46 +351,14 @@ internal static class CodexLineReader
                 reader.Read();
                 ReadInfo(ref reader, ref result);
             }
-            else
-            {
-                reader.Read();
-                JsonScan.SkipValue(ref reader);
-            }
-        }
-    }
-
-    private static ExecutionModes? ReadThreadModes(ref Utf8JsonReader reader)
-    {
-        if (reader.TokenType != JsonTokenType.StartObject)
-        {
-            JsonScan.SkipValue(ref reader);
-            return null;
-        }
-
-        var present = false;
-        string? tier = null, provider = null;
-        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
-        {
-            if (reader.ValueTextEquals("service_tier"u8))
-            {
-                reader.Read();
-                present = true;
-                tier = JsonScan.ReadString(ref reader);
-            }
-            else if (reader.ValueTextEquals("model_provider_id"u8))
-            {
-                reader.Read();
-                provider = JsonScan.ReadString(ref reader);
-            }
-            else
+            else if (!(hints.Tools && tools.TryRead(ref reader, line)))
             {
                 reader.Read();
                 JsonScan.SkipValue(ref reader);
             }
         }
 
-        return present ? ExecutionModeNative.OpenAiTier(tier, ExecutionModeEvidence.Selected,
-            ExecutionModeScope.Session, provider) : null;
+        result.Tools = tools.ToLineTools();
     }
 
     private static void ReadInfo(ref Utf8JsonReader reader, ref CodexLine result)
@@ -556,5 +581,84 @@ internal static class CodexLineReader
         return value;
     }
 
-    private readonly record struct Hints(bool Meta, bool AgentMessage, bool UsageRecord, bool TokenCount, bool ThreadSettings);
+    // collaboration_mode.settings.reasoning_effort
+    private static string? ReadCollaborationEffort(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            JsonScan.SkipValue(ref reader);
+            return null;
+        }
+
+        string? effort = null;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var settings = reader.ValueTextEquals("settings"u8);
+            reader.Read();
+            if (!settings)
+            {
+                JsonScan.SkipValue(ref reader);
+                continue;
+            }
+
+            effort = null;
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                JsonScan.SkipValue(ref reader);
+                continue;
+            }
+
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var match = reader.ValueTextEquals("reasoning_effort"u8);
+                reader.Read();
+                if (match)
+                {
+                    effort = JsonScan.ReadToken(ref reader);
+                }
+                else
+                {
+                    JsonScan.SkipValue(ref reader);
+                }
+            }
+        }
+
+        return effort;
+    }
+
+    private static void ReadThreadSettings(ref Utf8JsonReader reader, ref CodexLine result)
+    {
+        result.TierSetting = result.EffortSetting = default;
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            JsonScan.SkipValue(ref reader);
+            return;
+        }
+
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var tier = reader.ValueTextEquals("service_tier"u8);
+            var effort = !tier && reader.ValueTextEquals("reasoning_effort"u8);
+            var provider = !tier && !effort && reader.ValueTextEquals("model_provider_id"u8);
+            reader.Read();
+            if (tier)
+            {
+                result.TierSetting = new CodexSetting(true, JsonScan.ReadToken(ref reader));
+            }
+            else if (effort)
+            {
+                result.EffortSetting = new CodexSetting(true, JsonScan.ReadToken(ref reader));
+            }
+            else if (provider)
+            {
+                result.TierProvider = JsonScan.ReadString(ref reader);
+            }
+            else
+            {
+                JsonScan.SkipValue(ref reader);
+            }
+        }
+    }
+
+    private readonly record struct Hints(bool Meta, bool AgentMessage, bool UsageRecord, bool TokenCount, bool ThreadSettings, bool Tools);
 }

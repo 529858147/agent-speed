@@ -14,7 +14,7 @@
 
 ## 安装
 
-**macOS 14 及以上**（Apple Silicon 与 Intel）——粘贴到「终端」：
+**macOS 14 及以上**（Apple Silicon 与 Intel）**与 Linux**（x86_64 与 arm64）——粘贴到终端：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh | sh
@@ -27,6 +27,8 @@ irm https://raw.githubusercontent.com/zoefix/agent-speed/main/install.ps1 | iex
 ```
 
 就这样。安装程序会从 GitHub 下载最新版本、验证 SHA-256 校验码、安装并启动。之后重新运行同一行命令即可更新。
+
+在 Linux 上，脚本会把 AppImage 装到 `~/.local/share/agent-speed`（之后可在 App 内更新），并加入应用程序菜单。x86_64 需要 glibc 2.35 以上（Ubuntu 22.04、Debian 12 起），arm64 需要 2.39 以上（Ubuntu 24.04、Debian 13 起）。托盘图标需要 StatusNotifierItem：KDE Plasma 已内置；GNOME 请启用 AppIndicator 扩展（Ubuntu 已内置）。偏好软件包安装的话，[最新版本](https://github.com/zoefix/agent-speed/releases/latest)也有 `.deb`（`sudo apt install ./agent-speed_*_amd64.deb`），可用 `SHA256SUMS-Linux-<arch>.txt` 核对。
 
 <details>
 <summary>卸载</summary>
@@ -49,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **五种悬浮窗样式，想开几个就开几个**——「LED 仪表」「指针转速表」「能量液球」「反应堆」「极简圆环」。每个悬浮窗都能自由组合来源（全部、单个工具，或 Claude Code＋Codex），下方的玻璃名牌在任何壁纸上都清晰易读。
 - **菜单栏／任务栏**——精简的仪表与数字，宽度固定不跳动；可显示 tok/s、金额，或 tok/s 加上实时花费与今日总额，也能加上网络速度。Windows 版直接嵌在任务栏里、时钟旁边。
 - **面板**——圆形仪表里有一台跟着速度称号变化的发光线条载具：从步行、蹬着自行车出发，一路换到红线时的火箭；另有实时曲线、各来源速度、所有正在工作的 agent（含子 agent）及其状态、今日统计。点一下来源就能打开它的用量历史。
+- **性能分数**——为每个 agent 当下的组合跑分：1000 是参考水平，没有上限，越高越快。综合输出吞吐、首段延迟、思考速度、工具节奏、工具耗时、工具成功率和缓存命中，并和同一个模型在你电脑上前 14 天的表现相比，告诉你现在比平常快还是慢。悬浮窗、排行看板、菜单栏／任务栏和面板都能看到（鼠标移上去就有完整分析），用量历史还有每个模型的每日趋势。
 - **费用**——按各模型官方 API 标价估算 agent 的工作值多少钱：tok/s 旁的每秒实时花费、面板上的今日费用，以及用量历史里每天的费用。默认美元，也能选 38 种货币中的任意一种（每天更新汇率）；包月订阅的来源可以排除。价格表每天从本项目自动更新。
 - **网络流量**——各 agent 或整台电脑的上传／下载速度，以两行小字显示在悬浮窗上，菜单栏／任务栏与面板也能看到，用量历史记录每天的流量。Windows 若要看各 agent 的流量，需要安装一次可选的小型辅助服务（需管理员同意）。
 - **称号主题**——九套速度称号：「交通工具」「动物」「蒲福风级」「宇宙」「修真境界」「武学境界」「魔法位阶」「游戏段位」「工程师生涯」，也能自定义最多 8 组。选择交通工具以外的主题时，面板圆圈会显示发光的称号徽章。
@@ -56,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh 
 - **实时上报（可选）**——默认关闭；想参与的话，可以用你取的用户名，把实时数字分享给你选择的 API，例如 [Codex Radar](https://codexradar.com/) 的速蹬天梯。从不发送对话内容、文件或项目名称，详见[隐私](#隐私)。
 - **执行模式**——依据可靠记录显示 Standard／Fast／Ultrafast，以及各 agent 的加速卡、模型变体或路由选择，区分默认设置与未知；历史可单独导出模式 CSV，沿用既有测速公式。
 - **头像与多设备（可选 API 扩展）**——预览、更换、移除头像，通过一次性配对码由原设备批准后合并身份；每台设备保留自己的密钥，解绑不影响已入账历史。接收端须支持[新版 API 结构](spec/report-schema.json)。
-- **全原生**——macOS 使用 SwiftUI + AppKit，Windows 使用 WPF 与 Fluent／Mica。浅色、深色、自动主题；繁體中文、简体中文、English、日本語。
+- **全原生**——macOS 使用 SwiftUI + AppKit，Windows 使用 WPF 与 Fluent／Mica，Linux 使用 Qt 6。浅色、深色、自动主题；繁體中文、简体中文、English、日本語。
 - **人性化**——特效强度从「关闭」到「热血全开」，遵循「减弱动态效果」与高对比度设置，支持鼠标穿透、边缘磁吸、记住每块屏幕上的位置、登录时自动启动。
 - **永远最新**——后台检查 GitHub Releases，有新版一键更新，并以 SHA-256 验证。
 
@@ -95,19 +98,23 @@ Grok Build 提供每回合、每模型的原生批次记录：Token、API 耗时
 
 **速度＝输出 token ÷ 模型实际花在这些 token 上的时间**——从发出请求到回应完成，含等待第一个字。多个 agent 并行时会加总。回应仍在进行时，先以该 agent 近期的实测速度估算，完成的瞬间立即以实测值校正。也可以切换成「总吞吐量」（输入＋输出）。
 
-完整且可测试的规格见 [`spec/METRICS.md`](spec/METRICS.md)。两个平台的程序都以同一份测试数据，以及一份独立的[参考实现](spec/tools/reference.py)交叉验证。
+完整且可测试的规格见 [`spec/METRICS.md`](spec/METRICS.md)。三个平台的程序都以同一份测试数据，以及一份独立的[参考实现](spec/tools/reference.py)交叉验证。
 
 Claude Desktop 普通聊天对话不会保存在本机，因此无法统计；WorkBuddy 在云端运行的对话也不计入。
 
 ## 隐私
 
-只读、只在本机运行，没有遥测、无需账号。Agent Speed 只会自动发出三种网络请求，而且都不会发送任何关于你的数据：向 GitHub Releases 检查更新、每天从本项目下载公开的模型价格表（GitHub，以 jsDelivr 为备用），以及仅在你选择以美元以外的货币显示费用时，每天下载公开汇率（open.er-api.com，以 fawazahmed0 currency API 和 Frankfurter 为备用）。每位用户下载的都是同一份文件，因此服务器无从得知你的货币、模型或用量。设置里的一个开关即可关闭所有网络连接，此时费用改用应用内置的价格表和汇率。Agent Speed 从不保存或显示对话内容，只使用 token 数量、模型名称和项目文件夹名称。用量历史只保存每日汇总（含每日的 API 等值费用），存放在你电脑上的一个小型数据库（`~/Library/Application Support/AgentSpeed`、`%LOCALAPPDATA%\AgentSpeed`），可在设置中清除。更新在安装前会用该版本发布的 SHA-256 校验和验证；校验和与版本一同发布，因此能拦截损坏或被篡改的下载文件，但无法防范仓库本身被入侵。价格表是按严格规则校验的纯数据，没有数字签名。
+只读、只在本机运行，没有遥测、无需账号。Agent Speed 只会自动发出三种网络请求，而且都不会发送任何关于你的数据：向 GitHub Releases 检查更新、每天从本项目下载公开的模型价格表（GitHub，以 jsDelivr 为备用），以及仅在你选择以美元以外的货币显示费用时，每天下载公开汇率（open.er-api.com，以 fawazahmed0 currency API 和 Frankfurter 为备用）。每位用户下载的都是同一份文件，因此服务器无从得知你的货币、模型或用量。设置里的一个开关即可关闭所有网络连接，此时费用改用应用内置的价格表和汇率。Agent Speed 从不保存或显示对话内容，只显示 token 数量、模型名称、项目文件夹名称等信息。用量历史只保存每日汇总（含每日的 API 等值费用）和各模型每天的性能统计，存放在你电脑上的一个小型数据库（`~/Library/Application Support/AgentSpeed`、`%LOCALAPPDATA%\AgentSpeed`），可在设置中清除。更新在安装前会用该版本发布的 SHA-256 校验和验证；校验和与版本一同发布，因此能拦截损坏或被篡改的下载文件，但无法防范仓库本身被入侵。价格表是按严格规则校验的纯数据，没有数字签名。
 
 网络流量：Agent Speed 只在本机计算各程序收发的字节数，从不读取内容、网址或连接对象；只有在你开启实时上报（见下文）时，才会把 agent 的字节数发送给你选择的服务。在 Windows 上，要显示各 agent 的流量需要安装可选的辅助服务；它以权限受限的“本地服务”账户运行，只统计每个程序的字节数，安装和卸载各需要一次管理员确认（[详细说明](spec/WINDOWS-SERVICE.md)）。
 
-实时上报（可选，默认关闭；面板会询问一次）：为某个 API（例如公开排行榜服务，像是内置的 Codex Radar 速蹬天梯 `deng.codexradar.com`）开启后，Agent Speed 会把你的实时速度、最近几秒用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型、各工具的明细——连同你选择的用户名（默认是电脑名称，一键即可换成随机名称）发送给该服务。agent 工作时每隔几秒上报一次，空闲时停止。它从不发送对话内容、提示词、文件／文件夹／项目名称或用量历史，上报失败的数据也不会补发。每条上报都用只保存在你电脑上的密钥签名；服务能确认数据来自同一台设备，但无法确认数字是否准确。可以在设置中暂停、关闭，或要求服务忘记你的设备。
+推理强度与加速：大多数 agent 会把这两项写进上面的记录。其他情况下，Agent Speed 会以只读方式多读几个字段，绝不读取对话内容。三个数据库：OpenClaw 的 `trajectory_runtime_events`（只取 `trace.metadata` 行，由查询条件筛选，其中也只保留 think level 与 fast mode；压缩的行只在内存中解开，用完即丢）、WorkBuddy 的 `workbuddy.db`（只读 `sessions.id` 与 `sessions.thought_level`）、Hermes Agent 的 `state.db`（只读该会话的 `model_config.reasoning_config`）。打开这些文件时不会创建 `-wal` 或 `-shm`，Hermes 的数据库也只会短暂打开。配置文件各读一项：Codex `config.toml`（`service_tier`）、Gemini CLI `~/.gemini/settings.json`（匹配该 agent 模型的 override 中的 `thinkingLevel` 或 `thinkingBudget`）、Antigravity `~/.gemini/config/config.json`（`vertexServiceTier`）、WorkBuddy `settings.json`（`reasoningEffort`）、Hermes Agent `config.yaml`（`agent.reasoning_effort`、`agent.service_tier`）。只存在于配置文件的值会加上“配置值”标记，因为 agent 不一定实际使用它；这类值不会计入历史或统计，也不会上报。哪里都没有记录的值就保持未知，绝不猜测。
 
-可选 API 扩展会在模型分享开启时，额外发送每模型的 Harness 请求明细与执行模式。头像上传与一次性设备配对仅由你明确操作，且接收端必须支持[扩展 API](spec/report-schema.json)；图片不会放入周期报文。配对不共享私钥，网络总开关也会停用个人资料请求。
+性能分数：Agent Speed 依响应的时间与 token 数，以及工具调用的开始与结束时间、是否出错，计算每个 agent 的性能分数，从不依据提示词、命令或文件的内容；用量历史只保存各模型每天的汇总数字。只有在你开启实时上报、保留模型分享，而且服务支持时，才会把当前的分数和各模型的性能统计（输出与耗时总和、首段延迟分布、思考、缓存、工具调用的次数、耗时与失败数，以及活跃时间）发送给该服务，供排名与统计分析；从不发送单个请求或工具调用的数据，也不含提示词、命令、路径或时间点。
+
+实时上报（可选，默认关闭；面板会询问一次）：为某个 API（例如公开排行榜服务，像是内置的 Codex Radar 速蹬天梯 `deng.codexradar.com`）开启后，Agent Speed 会把你的实时速度、最近几秒用掉的 token 数，以及你保留的项目——以美元计的 API 等值费用、agent 的网络流量、使用中的模型（服务支持时，含各模型的性能分数、性能统计和思考速度）、各工具的明细——连同你选择的用户名（默认是电脑名称，一键即可换成随机名称）发送给该服务。agent 工作时每隔几秒上报一次，空闲时停止。它从不发送对话内容、提示词、命令或命令输出、文件／文件夹／项目名称或用量历史，上报失败的数据也不会补发。每条上报都用只保存在你电脑上的密钥签名；服务能确认数据来自同一台设备，但无法确认数字是否准确。可以在设置中暂停、关闭，或要求服务忘记你的设备。
+
+可选 API 扩展会在模型分享开启、且服务支持时，额外发送每模型的 Harness 请求明细、执行模式（Fast／Ultrafast 等服务档位与推理强度），以及上述性能相关的数字。头像上传与一次性设备配对仅由你明确操作，且接收端必须支持[扩展 API](spec/report-schema.json)；图片不会放入周期报文。配对不共享私钥，网络总开关也会停用个人资料请求。
 
 Agent Speed 可能连接的所有主机与时机，都列在 [`spec/NETWORK.md`](spec/NETWORK.md)。
 
@@ -130,6 +137,16 @@ swift test
 dotnet test windows/tests/AgentSpeed.Core.Tests
 dotnet test windows/tests/AgentSpeed.Presentation.Tests
 ./windows/scripts/publish.sh    # → dist/AgentSpeed-Windows-{x64,arm64}.zip
+```
+</details>
+
+<details>
+<summary>Linux（CMake、g++ 12 以上；App 需要含 Qt WebSockets 的 Qt 6.8）</summary>
+
+```sh
+cmake -S linux -B build -G Ninja -DAGENTSPEED_BUILD_TESTS=ON -DAGENTSPEED_BUILD_APP=ON
+cmake --build build && ctest --test-dir build
+linux/packaging/package.sh build dist 1.6.1   # → AppImage 与 .deb
 ```
 </details>
 

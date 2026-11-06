@@ -22,6 +22,10 @@
       "name": "deepseek",
       "url": "https://example.com/fixture-prices"
     },
+    "xiaomi": {
+      "name": "xiaomi",
+      "url": "https://example.com/fixture-prices"
+    },
     "fixture": {
       "name": "fixture",
       "url": "https://example.com/fixture-prices"

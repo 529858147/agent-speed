@@ -19,6 +19,9 @@ public enum OrbShape
 
     /// <summary>One segment of a stroked polyline (DESIGN 2.1 bolts and arcs), see <see cref="OrbGpuInstance.Stroke"/>.</summary>
     Stroke = 9,
+
+    /// <summary>A rounded-rect outline (the board's ring), see <see cref="OrbGpuInstance.RoundedRing"/>.</summary>
+    RoundedRing = 10,
 }
 
 /// <summary>How a shape is colored across its area.</summary>
@@ -31,6 +34,9 @@ public enum OrbFill
 
     /// <summary>Circle: color at the center → color2 at q0 × the radius → transparent at the radius.</summary>
     RadialStops = 4,
+
+    /// <summary>One stretch of a slanted linear gradient, nothing outside it (see <see cref="OrbGpuInstance.Band"/>).</summary>
+    Band = 5,
 }
 
 /// <summary>
@@ -86,6 +92,11 @@ public struct OrbGpuInstance
         Rgba color, double core = 1, double glow = 0, double glowAlpha = 0) =>
         new(OrbShape.RoundedRect, x, y, rotationDegrees * DegreesToRadians, (float)halfWidth, (float)halfHeight, (float)corner, glow, color,
             null, core, glowAlpha);
+
+    /// <summary>The outline of an axis-aligned rounded rect, <paramref name="width"/> wide, centered on its edge.</summary>
+    public static OrbGpuInstance RoundedRing(double x, double y, double halfWidth, double halfHeight, double corner, double width, Rgba color,
+        double core = 1, double glow = 0, double glowAlpha = 0) =>
+        new(OrbShape.RoundedRing, x, y, 0, (float)halfWidth, (float)halfHeight, (float)corner, glow, color, null, core, glowAlpha, (float)width);
 
     public static OrbGpuInstance Circle(double x, double y, double radius, Rgba color, double core = 1, double glow = 0, double glowAlpha = 0) =>
         new(OrbShape.Circle, x, y, 0, (float)radius, 0, 0, glow, color, null, core, glowAlpha);
@@ -161,6 +172,19 @@ public struct OrbGpuInstance
         var copy = this;
         copy.Color2 = ToVector(end);
         copy.Extra2 = new Vector4((float)OrbFill.Linear, (float)(angleDegrees * DegreesToRadians), (float)halfLength, 1);
+        return copy;
+    }
+
+    /// <summary>
+    /// One stretch of a linear gradient between two of its stops: this color where the distance from the shape's center along
+    /// <paramref name="angleDegrees"/> is <paramref name="from"/> → <paramref name="end"/> at <paramref name="to"/>, nothing outside
+    /// it, so the stretches of one gradient tile the shape without overlapping (CSS gradients at any angle, clipped to the shape).
+    /// </summary>
+    public readonly OrbGpuInstance Band(Rgba end, double angleDegrees, double from, double to)
+    {
+        var copy = this;
+        copy.Color2 = ToVector(end);
+        copy.Extra2 = new Vector4((float)OrbFill.Band, (float)(angleDegrees * DegreesToRadians), (float)from, (float)to);
         return copy;
     }
 

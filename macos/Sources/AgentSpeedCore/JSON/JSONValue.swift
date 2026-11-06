@@ -87,13 +87,15 @@ public enum JSONParseError: Error, Equatable, Sendable {
 }
 
 /// Strict RFC 8259 parser: UTF-8 without a byte-order mark, no `NaN` or `Infinity`, no control characters inside
-/// strings. Nesting is limited so a hostile document cannot exhaust the stack.
+/// strings. Nesting is limited so a hostile document cannot exhaust the stack. `exact` also refuses repeated member
+/// names and escaped lone surrogates, for messages a peer must write exactly (METRICS 11.9).
 public enum JSONParser {
     public static let defaultMaxDepth = 64
 
-    public static func parse(_ data: Data, maxDepth: Int = defaultMaxDepth) throws(JSONParseError) -> JSONValue {
+    public static func parse(_ data: Data, maxDepth: Int = defaultMaxDepth, exact: Bool = false) throws(JSONParseError)
+        -> JSONValue {
         let bytes = [UInt8](data)
-        var parser = Cursor(bytes: bytes, maxDepth: maxDepth)
+        var parser = Cursor(bytes: bytes, maxDepth: maxDepth, exact: exact)
         parser.skipWhitespace()
         let value = try parser.value(depth: 0)
         parser.skipWhitespace()
@@ -105,14 +107,23 @@ public enum JSONParser {
         try parse(Data(text.utf8), maxDepth: maxDepth)
     }
 
+    /// The first value after leading whitespace, ignoring whatever follows it (Python `JSONDecoder.raw_decode`).
+    public static func parseLeading(_ data: Data, maxDepth: Int = defaultMaxDepth) throws(JSONParseError) -> JSONValue {
+        var parser = Cursor(bytes: [UInt8](data), maxDepth: maxDepth, exact: false)
+        parser.skipWhitespace()
+        return try parser.value(depth: 0)
+    }
+
     private struct Cursor {
         let bytes: [UInt8]
         let maxDepth: Int
+        let exact: Bool
         var index = 0
 
-        init(bytes: [UInt8], maxDepth: Int) {
+        init(bytes: [UInt8], maxDepth: Int, exact: Bool) {
             self.bytes = bytes
             self.maxDepth = maxDepth
+            self.exact = exact
         }
 
         private var failure: JSONParseError { .invalid(offset: index) }
@@ -154,6 +165,7 @@ public enum JSONParser {
                 skipWhitespace()
                 guard index < bytes.count, bytes[index] == UInt8(ascii: "\"") else { throw failure }
                 let key = try string()
+                if exact, members[key] != nil { throw failure }
                 skipWhitespace()
                 guard index < bytes.count, bytes[index] == UInt8(ascii: ":") else { throw failure }
                 index += 1
@@ -276,7 +288,8 @@ public enum JSONParser {
             throw failure
         }
 
-        /// `\uXXXX` (the `\u` already consumed), joining surrogate pairs; a lone surrogate becomes U+FFFD.
+        /// `\uXXXX` (the `\u` already consumed), joining surrogate pairs; a lone surrogate becomes U+FFFD (an error when
+        /// `exact`).
         private mutating func unicodeEscape() throws(JSONParseError) -> Unicode.Scalar {
             let high = try hex4()
             if (0xD800...0xDBFF).contains(high), index + 1 < bytes.count,
@@ -290,6 +303,7 @@ public enum JSONParser {
                 }
                 index = saved
             }
+            if exact, (0xD800...0xDFFF).contains(high) { throw failure }
             return Unicode.Scalar(UInt32(high)) ?? "\u{FFFD}"
         }
 

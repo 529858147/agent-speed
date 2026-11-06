@@ -7,6 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using AgentSpeed.App;
 using AgentSpeed.Core;
+using AgentSpeed.Modes;
 using AgentSpeed.Interop;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Formatting;
@@ -39,6 +40,8 @@ internal sealed partial class HistoryWindow : Window
     private bool _syncingDates;
     private bool _entered;
     private bool _syncingMetric;
+    private bool _syncingModeKind;
+    private SpringStackPanel? _modeRowsPanel;
     private ToolbarDensity _density = ToolbarDensity.Full;
     private bool? _subscriptionsOffered;
     private double _subscriptionsWidth;
@@ -46,7 +49,7 @@ internal sealed partial class HistoryWindow : Window
     private int? _hoverIndex;
     private double _dividerTarget;
 
-    public HistoryWindow(HistoryViewModel model, bool reduceMotion, bool highContrast)
+    public HistoryWindow(HistoryViewModel model, CapsuleAppearance appearance)
     {
         InitializeComponent();
         _model = model;
@@ -101,7 +104,7 @@ internal sealed partial class HistoryWindow : Window
         BreakdownList.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler(OnBreakdownClick), handledEventsToo: true);
         BreakdownList.PreviewKeyDown += OnBreakdownKeyDown;
 
-        ApplyTheme(reduceMotion, highContrast);
+        ApplyTheme(appearance);
         Relocalize();
         Apply(HistoryUpdate.Filter, ChartTransition.Snap);
     }
@@ -118,9 +121,20 @@ internal sealed partial class HistoryWindow : Window
 
     public bool ReduceMotion { get; private set; }
 
-    public void ApplyTheme(bool reduceMotion, bool highContrast)
+    /// <param name="appearance">Motion and contrast, and how the effort and speed glyphs draw.</param>
+    public void ApplyTheme(CapsuleAppearance appearance)
     {
+        var (reduceMotion, highContrast) = (appearance.ReduceMotion, appearance.HighContrast);
         ReduceMotion = reduceMotion;
+        _model.SetModeAppearance(appearance);
+        _model.SetPerfAppearance(appearance.Dark, appearance.HighContrast, appearance.ReduceMotion);
+        if (_modeRowsPanel is { } rows)
+        {
+            rows.ReduceMotion = reduceMotion;
+        }
+
+        BreakdownBar.SetReduceMotion(ModeList, reduceMotion);
+        BreakdownBar.SetHighContrast(ModeList, highContrast);
         Chart.ReduceMotion = reduceMotion;
         Chart.HighContrast = highContrast;
         Table.ReduceMotion = reduceMotion;
@@ -209,6 +223,7 @@ internal sealed partial class HistoryWindow : Window
             Chart.SetData(_model.Bars, _model.DayAt, _model.Source, today, texts, transition);
             SyncRange();
             SyncMetric();
+            SyncModeKind();
         }
 
         if (update == HistoryUpdate.Text)
@@ -219,7 +234,7 @@ internal sealed partial class HistoryWindow : Window
         Table.SetRows(_model.Rows, _model.Today, loc, money, _model.ShowsTraffic);
         if (!_model.HasUnpriced && UnpricedFlyout.IsOpen)
         {
-            // The models were priced meanwhile: the list (and its link) is gone.
+            // The requests were priced meanwhile: the popover (and its link) is gone.
             UnpricedFlyout.IsOpen = false;
         }
         UpdateHeader();
@@ -274,6 +289,40 @@ internal sealed partial class HistoryWindow : Window
         _model.SetMetric(metric);
     }
 
+    // ---- Effort and speed ----
+
+    private void SyncModeKind()
+    {
+        _syncingModeKind = true;
+        try
+        {
+            ModeEffort.IsChecked = _model.ModeKind == ExecutionModeKind.Effort;
+            ModeSpeed.IsChecked = _model.ModeKind == ExecutionModeKind.Speed;
+        }
+        finally
+        {
+            _syncingModeKind = false;
+        }
+    }
+
+    private void OnModeKindChecked(object sender, RoutedEventArgs e)
+    {
+        if (_syncingModeKind || sender is not RadioButton { Tag: string tag } || !Enum.TryParse<ExecutionModeKind>(tag, out var kind))
+        {
+            return;
+        }
+
+        _model.SetModeKind(kind);
+    }
+
+    private void OnModeRowsPanelLoaded(object sender, RoutedEventArgs e)
+    {
+        _modeRowsPanel = (SpringStackPanel)sender;
+        _modeRowsPanel.ReduceMotion = ReduceMotion;
+    }
+
+    private void OnExportModes(object sender, RoutedEventArgs e) => SaveExport(_model.ExportModesCsv());
+
     // ---- Unknown prices ----
 
     private void OnShowUnpriced(object sender, RoutedEventArgs e)
@@ -284,18 +333,14 @@ internal sealed partial class HistoryWindow : Window
             return;
         }
 
+        UnpricedContent.ReduceMotion = ReduceMotion;
         UnpricedFlyout.IsOpen = true;
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (UnpricedList.Items.Count > 0 && UnpricedList.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem first)
-            {
-                first.Focus();
-            }
-        }, System.Windows.Threading.DispatcherPriority.Input);
+        Dispatcher.BeginInvoke(UnpricedContent.FocusFirst, System.Windows.Threading.DispatcherPriority.Input);
     }
 
     private void OnUnpricedClosed(object? sender, EventArgs e)
     {
+        UnpricedContent.Reset();
         if (IsActive && !IsKeyboardFocusWithin && UnpricedButton.IsVisible)
         {
             UnpricedButton.Focus();
@@ -510,17 +555,7 @@ internal sealed partial class HistoryWindow : Window
 
     // ---- Export ----
 
-    private void OnExport(object sender, RoutedEventArgs e)
-    {
-        var menu = new ContextMenu { PlacementTarget = ExportButton, Placement = PlacementMode.Bottom };
-        var usage = new MenuItem { Header = _model.Loc["history.export"] };
-        usage.Click += (_, _) => SaveExport(_model.ExportCsv());
-        var modes = new MenuItem { Header = _model.Loc["mode.exportCsv"] };
-        modes.Click += (_, _) => SaveExport(_model.ExportModesCsv());
-        menu.Items.Add(usage);
-        menu.Items.Add(modes);
-        menu.IsOpen = true;
-    }
+    private void OnExport(object sender, RoutedEventArgs e) => SaveExport(_model.ExportCsv());
 
     private void SaveExport((string FileName, byte[] Bytes) export)
     {

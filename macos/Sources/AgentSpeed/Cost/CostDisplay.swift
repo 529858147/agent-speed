@@ -77,6 +77,9 @@ final class CostDisplay {
                            form: .amount)
     }
 
+    /// Board costs per second in this currency (DESIGN 2c Live metrics).
+    var boardMoney: BoardMoneyFormat { BoardMoneyFormat(currency: currency, rate: rate, l10n: l10n) }
+
     /// `$12.34`, `NT$1,235`.
     func amountText(microUsd: Int64) -> String { amount(microUsd: microUsd).text }
 

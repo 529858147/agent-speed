@@ -1,11 +1,15 @@
 using AgentSpeed.Core;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Perf;
 using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Probe;
 
-/// <summary><c>--dump-today</c>: seeds from the real roots and prints every response that ended today.</summary>
+/// <summary>
+/// <c>--dump-today</c>: seeds from the real roots and prints every response that ended today, then the performance score of
+/// every seeded agent with a sample response and the sets at <c>--now</c> or the capture time (METRICS 6.9 <i>Dumps</i>).
+/// </summary>
 internal static class DumpToday
 {
     /// <summary>Costs use one table for every response, like <c>reference.py --dump-today</c> (no day bindings).</summary>
@@ -22,6 +26,8 @@ internal static class DumpToday
         var collector = new Collector();
         using var core = new MonitorCore(MonitorConfiguration.Default, options.Locations, todayStart, collector);
         var report = core.Seed(now, todayStart, CancellationToken.None);
+        var nowMs = options.NowMs ?? now;
+        var perf = core.PerfViews(nowMs).Where(a => SeededLike(a.Source)).ToList();
         var (snapshot, _) = core.BuildSnapshot(now, todayStart, MonitorState.Running, observeLive: false);
 
         var today = collector.Latest.Values
@@ -51,6 +57,7 @@ internal static class DumpToday
                 .Add("model", r.Model)
                 .Add("startMs", r.StartMs)
                 .Add("endMs", r.EndMs)
+                .Add("firstMs", r.FirstMs)
                 .Add("input", r.Tokens.Input)
                 .Add("cachedInput", r.Tokens.CachedInput)
                 .Add("cacheWriteInput", r.Tokens.CacheWriteInput)
@@ -60,10 +67,20 @@ internal static class DumpToday
                 .Add("final", r.Final)
                 .Add("provider", r.Provider)
                 .Add("fast", r.Fast)
-                .Add("costMicroUsd", cost);
+                .Add("costMicroUsd", cost)
+                .Raw("effort", JsonLine.Attribution(EffortAndSpeed.Effort(r.Modes)))
+                .Raw("speed", JsonLine.Attribution(EffortAndSpeed.Speed(r.Modes)));
             if (!r.Modes.IsEmpty) row.Raw("modes", JsonLine.Modes(r.Modes));
             output.Line(row.Text);
         }
+
+        var rows = perf.Where(a => a.Value.N > 0).OrderBy(a => a.Id, StringComparer.Ordinal).ToList();
+        foreach (var agent in rows)
+        {
+            output.Line(JsonLine.Of("perf", w => PerfDumpJson.WriteAgent(w, agent, nowMs)));
+        }
+
+        output.Line(JsonLine.Of("perfSets", w => PerfDumpJson.WriteSets(w, PerfSetView.Of(perf, nowMs))));
 
         var counts = new JsonLine();
         foreach (var kind in Enum.GetValues<SourceKind>())
@@ -85,7 +102,9 @@ internal static class DumpToday
             .Add("malformedLines", core.MalformedLineCount)
             .Add("unreadableFiles", core.UnreadableFileCount)
             .Add("partialHistory", core.PartialHistory)
-            .Add("unfinalized", today.Count(r => !r.Final));
+            .Add("unfinalized", today.Count(r => !r.Final))
+            .Add("nowMs", nowMs)
+            .Add("perfAgents", rows.Count);
         output.Line(new JsonLine().Raw("summary", summary.Text).Text);
         output.Flush();
 
@@ -93,9 +112,17 @@ internal static class DumpToday
             $"seeded {report.FilesRead} files, {report.BytesRead} bytes in {report.ElapsedMs} ms; " +
             $"oversized lines {core.OversizedLineCount}; average today {snapshot.AverageToday:F1} tok/s; " +
             $"peak today {snapshot.PeakToday.Output:F1} tok/s; " +
-            $"Antigravity connections {core.OpenDatabaseConnections} open, {core.ImmutableDatabaseConnections} immutable");
+            $"Antigravity connections {core.OpenDatabaseConnections} open, {core.ImmutableDatabaseConnections} immutable; " +
+            $"{rows.Count} agents with a performance sample");
         return 0;
     }
+
+    /// <summary>
+    /// The agents <c>reference.py --dump-today</c> seeds as parser states: OpenCode is not read there, and ZCode, Kimi Code
+    /// CLI and Grok Build are collected as responses only.
+    /// </summary>
+    private static bool SeededLike(SourceKind source) =>
+        source is not (SourceKind.OpenCode or SourceKind.ZCode or SourceKind.Kimi or SourceKind.GrokBuild);
 
     private sealed class Collector : IResponseObserver
     {

@@ -21,7 +21,7 @@ struct StatusItemTraffic: Equatable {
     @MainActor
     init?(model: AppModel) {
         let settings = model.settings
-        guard settings.trafficEnabled, settings.barTraffic != .off, settings.barMode != .glyph else { return nil }
+        guard settings.trafficEnabled, settings.barTraffic.isNetwork, settings.barMode != .glyph else { return nil }
         let snapshot = model.visibleTraffic
         let rate: TrafficRate? = settings.barTraffic == .machine
             ? snapshot.machineLive

@@ -3,7 +3,8 @@ import AppKit
 import SwiftUI
 
 /// `report.preview` (DESIGN 11, Preview window): a 560 × 640 panel with the request line and headers, the body of
-/// the next report, the countdown to it and Copy JSON. The signature is shown as `…`, an API key as `Bearer ••••`.
+/// the next report, the countdown to it (over WebSocket: sent on change) and Copy JSON. The signature is shown as `…`,
+/// an API key as `Bearer ••••`.
 @MainActor
 enum ReportPreviewWindow {
     private static var panel: NSPanel?
@@ -42,7 +43,7 @@ enum ReportPreviewWindow {
     }
 }
 
-private struct ReportPreviewPanel: View {
+struct ReportPreviewPanel: View {
     let model: AppModel
 
     var body: some View {
@@ -54,7 +55,12 @@ private struct ReportPreviewPanel: View {
                     Text(l10n("report.preview.title"))
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
-                    if let next = preview?.nextIn {
+                    if preview?.onChange == true {
+                        Label(l10n("report.preview.onChange"), systemImage: "bolt.horizontal.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .labelStyle(.titleAndIcon)
+                    } else if let next = preview?.nextIn {
                         Text(l10n("report.preview.next", next))
                             .font(.system(size: 11).monospacedDigit())
                             .foregroundStyle(.secondary)

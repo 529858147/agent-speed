@@ -45,16 +45,19 @@ public sealed class ReportCounters
 {
     private readonly Dictionary<ReportModelKey, ReportUsage> _byModel;
     private readonly Dictionary<ReportModeKey, ReportUsage> _byMode;
+    private readonly Dictionary<ReportModelKey, Perf.PerfSums> _perf;
 
     public ReportCounters()
-        : this(new Dictionary<ReportModelKey, ReportUsage>(), new Dictionary<ReportModeKey, ReportUsage>())
+        : this(new Dictionary<ReportModelKey, ReportUsage>(), new Dictionary<ReportModeKey, ReportUsage>(), new Dictionary<ReportModelKey, Perf.PerfSums>())
     {
     }
 
-    private ReportCounters(Dictionary<ReportModelKey, ReportUsage> byModel, Dictionary<ReportModeKey, ReportUsage> byMode)
+    private ReportCounters(Dictionary<ReportModelKey, ReportUsage> byModel, Dictionary<ReportModeKey, ReportUsage> byMode,
+        Dictionary<ReportModelKey, Perf.PerfSums> perf)
     {
         _byModel = byModel;
         _byMode = byMode;
+        _perf = perf;
     }
 
     public static ReportCounters Zero { get; } = new();
@@ -62,7 +65,22 @@ public sealed class ReportCounters
     public IReadOnlyDictionary<ReportModelKey, ReportUsage> ByModel => _byModel;
     public IReadOnlyDictionary<ReportModeKey, ReportUsage> ByMode => _byMode;
 
-    /// <summary>Changes with every non-zero <see cref="Add"/>, so an owner copies only after a change.</summary>
+    /// <summary>
+    /// The statistics ledger's rows counted in the current watch generation (METRICS 11.10), cumulative per model and source;
+    /// a new generation (the watch turned on again after a break) starts them over.
+    /// </summary>
+    public IReadOnlyDictionary<ReportModelKey, Perf.PerfSums> PerfRows => _perf;
+
+    /// <summary>The watch generation <see cref="PerfRows"/> belong to (0 before the watch was ever on).</summary>
+    public long PerfGeneration { get; private set; }
+
+    /// <summary>Σ <c>n</c> of <see cref="PerfRows"/>.</summary>
+    public long PerfResponses { get; private set; }
+
+    /// <summary>Σ <c>toolN</c> of <see cref="PerfRows"/>.</summary>
+    public long PerfCalls { get; private set; }
+
+    /// <summary>Changes with every non-zero <see cref="Add"/> and every statistics change, so an owner copies only after a change.</summary>
     public long Version { get; private set; }
 
     public ReportUsage Total
@@ -98,7 +116,7 @@ public sealed class ReportCounters
             var change = value - baseline._byMode.GetValueOrDefault(key);
             if (!change.IsZero) modes[key] = change;
         }
-        return new ReportCounters(delta, modes);
+        return new ReportCounters(delta, modes, new Dictionary<ReportModelKey, Perf.PerfSums>());
     }
 
     /// <summary>Whether any token field differs from <paramref name="baseline"/>.</summary>
@@ -120,7 +138,8 @@ public sealed class ReportCounters
         if (!usage.IsZero)
         {
             _byModel[key] = _byModel.GetValueOrDefault(key) + usage;
-            foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+            // The newest version's kinds: the ledger freezes them all, and a report sends those its service negotiated.
+            foreach (var kind in ExecutionModes.ReportKindsOf(2))
             {
                 var mode = (modes ?? ExecutionModes.Empty).Attribute(kind);
                 var modeKey = new ReportModeKey(key.ModelId, key.Source, kind, mode.Mode, mode.Evidence, mode.Provider);
@@ -130,8 +149,55 @@ public sealed class ReportCounters
         }
     }
 
+    /// <summary>The row of <paramref name="key"/> a counted completion adds to (METRICS 11.10, Counting).</summary>
+    internal Perf.PerfSums PerfRow(ReportModelKey key)
+    {
+        if (!_perf.TryGetValue(key, out var row))
+        {
+            _perf[key] = row = new Perf.PerfSums();
+        }
+
+        return row;
+    }
+
+    /// <summary>Notes that a completion was added to <see cref="PerfRows"/>.</summary>
+    internal void CountedPerf(bool response)
+    {
+        if (response)
+        {
+            PerfResponses++;
+        }
+        else
+        {
+            PerfCalls++;
+        }
+
+        Version++;
+    }
+
+    /// <summary>Starts the rows of watch generation <paramref name="generation"/> over; the rows of another are never sent.</summary>
+    public void StartPerfGeneration(long generation)
+    {
+        if (generation == PerfGeneration)
+        {
+            return;
+        }
+
+        _perf.Clear();
+        PerfResponses = 0;
+        PerfCalls = 0;
+        PerfGeneration = generation;
+        Version++;
+    }
+
     /// <summary>An immutable copy, for a snapshot.</summary>
-    public ReportCounters Copy() => new(new Dictionary<ReportModelKey, ReportUsage>(_byModel), new Dictionary<ReportModeKey, ReportUsage>(_byMode));
+    public ReportCounters Copy() => new(new Dictionary<ReportModelKey, ReportUsage>(_byModel), new Dictionary<ReportModeKey, ReportUsage>(_byMode),
+        _perf.ToDictionary(p => p.Key, p => p.Value.Clone()))
+    {
+        PerfGeneration = PerfGeneration,
+        PerfResponses = PerfResponses,
+        PerfCalls = PerfCalls,
+    };
 }
 
 /// <summary>Agents of the base set of METRICS 6.7 (staleness applied, no ancestor closure) of one source.</summary>
@@ -141,7 +207,7 @@ public readonly record struct ReportAgentCounts(int Generating = 0, int Tools = 
         new(a.Generating + b.Generating, a.Tools + b.Tools, a.Active + b.Active);
 }
 
-/// <summary>What each snapshot carries for live reporting (METRICS 11.2, 11.4).</summary>
+/// <summary>What each snapshot carries for live reporting (METRICS 11.2, 11.4, 11.10).</summary>
 /// <param name="Epoch">The engine instance the counters belong to; a new monitor session starts them over.</param>
 public sealed record ReportLiveFacts(
     IReadOnlyDictionary<SourceKind, ReportAgentCounts> Agents,
@@ -151,6 +217,9 @@ public sealed record ReportLiveFacts(
 {
     public static ReportLiveFacts Empty { get; } = new(
         new Dictionary<SourceKind, ReportAgentCounts>(), new Dictionary<ReportModelKey, int>(), ReportCounters.Zero);
+
+    /// <summary>The performance score's live values (METRICS 11.10): agents with a score and the thinking speeds.</summary>
+    public ReportPerfFacts Perf { get; init; } = ReportPerfFacts.Empty;
 }
 
 /// <summary>The reserved model ids of REPORTING 6.6.4.</summary>

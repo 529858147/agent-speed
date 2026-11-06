@@ -45,6 +45,8 @@ final class AppSettings {
     var trafficUnit: TrafficUnit { didSet { store(trafficUnit.rawValue, .trafficUnit) } }
     /// The menu bar traffic block (DESIGN 10): off (default), this computer or the agents.
     var barTraffic: BarTraffic { didSet { store(barTraffic.rawValue, .barTraffic) } }
+    /// The menu bar intelligence block (DESIGN 10): 性能 and 思考 after the network block; off by default.
+    var barIntelligence: Bool { didSet { store(barIntelligence, .barIntelligence) } }
     /// The menu bar money block (DESIGN 3): the live money rate and today's total after a tok/s value.
     var barSecondary: Bool { didSet { store(barSecondary, .barSecondary) } }
 
@@ -80,6 +82,14 @@ final class AppSettings {
     var zcodeRoot: URL? { didSet { store(zcodeRoot?.path, .zcodeRoot) } }
     var kimiRoot: URL? { didSet { store(kimiRoot?.path, .kimiRoot) } }
     var grokBuildRoot: URL? { didSet { store(grokBuildRoot?.path, .grokBuildRoot) } }
+    /// One Pi folder, replacing `<agent dir>/sessions` and Pi's own custom session folder.
+    var piRoot: URL? { didSet { store(piRoot?.path, .piRoot) } }
+    /// One OpenClaw state folder, agent folder or `openclaw-agent.sqlite`, replacing every automatic state folder.
+    var openclawRoot: URL? { didSet { store(openclawRoot?.path, .openclawRoot) } }
+    /// One Hermes Agent home or `logs` folder, replacing the automatic home.
+    var hermesRoot: URL? { didSet { store(hermesRoot?.path, .hermesRoot) } }
+    /// Factory Droid's `.factory` folder or its `sessions` folder, replacing `~/.factory/sessions`.
+    var droidRoot: URL? { didSet { store(droidRoot?.path, .droidRoot) } }
 
     /// UPDATES section 3: check GitHub at launch and every 6 h.
     var autoCheckUpdates: Bool { didSet { store(autoCheckUpdates, .autoCheckUpdates) } }
@@ -134,7 +144,15 @@ final class AppSettings {
         trafficEnabled = defaults.object(forKey: Key.trafficEnabled.rawValue) as? Bool ?? true
         trafficIncludeTools = defaults.object(forKey: Key.trafficIncludeTools.rawValue) as? Bool ?? true
         trafficUnit = TrafficUnit(rawValue: defaults.string(forKey: Key.trafficUnit.rawValue) ?? "") ?? .bytes
-        barTraffic = BarTraffic(rawValue: defaults.string(forKey: Key.barTraffic.rawValue) ?? "") ?? .off
+        // Earlier builds kept 性能 as a fourth traffic choice: it becomes the switch once, and the network block off.
+        let storedTraffic = defaults.string(forKey: Key.barTraffic.rawValue)
+        let migrates = storedTraffic == Self.retiredIntelligenceTraffic
+        barTraffic = BarTraffic(rawValue: storedTraffic ?? "") ?? .off
+        barIntelligence = migrates || defaults.object(forKey: Key.barIntelligence.rawValue) as? Bool ?? false
+        if migrates {
+            defaults.set(BarTraffic.off.rawValue, forKey: Key.barTraffic.rawValue)
+            defaults.set(true, forKey: Key.barIntelligence.rawValue)
+        }
         barSecondary = defaults.object(forKey: Key.barSecondary.rawValue) as? Bool ?? false
         agentsExpanded = defaults.object(forKey: Key.agentsExpanded.rawValue) as? Bool ?? false
         effects = EffectsLevel(rawValue: defaults.string(forKey: Key.effects.rawValue) ?? "") ?? .standard
@@ -160,6 +178,10 @@ final class AppSettings {
         zcodeRoot = Self.url(defaults.string(forKey: Key.zcodeRoot.rawValue))
         kimiRoot = Self.url(defaults.string(forKey: Key.kimiRoot.rawValue))
         grokBuildRoot = Self.url(defaults.string(forKey: Key.grokBuildRoot.rawValue))
+        piRoot = Self.url(defaults.string(forKey: Key.piRoot.rawValue))
+        openclawRoot = Self.location(defaults.string(forKey: Key.openclawRoot.rawValue))
+        hermesRoot = Self.url(defaults.string(forKey: Key.hermesRoot.rawValue))
+        droidRoot = Self.url(defaults.string(forKey: Key.droidRoot.rawValue))
         autoCheckUpdates = defaults.object(forKey: Key.autoCheckUpdates.rawValue) as? Bool ?? true
         networkEnabled = defaults.object(forKey: Key.networkEnabled.rawValue) as? Bool ?? true
         syncPrices = defaults.object(forKey: Key.syncPrices.rawValue) as? Bool ?? true
@@ -191,7 +213,11 @@ final class AppSettings {
             workbuddyAiRoot: workbuddyAiRoot,
             zcodeRoot: zcodeRoot,
             kimiRoot: kimiRoot,
-            grokBuildRoot: grokBuildRoot
+            grokBuildRoot: grokBuildRoot,
+            piRoot: piRoot,
+            openclawRoot: openclawRoot,
+            hermesRoot: hermesRoot,
+            droidRoot: droidRoot
         )
     }
 
@@ -243,6 +269,15 @@ final class AppSettings {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    /// A folder or a file, as the file system says.
+    private static func location(_ path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    /// The stored `barTraffic` value of builds before 性能 had its own switch (DESIGN 10).
+    static let retiredIntelligenceTraffic = "intelligence"
+
     private func store(_ value: Any?, _ key: Key) {
         if let value { defaults.set(value, forKey: key.rawValue) } else { defaults.removeObject(forKey: key.rawValue) }
     }
@@ -251,12 +286,12 @@ final class AppSettings {
         case appearance, language, metric, redline, redlineTotal, redlineDefaultsMigrated
         case barMode, barColoredGlyph, barShowsUnit
         case orbVisible, orbsVisible, orbNames
-        case trafficEnabled, trafficIncludeTools, trafficUnit, barTraffic, barSecondary
+        case trafficEnabled, trafficIncludeTools, trafficUnit, barTraffic, barIntelligence, barSecondary
         case agentsExpanded
         case effects, celebratePeaks, responsePulses
         case enabledSources, knownSources
         case codexRoot, claudeRoot, dshRoot, opencodeRoot, geminiRoot, ompRoot, antigravityRoot, workbuddyRoot, workbuddyAiRoot
-        case zcodeRoot, kimiRoot, grokBuildRoot
+        case zcodeRoot, kimiRoot, grokBuildRoot, piRoot, openclawRoot, hermesRoot, droidRoot
         case autoCheckUpdates
         case networkEnabled, syncPrices, currency, liveUnit, subscriptionSources, includeSubscriptions
         case heroLastTitle

@@ -54,7 +54,7 @@ internal static class TaskbarBenchmark
                         Save(OnBackground(image, dark), Path.Combine(output, $"taskbar-{(dark ? "dark" : "light")}-{scale:0.##}-{name}.png"));
                     }
 
-                    var card = new HoverTooltip();
+                    var card = new TaskbarDetailTooltip();
                     try
                     {
                         card.Show();
@@ -86,7 +86,7 @@ internal static class TaskbarBenchmark
 
         var placementChecks = new List<object>();
         var displays = Monitors.All();
-        var placementCard = new HoverTooltip();
+        var placementCard = new TaskbarDetailTooltip();
         try
         {
             foreach (var display in displays)
@@ -126,7 +126,7 @@ internal static class TaskbarBenchmark
 
         using var host = new TaskbarHost(_ => { }, Geometry);
         var stateIdle = State(idle, settings, cost, true);
-        var tooltip = new HoverTooltip();
+        var tooltip = new TaskbarDetailTooltip();
         try
         {
             host.Apply(stateIdle);

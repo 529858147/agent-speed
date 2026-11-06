@@ -54,7 +54,6 @@ public class ReportSettingsTests
             Pin = ReportConsentPin.Of(discovery),
             Discovery = discovery,
             DiscoveryFetchedAt = T0,
-            ETag = "\"abc-123\"",
             KeyCreatedAt = T0.AddDays(-10),
             PendingKey = true,
             HasApiKey = false,
@@ -100,7 +99,6 @@ public class ReportSettingsTests
         Assert.Equal(expected.Pin, actual.Pin);
         Assert.Equal(expected.Discovery?.ToJson().ToCompactString(), actual.Discovery?.ToJson().ToCompactString());
         Assert.Equal(expected.DiscoveryFetchedAt, actual.DiscoveryFetchedAt);
-        Assert.Equal(expected.ETag, actual.ETag);
         Assert.Equal(expected.KeyCreatedAt, actual.KeyCreatedAt);
         Assert.Equal(expected.PendingKey, actual.PendingKey);
         Assert.Equal(expected.HasApiKey, actual.HasApiKey);
@@ -262,7 +260,6 @@ public class ReportSettingsTests
         var e = report.Identities[1];
         Assert.Null(e.Username);
         Assert.Null(e.ProfileUrl);
-        Assert.Null(e.ETag);
         Assert.Null(e.Pin);
         Assert.Null(e.Discovery);
     }

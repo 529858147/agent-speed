@@ -28,6 +28,18 @@ internal static class JsonScan
         }
     }
 
+    /// <summary>Reads a string value as is (an empty string included); null for any other token.</summary>
+    public static string? ReadToken(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString();
+        }
+
+        SkipValue(ref reader);
+        return null;
+    }
+
     /// <summary>Reads a string value; empty strings count as missing.</summary>
     public static string? ReadString(ref Utf8JsonReader reader)
     {
@@ -64,6 +76,18 @@ internal static class JsonScan
 
         // A JSON number the double range cannot hold: its sign decides.
         return reader.ValueSpan[0] == (byte)'-' ? 0 : TokenCounts.MaxValue;
+    }
+
+    /// <summary>A Codex rollout ordinal (METRICS 3.5): an integer literal from 0 through <see cref="long.MaxValue"/>; anything else is null.</summary>
+    public static long? ReadOrdinal(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType != JsonTokenType.Number)
+        {
+            SkipValue(ref reader);
+            return null;
+        }
+
+        return reader.ValueSpan.IndexOfAny(".eE"u8) < 0 && reader.TryGetInt64(out var value) && value >= 0 ? value : null;
     }
 
     public static bool TryReadTimestamp(ref Utf8JsonReader reader, out long unixMs)

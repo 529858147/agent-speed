@@ -21,6 +21,7 @@ internal class FileTailer : TranscriptTailer
         Offset = Math.Max(0, offset);
         _alignment = Offset > 0 ? alignment : StartAlignment.None;
         Lines.Clear();
+        Lines.Position = Offset;
         Lines.AlignToNextLine = _alignment != StartAlignment.None;
     }
 
@@ -34,6 +35,7 @@ internal class FileTailer : TranscriptTailer
             Offset = 0;
             _alignment = StartAlignment.None;
             Lines.Clear();
+            Lines.Position = 0;
             wasReset = true;
         }
 

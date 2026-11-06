@@ -35,13 +35,7 @@ public static class OrbsJson
             writer.WriteStartObject(layout.Arrangement);
             foreach (var (id, record) in layout.Positions.OrderBy(p => document.IndexOf(p.Key)))
             {
-                writer.WriteStartObject(id);
-                writer.WriteString("display", record.Display);
-                writer.WriteString("xAnchor", OrbAxis.KeyOf(record.X.Anchor));
-                writer.WriteNumber("x", record.X.Value);
-                writer.WriteString("yAnchor", OrbAxis.KeyOf(record.Y.Anchor));
-                writer.WriteNumber("y", record.Y.Value);
-                writer.WriteEndObject();
+                WriteRecord(writer, id, record);
             }
 
             writer.WriteEndObject();
@@ -159,7 +153,7 @@ public static class OrbsJson
         }.Validated();
     }
 
-    private static OrbSources ReadSources(JsonElement element)
+    internal static OrbSources ReadSources(JsonElement element)
     {
         if (!element.TryGetProperty("sources", out var sources))
         {
@@ -221,7 +215,19 @@ public static class OrbsJson
         return result.ToImmutable();
     }
 
-    private static OrbPositionRecord? ReadRecord(JsonElement element)
+    /// <summary>One position record (<c>{ "display", "xAnchor", "x", "yAnchor", "y" }</c>), also of the boards.</summary>
+    internal static void WriteRecord(Utf8JsonWriter writer, string id, OrbPositionRecord record)
+    {
+        writer.WriteStartObject(id);
+        writer.WriteString("display", record.Display);
+        writer.WriteString("xAnchor", OrbAxis.KeyOf(record.X.Anchor));
+        writer.WriteNumber("x", record.X.Value);
+        writer.WriteString("yAnchor", OrbAxis.KeyOf(record.Y.Anchor));
+        writer.WriteNumber("y", record.Y.Value);
+        writer.WriteEndObject();
+    }
+
+    internal static OrbPositionRecord? ReadRecord(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object
             || ReadString(element, "display", OrbPositionRecord.MaxDisplayKeyLength) is not { } display
@@ -236,19 +242,19 @@ public static class OrbsJson
         return new OrbPositionRecord(display, new OrbAxis(xAnchor, x), new OrbAxis(yAnchor, y)).Validated();
     }
 
-    private static string? ReadString(JsonElement element, string name, int maxLength) =>
+    internal static string? ReadString(JsonElement element, string name, int maxLength) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
         && value.GetString() is { } text && text.Length <= maxLength
             ? text
             : null;
 
-    private static double? ReadNumber(JsonElement element, string name) =>
+    internal static double? ReadNumber(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
         && value.TryGetDouble(out var number) && double.IsFinite(number)
             ? number
             : null;
 
-    private static bool ReadBool(JsonElement element, string name, bool fallback) =>
+    internal static bool ReadBool(JsonElement element, string name, bool fallback) =>
         element.TryGetProperty(name, out var value)
             ? value.ValueKind switch
             {

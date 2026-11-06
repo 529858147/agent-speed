@@ -6,6 +6,8 @@ struct LineSplitter: Sendable {
     let maxLineBytes: Int
     private(set) var oversizedLines = 0
     private var partial: [UInt8] = []
+    /// Stream offset of the first byte of `partial`.
+    private var partialStart: Int64 = 0
     /// Skipping bytes until the next newline (oversized or unaligned line).
     private var discarding = false
 
@@ -25,6 +27,11 @@ struct LineSplitter: Sendable {
     }
 
     mutating func consume(_ chunk: UnsafeRawBufferPointer, onLine: (UnsafeRawBufferPointer) -> Void) {
+        consume(chunk, at: 0) { line, _ in onLine(line) }
+    }
+
+    /// Like `consume(_:onLine:)`, with each line's byte offset in the stream; `chunkOffset` is the chunk's own.
+    mutating func consume(_ chunk: UnsafeRawBufferPointer, at chunkOffset: Int64, onLine: (UnsafeRawBufferPointer, Int64) -> Void) {
         guard let base = chunk.baseAddress else { return }
         var lineStart = 0
         while lineStart < chunk.count {
@@ -38,14 +45,15 @@ struct LineSplitter: Sendable {
                     if fragment.count > maxLineBytes {
                         oversizedLines += 1
                     } else {
-                        onLine(fragment)
+                        onLine(fragment, chunkOffset + Int64(lineStart))
                     }
                 } else if partial.count + fragment.count > maxLineBytes {
                     oversizedLines += 1
                     releasePartial()
                 } else {
                     partial.append(contentsOf: fragment)
-                    partial.withUnsafeBytes { onLine($0) }
+                    let start = partialStart
+                    partial.withUnsafeBytes { onLine($0, start) }
                     releasePartial()
                 }
                 lineStart = lineEnd + 1
@@ -57,6 +65,7 @@ struct LineSplitter: Sendable {
                         releasePartial()
                         discarding = true
                     } else {
+                        if partial.isEmpty { partialStart = chunkOffset + Int64(lineStart) }
                         partial.append(contentsOf: fragment)
                     }
                 }

@@ -6,8 +6,8 @@ import SwiftUI
 struct HistoryFooter: View {
     let store: HistoryStore
     let l10n: Localizer
-    /// Models of the range without a known price.
-    var unpriced: [UnpricedModel] = []
+    /// Why the range's unpriced requests have no price (METRICS 9.10).
+    var unpriced: UnpricedView = .empty
     /// `以 2026/10/22 的匯率換算` for a non-USD currency.
     var rateNote: String?
     /// `網路流量自 10/22 開始記錄` when the range starts before traffic was recorded (DESIGN 10).
@@ -24,8 +24,8 @@ struct HistoryFooter: View {
                     .lineLimit(1)
                     .fixedSize()
             }
-            if !unpriced.isEmpty {
-                UnpricedNotice(models: unpriced, l10n: l10n)
+            if unpriced.unpriced > 0 {
+                UnpricedNotice(view: unpriced, l10n: l10n)
                     .padding(.leading, Spacing.xs)
                     .layoutPriority(0.5)
             }
@@ -169,88 +169,5 @@ struct HistoryEmptyState: View {
         }
         .padding(.bottom, Spacing.xxl)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// `1,234 筆請求的模型價格未知，未計入費用 · 查看`: the link opens the list of models with their requests and source.
-private struct UnpricedNotice: View {
-    let models: [UnpricedModel]
-    let l10n: Localizer
-
-    @State private var shown = false
-
-    var body: some View {
-        let count = models.reduce(0) { $0 + $1.requests }
-        HStack(spacing: 6) {
-            Image(systemName: "info.circle")
-                .imageScale(.small)
-                .accessibilityHidden(true)
-            Text(l10n("history.unpricedNotice", count))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(l10n("history.unpricedNotice", count))
-            Button(l10n("history.unpricedNotice.show")) { shown.toggle() }
-                .buttonStyle(.link)
-                .fixedSize()
-                .popover(isPresented: $shown, arrowEdge: .top) {
-                    UnpricedModelsList(models: models, l10n: l10n)
-                }
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// The popover of `history.unpricedNotice.show`: each model with its requests and source, then
-/// `history.unpricedModels.hint`.
-struct UnpricedModelsList: View {
-    let models: [UnpricedModel]
-    let l10n: Localizer
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let dark = colorScheme == .dark
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            Text(l10n("cost.unknown"))
-                .font(.system(size: 13, weight: .semibold))
-                .accessibilityAddTraits(.isHeader)
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(models) { model in
-                        HStack(alignment: .firstTextBaseline, spacing: 7) {
-                            Circle()
-                                .fill(model.source.tint(dark: dark))
-                                .frame(width: 7, height: 7)
-                                .help(l10n(model.source.titleKey))
-                                .accessibilityHidden(true)
-                            Text(model.model.isEmpty ? l10n("mac.history.breakdown.otherModels") : model.model)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-                            Spacer(minLength: Spacing.s)
-                            Text(HistoryText.fullNumber(model.requests, l10n))
-                                .font(HistoryFont.cell)
-                                .foregroundStyle(.historySecondary)
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(model.model.isEmpty ? l10n("mac.history.breakdown.otherModels") : model.model)
-                        .accessibilityValue(HistoryText.join([
-                            l10n(model.source.titleKey),
-                            HistoryText.labelled(l10n("history.table.requests"), HistoryText.fullNumber(model.requests, l10n), l10n),
-                        ], l10n))
-                    }
-                }
-            }
-            .frame(maxHeight: 220)
-            .fixedSize(horizontal: false, vertical: true)
-            Divider()
-            Text(l10n("history.unpricedModels.hint"))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.historySecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.m)
-        .frame(width: 300)
     }
 }

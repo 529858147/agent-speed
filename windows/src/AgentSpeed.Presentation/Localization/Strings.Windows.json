@@ -599,5 +599,29 @@
     "zh-Hans": "另 %d 张：未提供到期时间",
     "zh-Hant": "另 %d 張：未提供到期時間",
     "ja": "ほか %d 枚：有効期限未提供"
+  },
+  "win.report.ws.milliseconds": {
+    "zh-Hant": "%@ ms",
+    "zh-Hans": "%@ ms",
+    "en": "%@ ms",
+    "ja": "%@ ms"
+  },
+  "win.boards.tip.speed": {
+    "zh-Hant": "速度 %@ tok/s",
+    "zh-Hans": "速度 %@ tok/s",
+    "en": "Speed %@ tok/s",
+    "ja": "速度 %@ tok/s"
+  },
+  "win.boards.tip.speedSubs": {
+    "zh-Hant": "速度 %@ tok/s（子 agent %@）",
+    "zh-Hans": "速度 %@ tok/s（子 agent %@）",
+    "en": "Speed %@ tok/s (sub-agents %@)",
+    "ja": "速度 %@ tok/s（サブ agent %@）"
+  },
+  "win.boards.visible": {
+    "zh-Hant": "顯示這個看板",
+    "zh-Hans": "显示这个看板",
+    "en": "Show This Board",
+    "ja": "このボードを表示"
   }
 }

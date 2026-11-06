@@ -10,6 +10,9 @@ final class OrbCanvasView: NSView, OrbFrameClient {
     var sceneProvider: ((inout OrbScene, CGSize, CGFloat, TimeInterval) -> Void)?
     /// Called after every rendered frame (the animator re-evaluates its demand).
     var onFrame: (() -> Void)?
+    /// Another canvas drawn in this one's command buffer on each of its frames (a board's warp under its rows): two
+    /// surfaces, one submission. The companion asks for no frames of its own meanwhile.
+    weak var companion: OrbCanvasView?
 
     var request: OrbFrameRequest = .none {
         didSet { if request != oldValue { OrbFrameClock.shared.update() } }
@@ -126,17 +129,39 @@ final class OrbCanvasView: NSView, OrbFrameClient {
     }
 
     func renderFrame(at time: TimeInterval) {
-        guard let encoder, let sceneProvider, bounds.width > 0, let metalLayer,
+        guard let encoder, sceneProvider != nil, bounds.width > 0, let metalLayer,
               let drawable = metalLayer.nextDrawable() else { return }
         let start = DispatchTime.now().uptimeNanoseconds
+        guard let commandBuffer = encoder.beginFrame() else { return }
+        encode(drawable, at: time, into: commandBuffer, joining: false)
+        companion?.renderFrame(at: time, joining: commandBuffer)
+        commandBuffer.commit()
+        cpuNanoseconds &+= DispatchTime.now().uptimeNanoseconds - start
+        onFrame?()
+    }
+
+    /// Draws a frame inside another canvas's command buffer (see `companion`); its CPU and GPU time count as the
+    /// owner's.
+    private func renderFrame(at time: TimeInterval, joining commandBuffer: MTLCommandBuffer) {
+        guard window != nil, sceneProvider != nil, bounds.width > 0, let metalLayer,
+              let drawable = metalLayer.nextDrawable() else { return }
+        encode(drawable, at: time, into: commandBuffer, joining: true)
+    }
+
+    private func encode(_ drawable: CAMetalDrawable, at time: TimeInterval, into commandBuffer: MTLCommandBuffer, joining: Bool) {
+        guard let encoder, let sceneProvider else { return }
         let scale = backingScale
         sceneProvider(&scene, bounds.size, scale, time)
         pass.colorAttachments[0].texture = drawable.texture
-        encoder.render(scene, size: bounds.size, scale: scale, pass: pass, present: drawable)
-        cpuNanoseconds &+= DispatchTime.now().uptimeNanoseconds - start
+        if joining {
+            encoder.render(scene, size: bounds.size, scale: scale, pass: pass, present: drawable, joining: commandBuffer)
+        } else {
+            encoder.encode(count: 1, size: bounds.size, scale: scale, pass: pass, present: drawable, into: commandBuffer) { _ in
+                (scene, CGRect(origin: .zero, size: bounds.size), nil)
+            }
+        }
         framesDrawn += 1
         pass.colorAttachments[0].texture = nil
-        onFrame?()
     }
 
     func resetStats() {

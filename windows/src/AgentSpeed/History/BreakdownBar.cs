@@ -16,6 +16,14 @@ internal sealed class BreakdownBar : FrameworkElement
     public static readonly DependencyProperty ColorProperty = DependencyProperty.Register(
         nameof(Color), typeof(Color), typeof(BreakdownBar), new FrameworkPropertyMetadata(Colors.Gray, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    /// <summary>A fill in place of <see cref="Color"/>, for example a gradient; null uses the color.</summary>
+    public static readonly DependencyProperty FillProperty = DependencyProperty.Register(
+        nameof(Fill), typeof(Brush), typeof(BreakdownBar), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>Changes of length spring in 0.35 s instead of easing out in 0.45 s.</summary>
+    public static readonly DependencyProperty SpringProperty = DependencyProperty.Register(
+        nameof(Spring), typeof(bool), typeof(BreakdownBar), new FrameworkPropertyMetadata(false));
+
     public static readonly DependencyProperty HatchedProperty = DependencyProperty.Register(
         nameof(Hatched), typeof(bool), typeof(BreakdownBar), new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
 
@@ -35,6 +43,9 @@ internal sealed class BreakdownBar : FrameworkElement
         "Shown", typeof(double), typeof(BreakdownBar), new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
     private static readonly Duration GrowDuration = TimeSpan.FromMilliseconds(450);
+    private static readonly Duration SpringDuration = TimeSpan.FromMilliseconds(350);
+    private static readonly IEasingFunction GrowEasing = Frozen(new CubicEase { EasingMode = EasingMode.EaseOut });
+    private static readonly IEasingFunction SpringEasing = Frozen(new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.25 });
 
     private bool _entered;
 
@@ -61,6 +72,18 @@ internal sealed class BreakdownBar : FrameworkElement
     {
         get => (Color)GetValue(ColorProperty);
         set => SetValue(ColorProperty, value);
+    }
+
+    public Brush? Fill
+    {
+        get => (Brush?)GetValue(FillProperty);
+        set => SetValue(FillProperty, value);
+    }
+
+    public bool Spring
+    {
+        get => (bool)GetValue(SpringProperty);
+        set => SetValue(SpringProperty, value);
     }
 
     public bool Hatched
@@ -100,9 +123,11 @@ internal sealed class BreakdownBar : FrameworkElement
         var length = double.IsFinite(shown) ? Math.Clamp(shown, 0, 1) * width : 0;
         if (length > 0.25)
         {
-            var color = GetHighContrast(this) ? SystemColors.HighlightColor : Color;
-            dc.DrawRoundedRectangle(BarBrushes.For(color, gradient: false, Hatched), null,
-                new Rect(0, 0, Math.Max(length, Math.Min(width, 2 * radius)), height), radius, radius);
+            var highContrast = GetHighContrast(this);
+            var brush = Fill is { } fill && !highContrast
+                ? fill
+                : BarBrushes.For(highContrast ? SystemColors.HighlightColor : Color, gradient: false, Hatched);
+            dc.DrawRoundedRectangle(brush, null, new Rect(0, 0, Math.Max(length, Math.Min(width, 2 * radius)), height), radius, radius);
         }
     }
 
@@ -120,7 +145,7 @@ internal sealed class BreakdownBar : FrameworkElement
             return;
         }
 
-        var animation = new DoubleAnimation(target, GrowDuration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+        var animation = new DoubleAnimation(target, Spring ? SpringDuration : GrowDuration) { EasingFunction = Spring ? SpringEasing : GrowEasing };
         if (from is { } start)
         {
             animation.From = start;
@@ -128,5 +153,11 @@ internal sealed class BreakdownBar : FrameworkElement
 
         animation.Freeze();
         BeginAnimation(ShownProperty, animation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static IEasingFunction Frozen(EasingFunctionBase easing)
+    {
+        easing.Freeze();
+        return easing;
     }
 }

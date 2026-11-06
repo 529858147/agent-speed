@@ -1,5 +1,5 @@
 {
-  "_comment": "METRICS 9.2-9.3 against the fixture tables in `tables` (paths relative to this folder). `resolve.expect` is a model id, `free` or `unknown`. `cost.expect`: exact pico-USD, the rounded micro-USD (null = unknown price) and the index of the tier used (null = the base prices); `at` (UTC, YYYY-MM-DD or YYYY-MM-DDTHH:MMZ) is the response's endMs for periods and off-peak rules (absent = none applies); `fast` marks a fast-mode response. `resolve.expect` adds ` fast` when the id itself selects fast mode. Tokens are normalized usage (METRICS 3.2). `days` (9.7): all tables loaded, the highest version current, `bindings` stored; `version` is the date's binding afterwards.",
+  "_comment": "METRICS 9.2-9.3 against the fixture tables in `tables` (paths relative to this folder). `resolve.expect` is a model id, `free` or `unknown`. `cost.expect`: exact pico-USD, the rounded micro-USD (null = unknown price) and the index of the tier used (null = the base prices); `at` (UTC, YYYY-MM-DD or YYYY-MM-DDTHH:MMZ) is the response's endMs for periods and off-peak rules (absent = none applies); `fast` marks a fast-mode response. `resolve.expect` adds ` fast` when the id itself selects fast mode. Tokens are normalized usage (METRICS 3.2). `days` (9.7): all tables loaded, the highest version current, `bindings` stored; `version` is the date's binding afterwards. `bundled.cost`: cost cases against spec/assets/prices.json, the real table every build bundles; each has an `at`, so a later price change (a new period) keeps it valid.",
   "tables": {
     "v1": "prices/v1.json",
     "v2": "prices/v2.json"
@@ -274,6 +274,96 @@
       "model": "gpt-6.1-sol-mini",
       "provider": null,
       "expect": "gpt-6.1-sol-mini"
+    },
+    {
+      "table": "v1",
+      "model": "mimo-v2.6-pro",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "mimo-v2.6-pro",
+      "provider": "custom",
+      "expect": "mimo-v2.6-pro"
+    },
+    {
+      "table": "v2",
+      "model": "MiMo-V2.6-Pro",
+      "provider": null,
+      "expect": "mimo-v2.6-pro"
+    },
+    {
+      "table": "v2",
+      "model": "xiaomi/mimo-v2.6-pro",
+      "provider": "custom",
+      "expect": "mimo-v2.6-pro"
+    },
+    {
+      "table": "v2",
+      "model": "mimo-v2.6-pro-fast",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "custom:GPT-5.5-[OpenAI-BYOK]-0",
+      "provider": "custom",
+      "expect": "gpt-5.5"
+    },
+    {
+      "table": "v2",
+      "model": "Custom:Claude-Opus-5.5-Thinking-0",
+      "provider": "custom",
+      "expect": "claude-opus-5-5"
+    },
+    {
+      "table": "v2",
+      "model": "custom:Claude-Opus-5.5-[Bedrock]-12",
+      "provider": "custom",
+      "expect": "claude-opus-5-5"
+    },
+    {
+      "table": "v2",
+      "model": "custom:Claude Opus 5.5-0",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "custom:claude-opus-5-5-fast-0",
+      "provider": "custom",
+      "expect": "claude-opus-5-5 fast"
+    },
+    {
+      "table": "v2",
+      "model": "custom:gpt-5.5",
+      "provider": "custom",
+      "expect": "gpt-5.5"
+    },
+    {
+      "table": "v2",
+      "model": "custom:superbased-0",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "custom:Kimi-K3-(free)-0",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "custom:-0",
+      "provider": "custom",
+      "expect": "unknown"
+    },
+    {
+      "table": "v2",
+      "model": "gpt-5.5-0",
+      "provider": null,
+      "expect": "unknown"
     }
   ],
   "cost": [
@@ -774,6 +864,44 @@
         "tier": null
       },
       "fast": true
+    },
+    {
+      "name": "an explicit zero cache-write price is free, not the input price",
+      "table": "v2",
+      "model": "mimo-v2.6-pro",
+      "tokens": {
+        "input": 10000,
+        "cachedInput": 6000,
+        "cacheWriteInput": 3000,
+        "cacheWrite1hInput": 0,
+        "output": 400,
+        "reasoning": 0
+      },
+      "expect": {
+        "costPicoUsd": 804600000,
+        "costMicroUsd": 805,
+        "tier": null
+      },
+      "provider": "custom"
+    },
+    {
+      "name": "a model added by a newer table has no price in the older one",
+      "table": "v1",
+      "model": "mimo-v2.6-pro",
+      "tokens": {
+        "input": 10000,
+        "cachedInput": 6000,
+        "cacheWriteInput": 3000,
+        "cacheWrite1hInput": 0,
+        "output": 400,
+        "reasoning": 0
+      },
+      "expect": {
+        "costPicoUsd": null,
+        "costMicroUsd": null,
+        "tier": null
+      },
+      "provider": "custom"
     }
   ],
   "days": [
@@ -850,6 +978,25 @@
       "costMicroUsd": 6000
     },
     {
+      "name": "late pricing reaches a custom provider's model added later (issue #20)",
+      "bindings": {
+        "2026-10-20": 1
+      },
+      "date": "2026-10-20",
+      "model": "mimo-v2.6-pro",
+      "provider": "custom",
+      "tokens": {
+        "input": 10000,
+        "cachedInput": 6000,
+        "cacheWriteInput": 3000,
+        "cacheWrite1hInput": 0,
+        "output": 400,
+        "reasoning": 0
+      },
+      "version": 1,
+      "costMicroUsd": 805
+    },
+    {
       "name": "unknown in every table stays unknown",
       "bindings": {},
       "date": "2026-10-20",
@@ -865,5 +1012,118 @@
       "version": 2,
       "costMicroUsd": null
     }
-  ]
+  ],
+  "bundled": {
+    "cost": [
+      {
+        "name": "GPT-6.1 Terra at exactly 272 000 input tokens keeps its base prices",
+        "model": "gpt-6.1-terra",
+        "tokens": {
+          "input": 272000,
+          "cachedInput": 200010,
+          "cacheWriteInput": 20000,
+          "cacheWrite1hInput": 0,
+          "output": 4000,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 106990500000,
+          "costMicroUsd": 106991,
+          "tier": null
+        },
+        "at": "2026-10-28T12:00Z"
+      },
+      {
+        "name": "one more input token prices the whole GPT-6.1 Terra response at the long-context rates",
+        "model": "gpt-6.1-terra",
+        "tokens": {
+          "input": 272001,
+          "cachedInput": 200010,
+          "cacheWriteInput": 20000,
+          "cacheWrite1hInput": 0,
+          "output": 4000,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 203983000000,
+          "costMicroUsd": 203983,
+          "tier": 0
+        },
+        "at": "2026-10-28T12:00Z"
+      },
+      {
+        "name": "a routed GPT-6.1 Terra id bills cache reads and cache writes apart",
+        "model": "openai/gpt-6.1-terra",
+        "tokens": {
+          "input": 10000,
+          "cachedInput": 6000,
+          "cacheWriteInput": 1000,
+          "cacheWrite1hInput": 0,
+          "output": 500,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 7050000000,
+          "costMicroUsd": 7050,
+          "tier": null
+        },
+        "at": "2026-10-28T12:00Z"
+      },
+      {
+        "name": "GPT-6.1 Terra fast mode at exactly 272 000 input tokens",
+        "model": "gpt-6.1-terra",
+        "tokens": {
+          "input": 272000,
+          "cachedInput": 200010,
+          "cacheWriteInput": 20000,
+          "cacheWrite1hInput": 0,
+          "output": 4000,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 213981000000,
+          "costMicroUsd": 213981,
+          "tier": null
+        },
+        "at": "2026-10-28T12:00Z",
+        "fast": true
+      },
+      {
+        "name": "a -fast GPT-6.1 Terra id above 272 000 input tokens uses the long-context fast prices",
+        "model": "gpt-6.1-terra-fast",
+        "tokens": {
+          "input": 272001,
+          "cachedInput": 200010,
+          "cacheWriteInput": 20000,
+          "cacheWrite1hInput": 0,
+          "output": 4000,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 407966000000,
+          "costMicroUsd": 407966,
+          "tier": 0
+        },
+        "at": "2026-10-28T12:00Z"
+      },
+      {
+        "name": "GPT-5.6 Terra keeps its own prices",
+        "model": "gpt-5.6-terra",
+        "tokens": {
+          "input": 10000,
+          "cachedInput": 6000,
+          "cacheWriteInput": 1000,
+          "cacheWrite1hInput": 0,
+          "output": 500,
+          "reasoning": 0
+        },
+        "expect": {
+          "costPicoUsd": 15700000000,
+          "costMicroUsd": 15700,
+          "tier": null
+        },
+        "at": "2026-10-28T12:00Z"
+      }
+    ]
+  }
 }

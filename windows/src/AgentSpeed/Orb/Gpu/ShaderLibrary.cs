@@ -8,7 +8,7 @@ namespace AgentSpeed.Orb.Gpu;
 
 /// <summary>Compiled bytecode of the orb shaders.</summary>
 internal sealed record OrbShaderCode(byte[] ShapeVertex, byte[] ShapePixel, byte[] TextVertex, byte[] TextPixel, byte[] LiquidVertex,
-    byte[] LiquidPixel, byte[] LedVertex, byte[] LedPixel);
+    byte[] LiquidPixel, byte[] LedVertex, byte[] LedPixel, byte[] LayerVertex, byte[] LayerPixel);
 
 /// <summary>
 /// Compiles the orb's HLSL (embedded resources) with the operating system's <c>d3dcompiler_47.dll</c> and keeps the bytecode
@@ -18,8 +18,8 @@ internal sealed record OrbShaderCode(byte[] ShapeVertex, byte[] ShapePixel, byte
 internal static class ShaderLibrary
 {
     private const string Profile = "4_0";
-    private static readonly string[] Parts = ["OrbCommon", "OrbLiquid", "OrbShapes", "OrbText", "OrbLed"];
-    private const int BlobCount = 8;
+    private static readonly string[] Parts = ["OrbCommon", "OrbLiquid", "OrbShapes", "OrbText", "OrbLed", "BoardLayer"];
+    private const int BlobCount = 10;
 
     private static Task<OrbShaderCode>? s_preload;
 
@@ -32,8 +32,11 @@ internal static class ShaderLibrary
         }
     }
 
+    /// <summary>The per-user cache, or <c>AGENT_SPEED_SHADER_CACHE_DIR</c> (developer harnesses next to an installed app).</summary>
     private static string CacheDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppPaths.ProductFolder, "cache", "shaders");
+        Environment.GetEnvironmentVariable("AGENT_SPEED_SHADER_CACHE_DIR") is { Length: > 0 } custom && Path.IsPathFullyQualified(custom)
+            ? custom
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppPaths.ProductFolder, "cache", "shaders");
 
     /// <summary>The bytecode (waits for <see cref="Preload"/> when it started).</summary>
     public static OrbShaderCode Load()
@@ -73,7 +76,9 @@ internal static class ShaderLibrary
             Compile(source, "VsLiquid", "vs"),
             Compile(source, "PsLiquid", "ps"),
             Compile(source, "VsLed", "vs"),
-            Compile(source, "PsLed", "ps"));
+            Compile(source, "PsLed", "ps"),
+            Compile(source, "VsLayer", "vs"),
+            Compile(source, "PsLayer", "ps"));
         AppLog.Info($"Orb shaders compiled in {watch.ElapsedMilliseconds} ms.");
         TryWrite(path, code);
         return code;
@@ -113,7 +118,7 @@ internal static class ShaderLibrary
         }
     }
 
-    // Cache file: "ORB2", then eight length-prefixed blobs, then the SHA-256 of everything before it.
+    // Cache file: "ORB3", then ten length-prefixed blobs, then the SHA-256 of everything before it.
     private static OrbShaderCode? TryRead(string path)
     {
         try
@@ -135,7 +140,7 @@ internal static class ShaderLibrary
                 return null;
             }
 
-            if (Encoding.ASCII.GetString(body[..4]) != "ORB2")
+            if (Encoding.ASCII.GetString(body[..4]) != "ORB3")
             {
                 return null;
             }
@@ -155,7 +160,7 @@ internal static class ShaderLibrary
                 offset += length;
             }
 
-            return new OrbShaderCode(blobs[0], blobs[1], blobs[2], blobs[3], blobs[4], blobs[5], blobs[6], blobs[7]);
+            return new OrbShaderCode(blobs[0], blobs[1], blobs[2], blobs[3], blobs[4], blobs[5], blobs[6], blobs[7], blobs[8], blobs[9]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -174,11 +179,11 @@ internal static class ShaderLibrary
             }
 
             using var memory = new MemoryStream();
-            memory.Write("ORB2"u8);
+            memory.Write("ORB3"u8);
             foreach (var blob in new[]
                      {
                          code.ShapeVertex, code.ShapePixel, code.TextVertex, code.TextPixel, code.LiquidVertex, code.LiquidPixel, code.LedVertex,
-                         code.LedPixel,
+                         code.LedPixel, code.LayerVertex, code.LayerPixel,
                      })
             {
                 memory.Write(BitConverter.GetBytes(blob.Length));

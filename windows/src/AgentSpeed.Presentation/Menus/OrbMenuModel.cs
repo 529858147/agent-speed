@@ -1,6 +1,4 @@
-using AgentSpeed.Core;
 using AgentSpeed.Presentation.Localization;
-using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Settings.Orbs;
@@ -20,8 +18,7 @@ public static class OrbMenuModel
     /// <summary>The menu of <paramref name="orbId"/>; null when no such orb exists.</summary>
     /// <param name="sources">Source availability (split, the sources' secondary text and faded dots).</param>
     /// <param name="sourceTraffic">Per-process traffic can be measured now (else the sources choice says it is unavailable).</param>
-    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer, bool sourceTraffic = true,
-        IReadOnlyList<AgentStatus>? agents = null)
+    public static MenuLevel? Build(string orbId, AppSettings settings, SourceAvailability sources, Localizer localizer, bool sourceTraffic = true)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(localizer);
@@ -32,7 +29,6 @@ public static class OrbMenuModel
         }
 
         var id = orb.Id;
-        var modeAgents = agents?.Where(a => orb.Sources.Tracks(a.Source)).ToArray();
         var limit = localizer.Format("orbs.limit", OrbsDocument.MaxOrbs);
         var canAdd = document.CanAdd;
         var canSplit = OrbEditing.CanSplit(document, id, sources.Available);
@@ -45,15 +41,6 @@ public static class OrbMenuModel
         return new MenuLevel(
         [
             new MenuRow(OrbNaming.DisplayName(orb, localizer)) { Icon = DotsOf(orb, sources), IsHeader = true, IsEnabled = false },
-            .. (modeAgents is { Length: > 0 } ? new MenuEntry[]
-            {
-                new MenuRow(localizer["mode.label"] + ": " + ExecutionModeText.Aggregate(modeAgents.Select(a => a.Modes), localizer))
-                {
-                    IsEnabled = false,
-                    ToolTip = string.Join(Environment.NewLine, modeAgents.Select(a => (a.Model ?? localizer[DisplayText.SourceKey(a.Source)])
-                        + ": " + ExecutionModeText.Detail(a.Modes, localizer))),
-                },
-            } : []),
             MenuSeparator.Instance,
             StyleMenu(orb, localizer),
             SourcesMenu(orb, sources, localizer),
@@ -70,6 +57,7 @@ public static class OrbMenuModel
             new MenuRow(localizer["menu.orb.duplicate"]) { Action = new MenuAction.DuplicateOrb(id), IsEnabled = canAdd, ToolTip = canAdd ? null : limit },
             new MenuRow(localizer["menu.orb.split"]) { Action = new MenuAction.SplitOrb(id), IsEnabled = canSplit, ToolTip = splitTip },
             new MenuRow(localizer["menu.orb.mergeAll"]) { Action = new MenuAction.MergeOrbs(id), IsEnabled = document.CanMerge },
+            BoardMenuModel.AddRow(settings.Boards, id, localizer),
             MenuSeparator.Instance,
             hide,
             new MenuRow(localizer["menu.orb.remove"]) { Action = new MenuAction.RemoveOrb(id), IsEnabled = document.CanRemove },
@@ -111,57 +99,32 @@ public static class OrbMenuModel
     }
 
     /// <summary>
-    /// <c>orbs.traffic</c> ▸ <c>orbs.traffic.sources</c> / <c>orbs.traffic.machine</c> / <c>orbs.traffic.off</c>, a check on
-    /// the current one (DESIGN 10); disabled while measuring is off. Without per-process data the sources choice adds
-    /// <c>traffic.unavailable.short</c>. The quick menu's per-orb submenu has the same item.
+    /// <c>orbs.traffic</c> ▸ <c>orbs.traffic.sources</c> / <c>orbs.traffic.machine</c> / <c>orbs.traffic.intelligence</c> /
+    /// <c>orbs.traffic.off</c>, a check on the current one (DESIGN 10). The network choices are disabled while measuring is
+    /// off (intelligence needs no measuring); without per-process data the sources choice adds <c>traffic.unavailable.short</c>.
+    /// The quick menu's per-orb submenu has the same item.
     /// </summary>
     internal static MenuRow TrafficMenu(OrbDefinition orb, AppSettings settings, Localizer localizer, bool sourceTraffic)
     {
-        var enabled = settings.Traffic.Enabled;
+        var measuring = settings.Traffic.Enabled;
+        MenuRow Choice(string key, OrbTraffic traffic) =>
+            Toggle(localizer[key], orb.Traffic == traffic, new MenuAction.SetOrbTraffic(orb.Id, traffic), measuring || !OrbTraffics.IsNetwork(traffic));
         return Submenu(localizer["orbs.traffic"],
         [
-            Toggle(localizer["orbs.traffic.sources"], orb.Traffic == OrbTraffic.Sources, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Sources)) with
+            Choice("orbs.traffic.sources", OrbTraffic.Sources) with
             {
-                Detail = enabled && !sourceTraffic ? localizer["traffic.unavailable.short"] : null,
+                Detail = measuring && !sourceTraffic ? localizer["traffic.unavailable.short"] : null,
             },
-            Toggle(localizer["orbs.traffic.machine"], orb.Traffic == OrbTraffic.Machine, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Machine)),
-            Toggle(localizer["orbs.traffic.off"], orb.Traffic == OrbTraffic.Off, new MenuAction.SetOrbTraffic(orb.Id, OrbTraffic.Off)),
-        ]) with { IsEnabled = enabled };
+            Choice("orbs.traffic.machine", OrbTraffic.Machine),
+            Choice("orbs.traffic.intelligence", OrbTraffic.Intelligence),
+            Choice("orbs.traffic.off", OrbTraffic.Off),
+        ]);
     }
 
     private static MenuRow StyleMenu(OrbDefinition orb, Localizer localizer) =>
         Submenu(localizer["orbs.style"], OrbStyles.All.Select(style =>
             (MenuEntry)Toggle(localizer["style." + OrbStyles.Key(style)], orb.Style == style, new MenuAction.SetOrbStyle(orb.Id, style))));
 
-    /// <summary>
-    /// <c>orbs.sources.all</c>, a separator, then every source in source order with its dot and a check when tracked.
-    /// Unavailable sources say why and stay selectable; the last tracked source cannot be unchecked.
-    /// </summary>
-    private static MenuRow SourcesMenu(OrbDefinition orb, SourceAvailability sources, Localizer localizer)
-    {
-        var rows = new List<MenuEntry>
-        {
-            Toggle(localizer["orbs.sources.all"], orb.Sources.TracksAll, new MenuAction.SetOrbAllSources(orb.Id)),
-            MenuSeparator.Instance,
-        };
-        foreach (var kind in Enum.GetValues<SourceKind>())
-        {
-            var tracked = !orb.Sources.TracksAll && orb.Sources.Known.Contains(kind);
-            var locked = tracked && !OrbEditing.CanUncheck(orb, kind);
-            var state = sources.StateOf(kind);
-            rows.Add(Toggle(OrbNaming.SourceName(kind, localizer), tracked, new MenuAction.ToggleOrbSource(orb.Id, kind), !locked) with
-            {
-                Icon = new MenuIcon.Dots([new SourceDot(kind, state == SourceState.Available)]),
-                Detail = state switch
-                {
-                    SourceState.Disabled => localizer["source.disabled"],
-                    SourceState.NotFound => localizer["source.notFound"],
-                    _ => null,
-                },
-                ToolTip = locked ? localizer["orbs.sources.lastOne"] : null,
-            });
-        }
-
-        return Submenu(localizer["orbs.sources"], rows);
-    }
+    private static MenuRow SourcesMenu(OrbDefinition orb, SourceAvailability sources, Localizer localizer) =>
+        MenuParts.SourcesMenu(orb.Sources, new MenuAction.SetOrbAllSources(orb.Id), kind => new MenuAction.ToggleOrbSource(orb.Id, kind), sources, localizer);
 }

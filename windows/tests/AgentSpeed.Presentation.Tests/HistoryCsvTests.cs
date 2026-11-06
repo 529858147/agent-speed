@@ -200,6 +200,13 @@ public class HistoryCsvTests
     [InlineData(SourceKind.Antigravity, "antigravity")]
     [InlineData(SourceKind.WorkBuddy, "workbuddy")]
     [InlineData(SourceKind.WorkBuddyAi, "workbuddy-ai")]
+    [InlineData(SourceKind.ZCode, "zcode")]
+    [InlineData(SourceKind.Kimi, "kimi")]
+    [InlineData(SourceKind.GrokBuild, "grokBuild")]
+    [InlineData(SourceKind.Pi, "pi")]
+    [InlineData(SourceKind.OpenClaw, "openclaw")]
+    [InlineData(SourceKind.Hermes, "hermes")]
+    [InlineData(SourceKind.Droid, "droid")]
     [InlineData((SourceKind)99, "unknown")]
     public void SourceIdsAreStable(SourceKind? source, string id)
     {

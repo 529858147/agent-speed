@@ -20,6 +20,11 @@
                            Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
             </StackPanel>
         </Border>
+        <!-- DESIGN 3, Position on the taskbar: the widget moves by dragging it; this puts it back (also the keyboard route). -->
+        <controls:SettingsCard Header="{loc:Loc settings.taskbar.position}" Icon="&#xE8AB;" Description="{loc:Loc settings.taskbar.position.hint}">
+            <Button Content="{loc:Loc settings.taskbar.position.reset}" Command="{Binding ResetTaskbarPositionCommand}" MinWidth="96"
+                    AutomationProperties.HelpText="{loc:Loc settings.taskbar.position.hint}" />
+        </controls:SettingsCard>
         <controls:SettingsCard Header="{loc:Loc settings.bar.mode}" Icon="&#xE8A9;">
             <ComboBox MinWidth="200" SelectedIndex="{Binding BarModeIndex, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.mode}">
                 <ComboBoxItem Content="{loc:Loc settings.bar.mode.glyphValue}" />
@@ -33,13 +38,21 @@
         <controls:SettingsCard Header="{loc:Loc settings.bar.unit}" Icon="&#xE8D2;">
             <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding BarShowUnit, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.unit}" />
         </controls:SettingsCard>
-        <!-- DESIGN 10: the same control as in Settings → 網路流量 -->
-        <controls:SettingsCard Header="{loc:Loc settings.bar.traffic}" Icon="&#xE839;" IsEnabled="{Binding Traffic.Enabled}">
+        <!-- DESIGN 10: the same control as in Settings → 網路流量. Always enabled here: only the network choices need measuring;
+             a stored network choice stays selected and draws nothing while measuring is off. -->
+        <controls:SettingsCard Header="{loc:Loc settings.bar.traffic}" Icon="&#xE839;">
             <ComboBox MinWidth="200" SelectedIndex="{Binding Traffic.BarIndex, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc settings.bar.traffic}">
                 <ComboBoxItem Content="{loc:Loc settings.bar.traffic.off}" />
-                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.machine}" />
-                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.agents}" />
+                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.machine}" IsEnabled="{Binding Traffic.Enabled}" />
+                <ComboBoxItem Content="{loc:Loc settings.bar.traffic.agents}" IsEnabled="{Binding Traffic.Enabled}" />
             </ComboBox>
+        </controls:SettingsCard>
+        <!-- DESIGN 10: 性能 has a switch of its own, right after the network control, always enabled; it shows beside the
+             network block. Its caption says what the score is while it is on. -->
+        <controls:SettingsCard Header="{loc:Loc settings.bar.intelligence}" Icon="&#xE82F;" Description="{Binding BarIntelligenceHint}">
+            <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding BarIntelligence, Mode=TwoWay}"
+                      AutomationProperties.Name="{loc:Loc settings.bar.intelligence}"
+                      AutomationProperties.HelpText="{loc:Loc settings.bar.intelligence.hint}" />
         </controls:SettingsCard>
         <controls:SettingsCard Header="{loc:Loc settings.liveUnit}" Icon="&#xEC4A;" Description="{loc:Loc win.taskbar.compactHint}">
             <Border Style="{StaticResource SegmentedContainer}">

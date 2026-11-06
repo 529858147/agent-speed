@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AgentSpeed.Core.IO;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
@@ -6,124 +5,34 @@ using AgentSpeed.Core.Pi;
 
 namespace AgentSpeed.Core.Tests;
 
-/// <summary>
-/// The pi conformance fixtures (METRICS 4.13) from their own file, <c>spec/fixtures/pi-expected.json</c>. They are not
-/// part of <c>parser-expected.json</c> on purpose: that file is read by both platforms' tests and only the Windows
-/// reader exists so far, so this suite leaves the macOS ones untouched.
-/// </summary>
-public sealed class PiFixtureTests
+/// <summary>parser-expected.json <c>pi</c>: traces, discovery and the automatic roots, like the reference's checks.</summary>
+public sealed class PiFixtureTests : IDisposable
 {
-    private static readonly Lazy<JsonDocument> ExpectedDocument = new(() =>
-        JsonDocument.Parse(File.ReadAllBytes(Path.Combine(FixtureLocator.FixturesDirectory, "pi-expected.json"))));
+    private readonly TempDirectory _temp = new();
 
-    private static JsonElement Expected => ExpectedDocument.Value.RootElement;
-
-    /// <summary>The fixture folder <c>pi/agent</c> plays <c>~/.pi/agent</c>.</summary>
-    internal static string Root => Path.Combine(FixtureLocator.FixturesDirectory, "pi", "agent", "sessions");
-
-    public static TheoryData<string> FileNames()
-    {
-        var data = new TheoryData<string>();
-        foreach (var name in Expected.GetProperty("order").EnumerateArray())
-        {
-            data.Add(name.GetString()!);
-        }
-
-        return data;
-    }
+    public void Dispose() => _temp.Dispose();
 
     public static TheoryData<string, int, string, long?> Traces()
     {
         var data = new TheoryData<string, int, string, long?>();
-        foreach (var element in Expected.GetProperty("traces").EnumerateArray())
+        foreach (var trace in ParserFixtureTests.Expected.GetProperty("pi").GetProperty("traces").EnumerateArray())
         {
             data.Add(
-                element.GetProperty("file").GetString()!,
-                element.GetProperty("afterLine").GetInt32(),
-                element.GetProperty("phase").GetString()!,
-                ParserFixtureTests.NullableLong(element.GetProperty("inFlightStartMs")));
+                trace.GetProperty("file").GetString()!,
+                trace.GetProperty("afterLine").GetInt32(),
+                trace.GetProperty("phase").GetString()!,
+                ParserFixtureTests.NullableLong(trace.GetProperty("inFlightStartMs")));
         }
 
         return data;
-    }
-
-    public static TheoryData<int> TailReadIndexes()
-    {
-        var data = new TheoryData<int>();
-        for (var i = 0; i < Expected.GetProperty("tailReads").GetArrayLength(); i++)
-        {
-            data.Add(i);
-        }
-
-        return data;
-    }
-
-    /// <summary>Every file of `order` with one shared dedupe set, so a clone's copied keys stay with their owner.</summary>
-    private static readonly Lazy<Dictionary<string, FileResult>> Results = new(RunAll);
-
-    private sealed record FileResult(TranscriptParser Parser, RecordingSink Sink);
-
-    private static Dictionary<string, FileResult> RunAll()
-    {
-        var deduper = new Deduper();
-        var results = new Dictionary<string, FileResult>(StringComparer.Ordinal);
-        foreach (var relative in Order())
-        {
-            var sink = new RecordingSink();
-            results[relative] = new FileResult(ParserFixtureTests.ParseFixture(relative, deduper, sink), sink);
-        }
-
-        return results;
     }
 
     [Fact]
-    public void EveryFixtureFileIsListedInOrder()
-    {
-        var listed = Order().ToHashSet();
-        var expectedFiles = Expected.GetProperty("files").EnumerateObject().Select(p => p.Name).ToHashSet();
-        Assert.Equal(expectedFiles, listed);
-        foreach (var name in listed)
-        {
-            Assert.True(File.Exists(FixtureLocator.PathOf(name)), name);
-        }
-    }
+    public void EveryTraceIsListed() => Assert.Equal(19, Traces().Count);
 
-    [Theory]
-    [MemberData(nameof(FileNames))]
-    public void ParsedFileMatchesExpectation(string relative)
-    {
-        var expected = Expected.GetProperty("files").GetProperty(relative);
-        var actual = Results.Value[relative];
-
-        Assert.Equal(expected.GetProperty("source").GetString(), ParserFixtureTests.SourceName(actual.Parser.Source));
-        Assert.Equal(expected.GetProperty("project").GetString(), actual.Parser.Project);
-        Assert.Equal(expected.GetProperty("model").GetString(), actual.Parser.Model);
-        Assert.Equal(expected.GetProperty("isSubagent").GetBoolean(), actual.Parser.IsSubagent);
-        Assert.Equal(expected.GetProperty("phase").GetString(), ParserFixtureTests.PhaseName(actual.Parser.Phase));
-        Assert.Equal(ParserFixtureTests.NullableLong(expected.GetProperty("inFlightStartMs")), actual.Parser.InFlightStartMs);
-        Assert.Equal(ParserFixtureTests.NullableLong(expected.GetProperty("lastLineMs")), actual.Parser.LastLineMs);
-        Assert.Equal(expected.GetProperty("malformedLines").GetInt64(), actual.Parser.MalformedLines);
-
-        var expectedResponses = expected.GetProperty("responses").EnumerateArray().ToList();
-        Assert.Equal(expectedResponses.Select(r => r.GetProperty("key").GetString()!).ToList(),
-            actual.Sink.Latest.Select(r => r.Key).ToList());
-        ParserFixtureTests.AssertResponses(expectedResponses, actual.Sink.Latest, relative, actual.Parser);
-    }
-
-    [Theory]
-    [MemberData(nameof(FileNames))]
-    public void ParentFileMatchesExpectation(string relative)
-    {
-        var parents = ParentLinks.Resolve(
-            Results.Value.Values.Select(r => AgentLink.Of(r.Parser)).ToList(), StringComparer.Ordinal);
-        var expected = Expected.GetProperty("files").GetProperty(relative).GetProperty("parentFile").GetString();
-
-        var parent = parents.GetValueOrDefault(Results.Value[relative].Parser.AgentId);
-        var actual = parent is null
-            ? null
-            : Path.GetRelativePath(FixtureLocator.FixturesDirectory, parent).Replace(Path.DirectorySeparatorChar, '/');
-        Assert.Equal(expected, actual);
-    }
+    [Fact]
+    public void EveryPiFixtureFileIsParsed() => Assert.Equal(6,
+        ParserFixtureTests.Expected.GetProperty("order").EnumerateArray().Count(e => e.GetString()!.StartsWith("pi/", StringComparison.Ordinal)));
 
     [Theory]
     [MemberData(nameof(Traces))]
@@ -135,38 +44,14 @@ public sealed class PiFixtureTests
         Assert.Equal((phase, inFlightStartMs), (ParserFixtureTests.PhaseName(parser.Phase), parser.InFlightStartMs));
     }
 
-    /// <summary>A read that starts at a byte offset still takes the header from the file start (METRICS 4.13).</summary>
-    [Theory]
-    [MemberData(nameof(TailReadIndexes))]
-    public void ReadingFromAnOffsetTakesTheHeaderFirst(int index)
-    {
-        var expected = Expected.GetProperty("tailReads")[index];
-        var file = expected.GetProperty("file").GetString()!;
-        var path = FixtureLocator.PathOf(file);
-        var parser = new PiParser(path, ReadFilesBefore(file), Root);
-        var tailer = new FileTailer(path);
-        var sink = new RecordingSink();
-
-        tailer.StartAt(expected.GetProperty("offset").GetInt64(), StartAlignment.SkipPartialLine);
-        var batch = parser.NewBatch();
-        parser.PrepareBatch(batch, tailer.Offset);
-        tailer.ReadAppended(batch);
-        batch.ApplyTo(sink);
-
-        Assert.Equal(expected.GetProperty("project").GetString(), parser.Project);
-        Assert.Equal(expected.GetProperty("phase").GetString(), ParserFixtureTests.PhaseName(parser.Phase));
-        Assert.Equal(ParserFixtureTests.NullableLong(expected.GetProperty("inFlightStartMs")), parser.InFlightStartMs);
-        Assert.Equal(ParserFixtureTests.NullableLong(expected.GetProperty("lastLineMs")), parser.LastLineMs);
-        Assert.Equal(expected.GetProperty("responseKeys").EnumerateArray().Select(k => k.GetString()!).ToList(),
-            sink.Latest.Select(r => r.Key).ToList());
-    }
-
     [Fact]
-    public void DiscoveryFindsSessionsAndRunSubsessionsOnly()
+    public void DiscoveryFindsSessionsSubAgentsAndFlatCustomFilesButNoTempsBackupsOrArtifacts()
     {
-        var expected = Expected.GetProperty("discover").EnumerateArray().Select(e => e.GetString()!).ToList();
+        var expected = ParserFixtureTests.Expected.GetProperty("pi").GetProperty("discover").EnumerateArray()
+            .Select(e => e.GetString()!).ToList();
 
-        var found = TranscriptDiscovery.Enumerate(Root, TranscriptNaming.PiSession)
+        var found = PiFixture.Roots
+            .SelectMany(root => TranscriptDiscovery.Enumerate(root, TranscriptNaming.PiSession))
             .Select(f => Path.GetRelativePath(FixtureLocator.FixturesDirectory, f.Path).Replace(Path.DirectorySeparatorChar, '/'))
             .Order(StringComparer.Ordinal)
             .ToList();
@@ -175,28 +60,130 @@ public sealed class PiFixtureTests
     }
 
     [Fact]
-    public void WatcherPathsFollowTheDiscoveryRules()
+    public void FixtureRootsAreTheDefaultRootAndTheCustomFolderOfPisSettings()
     {
-        string P(string relative) => Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
-        var sessions = Expected.GetProperty("discover").EnumerateArray().Select(e => e.GetString()!)
-            .Select(r => r["pi/agent/sessions/".Length..]).ToList();
-
-        Assert.True(PiDiscovery.IsSessionPath(Root, P(sessions[0])));
-        Assert.True(PiDiscovery.IsSessionPath(Root, P(sessions[^1])));
-        Assert.False(PiDiscovery.IsSessionPath(Root, P("stray.jsonl")));
-        Assert.False(PiDiscovery.IsSessionPath(Root, P("-projects-pulsar/ollama.json")));
-        Assert.False(PiDiscovery.IsSessionPath(Root, P("-projects-pulsar/notes/draft.jsonl")));
-        Assert.False(PiDiscovery.IsSessionPath(Root, P(".hidden/session.jsonl")));
+        Assert.Equal([FixtureLocator.PathOf("pi/agent/sessions"), FixtureLocator.PathOf("pi/custom-sessions")], PiFixture.Roots);
     }
 
-    private static List<string> Order() =>
-        Expected.GetProperty("order").EnumerateArray().Select(e => e.GetString()!).ToList();
+    [Fact]
+    public void WatcherPathsFollowTheDiscoveryRules()
+    {
+        var root = PiFixture.Roots[0];
+        var custom = PiFixture.Roots[1];
+        string P(string folder, string relative) => Path.Combine(folder, relative.Replace('/', Path.DirectorySeparatorChar));
+        const string Session = "2026-10-20T12-00-00-000Z_01a1592e-c600-7b2f-b88d-001328b7bc6f";
+
+        Assert.True(TranscriptDiscovery.IsAcceptablePath(root, P(root, $"--Users-dev-projects-halo--/{Session}.jsonl"), TranscriptNaming.PiSession));
+        Assert.True(TranscriptDiscovery.IsAcceptablePath(root, P(root, $"--Users-dev-projects-halo--/{Session}/reviewer.jsonl"),
+            TranscriptNaming.PiSession));
+        Assert.True(TranscriptDiscovery.IsAcceptablePath(custom,
+            P(custom, "2026-10-20T12-30-00-000Z_01a1594a-3d40-76f3-bfd9-0015a195a333.jsonl"), TranscriptNaming.PiSession));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(root, P(root, $".trash/{Session}.jsonl"), TranscriptNaming.PiSession));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(root, P(root, $"--Users-dev-projects-halo--/.{Session}.tmp.jsonl"),
+            TranscriptNaming.PiSession));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(custom,
+            P(custom, "2026-10-20T12-30-00-000Z_01a1594a-3d40-76f3-bfd9-0015a195a333.jsonl.bak"), TranscriptNaming.PiSession));
+        Assert.False(TranscriptDiscovery.IsAcceptablePath(root, P(root, "--Users-dev-projects-halo--/notes.md"), TranscriptNaming.PiSession));
+    }
+
+    /// <summary>The cases of the reference's <c>check_pi_roots</c>.</summary>
+    [Fact]
+    public void AutomaticRootsFollowTheEnvironmentAndPisSettings()
+    {
+        var home = _temp.Combine("home");
+        var agent = Path.Combine(home, ".pi", "agent");
+        var sessions = Path.Combine(agent, "sessions");
+        var settings = Path.Combine(agent, "settings.json");
+        Directory.CreateDirectory(agent);
+        IReadOnlyList<string> Roots(params (string Name, string Value)[] env) =>
+            PiPaths.Roots(name => env.FirstOrDefault(e => e.Name == name).Value, home);
+
+        Assert.Equal([sessions], Roots());
+
+        File.WriteAllText(settings, """{"sessionDir":"~/elsewhere"}""");
+        Assert.Equal([sessions, Path.Combine(home, "elsewhere")], Roots());
+
+        File.WriteAllText(settings, """{"sessionDir":"   "}""");
+        Assert.Equal([sessions], Roots());
+
+        File.WriteAllText(settings, """{"sessionDir":7}""");
+        Assert.Equal([sessions], Roots());
+
+        File.WriteAllText(settings, "{ not json");
+        Assert.Equal([sessions], Roots());
+
+        var shared = Path.GetFullPath(_temp.Combine("srv", "pi"));
+        File.WriteAllText(settings, "{\"sessionDir\":\"" + shared.Replace("\\", "\\\\") + "\"}");
+        Assert.Equal([sessions, shared], Roots(("PI_CODING_AGENT_SESSION_DIR", shared)));
+
+        File.Delete(settings);
+        Assert.Equal([Path.Combine(home, "pi-agent", "sessions")], Roots(("PI_CODING_AGENT_DIR", "~/pi-agent")));
+        Assert.Equal(Path.Combine(home, "pi-agent", "sessions"),
+            PiPaths.DefaultRoot(name => name == "PI_CODING_AGENT_DIR" ? "~/pi-agent" : null, home));
+    }
+
+    [Fact]
+    public void AnOmpRootThatIsOrLiesInsideAPiRootIsPisOnly()
+    {
+        var home = _temp.Path;
+        var pi = Path.Combine(home, ".pi", "agent", "sessions");
+        string[] omp =
+        [
+            pi,
+            Path.Combine(pi, "x"),
+            Path.Combine(home, ".omp", "agent", "sessions"),
+            Path.Combine(home, ".pi", "agent", "sessions2"),
+        ];
+
+        Assert.Equal(omp[2..], PiPaths.WithoutPi(omp, [pi]));
+        Assert.Equal(omp[2..], PiPaths.WithoutPi(omp, [pi + Path.DirectorySeparatorChar]));
+        Assert.Equal(omp, PiPaths.WithoutPi(omp, []));
+    }
+
+    [Fact]
+    public void TheFileRootsReadAnOmpFolderThatIsPisAsPiOnly()
+    {
+        var pi = Path.GetFullPath(_temp.Combine(".pi", "agent", "sessions"));
+        var omp = Path.GetFullPath(_temp.Combine(".omp", "agent", "sessions"));
+        var locations = new SourceLocations(string.Empty, string.Empty, string.Empty, string.Empty, [],
+            OmpRoots: [pi, omp], PiRoots: [pi, pi]);
+
+        var roots = locations.FileRoots().Where(r => r.Family is RootFamily.Omp or RootFamily.Pi).ToList();
+
+        Assert.Equal([(RootFamily.Omp, omp), (RootFamily.Pi, pi)], roots);
+    }
+
+    [Fact]
+    public void AChosenFolderReplacesEveryAutomaticRoot()
+    {
+        var chosen = _temp.Combine("chosen");
+        var locations = SourceLocations.Resolve(new MonitorConfiguration(new HashSet<SourceKind> { SourceKind.Pi }, PiRoot: chosen));
+
+        Assert.Equal([Path.GetFullPath(chosen)], locations.PiRoots);
+        Assert.False(locations.PiAutomatic);
+        Assert.True(SourceLocations.Resolve(MonitorConfiguration.Default).PiAutomatic);
+    }
+
+    /// <summary>A sub-agent's parent is the session file named after its folder, also in a flat custom folder (METRICS 4.13).</summary>
+    [Fact]
+    public void ASubAgentIsAFileInAFolderNamedAfterASessionFile()
+    {
+        var halo = FixtureLocator.PathOf("pi/agent/sessions/--Users-dev-projects-halo--/2026-10-20T12-00-00-000Z_01a1592e-c600-7b2f-b88d-001328b7bc6f");
+        var flat = FixtureLocator.PathOf("pi/custom-sessions/2026-10-20T12-30-00-000Z_01a1594a-3d40-76f3-bfd9-0015a195a333");
+
+        Assert.Equal(halo + ".jsonl", PiPaths.ParentFileOf(Path.Combine(halo, "reviewer.jsonl")));
+        Assert.Equal(flat + ".jsonl", PiPaths.ParentFileOf(Path.Combine(flat, "helper.jsonl")));
+        Assert.Null(PiPaths.ParentFileOf(halo + ".jsonl"));
+        Assert.Null(PiPaths.ParentFileOf(flat + ".jsonl"));
+        Assert.Null(PiPaths.ParentFileOf(FixtureLocator.PathOf("pi/agent/sessions/.trash/x.jsonl")));
+    }
 
     private static Deduper ReadFilesBefore(string file)
     {
         var deduper = new Deduper();
-        foreach (var relative in Order())
+        foreach (var element in ParserFixtureTests.Expected.GetProperty("order").EnumerateArray())
         {
+            var relative = element.GetString()!;
             if (relative == file)
             {
                 break;

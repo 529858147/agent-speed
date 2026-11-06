@@ -1,6 +1,8 @@
 using AgentSpeed.Core;
+using AgentSpeed.Presentation.Boards;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Settings.Boards;
 using AgentSpeed.Presentation.Settings.Orbs;
 
 namespace AgentSpeed.Menus;
@@ -88,6 +90,37 @@ internal interface IAppCommands
     {
     }
 
+    /// <summary><c>boards.show</c> / <c>boards.hide</c>: every board at once.</summary>
+    void SetShowBoards(bool show) => UpdateBoards(d => BoardEditing.SetAllVisible(d, show));
+
+    void SetBoardStyle(string boardId, BoardStyle style) => UpdateBoards(d => BoardEditing.SetStyle(d, boardId, style));
+
+    void SetBoardAllSources(string boardId) => UpdateBoards(d => BoardEditing.SetAllSources(d, boardId));
+
+    /// <summary>Checks or unchecks one source of the board (never the last one).</summary>
+    void ToggleBoardSource(string boardId, SourceKind source) => UpdateBoards(d => BoardEditing.ToggleSource(d, boardId, source));
+
+    void SetBoardSize(string boardId, BoardSize size) => UpdateBoards(d => BoardEditing.SetSize(d, boardId, size));
+
+    void SetBoardReadout(string boardId, BoardReadout readout, bool on) => UpdateBoards(d => BoardEditing.SetReadout(d, boardId, readout, on));
+
+    void SetBoardAlwaysOnTop(string boardId, bool on) => UpdateBoards(d => BoardEditing.SetAlwaysOnTop(d, boardId, on));
+
+    void SetBoardClickThrough(string boardId, bool on) => UpdateBoards(d => BoardEditing.SetClickThrough(d, boardId, on));
+
+    /// <summary><c>boards.add</c> next to the window it came from (an orb or board id; null: the main display).</summary>
+    void AddBoard(string? fromId)
+    {
+    }
+
+    /// <summary>Asks first (<c>boards.remove.confirm</c>), then removes the board.</summary>
+    void RemoveBoard(string boardId)
+    {
+    }
+
+    /// <summary>Opens Settings → floating orbs at the Boards list, with this board selected.</summary>
+    void OpenBoardSettings(string? boardId) => OpenSettings("orb");
+
     /// <summary>Pauses live reporting for an hour, or until the user resumes (DESIGN 11, Menu).</summary>
     void PauseReporting(bool indefinitely)
     {
@@ -107,4 +140,7 @@ internal interface IAppCommands
 
     private void UpdateOrbs(Func<OrbsDocument, OrbsDocument?> change) =>
         UpdateSettings(s => change(s.Orbs) is { } next ? s with { Orbs = next } : s);
+
+    private void UpdateBoards(Func<BoardsDocument, BoardsDocument?> change) =>
+        UpdateSettings(s => change(s.Boards) is { } next ? s with { Boards = next } : s);
 }

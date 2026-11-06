@@ -205,26 +205,4 @@ public class CostPaneTextTests
         Assert.False(offline.CanToggleAutoSync);
         Assert.True(offline.ShowsNetworkOff);
     }
-
-    // Unpriced models
-
-    [Fact]
-    public void UnpricedModelsAreListedOnceInSourceOrder()
-    {
-        SourceStatus Source(SourceKind kind, params string[] models) =>
-            new(kind, true, string.Empty, true, 0, default, default, 0) { UnpricedModels = models };
-
-        var models = CostPaneText.UnpricedModels(
-        [
-            Source(SourceKind.Codex, "gpt-x", "local-a"),
-            Source(SourceKind.ClaudeCode),
-            Source(SourceKind.OpenCode, "local-a", "mystery-1"),
-        ]);
-
-        Assert.Equal(["gpt-x", "local-a", "mystery-1"], models);
-        Assert.Equal("Models without a price today: gpt-x, local-a, mystery-1",
-            CostPaneText.UnknownToday(models, new Localizer(Table, LanguageCodes.En)));
-        Assert.Equal("今天價格未知的模型：gpt-x、local-a、mystery-1", CostPaneText.UnknownToday(models, new Localizer(Table, LanguageCodes.ZhHant)));
-        Assert.Equal(string.Empty, CostPaneText.UnknownToday([], new Localizer(Table, LanguageCodes.En)));
-    }
 }

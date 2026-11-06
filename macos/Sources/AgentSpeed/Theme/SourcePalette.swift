@@ -17,6 +17,10 @@ extension SourceKind {
         case .zcode: RGBColor(hex: 0x466BFF)
         case .kimi: RGBColor(hex: 0xE16F8A)
         case .grokBuild: RGBColor(hex: 0x8290A6)
+        case .pi: RGBColor(hex: 0xA855F7)
+        case .openclaw: RGBColor(hex: 0xDE2E1F)
+        case .hermes: RGBColor(hex: 0xB8860B)
+        case .droid: RGBColor(hex: 0x9E5F46)
         }
     }
 

@@ -91,13 +91,16 @@ internal sealed class TrafficPaneViewModel : ObservableObject
         }
     }
 
-    /// <summary><c>settings.bar.traffic</c>: off, this computer, the agents (the same control as on the taskbar page).</summary>
+    /// <summary>
+    /// <c>settings.bar.traffic</c>: the taskbar's network block — off, this computer or the agents (the same control as on the
+    /// taskbar page; 性能 has its own switch there).
+    /// </summary>
     public int BarIndex
     {
         get => (int)T.Bar;
         set
         {
-            if (value is >= 0 and <= 2)
+            if (value is >= 0 and <= (int)BarTraffic.Agents)
             {
                 _settings.Update(s => s with { Traffic = s.Traffic with { Bar = (BarTraffic)value } });
             }

@@ -19,7 +19,6 @@ enum OrbMenus {
         header.image = dotsImage(orbs.dots(of: id))
         header.isEnabled = false
         menu.addItem(header)
-        menu.addItem(modeItem(model: model, orb: orb))
         menu.addItem(.separator())
         menu.addItem(styleItem(model: model, orb: orb))
         menu.addItem(sourcesItem(model: model, orb: orb))
@@ -54,6 +53,7 @@ enum OrbMenus {
         let merge = ActionMenuItem(l10n("menu.orb.mergeAll")) { [weak orbs] in orbs?.merge(keeping: id) }
         merge.isEnabled = orbs.canMerge
         menu.addItem(merge)
+        menu.addItem(BoardMenus.addItem(model: model, origin: .orb(id)))
 
         menu.addItem(.separator())
         let visibleCount = orbs.orbs.filter(\.visible).count
@@ -74,14 +74,6 @@ enum OrbMenus {
         menu.addItem(ActionMenuItem(l10n("menu.dashboard")) { [weak model] in model?.commands?.showDashboard() })
         menu.addItem(MenuFactory.quitItem(model: model))
         return menu
-    }
-
-    private static func modeItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
-        let mode = ExecutionModeText.orb(agents: model.snapshot.agents.filter { orb.sources.tracks($0.source) }, model.l10n)
-        let item = NSMenuItem(title: mode.summary, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.toolTip = mode.detail
-        return item
     }
 
     private static func styleItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
@@ -145,14 +137,14 @@ enum OrbMenus {
         return item
     }
 
-    /// `orbs.traffic` ▸ this orb's agents / the whole computer / off, check on the current one (DESIGN 10). Disabled
-    /// while traffic is not measured; without per-process data the `sources` choice, and the item while the orb uses
-    /// it, show `traffic.unavailable.short`.
+    /// `orbs.traffic` ▸ this orb's agents / the whole computer / live intelligence / off, check on the current one
+    /// (DESIGN 10). The network choices are disabled while traffic is not measured; without per-process data the
+    /// `sources` choice, and the item while the orb uses it, show `traffic.unavailable.short`. Intelligence needs
+    /// neither, so it is always available.
     static func trafficItem(model: AppModel, orb: OrbConfig) -> NSMenuItem {
         let l10n = model.l10n
         let unavailable = processTrafficUnavailable(model) ? l10n("traffic.unavailable.short") : nil
         let item = NSMenuItem(title: l10n("orbs.traffic"), action: nil, keyEquivalent: "")
-        item.isEnabled = model.settings.trafficEnabled
         if let unavailable, orb.traffic == .sources {
             item.attributedTitle = statusTitle(l10n("orbs.traffic"), status: unavailable)
         }
@@ -162,6 +154,7 @@ enum OrbMenus {
             let entry = ActionMenuItem(l10n(traffic.titleKey), state: orb.traffic == traffic ? .on : .off) { [weak model] in
                 model?.orbs.setTraffic(traffic, of: orb.id)
             }
+            entry.isEnabled = !traffic.isNetwork || model.settings.trafficEnabled
             if let unavailable, traffic == .sources {
                 entry.attributedTitle = statusTitle(l10n(traffic.titleKey), status: unavailable)
             }

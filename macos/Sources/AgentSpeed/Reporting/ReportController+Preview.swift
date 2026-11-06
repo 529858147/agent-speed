@@ -2,7 +2,8 @@ import AgentSpeedCore
 import Foundation
 
 /// The live preview (DESIGN 11, Consent sheet and Preview window): the real body of the next report — the open
-/// window of the run, or, before a run exists, the window since the preview was opened.
+/// window of the run, or, before a run exists, the window since the preview was opened. With WebSocket effective it is
+/// the connection's upgrade and the `report` message's body, `realtime` included.
 extension ReportController {
     struct Preview: Equatable {
         var body: ReportJSON
@@ -12,10 +13,12 @@ extension ReportController {
         var nextIn: Int?
         /// Built before the service's document is known (DESIGN 11, Preview window): the body only is meaningful.
         var assumed = false
+        /// WebSocket: sent as soon as the data changes (`report.preview.onChange` instead of the countdown).
+        var onChange = false
 
         static func == (lhs: Preview, rhs: Preview) -> Bool {
             lhs.body == rhs.body && lhs.requestLine == rhs.requestLine && lhs.nextIn == rhs.nextIn
-                && lhs.assumed == rhs.assumed
+                && lhs.assumed == rhs.assumed && lhs.onChange == rhs.onChange
                 && lhs.headers.map(\.name) == rhs.headers.map(\.name) && lhs.headers.map(\.value) == rhs.headers.map(\.value)
         }
 
@@ -65,19 +68,34 @@ extension ReportController {
         } else {
             return nil
         }
+        let websocket = draft == nil && effectiveTransport == .websocket
+        let streamOpen = draft == nil && stream != nil
         let runOpen = draft == nil && run != nil
-        let window = runOpen ? run!.window : (previewWindow ?? ReportWindow(sample))
-        let start = runOpen ? (run!.scheduler.windowStart ?? now) : (previewStartedAt ?? now)
-        let seq = runOpen ? run!.scheduler.seq + 1 : 1
+        let window = streamOpen ? stream!.window : runOpen ? run!.window : (previewWindow ?? ReportWindow(sample))
+        let windowStart = streamOpen ? stream!.scheduler.windowStart : runOpen ? run!.scheduler.windowStart : previewStartedAt
+        let seq = streamOpen ? stream!.scheduler.seq + 1 : runOpen ? run!.scheduler.seq + 1 : 1
         let working = sample.facts.agents.values.contains { $0.generating + $0.tools > 0 } || sample.live.output > 0
         let activity: ReportScheduler.Activity = !working && mode == .idle ? .idle : .active
+        let realtime = websocket
+            ? ReportRealtime(observationAgeMs: stream?.scheduler.windowObserved.map { now - $0 }) : nil
         let envelope = ReportEnvelope(
-            client: client, deviceId: deviceId, username: username, runId: run?.id ?? previewRunId, seq: seq,
-            sentAtMs: ReportClock.unixMs + clockCorrection * 1000, windowMs: max(0, now - start), activity: activity,
-            titleLevel: run?.title.level ?? 0)
+            client: client, deviceId: deviceId, username: username,
+            runId: streamOpen ? stream!.session.runId : run?.id ?? previewRunId, seq: seq,
+            sentAtMs: ReportClock.unixMs + clockCorrection * 1000, windowMs: max(0, now - (windowStart ?? now)),
+            activity: activity, titleLevel: (streamOpen ? stream?.title.level : run?.title.level) ?? 0, realtime: realtime)
         var options = options(for: document)
         options.sections = sections.intersection(document.sections)
-        let (body, data) = ReportBody.fitted(envelope, window.content(sample), sample, options)
+        if websocket { options.messageLimit = (document.websocket ?? .standard).maxMessageBytes }
+        var content = window.content(sample)
+        // The completions the next build takes (METRICS 11.10); none before the consent sheet's Start.
+        if draft == nil, options.perfScoreActive { content.perfStats = perfTracker.pending }
+        let (body, data) = ReportBody.fitted(envelope, content, sample, options)
+        let hasKey = draft.map { !$0.apiKey.isEmpty } ?? (apiKey != nil)
+        if websocket {
+            return Preview(body: body, requestLine: "GET \(document.api.streamURL.absoluteString) HTTP/1.1",
+                           headers: upgradeHeaders(document, deviceId: deviceId, hasKey: hasKey), nextIn: nil,
+                           assumed: assumed, onChange: true)
+        }
         let url = document.api.appending(endpoint: ReportEndpoint.reports)
         var headers: [(name: String, value: String)] = [
             ("Host", ReportURLs.authority(of: url)),
@@ -90,12 +108,32 @@ extension ReportController {
             (ReportCanonical.nonceHeader, "…"),
             (ReportCanonical.signatureHeader, "…"),
         ]
-        if draft.map({ !$0.apiKey.isEmpty }) ?? (apiKey != nil) { headers.append(("Authorization", "Bearer ••••")) }
+        if hasKey { headers.append(("Authorization", "Bearer ••••")) }
         var nextIn: Int?
         if draft == nil, runOpen, !preferences.isPaused, let due = run?.scheduler.nextDueAt {
             nextIn = Int(max(0, (due - now + 999) / 1000))
         }
         return Preview(body: body, requestLine: "POST \(ReportURLs.requestPath(of: url)) HTTP/1.1", headers: headers,
                        nextIn: nextIn, assumed: assumed)
+    }
+
+    /// The WebSocket upgrade as it is signed (METRICS 11.9, Connection); the key and signature are never shown.
+    private func upgradeHeaders(_ document: ReportDiscovery, deviceId: String, hasKey: Bool) -> [(name: String, value: String)] {
+        var headers: [(name: String, value: String)] = [
+            ("Host", document.api.authority),
+            ("User-Agent", userAgent),
+            ("Accept", "application/json"),
+            ("Upgrade", "websocket"),
+            ("Connection", "Upgrade"),
+            ("Sec-WebSocket-Version", "13"),
+            ("Sec-WebSocket-Key", "…"),
+            ("Sec-WebSocket-Protocol", ReportStreamSettings.subprotocol),
+            (ReportCanonical.deviceHeader, deviceId),
+            (ReportCanonical.timestampHeader, String(ReportClock.unixMs / 1000 + clockCorrection)),
+            (ReportCanonical.nonceHeader, "…"),
+            (ReportCanonical.signatureHeader, "…"),
+        ]
+        if hasKey { headers.append(("Authorization", "Bearer ••••")) }
+        return headers
     }
 }

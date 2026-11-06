@@ -29,12 +29,24 @@ enum PreviewRenderer {
         if wants("orbs") {
             OrbsPreviews.render(model: model, into: directory)
         }
+        if wants("boards") {
+            BoardSettingsPreviews.render(model: model, into: directory)
+        }
         if wants("themes") {
             TitleThemePreviews.render(model: model, into: directory)
         }
         if wants("traffic") {
             TrafficOrbPreviews.render(model: model, into: directory)
             TrafficSurfacePreviews.render(model: model, into: directory)
+        }
+        if wants("intel") {
+            IntelligencePreviews.render(model: model, into: directory)
+        }
+        if wants("agentintel") {
+            AgentIntelligencePreviews.render(model: model, into: directory)
+        }
+        if wants("intelbar") {
+            IntelligenceBarPreviews.render(model: model, into: directory)
         }
         if wants("cards") {
             TitleCardPreviews.render(model: model, into: directory)
@@ -106,6 +118,7 @@ enum PreviewRenderer {
             CostPreviews.render(model: model, into: directory)
         }
         if wants("modes") { ExecutionModePreviews.render(model: model, into: directory) }
+        if wants("configured") { ConfiguredCapsulePreviews.render(model: model, into: directory) }
         #if DEBUG
         if wants("profilecard") { ProfileCardPreviews.render(model: model, into: directory) }
         #endif
@@ -119,6 +132,8 @@ enum PreviewRenderer {
         if wants("update") {
             UpdatePreviews.render(model: model, into: directory)
         }
+        if wants("perfcard") { PerfCardPreviews.render(model: model, into: directory) }
+        if wants("perfhistory") { PerfHistoryPreviews.render(model: model, into: directory) }
         if wants("settings") {
             publish(model, speed: redline * 0.4)
             settleOrbs(model)

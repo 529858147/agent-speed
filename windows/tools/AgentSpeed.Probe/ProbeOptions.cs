@@ -1,3 +1,4 @@
+using System.Globalization;
 using AgentSpeed.Core;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Pricing;
@@ -8,6 +9,7 @@ internal enum ProbeMode
 {
     DumpToday,
     DumpHistory,
+    DumpUnpriced,
     Watch,
     SyncPrices,
     SyncRates,
@@ -23,6 +25,10 @@ internal enum ProbeMode
 /// <param name="SyncCurrency">The selected currency of <c>--sync-rates</c>.</param>
 /// <param name="WorkBuddyRoot">The WorkBuddy data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy</c>.</param>
 /// <param name="WorkBuddyAiRoot">The WorkBuddy AI data folder or its <c>projects</c> folder; null uses <c>~/.workbuddy-ai</c>.</param>
+/// <param name="PiRoot">One Pi sessions folder (replaces every automatic Pi root); null uses Pi's automatic roots.</param>
+/// <param name="OpenClawRoot">An OpenClaw state folder, agent folder or database (replaces every automatic state folder).</param>
+/// <param name="HermesRoot">A Hermes home or one <c>logs</c> folder (replaces the automatic Hermes home).</param>
+/// <param name="DroidRoot">The Factory Droid <c>.factory</c> folder or its <c>sessions</c> folder (replaces the automatic root).</param>
 internal sealed record ProbeOptions(
     ProbeMode Mode,
     int WatchSeconds,
@@ -44,12 +50,34 @@ internal sealed record ProbeOptions(
     string? ZCodeRoot = null,
     string? KimiRoot = null,
     string? GrokBuildRoot = null,
-    string? PiRoot = null)
+    string? PiRoot = null,
+    string? OpenClawRoot = null,
+    string? HermesRoot = null,
+    string? DroidRoot = null)
 {
     public const string Usage =
-        "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] | --dump-history [--utc] [--store PATH] | --watch N | --sync-prices DIR | --sync-rates DIR CURRENCY) [--prices PATH] " +
+        "usage: AgentSpeed.Probe (--dump-today [--since UNIXMS] [--now UNIXMS] | --dump-history [--utc] [--history-store PATH] | " +
+        "--dump-unpriced [--days N | --first YYYY-MM-DD --last YYYY-MM-DD | --live] [--source ID] [--history-store PATH] | " +
+        "--watch N | --sync-prices DIR | --sync-rates DIR CURRENCY) [--prices PATH] " +
         "[--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH] [--gemini PATH]... [--omp PATH]... [--antigravity PATH]... " +
-        "[--workbuddy PATH] [--workbuddy-ai PATH] [--zcode PATH] [--kimi PATH] [--grok-build PATH] [--pi PATH]";
+        "[--workbuddy PATH] [--workbuddy-ai PATH] [--zcode PATH] [--kimi PATH] [--grok-build PATH] [--pi PATH] [--openclaw PATH] [--hermes PATH] [--droid PATH]";
+
+    /// <summary><c>--days N</c> of <c>--dump-unpriced</c>: the last N local days, today included.</summary>
+    public int? Days { get; init; }
+
+    /// <summary><c>--first</c> / <c>--last</c> of <c>--dump-unpriced</c>: a custom range of local dates.</summary>
+    public string? First { get; init; }
+
+    public string? Last { get; init; }
+
+    /// <summary><c>--live</c> of <c>--dump-unpriced</c>: today's engine responses instead of the history.</summary>
+    public bool Live { get; init; }
+
+    /// <summary><c>--source ID</c> of <c>--dump-unpriced</c> (one source, METRICS 1).</summary>
+    public SourceKind? Source { get; init; }
+
+    /// <summary><c>--now UNIXMS</c>: the instant <c>--dump-today</c> evaluates the performance scores at (default: the capture time).</summary>
+    public long? NowMs { get; init; }
 
     public MonitorConfiguration Configuration => new(
         new HashSet<SourceKind>(Enum.GetValues<SourceKind>()),
@@ -61,7 +89,7 @@ internal sealed record ProbeOptions(
         OmpRoots is { Count: > 0 } omp ? omp[0] : null,
         AntigravityRoots is { Count: > 0 } antigravity ? antigravity[0] : null,
         WorkBuddyRoot,
-        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot, PiRoot);
+        WorkBuddyAiRoot, ZCodeRoot, KimiRoot, GrokBuildRoot, PiRoot, OpenClawRoot, HermesRoot, DroidRoot);
 
     /// <summary>Resolved roots; several <c>--gemini</c>, <c>--omp</c> or <c>--antigravity</c> folders are all read (like the reference).</summary>
     public SourceLocations Locations
@@ -123,8 +151,11 @@ internal sealed record ProbeOptions(
         var seconds = 0;
         var utc = false;
         string? codex = null, claude = null, dsh = null, opencode = null, store = null, prices = null, sync = null, currency = null;
-        string? workBuddy = null, workBuddyAi = null, zcode = null, kimi = null, grokBuild = null, pi = null;
-        long? since = null;
+        string? workBuddy = null, workBuddyAi = null, zcode = null, kimi = null, grokBuild = null, pi = null, openClaw = null, hermes = null, droid = null;
+        long? since = null, nowMs = null;
+        int? days = null;
+        string? first = null, last = null, sourceId = null;
+        var live = false;
         var gemini = new List<string>();
         var omp = new List<string>();
         var antigravity = new List<string>();
@@ -137,6 +168,29 @@ internal sealed record ProbeOptions(
                     break;
                 case "--dump-history":
                     mode = ProbeMode.DumpHistory;
+                    break;
+                case "--dump-unpriced":
+                    mode = ProbeMode.DumpUnpriced;
+                    break;
+                case "--now" when i + 1 < args.Length && long.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out var at):
+                    nowMs = at;
+                    i++;
+                    break;
+                case "--days" when i + 1 < args.Length && int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out var count):
+                    days = count;
+                    i++;
+                    break;
+                case "--first" when i + 1 < args.Length:
+                    first = args[++i];
+                    break;
+                case "--last" when i + 1 < args.Length:
+                    last = args[++i];
+                    break;
+                case "--live":
+                    live = true;
+                    break;
+                case "--source" when i + 1 < args.Length:
+                    sourceId = args[++i];
                     break;
                 case "--utc":
                     utc = true;
@@ -185,7 +239,16 @@ internal sealed record ProbeOptions(
                 case "--pi" when i + 1 < args.Length:
                     pi = args[++i];
                     break;
-                case "--store" when i + 1 < args.Length:
+                case "--openclaw" when i + 1 < args.Length:
+                    openClaw = args[++i];
+                    break;
+                case "--hermes" when i + 1 < args.Length:
+                    hermes = args[++i];
+                    break;
+                case "--droid" when i + 1 < args.Length:
+                    droid = args[++i];
+                    break;
+                case "--store" or "--history-store" when i + 1 < args.Length:
                     store = args[++i];
                     break;
                 case "--prices" when i + 1 < args.Length:
@@ -212,12 +275,66 @@ internal sealed record ProbeOptions(
 
         if (mode is null)
         {
-            error = "missing --dump-today, --dump-history, --watch N, --sync-prices DIR or --sync-rates DIR CURRENCY";
+            error = "missing --dump-today, --dump-history, --dump-unpriced, --watch N, --sync-prices DIR or --sync-rates DIR CURRENCY";
+            return null;
+        }
+
+        SourceKind? source = null;
+        if (mode == ProbeMode.DumpUnpriced && UnpricedRangeError(days, first, last, live, sourceId, out source) is { } rangeError)
+        {
+            error = rangeError;
             return null;
         }
 
         return new ProbeOptions(
             mode.Value, seconds, codex, claude, dsh, opencode, gemini, utc, store, since, omp, antigravity, prices, sync, currency,
-            workBuddy, workBuddyAi, zcode, kimi, grokBuild, pi);
+            workBuddy, workBuddyAi, zcode, kimi, grokBuild, pi, openClaw, hermes, droid)
+        {
+            Days = days,
+            First = first,
+            Last = last,
+            Live = live,
+            Source = source,
+            NowMs = nowMs,
+        };
     }
+
+    /// <summary>The checks of <c>reference.py --dump-unpriced</c>.</summary>
+    private static string? UnpricedRangeError(int? days, string? first, string? last, bool live, string? sourceId, out SourceKind? source)
+    {
+        source = null;
+        if (days is not null && (days < 1 || first is not null || last is not null))
+        {
+            return "--days takes a positive number and excludes --first/--last";
+        }
+
+        if ((first is not null && !IsDate(first)) || (last is not null && !IsDate(last)))
+        {
+            return "dates are YYYY-MM-DD";
+        }
+
+        if ((first is null) != (last is null) || (first is not null && string.CompareOrdinal(first, last) > 0))
+        {
+            return "--first and --last go together, first <= last";
+        }
+
+        if (live && (days is not null || first is not null))
+        {
+            return "--live takes no range: it is today's engine data";
+        }
+
+        if (sourceId is not null)
+        {
+            source = Enum.GetValues<SourceKind>().Cast<SourceKind?>().FirstOrDefault(k => JsonLine.SourceName(k!.Value) == sourceId);
+            if (source is null)
+            {
+                return "--source takes a source id: " + string.Join(", ", Enum.GetValues<SourceKind>().Select(JsonLine.SourceName));
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsDate(string text) =>
+        text.Length == 10 && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 }

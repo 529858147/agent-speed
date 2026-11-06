@@ -21,6 +21,7 @@ public class SettingsSerializerTests
             BarMode = BarDisplayMode.GlyphOnly,
             BarColoredGlyph = false,
             BarShowUnit = false,
+            TaskbarOffset = 180.5,
             ShowOrb = false,
             OrbSize = 196,
             OrbOpacity = 0.65,
@@ -287,7 +288,7 @@ public class SettingsSerializerTests
         [
             SourceKind.Codex, SourceKind.ClaudeDesktop, SourceKind.DeepSeek, SourceKind.OpenCode, SourceKind.Gemini,
             SourceKind.Omp, SourceKind.Antigravity, SourceKind.WorkBuddy, SourceKind.WorkBuddyAi, SourceKind.ZCode, SourceKind.Kimi, SourceKind.GrokBuild,
-            SourceKind.Pi,
+            SourceKind.Pi, SourceKind.OpenClaw, SourceKind.Hermes, SourceKind.Droid,
         ]));
         Assert.Equal(Path.Combine(Path.GetTempPath(), "c"), config.CodexRoot);
         Assert.Null(config.ClaudeRoot);
@@ -308,7 +309,7 @@ public class SettingsSerializerTests
         [
             SourceKind.Codex, SourceKind.ClaudeCode, SourceKind.ClaudeDesktop, SourceKind.OpenCode, SourceKind.Gemini,
             SourceKind.Omp, SourceKind.Antigravity, SourceKind.WorkBuddy, SourceKind.WorkBuddyAi, SourceKind.ZCode, SourceKind.Kimi, SourceKind.GrokBuild,
-            SourceKind.Pi,
+            SourceKind.Pi, SourceKind.OpenClaw, SourceKind.Hermes, SourceKind.Droid,
         ]));
         Assert.Equal(dsh, config.DshRoot);
         Assert.NotEqual(AppSettings.Default.ToMonitorConfiguration(), (AppSettings.Default with { DshRoot = dsh }).ToMonitorConfiguration());
@@ -340,6 +341,71 @@ public class SettingsSerializerTests
         var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(AppSettings.Default with { AgentsExpanded = true }));
         Assert.True(back.AgentsExpanded);
         Assert.Equal(120, back.ChartSeconds);
+    }
+
+    [Theory]
+    [InlineData("{}", ExecutionModeKind.Effort)]
+    [InlineData("{\"history\":{\"modeKind\":\"speed\"}}", ExecutionModeKind.Speed)]
+    [InlineData("{\"history\":{\"modeKind\":\"workflow\"}}", ExecutionModeKind.Effort)]
+    [InlineData("{\"history\":{\"modeKind\":1}}", ExecutionModeKind.Effort)]
+    public void HistoryModeKindIsReadTolerantly(string json, ExecutionModeKind expected) =>
+        Assert.Equal(expected, SettingsSerializer.Deserialize(json).HistoryModeKind);
+
+    [Fact]
+    public void TaskbarOffsetDefaultsToTheDefaultSpotAndRoundTrips()
+    {
+        Assert.Equal(0, AppSettings.Default.TaskbarOffset);
+        using (var defaults = JsonDocument.Parse(SettingsSerializer.Serialize(AppSettings.Default)))
+        {
+            Assert.Equal(0, defaults.RootElement.GetProperty("taskbar").GetProperty("offset").GetDouble());
+        }
+
+        var json = SettingsSerializer.Serialize(AppSettings.Default with { TaskbarOffset = 382.67 });
+        using (var document = JsonDocument.Parse(json))
+        {
+            Assert.Equal(382.67, document.RootElement.GetProperty("taskbar").GetProperty("offset").GetDouble());
+        }
+
+        Assert.Equal(382.67, SettingsSerializer.Deserialize(json).TaskbarOffset);
+        Assert.Equal(0, SettingsSerializer.Deserialize(SettingsSerializer.Serialize(CustomSettings() with { TaskbarOffset = 0 })).TaskbarOffset);
+    }
+
+    [Theory]
+    [InlineData("{}", 0)]
+    [InlineData("""{ "taskbar": { "offset": 240 } }""", 240)]
+    [InlineData("""{ "taskbar": { "offset": 12.3456 } }""", 12.35)]
+    [InlineData("""{ "taskbar": { "offset": -12 } }""", 0)]
+    [InlineData("""{ "taskbar": { "offset": 1e9 } }""", 10_000)]
+    [InlineData("""{ "taskbar": { "offset": 1e400 } }""", 0)]
+    [InlineData("""{ "taskbar": { "offset": "120" } }""", 0)]
+    [InlineData("""{ "taskbar": { "offset": null } }""", 0)]
+    [InlineData("""{ "taskbar": { "offset": true } }""", 0)]
+    [InlineData("""{ "taskbar": [] }""", 0)]
+    [InlineData("""{ "offset": 120 }""", 0)]
+    public void TaskbarOffsetIsReadTolerantly(string json, double expected)
+    {
+        var settings = SettingsSerializer.Deserialize(json);
+        Assert.Equal(expected, settings.TaskbarOffset);
+        Assert.True(settings.ShowOnTaskbar);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0)]
+    [InlineData(double.PositiveInfinity, 0)]
+    [InlineData(-0.5, 0)]
+    [InlineData(99.999, 100)]
+    [InlineData(20_000, 10_000)]
+    public void ValidatedNormalizesTheTaskbarOffset(double input, double expected)
+    {
+        Assert.Equal(expected, (AppSettings.Default with { TaskbarOffset = input }).Validated().TaskbarOffset);
+    }
+
+    [Fact]
+    public void HistoryModeKindRoundTrips()
+    {
+        var back = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(AppSettings.Default with { HistoryModeKind = ExecutionModeKind.Speed }));
+        Assert.Equal(ExecutionModeKind.Speed, back.HistoryModeKind);
+        Assert.Equal(ExecutionModeKind.Effort, (AppSettings.Default with { HistoryModeKind = ExecutionModeKind.Workflow }).Validated().HistoryModeKind);
     }
 
     [Fact]

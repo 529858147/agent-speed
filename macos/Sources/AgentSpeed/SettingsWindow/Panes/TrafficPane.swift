@@ -45,21 +45,41 @@ struct TrafficPane: View {
     }
 }
 
-/// `settings.bar.traffic` (DESIGN 10): the menu bar's traffic block; the same control in 選單列 and 網路流量.
+/// `settings.bar.traffic` (DESIGN 10, Menu bar and taskbar): the network block after the menu bar value; the same
+/// control in 選單列 and 網路流量. The network choices need measuring: while it is off they are shown but not
+/// selectable, and a stored one stays selected and draws nothing. `off` is always selectable.
 struct BarTrafficPicker: View {
     let model: AppModel
 
     var body: some View {
         @Bindable var settings = model.settings
         let l10n = model.l10n
-        Picker(selection: $settings.barTraffic) {
+        PopupRow(
+            title: l10n("settings.bar.traffic"),
+            caption: nil,
+            selection: $settings.barTraffic
+        ) {
             ForEach(BarTraffic.allCases) { option in
-                Text(l10n(option.titleKey)).tag(option)
+                Text(l10n(option.titleKey))
+                    .tag(option)
+                    .disabled(option.isNetwork && !settings.trafficEnabled)
             }
-        } label: {
-            RowTitle(l10n("settings.bar.traffic"))
         }
-        .pickerStyle(.menu)
+    }
+}
+
+/// `settings.bar.intelligence` (DESIGN 10): the intelligence block, a switch of its own in 選單列 right after the
+/// network control, independent of traffic measuring; its caption says what the score is while it is on.
+struct BarIntelligenceToggle: View {
+    let model: AppModel
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        let l10n = model.l10n
+        SettingToggle(title: l10n("settings.bar.intelligence"),
+                      subtitle: settings.barIntelligence ? l10n("settings.bar.intelligence.hint") : nil,
+                      isOn: $settings.barIntelligence)
+            .animation(Motion.fade, value: settings.barIntelligence)
     }
 }
 

@@ -139,7 +139,7 @@ private actor CaptureTransport: ReportTransport {
     var requests: [ReportRequest] = []
     let response: ReportHTTPResponse
     init(response: ReportHTTPResponse) { self.response = response }
-    func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse { response }
+    func get(_ url: URL, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse { response }
     func send(_ request: ReportRequest, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse {
         requests.append(request); return response
     }

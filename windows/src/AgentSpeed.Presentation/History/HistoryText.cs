@@ -35,18 +35,13 @@ public static class HistoryText
                 : date;
         }
 
-        string dates;
-        if (range.Start.Year == range.End.Year)
-        {
-            dates = Pattern(range.Start, "win.history.format.rangeStart", loc) + RangeDash + Pattern(range.End, "win.history.format.rangeEnd", loc);
-        }
-        else
-        {
-            dates = Date(range.Start, loc) + RangeDash + Date(range.End, loc);
-        }
-
-        return $"{dates} · {Days(range.DayCount, loc)}";
+        return $"{DateSpan(range.Start, range.End, loc)} · {Days(range.DayCount, loc)}";
     }
+
+    /// <summary><c>2026/10/19 – 10/21</c>: two days, the year written once when both share it.</summary>
+    public static string DateSpan(DateOnly start, DateOnly end, Localizer loc) => start.Year == end.Year
+        ? Pattern(start, "win.history.format.rangeStart", loc) + RangeDash + Pattern(end, "win.history.format.rangeEnd", loc)
+        : Date(start, loc) + RangeDash + Date(end, loc);
 
     /// <summary>Full date: <c>2026/10/21</c>, <c>Oct 21, 2026</c>.</summary>
     public static string Date(DateOnly day, Localizer loc) => Pattern(day, "win.history.format.date", loc);

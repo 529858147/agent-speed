@@ -340,6 +340,7 @@ internal sealed class OpenCodeSource : IDisposable
                 && nowMs - last > CompactAfterMs)
             {
                 tracked.Model = tracked.State.Model;
+                tracked.Modes = tracked.State.Modes;
                 Release(tracked);
             }
         }
@@ -447,7 +448,7 @@ internal sealed class OpenCodeSource : IDisposable
     {
         var rows = tracked.Rows.Values.ToList();
         rows.Sort(static (a, b) => a.Seq.CompareTo(b.Seq));
-        tracked.State = OpenCodeRules.Replay(tracked.Info, rows, tracked.Model);
+        tracked.State = OpenCodeRules.Replay(tracked.Info, rows, tracked.Model, tracked.Modes);
         return tracked.State;
     }
 
@@ -565,6 +566,9 @@ internal sealed class OpenCodeSource : IDisposable
 
         /// <summary>The model known when the rows were released.</summary>
         public string? Model { get; set; }
+
+        /// <summary>The current facts when the rows were released.</summary>
+        public ExecutionModes? Modes { get; set; }
 
         public OpenCodeAgentState? State { get; set; }
     }

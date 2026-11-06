@@ -1,7 +1,8 @@
 import AgentSpeedCore
 import Foundation
 
-/// `--dump-history`: one JSON object per (day, source), in the format of `reference.py --dump-history`.
+/// `--dump-history`: one JSON object per (day, source), then one `perf` row per performance record (METRICS 6.11), in
+/// the format of `reference.py --dump-history`.
 /// Timing goes to standard error so standard output can be diffed.
 enum DumpHistory {
     static func run(configuration: MonitorConfiguration, utc: Bool, storePath: String?, table: PriceTable) {
@@ -47,11 +48,20 @@ enum DumpHistory {
                 models.add(model.model, raw: tally.text)
             }
             line.add("models", raw: models.text)
+            line.add("unpriced", raw: JSONLine.array(day.unpriced.facts.map { fact in
+                var object = JSONLine()
+                object.add("model", fact.model)
+                object.add("provider", fact.provider)
+                object.add("fast", fact.fast)
+                object.add("requests", fact.requests)
+                return object.text
+            }))
             output += line.text + "\n"
         }
+        for row in PerfDump.historyRows(report.perf) { output += row + "\n" }
         FileHandle.standardOutput.write(Data(output.utf8))
         let summary = "history: \(report.days.count) rows, \(report.filesDiscovered) files discovered, "
-            + "\(report.filesAnalyzed) files (\(report.bytesAnalyzed) bytes) and \(report.sessionsAnalyzed) OpenCode sessions "
+            + "\(report.filesAnalyzed) files (\(report.bytesAnalyzed) bytes) and \(report.sessionsAnalyzed) database sessions "
             + "analysed in \(Int(report.durationMs.rounded())) ms\n"
         FileHandle.standardError.write(Data(summary.utf8))
     }

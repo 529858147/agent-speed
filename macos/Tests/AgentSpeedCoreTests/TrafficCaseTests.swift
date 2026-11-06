@@ -24,6 +24,23 @@ struct TrafficCaseTests {
         }
         #expect(names.contains("classify-macos") && names.contains("classify-windows"))
     }
+
+    /// Issue #35: behind a TUN-mode proxy the agent's bytes reach `day_traffic` once, under its source; the proxy core
+    /// and the agent that only reaches a local proxy over loopback store nothing.
+    @Test func tunnelAndLocalProxyStoreOnlyTheAgentsBytesOnce() throws {
+        let testCase = try #require(try Self.cases().first { $0.string("name") == "tunnel-and-local-proxy" })
+        let engine = TrafficCaseRunner(testCase).replay().engine
+        let directory = try TempDirectory()
+        var keeper = TrafficHistoryKeeper(storePath: directory.file("history.sqlite").path)
+        keeper.load()
+        keeper.write(engine.ledger.history, nowMs: 0)
+        let stored = HistoryDatabase.storedTraffic(at: keeper.storePath)
+        #expect(stored.since == "2026-10-28")
+        #expect(Set(stored.days) == [
+            TrafficDay(day: "2026-10-28", key: "machine", rx: 108_000, tx: 145_000, sampledMs: 2000),
+            TrafficDay(day: "2026-10-28", key: "codex", rx: 60000, tx: 12000, rxTools: 3500, txTools: 120_000, sampledMs: 2000),
+        ])
+    }
 }
 
 /// Fixture processes as an inspector: everything a case records for each identity.
@@ -87,6 +104,23 @@ struct TrafficCaseRunner {
     }
 
     func run() -> [String: Any] {
+        let (engine, rates, lastT) = replay()
+        var classes: [String: Any] = [:]
+        for (identity, record) in engine.table.records.sorted(by: { $0.key < $1.key }) {
+            classes[String(identity.pid)] = record.processClass.map { "\($0.source.rawValue)/\($0.role.rawValue)" } ?? NSNull()
+        }
+        var ledger = engine.ledger
+        let today = ledger.totals(ledger.label(forMs: lastT)) ?? TrafficDayTotals()
+        return [
+            "classes": classes,
+            "today": Self.today(today),
+            "rates": rates,
+            "history": engine.ledger.history.map(Self.row),
+        ]
+    }
+
+    /// Feeds every sample to a fresh engine; returns it with the rates at `rateTimes` and the last sample time.
+    func replay() -> (engine: TrafficEngine, rates: [String: Any], lastT: Int64) {
         let engine = TrafficEngine(platform: platform, timeZone: timeZone)
         engine.setAgents(agents)
         let inspector = FixtureInspector()
@@ -121,18 +155,7 @@ struct TrafficCaseRunner {
                         inspector: inspector)
             if rateTimes.contains(t) { rates[String(t)] = Self.rates(engine) }
         }
-        var classes: [String: Any] = [:]
-        for (identity, record) in engine.table.records.sorted(by: { $0.key < $1.key }) {
-            classes[String(identity.pid)] = record.processClass.map { "\($0.source.rawValue)/\($0.role.rawValue)" } ?? NSNull()
-        }
-        var ledger = engine.ledger
-        let today = ledger.totals(ledger.label(forMs: lastT)) ?? TrafficDayTotals()
-        return [
-            "classes": classes,
-            "today": Self.today(today),
-            "rates": rates,
-            "history": engine.ledger.history.map(Self.row),
-        ]
+        return (engine, rates, lastT)
     }
 
     static func pair(_ rate: TrafficRate?) -> Any {

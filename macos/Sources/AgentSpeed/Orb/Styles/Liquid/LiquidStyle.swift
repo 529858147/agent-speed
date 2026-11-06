@@ -13,7 +13,7 @@ final class LiquidStyle: OrbStyleRenderer {
         layout.dotHalo = true
         return layout
     }()
-    let trafficPlacement = OrbTrafficPlacement.liquid
+    let linePlacement = OrbLinePlacement.liquid
     let signOfLifeDuration: TimeInterval = 1.2
 
     private static let glass = LiquidMath.glassRadius
@@ -587,15 +587,15 @@ final class LiquidStyle: OrbStyleRenderer {
         readout.add(into: &scene, frame, layout: readoutLayout, palette: palette, clip: .liquid(below: true, rect: rect), pill: false)
     }
 
-    /// The traffic lines split at the surface like the readout (DESIGN 10: the 2a.3 layer 10 rule).
-    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout) {
+    /// The two lines split at the surface like the readout (DESIGN 10: the 2a.3 layer 10 rule).
+    func buildLines(into scene: inout OrbScene, _ frame: OrbFrame, lines: OrbLineReadout) {
         let s = frame.s
         let rect = CGRect(x: frame.center.x - s, y: frame.center.y - s, width: 2 * s, height: 2 * s)
         let contrast = frame.content.increaseContrast
-        traffic.add(into: &scene, frame, placement: trafficPlacement, palette: .standard(dark: frame.dark, increaseContrast: contrast),
+        lines.add(into: &scene, frame, placement: linePlacement, palette: .standard(dark: frame.dark, increaseContrast: contrast),
                     clip: .liquid(below: false, rect: rect))
-        traffic.add(into: &scene, frame, placement: trafficPlacement,
-                    palette: .underLiquid(dark: frame.dark, diameter: s, increaseContrast: contrast), clip: .liquid(below: true, rect: rect))
+        lines.add(into: &scene, frame, placement: linePlacement,
+                  palette: .underLiquid(dark: frame.dark, diameter: s, increaseContrast: contrast), clip: .liquid(below: true, rect: rect))
     }
 }
 

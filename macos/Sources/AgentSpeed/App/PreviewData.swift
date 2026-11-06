@@ -33,7 +33,7 @@ enum PreviewData {
         case .crowd(let count): agents = Array(crowdAgents(speed: speed, now: now).prefix(count))
         }
         let today = TokenTotals(requests: 1_284, input: 48_200_000, cachedInput: 41_000_000, cacheWriteInput: 2_100_000, output: 1_240_000, reasoning: 380_000)
-        let sources: [SourceStatus] = [
+        let measured: [SourceStatus] = [
             source(.codex, speed * 0.34, TokenTotals(requests: 520, input: 19_000_000, output: 520_000), 1),
             source(.claudeCode, speed * 0.42, TokenTotals(requests: 480, input: 19_400_000, output: 440_000), 2),
             source(.claudeDesktop, speed * 0.10, TokenTotals(requests: 120, input: 4_600_000, output: 120_000), 1),
@@ -47,7 +47,17 @@ enum PreviewData {
             source(.zcode, speed * 0.06, TokenTotals(requests: 34, input: 900_000, output: 42_000), 1),
             source(.kimi, speed * 0.03, TokenTotals(requests: 28, input: 780_000, output: 32_000), 1),
             source(.grokBuild, speed * 0.02, TokenTotals(requests: 18, input: 530_000, output: 23_000), 1),
+            source(.pi, speed * 0.04, TokenTotals(requests: 31, input: 1_200_000, output: 27_000), 1),
+            source(.openclaw, speed * 0.05, TokenTotals(requests: 44, input: 1_900_000, output: 36_000), 1),
+            source(.hermes, speed * 0.04, TokenTotals(requests: 38, input: 1_500_000, output: 31_000), 1),
+            source(.droid, speed * 0.05, TokenTotals(requests: 41, input: 1_700_000, output: 33_000), 1),
         ]
+        // Each source's intelligence sums are its agents' (METRICS 6.9: additive over agents and sources).
+        let sources = measured.map { status in
+            var status = status
+            status.intelligence = agents.filter { $0.source == status.kind }.reduce(into: IntelligenceSums()) { $0.add($1.intelligence) }
+            return status
+        }
         var liveCost = LiveCost.zero
         var todayCost = CostTally()
         for source in sources {
@@ -71,7 +81,8 @@ enum PreviewData {
             lastResponse: nil,
             warnings: [],
             liveCost: liveCost,
-            todayCost: todayCost
+            todayCost: todayCost,
+            intelligence: agents.reduce(into: IntelligenceSums()) { $0.add($1.intelligence) }
         )
     }
 
@@ -138,8 +149,9 @@ enum PreviewData {
         _ id: String, _ source: SourceKind, _ project: String, _ model: String,
         _ phase: AgentPhase, _ isSubagent: Bool, _ live: Double, _ activity: Date, parent: String? = nil
     ) -> AgentStatus {
-        AgentStatus(
-            id: "/preview/\(id).jsonl",
+        let id = "/preview/\(id).jsonl"
+        return AgentStatus(
+            id: id,
             source: source,
             project: project,
             model: model,
@@ -148,8 +160,41 @@ enum PreviewData {
             live: Rate(output: live, total: live * 26),
             recentSpeed: live > 0 ? live : nil,
             lastActivity: activity,
-            parentId: parent.map { "/preview/\($0).jsonl" }
+            parentId: parent.map { "/preview/\($0).jsonl" },
+            intelligence: intelligence(output: live, score: previewScore(model, source: source), id: id, idle: phase == .idle,
+                                       thinkingShare: 0.3, source: source)
         )
+    }
+
+    /// API-equivalent costs (METRICS 9): a blended price per output token, DeepSeek partly and Antigravity not priced.
+    private static func pricing(_ kind: SourceKind) -> (microUsdPerToken: Double, knownShare: Double) {
+        (kind == .deepseek ? 2.4 : kind == .gemini ? 9 : 21, kind == .antigravity ? 0 : kind == .deepseek ? 0.7 : 1)
+    }
+
+    /// A plausible performance score for the preview models (METRICS 6.9).
+    static func previewScore(_ model: String?, source: SourceKind) -> Double? {
+        guard let model, !model.isEmpty else { return nil }
+        let strong = ["opus", "fable", "gpt-6.1-sol", "gpt-5.5"].contains { model.contains($0) } && !model.contains("mini")
+        let light = ["haiku", "flash", "mini"].contains { model.contains($0) }
+        return strong ? 1286.4 : light ? 1742.6 : 948.2
+    }
+
+    /// An agent's own sums (METRICS 6.9) for `output` tok/s with `thinkingShare` of it reasoning, and its performance
+    /// `score` (live, or resting while `idle`).
+    static func intelligence(output: Double, score: Double?, id: String = "", idle: Bool = false, provisional: Bool = false,
+                             thinkingShare: Double, source: SourceKind) -> IntelligenceSums {
+        var sums = IntelligenceSums()
+        if let score {
+            sums.score = PerfSetValue(form: idle ? .resting : .live, score: score, agentId: id, lastLineMs: nil,
+                                      provisional: provisional)
+        }
+        guard output > 0 else { return sums }
+        sums.output = output
+        if source.recordsReasoningApart {
+            sums.thinking = output * thinkingShare
+            sums.thinkingBase = output
+        }
+        return sums
     }
 
     /// DeepSeek not installed and Claude Desktop turned off: the dashboard hides the first and dims the second.
@@ -160,7 +205,7 @@ enum PreviewData {
             switch source.kind {
             case .deepseek: source.available = false
             case .claudeDesktop: source.enabled = false
-            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity, .workbuddy, .workbuddyAi, .zcode, .kimi, .grokBuild: return source
+            case .codex, .claudeCode, .opencode, .gemini, .omp, .antigravity, .workbuddy, .workbuddyAi, .zcode, .kimi, .grokBuild, .pi, .openclaw, .hermes, .droid: return source
             }
             source.sessionCount = 0
             source.live = .zero
@@ -175,9 +220,7 @@ enum PreviewData {
     }
 
     private static func source(_ kind: SourceKind, _ live: Double, _ today: TokenTotals, _ active: Int) -> SourceStatus {
-        // API-equivalent costs (METRICS 9): a blended price per output token, DeepSeek partly and Antigravity not priced.
-        let microUsdPerToken: Double = kind == .deepseek ? 2.4 : kind == .gemini ? 9 : 21
-        let knownShare: Double = kind == .antigravity ? 0 : kind == .deepseek ? 0.7 : 1
+        let (microUsdPerToken, knownShare) = pricing(kind)
         let unpriced = kind == .antigravity ? today.requests : kind == .deepseek ? today.requests / 3 : 0
         return SourceStatus(
             kind: kind,
@@ -191,8 +234,23 @@ enum PreviewData {
             liveCost: LiveCost(microUsdPerSecond: live * knownShare * microUsdPerToken, knownOutput: live * knownShare),
             todayCost: CostTally(costMicroUsd: Int64(Double(today.output) * knownShare * microUsdPerToken * 1.6),
                                  unpricedRequests: unpriced),
-            unpricedModels: kind == .antigravity ? ["gemini-3.1-flash"] : kind == .deepseek ? ["deepseek-pro"] : []
+            unpricedModels: kind == .antigravity ? ["gemini-3.1-flash"] : kind == .deepseek ? ["deepseek-pro"] : [],
+            unpricedFacts: unpricedFacts(kind, unpriced)
         )
+    }
+
+    /// Today's unpriced facts behind `unpriced` (METRICS 9.10 *Live*): an Antigravity label and a response without a
+    /// model, and DeepSeek Harness's unofficial id.
+    private static func unpricedFacts(_ kind: SourceKind, _ unpriced: Int) -> [UnpricedFact] {
+        switch kind {
+        case .antigravity where unpriced > 1: return UnpricedFact.list([
+            UnpricedFactKey(model: "gemini-3.1-flash", provider: nil, fast: false): unpriced - 1,
+            UnpricedFactKey(model: "", provider: nil, fast: false): 1,
+        ])
+        case .deepseek where unpriced > 0:
+            return [UnpricedFact(key: UnpricedFactKey(model: "deepseek-pro", provider: nil, fast: false), requests: unpriced)]
+        default: return []
+        }
     }
 
     private static func sessionCount(_ folder: TranscriptFolder) -> Int {
@@ -209,6 +267,10 @@ enum PreviewData {
         case .zcode: 3
         case .kimi: 2
         case .grokBuild: 1
+        case .pi: 4
+        case .openclaw: 6
+        case .hermes: 3
+        case .droid: 2
         }
     }
 }

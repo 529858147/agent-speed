@@ -13,7 +13,7 @@ final class LedStyle: OrbStyleRenderer {
         layout.silkValue = true
         return layout
     }()
-    let trafficPlacement = OrbTrafficPlacement.led
+    let linePlacement = OrbLinePlacement.led
     /// The style draws its own aura, waves and rays (DESIGN 2.1).
     var hasAura: Bool { false }
     var hasWave: Bool { false }

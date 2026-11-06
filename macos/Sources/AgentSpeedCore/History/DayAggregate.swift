@@ -56,11 +56,18 @@ struct DayAggregate: Equatable, Sendable {
     var modes: [ExecutionModeUsageKey: ExecutionModeUsage] = [:]
     /// Nil when the contribution was stored before costs existed (METRICS 8).
     var cost: CostTally?
+    /// The unpriced facts of this one contribution (METRICS 9.10): from its responses, or from its stored side rows
+    /// when they are valid. Never merged across contributions: each is read on its own.
+    var unpricedFacts: [UnpricedFactKey: Int] = [:]
 
     /// Adds a response with its cost (nil = unknown price).
     mutating func add(_ record: ResponseRecord, cost responseCost: Int64?) {
         if cost == nil, totals.requests == 0 { cost = .zero }
         cost?.add(responseCost, requestCount: record.requestCount)
+        if responseCost == nil {
+            unpricedFacts[UnpricedFactKey(model: record.model, provider: record.provider, fast: record.fast), default: 0]
+                += record.requestCount
+        }
         totals.add(record.usage, sign: 1, requestCount: record.requestCount)
         var tally = models[record.model ?? ""] ?? ModelTally(cost: .zero)
         tally.cost?.add(responseCost, requestCount: record.requestCount)
@@ -74,7 +81,7 @@ struct DayAggregate: Equatable, Sendable {
         }
         if !record.isFinal { unfinalized += record.requestCount }
         models[record.model ?? ""] = tally
-        for attribution in record.modes.attributed {
+        for attribution in record.modes.breakdownAttributions {
             let key = ExecutionModeUsageKey(model: record.model ?? "", attribution: attribution)
             let measured = record.isFinal ? TimedResponse(record) : nil
             let part = ExecutionModeUsage(model: key.model, attribution: attribution, requests: record.requestCount,
@@ -84,6 +91,7 @@ struct DayAggregate: Equatable, Sendable {
         }
     }
 
+    /// Sums another contribution's aggregates; the unpriced facts stay per contribution (`reading`).
     mutating func merge(_ other: DayAggregate) {
         cost = CostTally.merged(cost, requests: totals.requests, other.cost, requests: other.totals.requests)
         totals.requests = totals.requests.saturatingAdd(other.totals.requests)
@@ -121,7 +129,13 @@ struct DayAggregate: Equatable, Sendable {
         return days
     }
 
-    func usage(day: String, source: SourceKind, peak: Double?, priceVersion: Int?) -> DailyUsage {
+    /// *Reading* of METRICS 9.10 for this contribution.
+    var unpricedReading: UnpricedReading {
+        UnpricedReading.read(requests: totals.requests, unpriced: cost?.unpricedRequests,
+                             models: models.compactMapValues { $0.cost?.unpricedRequests }, facts: unpricedFacts)
+    }
+
+    func usage(day: String, source: SourceKind, peak: Double?, priceVersion: Int?, unpriced: UnpricedReading? = nil) -> DailyUsage {
         DailyUsage(
             day: day,
             source: source,
@@ -139,7 +153,8 @@ struct DayAggregate: Equatable, Sendable {
                 .sorted { $0.model.unicodeScalars.lexicographicallyPrecedes($1.model.unicodeScalars) },
             cost: cost,
             priceVersion: cost == nil ? nil : priceVersion,
-            modeUsage: modes.values.sorted { $0.id < $1.id }
+            modeUsage: modes.values.sorted { $0.id < $1.id },
+            unpriced: unpriced ?? unpricedReading
         )
     }
 }

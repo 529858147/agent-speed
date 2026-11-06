@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Work;
 
 namespace AgentSpeed.Core.Omp;
 
@@ -36,7 +37,7 @@ internal static class OmpLineReader
 
             while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
             {
-                ReadTopLevelProperty(ref reader, ref result, ref top);
+                ReadTopLevelProperty(ref reader, ref result, ref top, line);
             }
 
             if (reader.TokenType != JsonTokenType.EndObject || reader.Read())
@@ -64,6 +65,7 @@ internal static class OmpLineReader
             TypeName.Message => top.HasMessage ? OmpEntryKind.Message : OmpEntryKind.Other,
             TypeName.ModelUsage => OmpEntryKind.ModelUsage,
             TypeName.ServiceTierChange => OmpEntryKind.ServiceTierChange,
+            TypeName.ThinkingLevelChange => OmpEntryKind.ThinkingLevelChange,
             TypeName.Custom when top.IsSessionExit => OmpEntryKind.SessionExit,
             _ => OmpEntryKind.Other,
         };
@@ -78,9 +80,15 @@ internal static class OmpLineReader
             result.CompletedAtMs = message.CompletedAtMs;
             result.Stop = message.Stop;
             result.PauseTurn = message.PauseTurn;
-            result.ToolCallIds = message.ToolCallIds;
+            result.ToolCallIds = PiFamilyTools.Ids(message.ToolCalls);
             result.ToolCallId = message.ToolCallId;
             result.IsFinalYield = message.IsYield && !message.IsErrorTrue;
+            result.Tools = message.Role switch
+            {
+                OmpRole.Assistant => new LineTools(message.ToolCalls),
+                OmpRole.ToolResult => PiFamilyTools.Result(message.ToolCallId, message.IsErrorTrue),
+                _ => default,
+            };
         }
         else if (result.Kind == OmpEntryKind.ModelUsage)
         {
@@ -89,7 +97,7 @@ internal static class OmpLineReader
         if (result.Kind != OmpEntryKind.ServiceTierChange) result.SelectedModes = null;
     }
 
-    private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref OmpLine result, ref TopLevel top)
+    private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref OmpLine result, ref TopLevel top, ReadOnlySpan<byte> line)
     {
         if (reader.ValueTextEquals("type"u8))
         {
@@ -99,6 +107,7 @@ internal static class OmpLineReader
                 : reader.ValueTextEquals("session"u8) ? TypeName.Session
                 : reader.ValueTextEquals("title"u8) ? TypeName.Title
                 : reader.ValueTextEquals("service_tier_change"u8) ? TypeName.ServiceTierChange
+                : reader.ValueTextEquals("thinking_level_change"u8) ? TypeName.ThinkingLevelChange
                 : reader.ValueTextEquals("model_usage"u8) ? TypeName.ModelUsage
                 : reader.ValueTextEquals("custom"u8) ? TypeName.Custom
                 : TypeName.Other;
@@ -135,6 +144,12 @@ internal static class OmpLineReader
             else JsonScan.SkipValue(ref reader);
             result.SelectedModes = modes;
         }
+        else if (reader.ValueTextEquals("thinkingLevel"u8))
+        {
+            reader.Read();
+            result.HasThinkingLevel = true;
+            result.ThinkingLevel = JsonScan.ReadString(ref reader);
+        }
         else if (reader.ValueTextEquals("timestamp"u8))
         {
             reader.Read();
@@ -150,7 +165,7 @@ internal static class OmpLineReader
         {
             reader.Read();
             top.HasMessage = reader.TokenType == JsonTokenType.StartObject;
-            top.Message = top.HasMessage ? ReadMessage(ref reader) : default;
+            top.Message = top.HasMessage ? ReadMessage(ref reader, line) : default;
             JsonScan.SkipValue(ref reader);
         }
         else if (reader.ValueTextEquals("customType"u8))
@@ -167,7 +182,7 @@ internal static class OmpLineReader
     }
 
     // The reader is on the message object; it ends on its EndObject.
-    private static Message ReadMessage(ref Utf8JsonReader reader)
+    private static Message ReadMessage(ref Utf8JsonReader reader, ReadOnlySpan<byte> line)
     {
         var message = new Message { Stop = OmpStop.Aborted };
         var call = default(CallFields);
@@ -220,7 +235,7 @@ internal static class OmpLineReader
             else if (reader.ValueTextEquals("content"u8))
             {
                 reader.Read();
-                message.ToolCallIds = reader.TokenType == JsonTokenType.StartArray ? ReadToolCallIds(ref reader) : null;
+                message.ToolCalls = reader.TokenType == JsonTokenType.StartArray ? PiFamilyTools.ReadCalls(ref reader, line) : null;
                 JsonScan.SkipValue(ref reader);
             }
             else if (reader.ValueTextEquals("toolCallId"u8))
@@ -273,6 +288,16 @@ internal static class OmpLineReader
             reader.Read();
             call.ServiceTier = JsonScan.ReadString(ref reader);
         }
+        else if (reader.ValueTextEquals("requestControls"u8))
+        {
+            reader.Read();
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                ReadRequestControls(ref reader, ref call);
+            }
+
+            JsonScan.SkipValue(ref reader);
+        }
         else if (reader.ValueTextEquals("disabledFeatures"u8))
         {
             reader.Read();
@@ -305,6 +330,36 @@ internal static class OmpLineReader
         }
 
         return true;
+    }
+
+    // The reader is on the requestControls object; it ends on its EndObject.
+    private static void ReadRequestControls(ref Utf8JsonReader reader, ref CallFields call)
+    {
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var isEffort = reader.ValueTextEquals("effort"u8);
+            reader.Read();
+            if (isEffort)
+            {
+                string? tail = null, top = null;
+                if (reader.TokenType == JsonTokenType.StartObject)
+                {
+                    while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        var isTail = reader.ValueTextEquals("tail"u8);
+                        var isTop = reader.ValueTextEquals("topLevel"u8);
+                        reader.Read();
+                        if (isTail) tail = JsonScan.ReadString(ref reader);
+                        else if (isTop) top = JsonScan.ReadString(ref reader);
+                        else JsonScan.SkipValue(ref reader);
+                    }
+                }
+
+                call.RequestEffort = tail ?? top;
+            }
+
+            JsonScan.SkipValue(ref reader);
+        }
     }
 
     // The reader is on the usage object; it ends on its EndObject.
@@ -367,49 +422,6 @@ internal static class OmpLineReader
         return pause;
     }
 
-    // The reader is on the content array; it ends on its EndArray.
-    private static string[]? ReadToolCallIds(ref Utf8JsonReader reader)
-    {
-        List<string>? ids = null;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-        {
-            if (reader.TokenType != JsonTokenType.StartObject)
-            {
-                JsonScan.SkipValue(ref reader);
-                continue;
-            }
-
-            var isToolCall = false;
-            string? id = null;
-            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
-            {
-                if (reader.ValueTextEquals("type"u8))
-                {
-                    reader.Read();
-                    isToolCall = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("toolCall"u8);
-                }
-                else if (reader.ValueTextEquals("id"u8))
-                {
-                    reader.Read();
-                    id = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
-                }
-                else
-                {
-                    reader.Read();
-                }
-
-                JsonScan.SkipValue(ref reader);
-            }
-
-            if (isToolCall && id is not null && (ids ??= []).IndexOf(id) < 0)
-            {
-                ids.Add(id);
-            }
-        }
-
-        return ids?.ToArray();
-    }
-
     private static double? ReadFinite(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.Number)
@@ -434,6 +446,7 @@ internal static class OmpLineReader
         ModelUsage,
         Custom,
         ServiceTierChange,
+        ThinkingLevelChange,
     }
 
     private struct Usage
@@ -450,6 +463,7 @@ internal static class OmpLineReader
         public string? Model;
         public string? ServiceTier;
         public bool DisabledPriority;
+        public string? RequestEffort;
         public bool HasProvider;
         public string? Provider;
         public bool HasApi;
@@ -462,6 +476,7 @@ internal static class OmpLineReader
             Model = Model,
             ServiceTier = ServiceTier,
             DisabledPriority = DisabledPriority,
+            RequestEffort = RequestEffort,
             Provider = Provider,
             HasUsage = Usage.Input > 0 || Usage.Output > 0 || Usage.CacheRead > 0 || Usage.CacheWrite > 0,
             Tokens = new TokenCounts(
@@ -482,7 +497,7 @@ internal static class OmpLineReader
         public long? CompletedAtMs;
         public OmpStop Stop;
         public bool PauseTurn;
-        public string[]? ToolCallIds;
+        public ToolCall[]? ToolCalls;
         public string? ToolCallId;
         public bool IsYield;
         public bool IsErrorTrue;

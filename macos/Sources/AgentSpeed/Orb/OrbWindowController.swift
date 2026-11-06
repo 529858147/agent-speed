@@ -8,6 +8,8 @@ import AppKit
 protocol OrbWindowManaging: AnyObject {
     /// The other shown orbs on `screen`.
     func otherDiscs(excluding id: String, on screen: NSScreen) -> [OrbDisc]
+    /// The shown leaderboard boards on `screen` (DESIGN 2c: boards and orbs never overlap).
+    func boardShapes(on screen: NSScreen) -> [FloatingShape]
     /// The orb came to rest at `center` by the user's (or a programmatic) placement; store it for this arrangement.
     func orbSettled(_ id: String, center: CGPoint, radius: CGFloat, on screen: NSScreen)
     /// Pointer down, drag or menu on an orb: bring it to the front and keep its frame rate in a crowd.
@@ -451,10 +453,7 @@ final class OrbWindowController {
             cursor.set()
         }
         host.removeAllToolTips()
-        let mode = ExecutionModeText.orb(agents: model.snapshot.agents.filter { config.sources.tracks($0.source) }, model.l10n)
-        let hint = hovered ? model.l10n("orbs.unit.toggleHint") + "\n" : ""
-        host.addToolTip(hovered ? (unitHitRect ?? host.bounds) : host.bounds,
-                        owner: (hint + mode.summary + "\n" + mode.detail) as NSString, userData: nil)
+        if hovered, let rect = unitHitRect { host.addToolTip(rect, owner: model.l10n("orbs.unit.toggleHint") as NSString, userData: nil) }
         let readout = presenter.animator.readout
         let start = readout.unitHoverAmount
         let target = hovered ? 1.0 : 0.0
@@ -549,7 +548,13 @@ final class OrbWindowController {
         let current = animator.state.center
         guard let screen = Self.screen(containing: current) else { return }
         let others = manager?.otherDiscs(excluding: id, on: screen) ?? []
-        let target = OrbMagnet.releaseTarget(raw: current, radius: radius, others: others, visible: screen.visibleFrame)
+        var target = OrbMagnet.releaseTarget(raw: current, radius: radius, others: others, visible: screen.visibleFrame)
+        let boards = manager?.boardShapes(on: screen) ?? []
+        let shape = FloatingShape(OrbDisc(center: target, radius: radius))
+        if !FloatingPlacement.isFree(shape, others: boards) {
+            target = FloatingMagnet.releaseTarget(raw: target, shape: shape, others: others.map(FloatingShape.init) + boards,
+                                                  visible: screen.visibleFrame)
+        }
         animator.animate(center: target, motion: motion(.snap), velocity: reduceMotion ? .zero : velocity)
         settle(at: target)
     }

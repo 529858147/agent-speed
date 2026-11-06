@@ -1,5 +1,6 @@
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Work;
 
 namespace AgentSpeed.Core.Tests;
 
@@ -261,6 +262,36 @@ public sealed class MonitorCoreTests : IDisposable
     }
 
     [Fact]
+    public void ASessionQuietSinceYesterdayIsReadByRediscoveryAfterMidnight()
+    {
+        // METRICS 5: an agent that keeps its transcript open may raise no watcher event, so the rediscovery re-checks
+        // tracked files whatever day they last changed on (issue #26).
+        var yesterdayStart = _todayStart - 86_400_000;
+        var evening = _todayStart - 3 * 3_600_000;
+        var path = WriteCodex("2026/10/26/rollout-evening.jsonl",
+            CodexLines.SessionMeta(evening - 5000),
+            CodexLines.TaskStarted(evening - 4000),
+            CodexLines.Envelope(evening, "token_usage_record",
+                """{"thread_id":"thread-1","response_id":"resp-evening","usage":{"input_tokens":100,"output_tokens":40}}"""));
+        SetModified(path, evening);
+        var core = new MonitorCore(MonitorConfiguration.Default, CodexRoot, ClaudeRoot, DshRoot, yesterdayStart);
+        core.Seed(evening + 60_000, yesterdayStart, CancellationToken.None);
+        Assert.Equal(40, core.BuildSnapshot(evening + 60_000, yesterdayStart, MonitorState.Running, observeLive: true).Snapshot.Today.Output);
+        Assert.Equal(0, core.BuildSnapshot(_todayStart + 1000, _todayStart, MonitorState.Running, observeLive: true).Snapshot.Today.Output);
+
+        File.AppendAllText(path,
+            CodexLines.TaskStarted(_now - 3000) + "\n"
+            + CodexLines.Envelope(_now - 1000, "token_usage_record",
+                """{"thread_id":"thread-1","response_id":"resp-morning","usage":{"input_tokens":100,"output_tokens":80}}""") + "\n");
+
+        Assert.True(core.Rediscover(_now, _todayStart, CancellationToken.None));
+        var (snapshot, events) = core.BuildSnapshot(_now, _todayStart, MonitorState.Running, observeLive: true);
+        Assert.Equal(80, snapshot.Today.Output);
+        Assert.Single(events.OfType<SpeedEvent.ResponseCompleted>());
+        Assert.Single(snapshot.Agents);
+    }
+
+    [Fact]
     public void DshSessionsAreADeepSeekSourceWithItsOwnRoot()
     {
         var path = WriteDsh("--w-quasar--/session-a/session.v4.jsonl.zstd",
@@ -455,6 +486,38 @@ public sealed class MonitorCoreTests : IDisposable
             CodexLines.Envelope(t + 5000, "token_usage_record",
                 """{"thread_id":"thread-1","response_id":"resp-a","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":200,"reasoning_output_tokens":0}}"""));
     }
+
+    [Fact]
+    public void SeedingAddsNoActionsAndLiveFailingRepeatsShowAsLooping()
+    {
+        var t = _now - 60_000;
+        var path = WriteClaude("p/loop.jsonl", ClaudeLines.UserText(t, "go"), ToolUse(t + 1000, "m0", "t0"), ToolResult(t + 1500, "t0", true));
+        var core = NewCore();
+        core.Seed(_now, _todayStart, CancellationToken.None);
+        Assert.Equal(WorkSignals.None, Assert.Single(core.BuildSnapshot(_now, _todayStart, MonitorState.Running, true).Snapshot.Agents).Work);
+
+        var live = new List<string>();
+        for (var i = 1; i <= 3; i++)
+        {
+            live.Add(ToolUse(_now - 9000 + i * 2000, "m" + i, "t" + i));
+            live.Add(ToolResult(_now - 8500 + i * 2000, "t" + i, true));
+        }
+
+        File.AppendAllText(path, string.Concat(live.Select(l => l + "\n")));
+        Assert.True(core.ProcessPaths([path], _now, _todayStart));
+        var work = Assert.Single(core.BuildSnapshot(_now, _todayStart, MonitorState.Running, true).Snapshot.Agents).Work;
+
+        Assert.Equal(3, work.Looping);
+        Assert.Equal((3, 0), (work.Failed, work.Recovered));
+    }
+
+    private static string ToolUse(long ms, string message, string id) =>
+        ClaudeLines.Assistant(ms, message, 10, "\"tool_use\"").Replace(
+            """[{"type":"text","text":"x"}]""",
+            $$$"""[{"type":"tool_use","id":"{{{id}}}","name":"Bash","input":{"command":"swift test"}}]""", StringComparison.Ordinal);
+
+    private static string ToolResult(long ms, string id, bool isError) =>
+        ClaudeLines.User(ms, $$"""[{"type":"tool_result","tool_use_id":"{{id}}","is_error":{{(isError ? "true" : "false")}},"content":"failed"} ]""");
 
     private MonitorCore NewCore(IResponseObserver? observer = null) =>
         new(MonitorConfiguration.Default, CodexRoot, ClaudeRoot, DshRoot, _todayStart, observer);

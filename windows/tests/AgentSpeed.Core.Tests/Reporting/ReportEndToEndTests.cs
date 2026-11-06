@@ -87,7 +87,7 @@ public sealed class ReportEndToEndTests
         Assert.True(device.Document.SupportsThisClient);
         Assert.True(device.Document.Api.IsLoopbackHttp);
         Assert.Equal(4, device.Document.Sections.Count);
-        Assert.IsType<ReportDiscoveryOutcome.Document>(await api.DiscoverAsync(server.Service, "\"stale-etag\""));
+        Assert.IsType<ReportDiscoveryOutcome.Document>(await api.DiscoverAsync(server.Service));
 
         Assert.Equal("created", (await device.Register("小明的 Mac")).Result);
         Assert.Equal("exists", (await device.Register("小明的 Mac")).Result);

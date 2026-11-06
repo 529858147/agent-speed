@@ -20,6 +20,9 @@ internal enum OmpEntryKind : byte
     /// <summary><c>custom</c> with <c>customType == "session_exit"</c>.</summary>
     SessionExit,
     ServiceTierChange,
+
+    /// <summary>A <c>thinking_level_change</c> entry: a selection on the journal branch.</summary>
+    ThinkingLevelChange,
 }
 
 internal enum OmpRole : byte
@@ -51,6 +54,9 @@ internal struct OmpCall
     public bool Guarded;
     public string? ServiceTier;
     public bool DisabledPriority;
+
+    /// <summary><c>requestControls.effort</c>: <c>tail</c> when it is a string, else <c>topLevel</c> when that is.</summary>
+    public string? RequestEffort;
     public string? Model;
 
     /// <summary>The <c>provider</c> string; null when it is empty (METRICS 3.2).</summary>
@@ -71,7 +77,13 @@ internal struct OmpLine
     public string? Id;
     public string? ParentId;
     public bool HasParentId;
+
+    /// <summary>The tiers a <c>service_tier_change</c> names, one per family.</summary>
     public ExecutionModes? SelectedModes;
+
+    /// <summary>The entry has a <c>thinkingLevel</c> member, and its value when that is a string.</summary>
+    public bool HasThinkingLevel;
+    public string? ThinkingLevel;
 
     /// <summary>The entry (or header) <c>timestamp</c>, ISO 8601.</summary>
     public long? TimestampMs;
@@ -101,9 +113,13 @@ internal struct OmpLine
     /// <summary>Distinct string ids of the <c>toolCall</c> content blocks.</summary>
     public string[]? ToolCallIds;
 
+    /// <summary>The <c>toolCall</c> blocks and the tool result as actions (METRICS 6.10).</summary>
+    public Work.LineTools Tools;
+
     /// <summary>Tool result <c>toolCallId</c> when it is a string.</summary>
     public string? ToolCallId;
 
     /// <summary>Tool result of <c>yield</c> whose <c>isError</c> is not <c>true</c>: a sub-agent's final yield.</summary>
     public bool IsFinalYield;
+
 }

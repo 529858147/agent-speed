@@ -5,6 +5,8 @@ import SwiftUI
 /// shows the first rows and a disclosure for the rest; expanded it shows everyone, scrolling past a dozen rows.
 struct AgentsSection: View {
     let model: AppModel
+    /// Width of the agent rows: the panel minus its padding.
+    var rowWidth = DashboardController.width - 2 * DashboardLayout.padding
 
     @State private var order = StableAgentOrder()
     /// True while a collapse animates: the extra rows stay until the closing region has slid over them.
@@ -22,14 +24,25 @@ struct AgentsSection: View {
         let visible = min(rows.count, expanded ? DashboardLayout.maxExpandedAgents : limit)
         let hidden = expanded ? 0 : total - visible
         let tree = AgentTree(rows)
-        let depths = tree.depths
+        let depths = tree.depths.map { min($0, DashboardLayout.maxAgentDepth) }
+        let intelligenceCaption = l10n("intel.glyph")
+        let intelligenceWidth = AgentIntelligenceColumn.width(caption: intelligenceCaption)
+        let column = AgentCapsuleColumn(
+            rows: rows.indices.map { (EffortCapsule(rows[$0].current, l10n), depths[$0]) },
+            rowWidth: rowWidth,
+            intelligence: intelligenceWidth
+        )
 
         VStack(alignment: .leading, spacing: DashboardLayout.rowSpacing) {
             HStack(spacing: Spacing.s) {
                 SectionTitle(text: l10n("dashboard.agents"), latin: model.dashboardLatinCaps)
                 Spacer(minLength: 0)
                 if !rows.isEmpty {
-                    ColumnCaption(text: l10n("unit.tokS"), width: DashboardLayout.speedColumn)
+                    HStack(spacing: AgentIntelligenceColumn.gap) {
+                        ColumnCaption(text: intelligenceCaption, width: intelligenceWidth)
+                            .help(l10n("agents.intel.hint"))
+                        ColumnCaption(text: l10n("unit.tokS"), width: DashboardLayout.speedColumn)
+                    }
                 }
             }
             .padding(.bottom, 2)
@@ -49,8 +62,10 @@ struct AgentsSection: View {
                             AgentRow(
                                 model: model,
                                 agent: agent,
-                                depth: min(depths[index], DashboardLayout.maxAgentDepth),
-                                now: snapshot.timestamp
+                                depth: depths[index],
+                                now: snapshot.timestamp,
+                                capsuleColumn: column,
+                                intelligenceWidth: intelligenceWidth
                             )
                             .transition(.asymmetric(insertion: fadeIn, removal: .identity))
                             .zIndex(Double(rows.count - index))

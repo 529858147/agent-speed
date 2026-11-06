@@ -8,6 +8,12 @@ struct LaunchOptions: Sendable {
     var orbFramesDirectory: URL?
     /// `--orb-bench DIR`: measures the floating orbs' CPU and GPU time on screen, see `OrbBenchmark`.
     var orbBenchDirectory: URL?
+    /// `--board-frames DIR`: offscreen stills of the board effects, see `BoardFrameHarness`.
+    var boardFramesDirectory: URL?
+    /// `--board-bench DIR`: measures a board's CPU, frame rate and GPU time on screen, see `BoardBenchmark`.
+    var boardBenchDirectory: URL?
+    /// `--board-demo [glass|timing|neon] [S|M|L]`: one board fed by the prototype simulation, see `BoardDemoHarness`.
+    var boardDemo: BoardDemoOptions?
     /// `--check-updates-now`: run a manual update check right after launch.
     var checkUpdatesNow = false
     /// `--install-update-now`: check, then install an available update without waiting for the button.
@@ -50,6 +56,18 @@ struct LaunchOptions: Sendable {
                 if let path = iterator.next() {
                     options.orbBenchDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
                 }
+            case "--board-frames":
+                if let path = iterator.next() {
+                    options.boardFramesDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--board-bench":
+                if let path = iterator.next() {
+                    options.boardBenchDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                }
+            case "--board-demo":
+                options.boardDemo = BoardDemoOptions()
+            case _ where options.boardDemo?.accepts(argument) == true:
+                options.boardDemo?.take(argument)
             case "--render-previews":
                 if let path = iterator.next() {
                     options.previewDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
@@ -88,5 +106,20 @@ struct LaunchOptions: Sendable {
             }
         }
         return options
+    }
+}
+
+
+/// The style and size words after `--board-demo`.
+struct BoardDemoOptions: Sendable {
+    var style: String?
+    var size: String?
+
+    func accepts(_ word: String) -> Bool {
+        (style == nil && ["glass", "timing", "neon"].contains(word)) || (size == nil && ["S", "M", "L"].contains(word))
+    }
+
+    mutating func take(_ word: String) {
+        if ["S", "M", "L"].contains(word) { size = word } else { style = word }
     }
 }

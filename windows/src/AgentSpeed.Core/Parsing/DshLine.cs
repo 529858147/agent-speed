@@ -39,6 +39,9 @@ internal struct DshEvent
     /// <summary><c>data.header.config.provider</c> (METRICS 3.2).</summary>
     public string? ConfigProvider;
 
+    /// <summary><c>data.header.config.reasoningEffort</c> when it is a string (EXECUTION-MODES, DeepSeek Harness).</summary>
+    public string? ConfigEffort;
+
     /// <summary><c>data.message.source.model</c>.</summary>
     public string? SourceModel;
 
@@ -272,6 +275,7 @@ internal static class DshLineReader
     {
         facts.ConfigModel = null;
         facts.ConfigProvider = null;
+        facts.ConfigEffort = null;
         facts.SourceModel = null;
         facts.SourceProvider = null;
         facts.MessageId = null;
@@ -289,7 +293,7 @@ internal static class DshLineReader
             if (reader.ValueTextEquals("header"u8))
             {
                 reader.Read();
-                (facts.ConfigModel, facts.ConfigProvider) = ReadConfig(ref reader);
+                ReadHeaderConfig(ref reader, ref facts);
             }
             else if (reader.ValueTextEquals("message"u8))
             {
@@ -318,31 +322,28 @@ internal static class DshLineReader
         }
     }
 
-    // data.header.config.model and .provider
-    private static (string? Model, string? Provider) ReadConfig(ref Utf8JsonReader reader)
+    // data.header.config: model, provider and reasoningEffort
+    private static void ReadHeaderConfig(ref Utf8JsonReader reader, ref DshEvent facts)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return (null, null);
+            return;
         }
 
-        (string?, string?) result = (null, null);
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var config = reader.ValueTextEquals("config"u8);
             reader.Read();
             if (config)
             {
-                result = ReadModelAndProvider(ref reader);
+                (facts.ConfigModel, facts.ConfigProvider, facts.ConfigEffort) = ReadCallConfig(ref reader);
             }
             else
             {
                 JsonScan.SkipValue(ref reader);
             }
         }
-
-        return result;
     }
 
     private static void ReadMessage(ref Utf8JsonReader reader, ref DshEvent facts)
@@ -367,7 +368,7 @@ internal static class DshLineReader
             else if (reader.ValueTextEquals("source"u8))
             {
                 reader.Read();
-                (sourceModel, sourceProvider) = ReadModelAndProvider(ref reader);
+                (sourceModel, sourceProvider, _) = ReadCallConfig(ref reader);
             }
             else if (reader.ValueTextEquals("content"u8))
             {
@@ -458,36 +459,41 @@ internal static class DshLineReader
             JsonScan.SaturatingAdd(JsonScan.SaturatingAdd(input, cacheRead), cacheWrite), cacheRead, cacheWrite, output, 0);
     }
 
-    private static (string? Model, string? Provider) ReadModelAndProvider(ref Utf8JsonReader reader)
+    /// <summary><c>model</c>, <c>provider</c> and <c>reasoningEffort</c> of a header's <c>config</c> or a message's <c>source</c>.</summary>
+    private static (string? Model, string? Provider, string? Effort) ReadCallConfig(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return (null, null);
+            return default;
         }
 
-        string? model = null;
-        string? provider = null;
+        (string? Model, string? Provider, string? Effort) result = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
-            var isModel = reader.ValueTextEquals("model"u8);
-            var isProvider = !isModel && reader.ValueTextEquals("provider"u8);
-            reader.Read();
-            if (isModel)
+            if (reader.ValueTextEquals("model"u8))
             {
-                model = JsonScan.ReadString(ref reader);
+                reader.Read();
+                result.Model = JsonScan.ReadString(ref reader);
             }
-            else if (isProvider)
+            else if (reader.ValueTextEquals("provider"u8))
             {
-                provider = JsonScan.ReadString(ref reader);
+                reader.Read();
+                result.Provider = JsonScan.ReadString(ref reader);
+            }
+            else if (reader.ValueTextEquals("reasoningEffort"u8))
+            {
+                reader.Read();
+                result.Effort = JsonScan.ReadToken(ref reader);
             }
             else
             {
+                reader.Read();
                 JsonScan.SkipValue(ref reader);
             }
         }
 
-        return (model, provider);
+        return result;
     }
 
     /// <summary>A JSON number (not a boolean) as whole milliseconds, truncated toward zero.</summary>

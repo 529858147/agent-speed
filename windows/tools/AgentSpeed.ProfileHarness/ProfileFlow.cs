@@ -276,7 +276,7 @@ internal static class ProfileFlow
     {
         public Task<ReportHttpResponse> SendAsync(ReportRequest request, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default) => request.Url.IsLoopback
             ? inner.SendAsync(request, maxBytes, timeout, cancellationToken) : throw new InvalidOperationException("Only loopback is allowed.");
-        public Task<ReportHttpResponse> GetAsync(Uri url, string? etag, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+        public Task<ReportHttpResponse> GetAsync(Uri url, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default) =>
             SendAsync(new ReportRequest("GET", url, [new("User-Agent", userAgent), new("Accept", "application/json")], []), maxBytes, timeout, cancellationToken);
     }
     private sealed class Cleanup(Func<Task> cleanup) : IAsyncDisposable

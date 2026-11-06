@@ -4,7 +4,15 @@ enum ClaudeLineType: Sendable {
     case assistant
     case user
     case apiRequest
+    case attachment
     case other
+}
+
+/// `attachment.type` markers of ultracode (EXECUTION-MODES, Claude Code).
+enum ClaudeAttachment: Equatable, Sendable {
+    case ultraEffortEnter
+    case ultraEffortExit
+    case workflowKeywordRequest
 }
 
 enum ClaudeStopReason: Equatable, Sendable {
@@ -31,16 +39,24 @@ struct ClaudeLine: Equatable, Sendable {
     /// `message.usage.speed == "fast"` (METRICS 3.2).
     var fast = false
     var modes: ExecutionModes = .empty
+    /// The recorded effort of an assistant line: `perTurnEffort` when it is a string, else top-level `effort`.
+    var effort: ExecutionModeFact?
+    var attachment: ClaudeAttachment?
+    /// A user line a person typed (or an interrupt): not `isMeta`, string content or a `text` block.
+    var isPrompt = false
     /// A user line whose content starts with `[Request interrupted by user`.
     var isInterrupt = false
+    /// A user line with `toolEndsTurn == true`: the tool result ends the agent's run.
+    var toolEndsTurn = false
     /// `message.content` contains a block of type `tool_use`.
     var hasToolUse = false
 }
 
 /// Decodes the fields of a Claude transcript line that METRICS 4.1 needs. Conversation text is never captured.
 enum ClaudeLineExtractor {
-    private static let lineTypes: [StaticString] = ["assistant", "user", "api-request"]
+    private static let lineTypes: [StaticString] = ["assistant", "user", "api-request", "attachment"]
     private static let stopReasons: [StaticString] = ["pause_turn", "tool_use"]
+    private static let attachments: [StaticString] = ["ultra_effort_enter", "ultra_effort_exit", "workflow_keyword_request"]
     private static let interruptPrefix: StaticString = "[Request interrupted by user"
 
     static func extract(_ bytes: UnsafeRawBufferPointer) -> LineExtraction<ClaudeLine> {
@@ -48,6 +64,11 @@ enum ClaudeLineExtractor {
         if scanner.isBlank { return .blank }
         do {
             var line = ClaudeLine()
+            var isMeta = false
+            var hasPromptContent = false
+            // `.some(nil)`: a string too long to keep, which still wins over `effort` and gives no fact.
+            var perTurnEffort: String??
+            var effort: String??
             try scanner.beginObject()
             while let key = try scanner.nextMember() {
                 if scanner.key(key, is: "type") {
@@ -55,6 +76,7 @@ enum ClaudeLineExtractor {
                     case 0: line.type = .assistant
                     case 1: line.type = .user
                     case 2: line.type = .apiRequest
+                    case 3: line.type = .attachment
                     default: line.type = .other
                     }
                 } else if scanner.key(key, is: "timestamp") {
@@ -69,12 +91,22 @@ enum ClaudeLineExtractor {
                     line.cwd = try scanner.readNonEmptyString()
                 } else if scanner.key(key, is: "isSidechain") {
                     line.isSidechain = try scanner.readBool() ?? false
+                } else if scanner.key(key, is: "toolEndsTurn") {
+                    line.toolEndsTurn = try scanner.readBool() ?? false
+                } else if scanner.key(key, is: "isMeta") {
+                    isMeta = try scanner.readBool() ?? false
+                } else if scanner.key(key, is: "perTurnEffort") {
+                    perTurnEffort = try scanner.readStringValue()
+                } else if scanner.key(key, is: "effort") {
+                    effort = try scanner.readStringValue()
+                } else if scanner.key(key, is: "attachment") {
+                    line.attachment = try scanAttachment(&scanner)
                 } else if scanner.key(key, is: "requestId") {
                     line.requestId = try scanner.readNonEmptyString()
                 } else if scanner.key(key, is: "uuid") {
                     line.uuid = try scanner.readNonEmptyString()
                 } else if scanner.key(key, is: "message") {
-                    try scanMessage(&scanner, into: &line)
+                    hasPromptContent = try scanMessage(&scanner, into: &line)
                 } else {
                     try scanner.skipValue()
                 }
@@ -86,16 +118,26 @@ enum ClaudeLineExtractor {
                 line.uuid = nil
                 line.model = nil
             }
-            if line.type != .user { line.isInterrupt = false }
+            if line.type != .user {
+                line.isInterrupt = false
+                line.toolEndsTurn = false
+            }
             if line.type != .assistant { line.hasToolUse = false }
+            if line.type != .attachment { line.attachment = nil }
+            line.isPrompt = line.type == .user && !isMeta && hasPromptContent
+            if line.type == .assistant, let raw = perTurnEffort ?? effort {
+                line.effort = ExecutionModeAdapters.effort(raw, evidence: .recorded, scope: .request)
+            }
             return .line(line)
         } catch {
             return .malformed
         }
     }
 
-    private static func scanMessage(_ scanner: inout JSONScanner, into line: inout ClaudeLine) throws(JSONScanError) {
-        guard try scanner.beginObjectIfPresent() else { return }
+    /// Returns whether `content` is a string or has a `text` block.
+    private static func scanMessage(_ scanner: inout JSONScanner, into line: inout ClaudeLine) throws(JSONScanError) -> Bool {
+        guard try scanner.beginObjectIfPresent() else { return false }
+        var hasText = false
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "id") {
                 line.messageId = try scanner.readNonEmptyString()
@@ -114,11 +156,30 @@ enum ClaudeLineExtractor {
             } else if scanner.key(key, is: "usage") {
                 (line.usage, line.fast, line.modes) = try scanUsage(&scanner)
             } else if scanner.key(key, is: "content") {
-                (line.isInterrupt, line.hasToolUse) = try scanContent(&scanner)
+                (line.isInterrupt, line.hasToolUse, hasText) = try scanContent(&scanner)
             } else {
                 try scanner.skipValue()
             }
         }
+        return hasText
+    }
+
+    private static func scanAttachment(_ scanner: inout JSONScanner) throws(JSONScanError) -> ClaudeAttachment? {
+        guard try scanner.beginObjectIfPresent() else { return nil }
+        var marker: ClaudeAttachment?
+        while let key = try scanner.nextMember() {
+            guard scanner.key(key, is: "type") else {
+                try scanner.skipValue()
+                continue
+            }
+            switch try scanner.readStringMatch(attachments) {
+            case 0: marker = .ultraEffortEnter
+            case 1: marker = .ultraEffortExit
+            case 2: marker = .workflowKeywordRequest
+            default: marker = nil
+            }
+        }
+        return marker
     }
 
     private static func scanUsage(_ scanner: inout JSONScanner) throws(JSONScanError) -> (TokenUsage, fast: Bool, modes: ExecutionModes) {
@@ -177,18 +238,19 @@ enum ClaudeLineExtractor {
         return count
     }
 
-    /// Whether string content or any top-level `text` block starts with the interrupt marker, and whether any
-    /// top-level block is a `tool_use`.
-    private static func scanContent(_ scanner: inout JSONScanner) throws(JSONScanError) -> (interrupt: Bool, toolUse: Bool) {
+    /// Whether string content or any top-level `text` block starts with the interrupt marker, whether any
+    /// top-level block is a `tool_use`, and whether the content is a string or has a `text` block.
+    private static func scanContent(_ scanner: inout JSONScanner) throws(JSONScanError) -> (interrupt: Bool, toolUse: Bool, text: Bool) {
         if scanner.nextIsString {
-            return (try scanner.readStringHasPrefix(interruptPrefix) ?? false, false)
+            return (try scanner.readStringHasPrefix(interruptPrefix) ?? false, false, true)
         }
         guard try scanner.beginArrayIfPresent() else {
             try scanner.skipValue()
-            return (false, false)
+            return (false, false, false)
         }
         var interrupted = false
         var toolUse = false
+        var text = false
         while try scanner.nextElement() {
             guard try scanner.beginObjectIfPresent() else { continue }
             var blockType: Int?
@@ -202,9 +264,10 @@ enum ClaudeLineExtractor {
                     try scanner.skipValue()
                 }
             }
+            if blockType == 0 { text = true }
             if blockType == 0 && hasPrefix { interrupted = true }
             if blockType == 1 { toolUse = true }
         }
-        return (interrupted, toolUse)
+        return (interrupted, toolUse, text)
     }
 }

@@ -8,6 +8,8 @@ enum ReportStatus: Equatable {
     case networkOff
     case never
     case reporting(last: Date)
+    /// WebSocket: the last acknowledged report's time; never just a connected socket.
+    case streaming(last: Date)
     case idle
     case quiet
     case paused(until: Date)
@@ -24,6 +26,7 @@ enum ReportStatus: Equatable {
     /// The invitation did not cover the service's document; the consent sheet finishes it (REPORTING 3.3).
     case review
     case problem(ReportProblem)
+    case stream(ReportStreamIssue)
 
     enum Tone: Equatable {
         case green, gray, amber, red
@@ -31,11 +34,12 @@ enum ReportStatus: Equatable {
 
     var tone: Tone {
         switch self {
-        case .reporting: .green
+        case .reporting, .streaming: .green
         case .off, .networkOff, .never, .idle, .quiet, .paused, .pausedIndefinitely: .gray
         case .connecting, .registering, .retrying, .rateLimited, .registerFailed: .amber
         case .service(let issue): issue.isPermanent ? .red : .amber
         case .changed, .review, .problem: .red
+        case .stream(let issue): issue.isStop ? .red : .amber
         }
     }
 
@@ -57,12 +61,10 @@ enum ReportStatus: Equatable {
         case .off: return l10n("report.status.off")
         case .networkOff: return l10n("settings.network.offHint")
         case .never: return l10n("report.status.never")
-        case .reporting(let last):
-            let seconds = max(0, Int(now.timeIntervalSince(last).rounded(.down)))
-            let when = seconds < 60
-                ? l10n("time.secondsAgo", seconds)
-                : last.formatted(Date.RelativeFormatStyle(presentation: .named, unitsStyle: .wide).locale(l10n.locale))
-            return l10n("report.status.reporting", when)
+        case .reporting(let last): return l10n("report.status.reporting", Self.ago(last, l10n, now: now))
+        case .streaming(let last): return l10n("report.status.streaming", Self.ago(last, l10n, now: now))
+        case .stream(.reconnecting(let last?)): return l10n("report.status.wsReconnecting", Self.ago(last, l10n, now: now))
+        case .stream(let issue): return l10n(issue.key)
         case .idle: return l10n("report.status.idle")
         case .quiet: return l10n("report.status.quiet")
         case .paused(let until): return l10n("report.status.paused", Self.time(until, l10n))
@@ -86,6 +88,15 @@ enum ReportStatus: Equatable {
         case .amber: .orange
         case .red: .red
         }
+    }
+
+    /// Seconds for the last minute, then the relative time.
+    @MainActor
+    static func ago(_ date: Date, _ l10n: Localizer, now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date).rounded(.down)))
+        return seconds < 60
+            ? l10n("time.secondsAgo", seconds)
+            : date.formatted(Date.RelativeFormatStyle(presentation: .named, unitsStyle: .wide).locale(l10n.locale))
     }
 
     @MainActor

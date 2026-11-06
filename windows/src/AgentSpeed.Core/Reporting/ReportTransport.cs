@@ -70,9 +70,12 @@ public static class ReportFailures
 /// <summary>The network seam of live reporting; tests use a scripted transport or the reference server.</summary>
 public interface IReportTransport
 {
-    /// <summary>Discovery <c>GET</c> (REPORTING 3.1): <c>Accept</c>, <c>User-Agent</c>, <c>If-None-Match</c>; up to three <c>https</c> redirects.</summary>
+    /// <summary>
+    /// Discovery <c>GET</c> (REPORTING 3.1): <c>Accept</c> and <c>User-Agent</c> only — never <c>If-None-Match</c>, the document is
+    /// always fetched in full (NETWORK 6); up to three <c>https</c> redirects.
+    /// </summary>
     /// <exception cref="ReportTransportException">The request failed.</exception>
-    Task<ReportHttpResponse> GetAsync(Uri url, string? etag, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default);
+    Task<ReportHttpResponse> GetAsync(Uri url, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default);
 
     /// <summary>An API request: never redirected (a <c>3xx</c> comes back as the response).</summary>
     /// <exception cref="ReportTransportException">The request failed.</exception>
@@ -100,7 +103,7 @@ public sealed class HttpReportTransport : IReportTransport, IDisposable
         _http = new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
-    public async Task<ReportHttpResponse> GetAsync(Uri url, string? etag, string userAgent, int maxBytes, TimeSpan timeout,
+    public async Task<ReportHttpResponse> GetAsync(Uri url, string userAgent, int maxBytes, TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -113,10 +116,6 @@ public sealed class HttpReportTransport : IReportTransport, IDisposable
                 using var message = new HttpRequestMessage(HttpMethod.Get, current) { Version = HttpVersion.Version11 };
                 message.Headers.TryAddWithoutValidation("User-Agent", userAgent);
                 message.Headers.TryAddWithoutValidation("Accept", "application/json");
-                if (etag is { Length: > 0 and <= 512 } && etag.All(c => c is >= ' ' and <= '~'))
-                {
-                    message.Headers.TryAddWithoutValidation("If-None-Match", etag);
-                }
 
                 using var response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;

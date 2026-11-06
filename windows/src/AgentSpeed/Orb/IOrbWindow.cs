@@ -45,16 +45,16 @@ internal interface IOrbSurface
     void SetHover(bool hovering);
 
     /// <summary>
-    /// One traffic sample for the readout (DESIGN 10): <paramref name="enabled"/> is the orb's readout setting with measuring
-    /// on, <paramref name="rate"/> the rate it shows (null: nothing to show).
+    /// One sample for the two-line readout (DESIGN 10): <paramref name="enabled"/> is the orb's readout setting where it can
+    /// show, <paramref name="sample"/> what it shows (null: nothing to show).
     /// </summary>
-    void SetTraffic(Core.Traffic.TrafficRate? rate, bool bits, bool enabled);
+    void SetLines(Presentation.Orb.Lines.OrbLinesSample? sample, bool enabled);
 
-    /// <summary>The traffic readout is visible now (the accessible label reads it).</summary>
-    bool TrafficVisible { get; }
+    /// <summary>The two-line readout is visible now (the accessible label and the tooltip read it).</summary>
+    bool LinesVisible { get; }
 
-    /// <summary>What the traffic readout shows, or null.</summary>
-    Presentation.Orb.Traffic.OrbTrafficReading? TrafficReading { get; }
+    /// <summary>What the two-line readout shows, or null.</summary>
+    Presentation.Orb.Lines.OrbLinesReading? LinesReading { get; }
 
     void Pulse(double speed, long outputTokens);
 
@@ -133,6 +133,9 @@ internal interface IOrbWindow
 
     /// <summary>The tooltip of the unit's hit area (<c>orbs.unit.toggleHint</c>, DESIGN 9 Switching).</summary>
     void SetUnitHint(string hint);
+
+    /// <summary>The tooltip of the rest of the disc (the intelligence readout's lines, DESIGN 10); null for none.</summary>
+    void SetDiscHint(string? hint);
 
     /// <summary>A click on the unit toggled it (after the double-click interval): the owner switches the orb's unit.</summary>
     event EventHandler? UnitToggleRequested;

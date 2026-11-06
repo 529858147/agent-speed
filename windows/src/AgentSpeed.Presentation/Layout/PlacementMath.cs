@@ -116,35 +116,25 @@ public static class PlacementMath
     }
 
     /// <summary>
-    /// Taskbar widget rectangle in taskbar client coordinates: immediately before the notification area along
-    /// the taskbar, spanning its thickness. Returns null when there is not enough room.
+    /// Taskbar widget rectangle in screen pixels (DESIGN 3, Position on the taskbar): its trailing edge
+    /// <paramref name="gap"/> plus <paramref name="offset"/> before the notification area (left of it, or above it when
+    /// vertical), spanning the taskbar's thickness. The offset is limited as <see cref="TaskbarWidgetOffset"/> says;
+    /// null when even the default spot lacks room.
     /// </summary>
-    public static RectD? TaskbarWidget(RectD taskbar, RectD tray, double length, double gap, bool vertical)
+    public static RectD? TaskbarWidget(RectD taskbar, RectD tray, double length, double gap, bool vertical, double offset = 0)
     {
-        if (taskbar.IsEmpty || length <= 0)
+        if (TaskbarWidgetOffset(taskbar, tray, length, gap, vertical, offset) is not { } shift)
         {
             return null;
         }
 
+        var end = TaskbarWidgetEnd(taskbar, tray, gap, vertical) - shift;
         if (vertical)
         {
-            var bottom = tray.IsEmpty ? taskbar.Bottom : tray.Y - gap;
-            var top = bottom - length;
-            if (top < taskbar.Y + taskbar.Height * 0.25)
-            {
-                return null;
-            }
-
-            return new RectD(taskbar.X, Math.Round(top), taskbar.Width, Math.Round(length));
+            return new RectD(taskbar.X, Math.Round(end - length), taskbar.Width, Math.Round(length));
         }
 
-        var right = tray.IsEmpty ? taskbar.Right : tray.X - gap;
-        var left = right - length;
-        if (left < taskbar.X + taskbar.Width * 0.25)
-        {
-            return null;
-        }
-
+        var left = end - length;
         var y = taskbar.Y;
         var h = taskbar.Height;
         if (!tray.IsEmpty && tray.Height > 0 && tray.Height < taskbar.Height)
@@ -155,6 +145,36 @@ public static class PlacementMath
 
         return new RectD(Math.Round(left), y, Math.Round(length), h);
     }
+
+    /// <summary>
+    /// The offset (whole pixels) the taskbar widget takes for a requested one: from 0 (the default spot) up to where its
+    /// far edge reaches the first <see cref="TaskbarPosition.ReservedStart"/> of the taskbar, which stays clear for a
+    /// left-aligned Start button and the first app buttons. Null when the widget does not fit even at the default spot.
+    /// </summary>
+    public static double? TaskbarWidgetOffset(RectD taskbar, RectD tray, double length, double gap, bool vertical, double offset)
+    {
+        if (taskbar.IsEmpty || !(length > 0) || !double.IsFinite(length))
+        {
+            return null;
+        }
+
+        var limit = vertical
+            ? taskbar.Y + taskbar.Height * TaskbarPosition.ReservedStart
+            : taskbar.X + taskbar.Width * TaskbarPosition.ReservedStart;
+        var room = TaskbarWidgetEnd(taskbar, tray, gap, vertical) - length - limit;
+        if (!(room >= 0))
+        {
+            return null;
+        }
+
+        var requested = double.IsFinite(offset) ? Math.Round(offset, MidpointRounding.AwayFromZero) : 0;
+        return Math.Clamp(requested, 0, Math.Floor(room));
+    }
+
+    /// <summary>The widget's trailing edge at the default spot: the gap before the notification area, else the taskbar's end.</summary>
+    private static double TaskbarWidgetEnd(RectD taskbar, RectD tray, double gap, bool vertical) => vertical
+        ? tray.IsEmpty ? taskbar.Bottom : tray.Y - gap
+        : tray.IsEmpty ? taskbar.Right : tray.X - gap;
 
     private static double ClampAxis(double value, double min, double max) =>
         min > max ? (min + max) / 2 : Math.Clamp(value, min, max);

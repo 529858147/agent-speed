@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排行看板 · 計時塔</title>
+<style>
+  /* Direction B — 計時塔: a racing broadcast timing tower. A dark slab, position blocks, team stripes in source colors,
+     an interval column, and kinetic, broadcast-style transitions when someone overtakes. */
+  :root {
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang TC",
+          "Microsoft JhengHei", system-ui, sans-serif;
+    --disp: "SF Pro Display", -apple-system, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --mono: "SF Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --gold: #FACC15; --purple: #A855F7; --green: #22C55E; --red: #EF4444; --amber: #F5A524;
+  }
+  [data-theme="dark"] {
+    --stage: #07080c; --slab: #0c0e14; --slab-2: #12151d; --edge: rgba(255,255,255,.09);
+    --ink: #f5f7fb; --ink-2: rgba(232,236,245,.66); --ink-3: rgba(232,236,245,.36);
+    --block: #1b1f2a; --block-ink: #e8ecf5; --line: rgba(255,255,255,.06); --hatch: rgba(255,255,255,.025);
+    --unlit: rgba(255,255,255,.16); --fill: rgba(255,255,255,.05); --amber-ink: #F5A524; color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --stage: #e9ecf2; --slab: #fbfbfd; --slab-2: #f1f3f7; --edge: rgba(0,0,0,.08);
+    --ink: #0e1118; --ink-2: rgba(14,17,24,.62); --ink-3: rgba(14,17,24,.38);
+    --block: #e6e9f0; --block-ink: #1a1e28; --line: rgba(0,0,0,.06); --hatch: rgba(0,0,0,.025);
+    --unlit: rgba(0,0,0,.14); --fill: rgba(0,0,0,.045); --amber-ink: #B86E00; color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: var(--ui); background: var(--stage); color: var(--ink); overflow: hidden;
+         background-image: radial-gradient(900px 600px at 50% 40%, color-mix(in oklab, var(--slab-2) 60%, transparent), transparent 70%); }
+  .controls { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 14px; flex-wrap: wrap;
+              justify-content: center; align-items: center; padding: 8px 12px; border-radius: 12px; font-size: 12px;
+              color: var(--ink-2); background: var(--fill); border: 1px solid var(--line); max-width: calc(100vw - 24px); }
+  .seg { display: inline-flex; background: var(--fill); border-radius: 8px; padding: 2px; }
+  .seg button, .controls > button { font: inherit; color: inherit; background: none; border: 0; padding: 4px 9px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--block); color: var(--ink); }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+  /* ── Panel ───────────────────────────────────────────────────────────────────────── */
+  .panel { --w: 340px; --h: 340px; --pad: 14px; --row: 30px; --sub: 21px; --hero: 78px; --big: 36px;
+           position: fixed; left: calc(50% - var(--w) / 2); top: calc(46% - var(--h) / 2); width: var(--w); height: var(--h);
+           border-radius: 20px; overflow: hidden; isolation: isolate; background: var(--slab); cursor: grab; user-select: none;
+           box-shadow: 0 0 0 1px var(--edge), 0 28px 70px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+           transition: width .4s cubic-bezier(.2,.9,.2,1), height .4s cubic-bezier(.2,.9,.2,1), left .4s, top .4s; }
+  .panel[data-size="S"] { --w: 280px; --h: 280px; --pad: 12px; --hero: 70px; --big: 30px; }
+  .panel[data-size="L"] { --w: 420px; --h: 420px; --pad: 16px; --row: 32px; --sub: 22px; --hero: 86px; --big: 42px; }
+  .panel::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+                   background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 7px); }
+  /* Heat rail along the top edge: the whole tower's temperature at a glance. */
+  .rail { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--line); }
+  .rail i { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: left; transform: scaleX(var(--heat-amount, 0));
+            background: linear-gradient(90deg, #2DD4BF, #818CF8 40%, #FB7185 75%, #FACC15); transition: transform .6s cubic-bezier(.2,.9,.2,1);
+            box-shadow: 0 0 10px color-mix(in oklab, var(--heat) 70%, transparent); }
+
+  .hero { position: absolute; left: var(--pad); right: var(--pad); top: calc(var(--pad) + 2px); height: var(--hero);
+          display: grid; grid-template-columns: 1fr auto; align-items: center; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font: 700 10px/1 var(--disp); letter-spacing: .14em; color: var(--ink-2); }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 0 rgba(239,68,68,.6); animation: live 1.6s ease-out infinite; }
+  .live.idle i { background: var(--ink-3); animation: none; }
+  @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); } 100% { box-shadow: 0 0 0 7px rgba(239,68,68,0); } }
+  .rm .live i { animation: none; }
+  .value { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }
+  .num { font: 800 var(--big)/1 var(--mono); letter-spacing: -.04em; display: inline-flex; height: 1.08em; overflow: hidden; }
+  .num .slot { position: relative; display: inline-block; height: 1em; }
+  .num .ch { display: inline-block; transition: transform .22s cubic-bezier(.3,1.4,.4,1), opacity .18s; }
+  .num .ch.out { position: absolute; left: 0; top: 0; filter: blur(1px); }
+  .num .ch.in { animation: tin .55s cubic-bezier(.3,1.3,.4,1); }
+  .num .ch.in.hot { animation: thot .8s cubic-bezier(.3,1.3,.4,1); }
+  @keyframes tin { 0% { filter: blur(1.4px); } 40% { filter: none; } }
+  @keyframes thot { 0% { filter: blur(1.4px); color: var(--green); text-shadow: 0 0 12px rgba(34,197,94,.8); } 50% { color: var(--green); } 100% { text-shadow: none; } }
+  .num.punch { animation: tpunch .38s cubic-bezier(.3,1.6,.4,1); transform-origin: left 80%; }
+  @keyframes tpunch { 35% { transform: scale(1.07) skewX(-4deg); } }
+  .speed.up .v { animation: tvu .7s ease-out; display: inline-block; }
+  .speed.down .v { animation: tvd .7s ease-out; display: inline-block; }
+  @keyframes tvu { 0% { color: var(--green); transform: translateY(-2px); text-shadow: 0 0 8px rgba(34,197,94,.7); } }
+  @keyframes tvd { 0% { color: var(--red); transform: translateY(2px); } }
+  .rm .num .ch.in, .rm .num.punch, .rm .speed .v { animation: none !important; }
+  .unit { font: 600 11px/1 var(--mono); color: var(--ink-3); letter-spacing: .04em; }
+  .meta { margin-top: 7px; display: flex; gap: 7px; align-items: center; font: 600 10.5px/1 var(--mono); color: var(--ink-3); letter-spacing: .03em; white-space: nowrap; }
+  .tpill { font: 700 11px/1 var(--ui); padding: 3px 7px; border-radius: 5px; color: #0b0d12; background: var(--heat); letter-spacing: .04em;
+           transition: background .6s; }
+  .tpill.swap { animation: tswap .4s cubic-bezier(.3,1.4,.4,1); }
+  @keyframes tswap { from { transform: scale(.7); opacity: 0; } }
+  .bars { display: flex; align-items: flex-end; gap: 2px; height: 38px; }
+  .bars i { width: 3px; border-radius: 1px; background: var(--heat); opacity: .85; transition: height .3s ease, background .6s; }
+  .panel[data-size="S"] .bars i:nth-child(-n+10) { display: none; }
+
+  /* NEW LEADER banner: slides across the bottom of the hero. */
+  .banner { position: absolute; left: 0; right: 0; top: calc(var(--pad) + var(--hero) - 14px); height: 22px; z-index: 6; pointer-events: none;
+            display: flex; align-items: center; gap: 8px; padding-left: var(--pad); font: 800 11px/1 var(--disp); letter-spacing: .16em;
+            color: #120d00; background: linear-gradient(90deg, var(--gold), #fff1a8 40%, var(--gold) 70%, transparent);
+            clip-path: inset(0 100% 0 0); }
+  .banner.go { animation: banner 1.9s cubic-bezier(.2,.9,.2,1); }
+  @keyframes banner { 0% { clip-path: inset(0 100% 0 0); } 18%, 78% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 100%); } }
+  .banner b { font-family: var(--ui); letter-spacing: .02em; font-weight: 750; }
+
+  .board { position: absolute; left: calc(var(--pad) - 4px); right: calc(var(--pad) - 4px); top: calc(var(--pad) + var(--hero) + 8px);
+           bottom: 32px; overflow: hidden; }
+  .item { position: absolute; left: 0; right: 0; top: 0; will-change: transform, opacity; transition: opacity .25s; }
+  .item.gone { opacity: 0; }
+  .row { height: var(--row); display: grid; align-items: center; column-gap: 7px; padding: 0 4px; position: relative;
+         grid-template-columns: 24px 3px minmax(0,1fr) var(--capw, auto) 38px 46px; }
+  .group .row { border-bottom: 1px solid var(--line); }
+  .pos { width: 24px; height: 22px; border-radius: 5px; background: var(--block); color: var(--block-ink); display: grid; place-items: center;
+         font: 800 12px/1 var(--mono); overflow: hidden; position: relative; transition: background .3s, color .3s; }
+  .pos span { display: block; transition: transform .32s cubic-bezier(.3,1.3,.4,1); }
+  .lead .pos { background: linear-gradient(160deg, #fff1a8, var(--gold) 45%, #d49b00); color: #241a00; box-shadow: 0 0 12px rgba(250,204,21,.35); }
+  .pos.up { animation: posUp .9s ease-out; }
+  @keyframes posUp { 0% { background: var(--green); color: #04130a; } 100% { } }
+  .stripe { width: 3px; height: 18px; border-radius: 2px; background: var(--src); box-shadow: 0 0 6px color-mix(in oklab, var(--src) 60%, transparent); }
+  .gen .stripe { animation: stripe 1.1s ease-in-out infinite; }
+  @keyframes stripe { 50% { opacity: .45; } }
+  .rm .gen .stripe { animation: none; }
+  .name { min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .name b { font: 700 12.5px/1.2 var(--disp); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 22px; letter-spacing: .005em; }
+  .name small { font: 600 10px/1 var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; letter-spacing: .02em; }
+  .gap { font: 600 10.5px/1 var(--mono); color: var(--ink-3); text-align: right; white-space: nowrap; }
+  .lead .gap { color: var(--gold); font-weight: 800; letter-spacing: .08em; font-size: 9.5px; }
+  .speed { font: 800 13px/1 var(--mono); text-align: right; letter-spacing: -.02em; position: relative; }
+  .speed.dim { color: var(--ink-3); font-weight: 600; }
+  .speed .fl { position: absolute; left: -9px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--purple);
+               box-shadow: 0 0 8px var(--purple); opacity: 0; transition: opacity .3s; }
+  .fastest .speed .fl { opacity: 1; }
+  .sub .row { height: var(--sub); grid-template-columns: 24px 3px minmax(0,1fr) var(--capw, auto) 38px 46px; }
+  .sub .pos { visibility: hidden; }
+  .sub .stripe { height: 10px; width: 2px; opacity: .7; margin-left: 1px; }
+  .sub .name { padding-left: 10px; position: relative; }
+  .sub .name::before { content: ""; position: absolute; left: 0; top: 50%; width: 6px; border-top: 1px solid var(--ink-3); opacity: .6; }
+  .sub .name b { font: 600 11px/1.2 var(--ui); color: var(--ink-2); }
+  .sub .speed { font-size: 11px; color: var(--ink-2); font-weight: 700; }
+  .more .row { height: 19px; grid-template-columns: 24px 3px minmax(0,1fr) 46px; }
+  .more .name { padding-left: 10px; font: 600 10px/1 var(--mono); color: var(--ink-3); letter-spacing: .03em; }
+  .more .speed { font-size: 10.5px; color: var(--ink-3); font-weight: 700; }
+
+  /* Overtake: a broadcast wipe across the row in the climber's source color. */
+  .wipe { position: absolute; inset: 1px 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+          background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--src) 55%, transparent) 45%, rgba(255,255,255,.55) 50%, transparent 56%);
+          background-size: 300% 100%; }
+  [data-theme="light"] .wipe { mix-blend-mode: multiply; background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--src) 35%, transparent) 48%, transparent 56%); background-size: 300% 100%; }
+  .wipe.go { animation: wipe .7s cubic-bezier(.2,.8,.2,1); }
+  @keyframes wipe { 0% { opacity: 1; background-position: 120% 0; } 100% { opacity: 1; background-position: -40% 0; } }
+  .delta { position: absolute; right: 92px; top: 50%; margin-top: -8px; height: 16px; padding: 0 5px; border-radius: 4px; display: grid; place-items: center;
+           font: 800 10px/1 var(--mono); color: #04130a; background: var(--green); opacity: 0; transform: translateX(6px); pointer-events: none; }
+  .delta.go { animation: delta 1.5s cubic-bezier(.2,.9,.2,1); }
+  @keyframes delta { 0% { opacity: 0; transform: translateX(8px); } 12%, 70% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateX(-4px); } }
+
+  /* Effort capsule (DESIGN 4, Agents), compact tower variant: square-cornered chip. */
+  .cap { height: 17px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; padding: 0 5px; background: var(--fill);
+         box-shadow: inset 0 0 0 1px var(--line); justify-self: stretch; }
+  .cap.none { opacity: 0; }
+  .meter { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+  .meter i { width: 2.5px; border-radius: .5px; background: var(--unlit); transition: background .22s; }
+  .meter i:nth-child(1) { height: 4px; } .meter i:nth-child(2) { height: 5.5px; } .meter i:nth-child(3) { height: 7px; }
+  .meter i:nth-child(4) { height: 8.5px; } .meter i:nth-child(5) { height: 10px; }
+  .meter i.on { background: var(--ink-2); }
+  .cap.max .meter i.on { background: var(--maxc); }
+  .cap.top .meter i.on { background: linear-gradient(0deg, var(--topa), var(--topb)); box-shadow: 0 0 3px color-mix(in oklab, var(--topb) 55%, transparent); }
+  .word { font: 700 10px/1 var(--mono); color: var(--ink-2); letter-spacing: .02em; text-transform: uppercase; }
+  .cap.max .word { color: var(--maxc); }
+  .cap.top .word { background: linear-gradient(90deg, var(--topa), var(--topb)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bolts { display: inline-flex; margin-left: auto; }
+  .bolts svg { width: 8px; height: 10px; fill: var(--amber-ink); }
+  .bolts svg + svg { margin-left: -3px; }
+  .bolts svg:first-child:not(:only-child) { opacity: .6; }
+  .bolts:empty { display: none; }
+  .panel[data-size="S"] .word, .panel[data-size="S"] .gap { display: none; }
+  .panel[data-size="S"] .row { grid-template-columns: 24px 3px minmax(0,1fr) var(--capw, auto) 0 44px; }
+
+  .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 28px; display: flex; align-items: center; justify-content: space-between;
+          padding: 0 var(--pad); font: 700 10px/1 var(--mono); color: var(--ink-3); letter-spacing: .06em; border-top: 1px solid var(--line);
+          background: var(--slab-2); }
+  .foot b { color: var(--ink-2); }
+  .panel[data-size="S"] .foot .peak { display: none; }
+</style>
+</head>
+<body data-theme="dark">
+<section class="panel" id="panel" data-size="M" aria-label="排行看板">
+  <div class="rail"><i></i></div>
+  <div class="hero">
+    <div>
+      <span class="live" id="live"><i></i>LIVE</span>
+      <div class="value"><span class="num" id="num"></span><span class="unit">TOK/S</span></div>
+      <div class="meta"><span class="tpill" id="title"></span><span id="counts"></span></div>
+    </div>
+    <div class="bars" id="bars" aria-hidden="true"></div>
+  </div>
+  <div class="banner" id="banner">NEW LEADER <b id="bannerName"></b></div>
+  <div class="board" id="board" role="list"></div>
+  <div class="foot"><span>TODAY <b id="today"></b></span><span><b id="cost"></b></span><span class="peak">PEAK <b id="peak"></b></span></div>
+</section>
+
+<div class="controls">
+  <span class="seg" id="scenarios"><button data-v="swarm" aria-pressed="true">100 子 agent</button><button data-v="team">團隊</button>
+    <button data-v="duel">對決</button><button data-v="calm">安靜</button></span>
+  <span class="seg" id="sizes"><button data-v="S">S</button><button data-v="M" aria-pressed="true">M</button><button data-v="L">L</button></span>
+  <span class="seg" id="themes"><button data-v="dark" aria-pressed="true">深色</button><button data-v="light">淺色</button></span>
+  <label><input type="checkbox" id="rm"> 減少動態</label>
+  <button id="pause">暫停</button><button id="step">單步</button>
+</div>
+
+<script src="sim.js"></script>
+<script src="fx.js"></script>
+<script>
+(() => {
+  "use strict";
+  const S = window.AgentSim;
+  const $ = (id) => document.getElementById(id);
+  const panel = $("panel"), board = $("board");
+  const fx = window.BoardFX.create(panel, { radius: 20, comets: [1, 1, 2, 2, 3], ringWidth: 1.2 });
+  const center = (el) => { const p = panel.getBoundingClientRect(), r = el.getBoundingClientRect();
+                           return [r.left - p.left + r.width / 2, r.top - p.top + r.height / 2, r]; };
+  const LIMITS = { S: { groups: 4, subs: [0, 0, 0, 0] }, M: { groups: 6, subs: [2, 1, 1] }, L: { groups: 8, subs: [3, 3, 3, 2, 2] } };
+  const BOX = { S: [280, 12, 70], M: [340, 14, 78], L: [420, 16, 86] };
+  const BOLT = '<svg viewBox="0 0 8 10"><path d="M4.8 0 0.6 5.6h2.7L2.6 10 7.4 4.1H4.6z"/></svg>';
+  let size = "M", reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches, last = null, lastTotal = 0;
+  $("rm").checked = reduceMotion; document.body.classList.toggle("rm", reduceMotion);
+  const barsEl = $("bars");
+  for (let i = 0; i < 30; i++) barsEl.appendChild(document.createElement("i"));
+
+  let shownNum = "";
+  function setNumber(text, up) {
+    const el = $("num");
+    if (text === shownNum) return;
+    const old = shownNum; shownNum = text;
+    if (reduceMotion || old.length !== text.length) { el.innerHTML = [...text].map(c => `<span class="slot"><span class="ch">${c}</span></span>`).join(""); return; }
+    [...text].forEach((c, i) => {
+      if (old[i] === c) return;
+      const slot = el.children[i], prev = slot.querySelector(".ch:not(.out)"), next = document.createElement("span");
+      next.className = "ch in" + (up ? " hot" : ""); next.textContent = c; next.style.transform = `translateY(${up ? 100 : -100}%)`; next.style.opacity = "0";
+      if (prev) prev.classList.add("out");
+      slot.appendChild(next);
+      requestAnimationFrame(() => { next.style.transform = ""; next.style.opacity = ""; if (prev) { prev.style.transform = `translateY(${up ? -100 : 100}%)`; prev.style.opacity = "0"; } });
+      setTimeout(() => prev && prev.remove(), 260);
+    });
+  }
+
+  function capsule() {
+    const el = document.createElement("span");
+    el.className = "cap none";
+    el.innerHTML = '<span class="meter"><i></i><i></i><i></i><i></i><i></i></span><span class="word"></span><span class="bolts"></span>';
+    return el;
+  }
+  function paintCapsule(el, agent) {
+    const e = agent.effort, bolts = agent.bolts, key = (e ? e.value : "-") + "/" + bolts;
+    if (el.dataset.key === key) return;
+    el.dataset.key = key;
+    const meter = el.querySelector(".meter");
+    el.classList.toggle("none", !e && !bolts);
+    el.classList.toggle("max", !!e && e.value === "max");
+    el.classList.toggle("top", !!e && e.top);
+    meter.style.display = e && e.level !== null ? "" : "none";
+    [...meter.children].forEach((bar, i) => {
+      const on = !!e && e.level > i;
+      if (bar.classList.contains("on") === on) return;
+      bar.style.transitionDelay = reduceMotion ? "0ms" : (on ? i : 4 - i) * 30 + "ms";
+      bar.classList.toggle("on", on);
+    });
+    el.querySelector(".word").textContent = e ? e.value : "";
+    el.querySelector(".word").style.display = e ? "" : "none";
+    el.querySelector(".bolts").innerHTML = BOLT.repeat(bolts);
+  }
+
+  const items = new Map();
+  function makeItem(kind) {
+    const el = document.createElement("div");
+    el.className = "item " + kind; el.setAttribute("role", "listitem");
+    el.innerHTML = kind === "more"
+      ? '<div class="row"><span></span><span></span><span class="name"></span><span class="speed"></span></div>'
+      : '<div class="row"><span class="wipe"></span><span class="pos"><span></span></span><span class="stripe"></span><span class="name"><b></b><small></small></span>' +
+        '<span class="capslot"></span><span class="gap"></span><span class="speed"><i class="fl"></i><span class="v"></span></span><span class="delta"></span></div>';
+    if (kind !== "more") el.querySelector(".capslot").replaceWith(capsule());
+    el.style.opacity = "0";
+    board.appendChild(el);
+    return { el, kind, y: null, target: 0, v: 0, alive: true };
+  }
+
+  function paintRow(it, agent, o) {
+    const el = it.el, row = el.firstElementChild;
+    el.dataset.id = o.id;
+    row.style.setProperty("--src", agent.sourceColor);
+    row.classList.toggle("gen", o.generating);
+    row.querySelector(".name b").textContent = o.name;
+    row.querySelector(".name small").textContent = o.detail;
+    const sp = row.querySelector(".speed"), v = sp.querySelector(".v");
+    const before = Number(sp.dataset.v || 0), nextText = o.live > 0.05 ? S.formatSpeed(o.live) : "–";
+    sp.dataset.v = o.live;
+    if (!reduceMotion && v.textContent && v.textContent !== nextText && before > 0.05) {
+      const cls = o.live > before * 1.05 ? "up" : o.live < before * 0.95 ? "down" : null;
+      if (cls) { sp.classList.remove("up", "down"); void sp.offsetWidth; sp.classList.add(cls); }
+    }
+    v.textContent = nextText;
+    sp.classList.toggle("dim", !(o.live > 0.05));
+    el.classList.toggle("fastest", !!o.fastest);
+    paintCapsule(row.querySelector(".cap"), agent);
+    row.querySelector(".gap").textContent = o.gap || "";
+    if (o.rank !== undefined) {
+      const p = row.querySelector(".pos span");
+      if (p.textContent !== String(o.rank)) {
+        const prev = Number(p.textContent) || o.rank;
+        if (!reduceMotion && p.textContent) { p.style.transition = "none"; p.style.transform = `translateY(${o.rank < prev ? 110 : -110}%)`;
+          requestAnimationFrame(() => { p.style.transition = ""; p.style.transform = ""; }); }
+        p.textContent = o.rank;
+      }
+      el.classList.toggle("lead", o.rank === 1);
+    }
+  }
+
+  function accent(it, ev, name) {
+    if (reduceMotion) return;
+    const row = it.el.firstElementChild;
+    const wipe = row.querySelector(".wipe"), pos = row.querySelector(".pos"), delta = row.querySelector(".delta");
+    for (const el of [wipe, pos, delta]) el.classList.remove("go", "up");
+    void row.offsetWidth;
+    wipe.classList.add("go"); pos.classList.add("up");
+    delta.textContent = "▲" + (ev.from - ev.to); delta.classList.add("go");
+    const [, y, r] = center(row), p = panel.getBoundingClientRect();
+    const src = getComputedStyle(row).getPropertyValue("--src").trim() || "#ffffff";
+    fx.streak(r.left - p.left, y, r.right - p.left, src);
+    const [px, py] = center(pos);
+    if (ev.type === "newLeader") {
+      $("bannerName").textContent = name; const b = $("banner"); b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
+      fx.celebrate(px, py);
+    } else {
+      fx.burst(px, py, { count: 12, speed: 130, life: .6, colors: ["#22C55E", "#FFFFFF"], size: 1.4, gravity: 50 });
+    }
+  }
+
+  function layout(snap) {
+    const lim = LIMITS[size], box = BOX[size];
+    const rowH = parseFloat(getComputedStyle(panel).getPropertyValue("--row")), subH = parseFloat(getComputedStyle(panel).getPropertyValue("--sub"));
+    const room = box[0] - (box[1] + box[2] + 8) - 32 - 6;
+    const all = snap.groups;
+    let groups = all.slice(0, lim.groups);
+    const restRow = () => all.length > groups.length ? 19 : 0;
+    while (groups.length > 1 && groups.length * rowH + restRow() > room) groups = groups.slice(0, -1);
+    let free = room - groups.length * rowH - restRow();
+    const plan = groups.map((g, i) => ({ g, subs: g.subs.filter(s => s.live > 0.05).slice(0, lim.subs[i] || 0), more: false }));
+    for (const p of plan) {
+      const keep = [];
+      for (const s of p.subs) {
+        const needMore = p.g.subs.length - keep.length - 1 > 0 && !p.more ? 19 : 0;
+        if (free >= subH + needMore) { keep.push(s); free -= subH; if (needMore) { p.more = true; free -= 19; } }
+      }
+      if (p.more && keep.length === p.g.subs.length) { p.more = false; free += 19; }
+      p.subs = keep;
+    }
+    const list = [];
+    let y = 0;
+    for (const p of plan) {
+      list.push({ key: p.g.id, kind: "group", g: p.g, h: rowH, y }); y += rowH;
+      for (const s of p.subs) { list.push({ key: s.id, kind: "sub", g: p.g, s, h: subH, y }); y += subH; }
+      if (p.more) { list.push({ key: p.g.id + "#more", kind: "more", g: p.g, rest: p.g.subs.length - p.subs.length, h: 19, y }); y += 19; }
+    }
+    const hidden = all.slice(groups.length);
+    if (hidden.length) list.push({ key: "#rest", kind: "more", groups: true, rest: hidden.length, restLive: hidden.reduce((s, g) => s + g.live, 0), h: 19, y });
+    return list;
+  }
+
+  function render(snap, instant) {
+    last = snap;
+    const total = snap.total;
+    setNumber(S.formatSpeed(total.live), total.live >= lastTotal);
+    if (!reduceMotion && lastTotal && total.live > lastTotal * 1.08 + 20) {
+      const n = $("num"); n.classList.remove("punch"); void n.offsetWidth; n.classList.add("punch");
+      const [x, y, r] = center(n);
+      fx.burst(x + r.width / 2, y, { count: 10, speed: 150, angle: 0, spread: 0.7, life: .6, gravity: 0, drag: 2.2,
+                                    colors: [S.heatColor(Math.min(1, total.heat + .1)), "#FFFFFF"], size: 1.3 });
+    }
+    lastTotal = total.live;
+    fx.setHeat(total.heat, total.overdrive);
+    panel.style.setProperty("--heat", S.heatColor(Math.max(0.1, total.heat)));
+    panel.style.setProperty("--heat-amount", total.heat.toFixed(3));
+    panel.style.setProperty("--maxc", S.heatColor(0.82));
+    panel.style.setProperty("--topa", S.heatColor(0.72));
+    panel.style.setProperty("--topb", S.heatColor(1));
+    $("live").classList.toggle("idle", total.generating === 0);
+    const t = $("title");
+    if (t.dataset.key !== total.title.key) { t.dataset.key = total.title.key; t.textContent = total.title.zh; if (!reduceMotion) { t.classList.remove("swap"); void t.offsetWidth; t.classList.add("swap"); } }
+    $("counts").textContent = `GEN ${total.generating} · TOOL ${total.tools}`;
+    $("today").textContent = S.formatSpeed(total.today) + " TOK";
+    $("cost").textContent = "$" + total.cost.toFixed(2);
+    $("peak").textContent = S.formatSpeed(total.peak);
+    const hist = snap.history.slice(-30), max = Math.max(10, ...hist);
+    [...barsEl.children].forEach((b, i) => { const v = hist[i - (30 - hist.length)] || 0; b.style.height = Math.max(2, v / max * 38) + "px"; });
+
+    // The single fastest agent anywhere gets the purple "fastest" dot, like a fastest lap.
+    let fastest = null;
+    for (const g of snap.groups) for (const a of [g.root, ...g.subs]) if (!fastest || a.live > fastest.live) fastest = a;
+
+    const list = layout(snap), seen = new Set();
+    const leader = snap.groups[0];
+    for (const entry of list) {
+      seen.add(entry.key);
+      let it = items.get(entry.key);
+      const fresh = !it;
+      if (fresh) { it = makeItem(entry.kind); items.set(entry.key, it); }
+      it.alive = true; it.el.classList.remove("gone");
+      if (entry.kind === "group") {
+        const g = entry.g, r = g.root, i = snap.groups.indexOf(g);
+        const ahead = i > 0 ? snap.groups[i - 1] : null;
+        const gap = !ahead ? "LEADER" : (ahead.live - g.live >= 0 ? "−" : "+") + S.formatSpeed(Math.abs(ahead.live - g.live));
+        paintRow(it, r, { id: g.id, live: g.live, rank: g.rank, generating: g.generating > 0, name: r.project,
+                          detail: g.subs.length ? `${r.model} · ${g.subs.length} 子` : r.model, gap, fastest: fastest === r });
+      } else if (entry.kind === "sub") {
+        paintRow(it, entry.s, { id: entry.s.id, live: entry.s.live, generating: entry.s.phase === "generating", name: entry.s.label, detail: "", gap: "", fastest: fastest === entry.s });
+      } else {
+        const row = it.el.firstElementChild;
+        const restLive = entry.groups ? entry.restLive : entry.g.subs.slice(entry.g.subs.length - entry.rest).reduce((s, a) => s + a.live, 0);
+        row.querySelector(".name").textContent = entry.groups ? `還有 ${entry.rest} 個 agent` : `+${entry.rest} 個子 agent`;
+        row.querySelector(".speed").textContent = restLive > 0.05 ? S.formatSpeed(restLive) : "";
+      }
+      it.target = entry.y;
+      if (fresh || instant || reduceMotion) { it.y = reduceMotion || instant ? entry.y : entry.y + 12; it.v = 0; }
+      requestAnimationFrame(() => { it.el.style.opacity = ""; });
+    }
+    for (const [key, it] of items) {
+      if (seen.has(key) || !it.alive) continue;
+      it.alive = false; it.el.classList.add("gone");
+      setTimeout(() => { if (!it.alive) { it.el.remove(); items.delete(key); } }, 280);
+    }
+    for (const ev of snap.events) { const it = items.get(ev.id); const g = snap.groups.find(x => x.id === ev.id); if (it && g) accent(it, ev, g.root.project); }
+    let w = 0;
+    board.querySelectorAll(".item:not(.gone) .cap:not(.none)").forEach(c => { c.style.width = "auto"; w = Math.max(w, c.scrollWidth); });
+    board.querySelectorAll(".cap").forEach(c => { c.style.width = ""; });
+    panel.style.setProperty("--capw", w ? Math.ceil(w) + "px" : "0px");
+    kick();
+  }
+
+  // Positions: a slightly underdamped spring (a touch of overshoot, broadcast-snappy); no frames once settled.
+  let raf = 0, lastT = 0;
+  function kick() { if (!raf) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+  function frame(now) {
+    const dt = Math.max(0, Math.min(0.05, (now - lastT) / 1000)); lastT = now;
+    let moving = false;
+    const k = 260, c = 2 * Math.sqrt(k) * 0.72;
+    for (const it of items.values()) {
+      if (it.y === null) it.y = it.target;
+      it.v += (-k * (it.y - it.target) - c * it.v) * dt; it.y += it.v * dt;
+      if (Math.abs(it.y - it.target) < 0.05 && Math.abs(it.v) < 0.05) { it.y = it.target; it.v = 0; } else moving = true;
+      it.el.style.transform = `translate3d(0, ${it.y.toFixed(2)}px, 0)`;
+    }
+    raf = moving ? requestAnimationFrame(frame) : 0;
+  }
+
+  let drag = null;
+  panel.addEventListener("pointerdown", (e) => { drag = { x: e.clientX - panel.offsetLeft, y: e.clientY - panel.offsetTop }; panel.setPointerCapture(e.pointerId); panel.style.transition = "none"; });
+  panel.addEventListener("pointermove", (e) => { if (drag) { panel.style.left = e.clientX - drag.x + "px"; panel.style.top = e.clientY - drag.y + "px"; } });
+  panel.addEventListener("pointerup", () => { drag = null; panel.style.transition = ""; });
+
+  const sim = S.create({ scenario: "swarm" });
+  function seg(id, fn) {
+    $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return;
+      $(id).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); fn(b.dataset.v); });
+  }
+  seg("scenarios", (v) => sim.setScenario(v));
+  seg("sizes", (v) => { size = v; panel.dataset.size = v; render(last, false); });
+  seg("themes", (v) => { document.body.dataset.theme = v; });
+  $("rm").addEventListener("change", (e) => { reduceMotion = e.target.checked; document.body.classList.toggle("rm", reduceMotion); fx.setReduceMotion(reduceMotion); });
+  $("pause").addEventListener("click", () => { if (sim.running) { sim.stop(); $("pause").textContent = "繼續"; } else { sim.start(); $("pause").textContent = "暫停"; } });
+  $("step").addEventListener("click", () => sim.step());
+  const params = new URLSearchParams(location.search);
+  if (params.has("theme")) document.body.dataset.theme = params.get("theme");
+  if (params.has("size")) { size = params.get("size"); panel.style.transition = "none"; panel.dataset.size = size; }
+  if (params.has("steps")) {
+    reduceMotion = true; document.body.classList.add("rm"); fx.setReduceMotion(true);
+    if (params.has("scenario")) sim.setScenario(params.get("scenario"));
+    let snapLast = null; const off = sim.subscribe((snap) => { snapLast = snap; });
+    for (let i = 0; i < Number(params.get("steps")); i++) sim.step();
+    off(); render(snapLast, true); return;
+  }
+  sim.subscribe((snap) => render(snap, false));
+  sim.start();
+})();
+</script>
+</body>
+</html>

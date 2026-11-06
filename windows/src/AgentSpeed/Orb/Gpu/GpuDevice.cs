@@ -238,9 +238,16 @@ internal sealed class GpuDevice : IDisposable
 
         public ID3D11PixelShader LedPixel { get; private set; } = null!;
 
+        public ID3D11VertexShader LayerVertex { get; private set; } = null!;
+
+        public ID3D11PixelShader LayerPixel { get; private set; } = null!;
+
         public ID3D11InputLayout ShapeLayout { get; private set; } = null!;
 
         public ID3D11InputLayout TextLayout { get; private set; } = null!;
+
+        /// <summary>The cached layers of the boards (DESIGN 2c).</summary>
+        public ID3D11InputLayout LayerLayout { get; private set; } = null!;
 
         public ID3D11BlendState Over { get; private set; } = null!;
 
@@ -267,6 +274,10 @@ internal sealed class GpuDevice : IDisposable
         public ID3D11Buffer? Texts { get; set; }
 
         public int TextCapacity { get; set; }
+
+        public ID3D11Buffer? Layers { get; set; }
+
+        public int LayerCapacity { get; set; }
 
         public static Resources Create()
         {
@@ -322,6 +333,9 @@ internal sealed class GpuDevice : IDisposable
             LedPixel = Device.CreatePixelShader(code.LedPixel);
             ShapeLayout = Device.CreateInputLayout(InstanceElements(6), code.ShapeVertex);
             TextLayout = Device.CreateInputLayout(InstanceElements(8), code.TextVertex);
+            LayerVertex = Device.CreateVertexShader(code.LayerVertex);
+            LayerPixel = Device.CreatePixelShader(code.LayerPixel);
+            LayerLayout = Device.CreateInputLayout(InstanceElements(5), code.LayerVertex);
 
             Over = Device.CreateBlendState(Blend(additive: false));
             Additive = Device.CreateBlendState(Blend(additive: true));
@@ -386,6 +400,7 @@ internal sealed class GpuDevice : IDisposable
             Context.Flush();
             Instances?.Dispose();
             Texts?.Dispose();
+            Layers?.Dispose();
             Palette?.Dispose();
             LedParams?.Dispose();
             LiquidPass?.Dispose();
@@ -395,8 +410,11 @@ internal sealed class GpuDevice : IDisposable
             Sampler?.Dispose();
             Additive?.Dispose();
             Over?.Dispose();
+            LayerLayout?.Dispose();
             TextLayout?.Dispose();
             ShapeLayout?.Dispose();
+            LayerPixel?.Dispose();
+            LayerVertex?.Dispose();
             LedPixel?.Dispose();
             LedVertex?.Dispose();
             LiquidPixel?.Dispose();

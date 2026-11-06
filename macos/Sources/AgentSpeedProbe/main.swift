@@ -8,10 +8,15 @@ guard let arguments = ProbeArguments.parse(Array(CommandLine.arguments.dropFirst
 
 switch arguments.mode {
 case .dumpToday:
-    DumpToday.run(configuration: arguments.configuration, table: arguments.priceTable())
+    DumpToday.run(configuration: arguments.configuration, table: arguments.priceTable(), now: arguments.now)
 case .dumpHistory:
     DumpHistory.run(
         configuration: arguments.configuration, utc: arguments.utc, storePath: arguments.historyStore,
+        table: arguments.priceTable()
+    )
+case .dumpUnpriced(let options):
+    DumpUnpriced.run(
+        configuration: arguments.configuration, options: options, storePath: arguments.historyStore,
         table: arguments.priceTable()
     )
 case .watch(let seconds):

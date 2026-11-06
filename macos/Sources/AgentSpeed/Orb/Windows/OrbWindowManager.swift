@@ -28,6 +28,8 @@ final class OrbWindowManager {
     nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
     /// Ids created by an operation, placed by `handle(_:)` rather than by `sync()`.
     private var pendingPlacement: Set<String> = []
+    /// The shown leaderboard boards, which orbs keep clear of (DESIGN 2c).
+    var boardShapes: () -> [FloatingShape] = { [] }
 
     init(model: AppModel) {
         self.model = model
@@ -167,7 +169,13 @@ final class OrbWindowManager {
         let screen = anchor?.screen ?? Self.primaryScreen
         guard let screen else { return }
         let others = otherDiscs(excluding: id, on: screen)
-        let target = OrbPlacement.placeNew(radius: window.radius, near: anchor?.disc, others: others, visible: screen.visibleFrame)
+        var target = OrbPlacement.placeNew(radius: window.radius, near: anchor?.disc, others: others, visible: screen.visibleFrame)
+        let boards = boardShapes(on: screen)
+        let template = FloatingShape(OrbDisc(center: .zero, radius: window.radius))
+        if !FloatingPlacement.isFree(template.moved(to: target), others: boards) {
+            target = FloatingPlacement.placeNew(template, near: anchor.map { FloatingShape($0.disc) },
+                                                others: others.map(FloatingShape.init) + boards, visible: screen.visibleFrame)
+        }
         window.update(config: model.orbs.orb(id) ?? window.config)
         prepareShown(window)
         window.animateEntrance(from: nil, to: target)
@@ -297,6 +305,10 @@ extension OrbWindowManager: OrbWindowManaging {
             guard window.id != id, window.isShown, window.screen == screen else { return nil }
             return window.disc
         }
+    }
+
+    func boardShapes(on screen: NSScreen) -> [FloatingShape] {
+        boardShapes().filter { screen.frame.contains($0.center) }
     }
 
     func orbSettled(_ id: String, center: CGPoint, radius: CGFloat, on screen: NSScreen) {

@@ -5,6 +5,8 @@
         xmlns:loc="clr-namespace:AgentSpeed.Localization"
         xmlns:controls="clr-namespace:AgentSpeed.Controls"
         xmlns:history="clr-namespace:AgentSpeed.History"
+        xmlns:modes="clr-namespace:AgentSpeed.Modes"
+        xmlns:perf="clr-namespace:AgentSpeed.History.Perf"
         xmlns:layout="clr-namespace:AgentSpeed.Presentation.History;assembly=AgentSpeed.Presentation"
         Title="{loc:Loc history.title}"
         Width="920" Height="680" MinWidth="720" MinHeight="540"
@@ -320,65 +322,6 @@
         </Style>
 
         <!-- The unknown-price models: a keyboard list that scrolls inside the flyout, rows without a selection chip -->
-        <Style x:Key="UnpricedListStyle" TargetType="ListBox">
-            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-            <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="SelectionMode" Value="Single" />
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
-            <Setter Property="KeyboardNavigation.TabNavigation" Value="Once" />
-            <Setter Property="KeyboardNavigation.DirectionalNavigation" Value="Contained" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBox">
-                        <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      CanContentScroll="False" PanningMode="VerticalOnly">
-                            <ItemsPresenter />
-                        </ScrollViewer>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="ItemTemplate">
-                <Setter.Value>
-                    <DataTemplate DataType="{x:Type history:UnpricedModelView}">
-                        <DockPanel Height="26" Background="Transparent" ToolTip="{Binding SourceName}">
-                            <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Dot}" />
-                            <TextBlock DockPanel.Dock="Right" Text="{Binding Requests}" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"
-                                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center" />
-                        </DockPanel>
-                    </DataTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="UnpricedItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="8,0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
-            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Chip" CornerRadius="4" Background="Transparent" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <Style x:Key="BreakdownItemStyle" TargetType="ListBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
@@ -407,6 +350,111 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+        <Style x:Key="ModeListStyle" TargetType="ListBox" BasedOn="{StaticResource BreakdownListStyle}">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <history:SpringStackPanel Loaded="OnModeRowsPanelLoaded" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemTemplate">
+                <Setter.Value>
+                    <DataTemplate DataType="{x:Type history:ModeRowView}">
+                        <Grid Height="30" Background="Transparent" ToolTipService.IsEnabled="{Binding HasTopModels}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Glyph}" />
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Token}" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Share}" />
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Requests}" />
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Output}" />
+                                <ColumnDefinition Width="{x:Static history:ModeColumns.Speed}" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.ToolTip>
+                                <ToolTip>
+                                    <StackPanel MinWidth="200" MaxWidth="320">
+                                        <TextBlock Text="{loc:Loc history.table.models}" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" />
+                                        <ItemsControl ItemsSource="{Binding TopModels}" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type history:ModeModelView}">
+                                                    <StackPanel Margin="0,3,0,0">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ShareText}" Margin="12,0,0,0"
+                                                                       Typography.NumeralAlignment="Tabular"
+                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                        </DockPanel>
+                                                        <history:ShareBar Height="3" Margin="0,3,0,0" Value="{Binding Fraction}"
+                                                                          Fill="{DynamicResource AccentFillColorDefaultBrush}"
+                                                                          Track="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ToolTip>
+                            </Grid.ToolTip>
+                            <modes:ModeGlyph Glyph="{Binding Glyph}" VerticalAlignment="Center"
+                                             Appearance="{Binding DataContext.ModeAppearance, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Token}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,12,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Setter Property="FontWeight" Value="Medium" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsUnknown}" Value="True">
+                                                <Setter Property="FontWeight" Value="Normal" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <history:BreakdownBar Grid.Column="2" Height="6" VerticalAlignment="Center" Value="{Binding Fraction}" Spring="True"
+                                                  Track="{DynamicResource SubtleFillColorTertiaryBrush}">
+                                <history:BreakdownBar.Style>
+                                    <Style TargetType="history:BreakdownBar">
+                                        <Setter Property="Fill" Value="{Binding BarFill}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Tone}" Value="Neutral">
+                                                <Setter Property="Fill" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </history:BreakdownBar.Style>
+                            </history:BreakdownBar>
+                            <TextBlock Grid.Column="3" Text="{Binding ShareText}" FontSize="12" TextAlignment="Right" VerticalAlignment="Center"
+                                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Grid.Column="4" Text="{Binding RequestsText}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular" />
+                            <TextBlock Grid.Column="5" Text="{Binding OutputText}" FontSize="13" TextAlignment="Right" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular" Background="Transparent"
+                                       ToolTip="{Binding OutputToolTip}" />
+                            <TextBlock Grid.Column="6" Text="{Binding SpeedText}" TextAlignment="Right" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasSpeed}" Value="False">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModeItemStyle" TargetType="ListBoxItem" BasedOn="{StaticResource BreakdownItemStyle}">
+            <Setter Property="AutomationProperties.HelpText" Value="" />
+            <Setter Property="Margin" Value="0" />
         </Style>
     </Window.Resources>
 
@@ -673,6 +721,62 @@
                         </Grid>
                     </Border>
 
+                    <!-- Effort and speed (DESIGN 4b, 3b): one row per value over the range and source, unknown last -->
+                    <Border x:Name="ModesCard" Style="{StaticResource Card}" Margin="0,20,0,0" Padding="16,12,16,10">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc modes.history.title}" Style="{StaticResource BodyStrongText}" FontSize="13"
+                                           VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level2" />
+                                <Border Grid.Column="1" Style="{StaticResource SegmentedContainer}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                        KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="ModeEffort" Style="{StaticResource SegmentedItem}" GroupName="HistoryModeKind"
+                                                     Tag="Effort" Content="{loc:Loc effort.label}" Checked="OnModeKindChecked" />
+                                        <RadioButton x:Name="ModeSpeed" Style="{StaticResource SegmentedItem}" GroupName="HistoryModeKind"
+                                                     Tag="Speed" Content="{loc:Loc speed.label}" Checked="OnModeKindChecked" />
+                                    </StackPanel>
+                                </Border>
+                                <Button Grid.Column="3" Style="{StaticResource SubtleButton}" Height="28" Padding="8,0,10,0" VerticalAlignment="Center"
+                                        Click="OnExportModes" AutomationProperties.Name="{loc:Loc mode.exportCsv}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xEDE1;" FontSize="13" VerticalAlignment="Center" />
+                                        <TextBlock Text="{loc:Loc mode.exportCsv}" FontSize="12" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <Grid Margin="0,0,0,2" TextElement.FontSize="11" TextElement.Foreground="{DynamicResource TextFillColorTertiaryBrush}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Glyph}" />
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Token}" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Share}" />
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Requests}" />
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Output}" />
+                                    <ColumnDefinition Width="{x:Static history:ModeColumns.Speed}" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="4" Text="{loc:Loc history.table.requests}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="5" Text="{loc:Loc history.table.output}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="6" Text="{loc:Loc history.table.speed}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                            <ListBox x:Name="ModeList" Margin="-8,0" ItemsSource="{Binding ModeRows}" Style="{StaticResource ModeListStyle}"
+                                     ItemContainerStyle="{StaticResource ModeItemStyle}" AutomationProperties.Name="{loc:Loc modes.history.title}" />
+                            <TextBlock Text="{loc:Loc modes.history.empty}" FontSize="12" Margin="0,6,0,2" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Visibility="{Binding ModesEmpty, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 性能表現 (DESIGN 4b, 3c; DESIGN 12): the range's performance per source and model, with the selected row's trend -->
+                    <Border x:Name="PerformanceCard" Style="{StaticResource Card}" Margin="0,20,0,0" Padding="16,14,16,12">
+                        <perf:PerfPerformanceSection DataContext="{Binding Performance}" />
+                    </Border>
+
                     <!-- Daily table -->
                     <Border x:Name="TableCard" Style="{StaticResource Card}" Margin="0,20,0,0" Padding="0,6,0,8">
                         <StackPanel>
@@ -789,27 +893,20 @@
             </history:FooterLinePanel>
         </Border>
 
-        <!-- The models behind the unknown-price notice: name, requests and source; closes with Escape or a click elsewhere. -->
-        <!-- Offsets take back the card's 12 DIP shadow margin: the card starts at the notice's icon, 4 DIP above it. -->
+        <!-- Why the notice's requests have no price, by source, with the copyable diagnostics (DESIGN 9, Unknown prices);
+             closes with Escape or a click elsewhere. Offsets take back the card's 12 DIP shadow margin: the card starts at
+             the notice's icon, 4 DIP above it. -->
         <Popup x:Name="UnpricedFlyout" Grid.Row="3" PlacementTarget="{Binding ElementName=UnpricedNotice}" Placement="Top" StaysOpen="False"
                AllowsTransparency="True" PopupAnimation="Fade" HorizontalOffset="-12" VerticalOffset="8" Closed="OnUnpricedClosed"
                KeyDown="OnUnpricedKeyDown">
-            <Border Margin="12" Width="300" Padding="16,14,16,14" CornerRadius="8" BorderThickness="1"
+            <Border Margin="12" Width="380" Padding="16" CornerRadius="8" BorderThickness="1"
                     Background="{DynamicResource FlyoutBackground}" BorderBrush="{DynamicResource FlyoutBorderBrush}"
                     TextElement.FontFamily="{DynamicResource AppFontFamily}"
                     TextElement.Foreground="{DynamicResource TextFillColorPrimaryBrush}">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.2" />
                 </Border.Effect>
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc cost.unknown}" FontSize="13" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2" />
-                    <ListBox x:Name="UnpricedList" Margin="-8,8,-8,0" MaxHeight="220" ItemsSource="{Binding UnpricedModels}"
-                             Style="{StaticResource UnpricedListStyle}" ItemContainerStyle="{StaticResource UnpricedItemStyle}"
-                             AutomationProperties.Name="{loc:Loc cost.unknown}" />
-                    <Rectangle Style="{StaticResource Hairline}" Margin="0,10,0,8" />
-                    <TextBlock Text="{loc:Loc history.unpricedModels.hint}" FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                </StackPanel>
+                <history:UnpricedPanel x:Name="UnpricedContent" />
             </Border>
         </Popup>
     </Grid>

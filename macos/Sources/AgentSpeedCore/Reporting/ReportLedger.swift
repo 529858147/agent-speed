@@ -31,13 +31,15 @@ struct ReportLedger: Sendable {
 
     func isCounted(_ key: String) -> Bool { counted[key] != nil }
 
-    /// Counts a response at its first live emission.
-    mutating func count(_ record: ResponseRecord, modelId: String) {
+    /// Counts a response at its first live emission. `currentEffort` is the agent's current effort at that moment, which
+    /// a response without an effort of its own freezes (EXECUTION-MODES, Current values, Ledger).
+    mutating func count(_ record: ResponseRecord, modelId: String, currentEffort: ExecutionModeAttribution? = nil) {
         guard counted[record.key] == nil else {
             grow(record, modelId: modelId)
             return
         }
-        let values = Self.values(of: record)
+        var values = Self.values(of: record)
+        values.modes = Self.freezing(currentEffort, into: values.modes)
         var usage = ReportUsage(
             requests: values.requests, output: values.output, input: values.input, cachedInput: values.cachedInput,
             cacheWriteInput: values.cacheWriteInput, reasoning: values.reasoning, measuredOutput: values.measuredOutput,
@@ -94,6 +96,21 @@ struct ReportLedger: Sendable {
         }
     }
 
+    /// The effort the ledger freezes: the response's own when known, else a current value that is `selected` or better,
+    /// without its provider. A configured value is never reported.
+    static func frozenEffort(response: ExecutionModeAttribution, current: ExecutionModeAttribution?) -> ExecutionModeAttribution {
+        guard response.isUnknown, let current, !current.isUnknown,
+              let evidence = ExecutionModeEvidence(rawValue: current.evidence),
+              ExecutionModeEvidence.attributable.contains(evidence) else { return response }
+        return ExecutionModeAttribution(kind: .effort, mode: current.mode, evidence: current.evidence)
+    }
+
+    private static func freezing(_ current: ExecutionModeAttribution?, into modes: [ExecutionModeAttribution]) -> [ExecutionModeAttribution] {
+        guard !modes.contains(where: { $0.kind == .effort }) else { return modes }
+        let frozen = frozenEffort(response: ExecutionModeAttribution(kind: .effort), current: current)
+        return frozen.isUnknown ? modes : modes + [frozen]
+    }
+
     private static func values(of record: ResponseRecord) -> Reported {
         let usage = record.usage
         let measured = record.isFinal ? TimedResponse(record) : nil
@@ -103,7 +120,7 @@ struct ReportLedger: Sendable {
             cacheWriteInput: Int64(usage.cacheWriteInput), reasoning: Int64(usage.reasoning),
             measuredOutput: measured == nil ? 0 : Int64(usage.output), measuredMs: measured?.durationMs ?? 0,
             costMicroUsd: record.costMicroUsd ?? 0, endMs: record.endMs,
-            modes: record.modes.attributed
+            modes: record.modes.reportedAttributions
         )
     }
 }

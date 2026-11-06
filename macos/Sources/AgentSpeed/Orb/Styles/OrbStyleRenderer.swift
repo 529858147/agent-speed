@@ -28,9 +28,8 @@ struct OrbContent {
     var money: OrbMoneyText?
     /// Thumbnails and previews (Settings) cap effects and draw at small sizes.
     var isThumbnail = false
-    /// The traffic readout is on for this orb (DESIGN 10), and what it shows (nil while it never was loud).
-    var trafficEnabled = false
-    var traffic: OrbTrafficReading?
+    /// The two-line readout while it is on for this orb (DESIGN 10).
+    var lines: OrbLines?
 
     /// Below 64 pt only the value is drawn (DESIGN 2a, Shared foundation).
     var valueOnly: Bool { diameter < 64 }
@@ -95,7 +94,7 @@ struct OrbFrame {
     let alpha: Double
     /// The first frame after the orb could not be seen: show the current state, never a catch-up animation.
     var resumed = false
-    /// How far the readout stack sits below its resting place while the traffic block shows above it (DESIGN 10).
+    /// How far the readout stack sits below its resting place while the two-line block shows above it (DESIGN 10).
     var readoutShift: CGFloat = 0
     /// The aura's flare after a response pulse (0...1), for styles that draw their own aura.
     var auraFlare: Double = 0
@@ -196,8 +195,8 @@ struct OrbReadoutLayout {
 protocol OrbStyleRenderer: AnyObject {
     var kind: OrbStyleKind { get }
     var readoutLayout: OrbReadoutLayout { get }
-    /// Where the traffic readout goes (DESIGN 10).
-    var trafficPlacement: OrbTrafficPlacement { get }
+    /// Where the two-line readout goes (DESIGN 10).
+    var linePlacement: OrbLinePlacement { get }
     /// Layers of the shared foundation this style draws.
     var hasAura: Bool { get }
     var hasWave: Bool { get }
@@ -209,8 +208,8 @@ protocol OrbStyleRenderer: AnyObject {
     func build(into scene: inout OrbScene, _ frame: OrbFrame)
     /// Adds the readout; styles that split or recolor it override this.
     func buildReadout(into scene: inout OrbScene, _ frame: OrbFrame, readout: OrbReadoutBuilder)
-    /// Adds the traffic readout; `liquid` splits it at its surface.
-    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout)
+    /// Adds the two-line readout; `liquid` splits it at its surface.
+    func buildLines(into scene: inout OrbScene, _ frame: OrbFrame, lines: OrbLineReadout)
     /// The frame class the instrument needs at rest in this state (transitions are handled by the animator).
     func ambientFrameClass(_ frame: OrbFrame) -> OrbFrameClass
     /// Whether anything of the style still moves (springs settling, particles alive).
@@ -233,8 +232,8 @@ extension OrbStyleRenderer {
         readout.add(into: &scene, frame, layout: readoutLayout)
     }
 
-    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout) {
-        traffic.add(into: &scene, frame, placement: trafficPlacement,
+    func buildLines(into scene: inout OrbScene, _ frame: OrbFrame, lines: OrbLineReadout) {
+        lines.add(into: &scene, frame, placement: linePlacement,
                     palette: .standard(dark: frame.dark, increaseContrast: frame.content.increaseContrast))
     }
 

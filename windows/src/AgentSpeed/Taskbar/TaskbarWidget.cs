@@ -32,6 +32,9 @@ internal sealed class TaskbarWidget : IDisposable
 
     public event EventHandler? PresenceChanged;
 
+    /// <summary>The user dropped the widget after dragging it: its new stored position (DIPs; DESIGN 3, Position on the taskbar).</summary>
+    public event EventHandler<double>? Moved;
+
     public TaskbarPresence Presence { get; private set; } = TaskbarPresence.Hidden;
 
     /// <summary>Last known widget rectangle in physical screen pixels.</summary>
@@ -169,6 +172,9 @@ internal sealed class TaskbarWidget : IDisposable
                 case TaskbarSignal.Hover hover:
                     Bounds = hover.Bounds;
                     HoverChanged?.Invoke(this, (hover.IsOver, hover.Bounds));
+                    break;
+                case TaskbarSignal.Moved moved:
+                    Moved?.Invoke(this, moved.Offset);
                     break;
                 case TaskbarSignal.PresenceChanged presence:
                     Presence = presence.Presence;

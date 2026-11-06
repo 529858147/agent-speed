@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import AgentSpeedCore
 
@@ -20,7 +21,11 @@ struct SessionTests {
             opencodeRoot: directory.file("opencode"),
             geminiRoot: directory.file("gemini"),
             ompRoot: directory.file("missing-omp"),
-            antigravityRoot: directory.file("missing-antigravity")
+            antigravityRoot: directory.file("missing-antigravity"),
+            piRoot: directory.file("missing-pi"),
+            openclawRoot: directory.file("missing-openclaw"),
+            hermesRoot: directory.file("missing-hermes"),
+            droidRoot: directory.file("missing-droid")
         )
         return (directory, configuration)
     }
@@ -32,22 +37,23 @@ struct SessionTests {
         let session = TranscriptSession(configuration: configuration)
         let fixtureDay = Clock.milliseconds(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_792_490_400)))
         let summary = session.seed(todayStartMs: fixtureDay)
-        #expect(summary.filesRead == 9)
-        #expect(summary.filesDiscovered == 9)
+        #expect(summary.filesRead == 14)
+        #expect(summary.filesDiscovered == 14)
         #expect(Set(session.responses.map(\.key)) == [
             "resp-1", "resp-2", "resp-3", "resp-4", "codex-legacy:thread-legacy:20213", "codex-legacy:thread-legacy:41000",
-            "resp-z1", "resp-z2",
-            "msg_A", "msg_B", "msg_C", "msg_D", "msg_E", "dsm-1", "dsm-2", "dss-1",
+            "resp-z1", "resp-z2", "resp-p1", "resp-p2", "resp-t1", "resp-t2", "resp-t3", "resp-t4",
+            "msg_A", "msg_B", "msg_C", "msg_D", "msg_E", "msg_W", "msg_R1", "msg_R2", "msg_R3", "msg_F1",
+            "dsm-1", "dsm-2", "dss-1",
         ])
         #expect(session.responses.first { $0.key == "msg_B" }?.agentId.hasSuffix("s-cli.jsonl") == true)
         #expect(session.responses.first { $0.key == "dsm-1" }?.agentId.hasSuffix("session-dsh-main/session.v4.jsonl.zstd") == true)
         #expect(session.responses.first { $0.key == "dss-1" }?.source == .deepseek)
-        #expect(session.malformedLines == 2)
+        #expect(session.malformedLines == 3)
         #expect(session.responses.first { $0.key == "msg_E" }?.isFinal == false)
         let (output, events) = session.advance(nowMs: 1_792_491_000_000, todayStartMs: fixtureDay, emitsEvents: true)
-        #expect(events.isEmpty)
+        #expect(!events.contains { if case .responseCompleted = $0 { true } else { false } }, "seeding completes nothing live")
         let context = SnapshotContext(session: session, todayStartMs: fixtureDay)
-        #expect(context.warnings(for: output) == [.malformedLines(2), .unfinalizedUsage(1)])
+        #expect(context.warnings(for: output) == [.malformedLines(3), .unfinalizedUsage(1)])
         #expect(context.sources[.deepseek]?.available == true)
         #expect(context.sources[.deepseek]?.rootPath == directory.file("dsh/sessions").path)
         _ = directory
@@ -64,17 +70,19 @@ struct SessionTests {
         let pairs = [
             ("rollout-2026-10-20T10-00-00-modern.jsonl", "rollout-2026-10-20T10-00-20-subagent.jsonl"),
             ("s-cli.jsonl", "agent-abc.jsonl"),
+            ("s-desk.jsonl", "agent-wf1.jsonl"),
             ("session-dsh-main/session.v4.jsonl.zstd", "session-dsh-sub/session.v4.jsonl.zstd"),
         ]
         for (parentName, childName) in pairs {
             let child = try #require(agents.firstIndex { $0.id.hasSuffix("/" + childName) }, "\(childName) listed")
-            #expect(child > 0)
-            #expect(agents[child - 1].id.hasSuffix("/" + parentName), "\(childName) follows its parent")
-            #expect(agents[child].parentId == agents[child - 1].id)
-            #expect(agents[child - 1].parentId == nil)
+            let parent = try #require(agents.firstIndex { $0.id.hasSuffix("/" + parentName) }, "\(parentName) listed")
+            #expect(parent < child, "\(childName) follows its parent")
+            #expect(agents[parent].parentId == nil)
+            // Only the parent's other sub-agents (the paginated Codex one) may come between them.
+            #expect(agents[(parent + 1)...child].allSatisfy { $0.parentId == agents[parent].id })
         }
-        #expect(agents.count == 9)
-        #expect(agents.filter { $0.parentId != nil }.count == 3)
+        #expect(agents.count == 14)
+        #expect(agents.filter { $0.parentId != nil }.count == 5)
         _ = directory
     }
 
@@ -84,7 +92,8 @@ struct SessionTests {
         configuration.enabledSources = [.claudeDesktop]
         let session = TranscriptSession(configuration: configuration)
         _ = session.seed(todayStartMs: Self.startOfToday())
-        #expect(session.responses.map(\.key) == ["msg_C"])
+        // Stored responses come from a dictionary, so their order is not defined.
+        #expect(Set(session.responses.map(\.key)) == ["msg_W", "msg_C"])
         _ = directory
     }
 
@@ -201,13 +210,84 @@ struct SessionTests {
         #expect(summary.filesRead == 0)
         #expect(session.responses.isEmpty)
         try directory.append(relative, #"{"timestamp":"2026-10-01T10:00:09Z","type":"token_usage_record","payload":{"response_id":"new","usage":{"output_tokens":5}}}"# + "\n")
-        // Neither hot nor active today, so only a watcher event picks the change up.
+        // Not hot: the file was quiet for days. A watcher event reads the change at once.
         #expect(!session.pollRecentFiles(nowMs: Clock.milliseconds(Date())))
-        #expect(!session.rediscover(todayStartMs: Self.startOfToday()))
         let canonical = try #require(realpath(directory.file(relative).path, nil))
         defer { free(canonical) }
         #expect(session.handleChanges(atCanonicalPaths: [String(cString: canonical)]))
         #expect(session.responses.map(\.key) == ["new"])
+    }
+
+    /// Codex keeps a session's rollout open while the session lives, often for days: FSEvents reports nothing until the
+    /// file is closed, so rediscovery must notice such files waking up (issue #26).
+    @Test func filesQuietForDaysAreRecheckedInTurnsWithoutWatcherEvents() throws {
+        let directory = try TempDirectory()
+        let turns = TranscriptSession.recheckTurns
+        let old = Date().addingTimeInterval(-3 * 86_400)
+        for index in 0..<turns {
+            try directory.write("2026/10/01/rollout-\(index).jsonl",
+                                #"{"timestamp":"2026-10-01T10:00:00Z","type":"token_usage_record","payload":{"response_id":"old-\#(index)","usage":{"output_tokens":5}}}"# + "\n",
+                                modified: old.addingTimeInterval(TimeInterval(index)))
+        }
+        let session = TranscriptSession(configuration: MonitorConfiguration(enabledSources: [.codex], codexRoot: directory.url))
+        #expect(session.seed(todayStartMs: Self.startOfToday()).filesRead == 0)
+        for index in 0..<turns {
+            try directory.append("2026/10/01/rollout-\(index).jsonl",
+                                 #"{"timestamp":"2026-10-01T10:00:09Z","type":"token_usage_record","payload":{"response_id":"new-\#(index)","usage":{"output_tokens":5}}}"# + "\n")
+        }
+        #expect(!session.pollRecentFiles(nowMs: Clock.milliseconds(Date())))
+        var readAfterRound: [Int] = []
+        for _ in 0..<turns {
+            #expect(session.rediscover(todayStartMs: Self.startOfToday()))
+            readAfterRound.append(session.responses.count)
+        }
+        // One file in `turns` per round, so every quiet file is re-checked once a minute at little cost.
+        #expect(readAfterRound == Array(1...turns))
+        #expect(Set(session.responses.map(\.key)) == Set((0..<turns).map { "new-\($0)" }))
+    }
+
+    /// Issue #26: a session that went quiet in the evening and goes on the next morning, with its writer still holding
+    /// the file open (no watcher event), counts toward the new day.
+    @Test func aSessionThatResumesAfterMidnightIsReadWithoutWatcherEvents() throws {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: today))
+        let evening = today.addingTimeInterval(-3 * 3600)
+        let morning = today.addingTimeInterval(9 * 3600)
+        let (todayStartMs, yesterdayStartMs) = (Clock.milliseconds(today), Clock.milliseconds(yesterday))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func turn(_ id: String, endingAt end: Date, output: Int) -> String {
+            #"{"timestamp":"\#(formatter.string(from: end.addingTimeInterval(-4)))","type":"event_msg","payload":{"type":"user_message","message":"x"}}"#
+                + "\n" + #"{"timestamp":"\#(formatter.string(from: end))","type":"token_usage_record","payload":{"response_id":"\#(id)","usage":{"input_tokens":100,"output_tokens":\#(output)}}}"#
+                + "\n"
+        }
+        let directory = try TempDirectory()
+        let relative = "2026/10/27/rollout-evening.jsonl"
+        try directory.write(relative, #"{"timestamp":"\#(formatter.string(from: evening.addingTimeInterval(-60)))","type":"session_meta","payload":{"id":"t-1","cwd":"/w/rocket"}}"#
+                            + "\n" + turn("resp-evening", endingAt: evening, output: 40), modified: evening)
+        let now = OSAllocatedUnfairLock(initialState: Clock.milliseconds(evening) + 60_000)
+        let session = TranscriptSession(configuration: MonitorConfiguration(enabledSources: [.codex], codexRoot: directory.url),
+                                        clock: { now.withLock { $0 } })
+        _ = session.seed(todayStartMs: yesterdayStartMs)
+        #expect(session.advance(nowMs: now.withLock { $0 }, todayStartMs: yesterdayStartMs, emitsEvents: false).output.today.output == 40)
+        #expect(session.advance(nowMs: todayStartMs + 30_000, todayStartMs: todayStartMs, emitsEvents: true).output.today.output == 0)
+
+        try directory.append(relative, turn("resp-morning", endingAt: morning, output: 80))
+        try FileManager.default.setAttributes([.modificationDate: morning], ofItemAtPath: directory.file(relative).path)
+        let nowMs = now.withLock { value in
+            value = Clock.milliseconds(morning) + 1000
+            return value
+        }
+        #expect(!session.pollRecentFiles(nowMs: nowMs), "quiet for hours, so not hot")
+        #expect(session.rediscover(todayStartMs: todayStartMs), "changed within 24 hours, so re-checked every round")
+        let (output, events) = session.advance(nowMs: nowMs, todayStartMs: todayStartMs, emitsEvents: true)
+        #expect(output.today.output == 80)
+        #expect(output.todayBySource[.codex]?.output == 80)
+        #expect(output.agents.map { ($0.agent.id as NSString).lastPathComponent } == ["rollout-evening.jsonl"])
+        #expect(events.count == 1)
+        let context = SnapshotContext(session: session, todayStartMs: todayStartMs)
+        #expect(SnapshotBuilder.running(output, context: context).sources.first { $0.kind == .codex }?.producedToday == true)
     }
 
     @Test func largeFilesAreSeededFromTheirTailWithAWarning() throws {

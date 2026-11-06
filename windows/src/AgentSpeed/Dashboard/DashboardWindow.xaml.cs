@@ -12,6 +12,7 @@ using AgentSpeed.Interop;
 using AgentSpeed.Orb;
 using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Motion;
+using AgentSpeed.Perf;
 
 namespace AgentSpeed.Dashboard;
 
@@ -48,6 +49,11 @@ internal sealed partial class DashboardWindow : Window
 
     public DashboardWindow(DashboardViewModel viewModel, Func<double> clock)
     {
+        ScoreCards = new PerfCardPresenter(Dispatcher,
+            () => new PerfCardAppearance(viewModel.CapsuleAppearance.Dark, viewModel.CapsuleAppearance.HighContrast, viewModel.ReduceMotion,
+                viewModel.TransparencyEnabled),
+            () => viewModel.LanguageCode);
+        viewModel.AgentsUpdated += (_, _) => ScoreCards.Refresh();
         InitializeComponent();
         DataContext = viewModel;
         _model = viewModel;
@@ -84,6 +90,9 @@ internal sealed partial class DashboardWindow : Window
             Dispatcher.BeginInvoke(() => Place(_placedHeight));
         };
     }
+
+    /// <summary>The agent rows' score cards (DESIGN 12): beside the panel, toward the screen's centre.</summary>
+    public PerfCardPresenter ScoreCards { get; }
 
     public event EventHandler? SettingsRequested;
 
@@ -159,6 +168,18 @@ internal sealed partial class DashboardWindow : Window
     /// <summary>The live reporting indicator was clicked: Settings → API.</summary>
     public event EventHandler? ReportSettingsRequested;
 
+    /// <summary>The footer's boards button: the app answers with <see cref="ShowBoardsMenu"/>.</summary>
+    public event EventHandler? BoardsMenuRequested;
+
+    /// <summary>Opens the boards' menu above the footer button, inside the flyout (so it stays open).</summary>
+    public void ShowBoardsMenu(System.Windows.Controls.ContextMenu menu)
+    {
+        ArgumentNullException.ThrowIfNull(menu);
+        menu.PlacementTarget = BoardsButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.IsOpen = true;
+    }
+
     /// <summary>The one-time live reporting invitation above the hero (DESIGN 11).</summary>
     public ReportInvitationCard ReportInvitation => Invitation;
 
@@ -176,6 +197,8 @@ internal sealed partial class DashboardWindow : Window
     }
 
     private void OnReportIndicator(object sender, RoutedEventArgs e) => ReportSettingsRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnBoardsMenu(object sender, RoutedEventArgs e) => BoardsMenuRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>The one-time <c>update.done</c> line after an update; null hides it.</summary>
     public void SetUpdateDone(string? text)
@@ -231,6 +254,7 @@ internal sealed partial class DashboardWindow : Window
         }
 
         InfoPopup.IsOpen = false;
+        ScoreCards.Hide();
         LastHiddenTick = Environment.TickCount64;
         Hide();
     }
@@ -270,6 +294,7 @@ internal sealed partial class DashboardWindow : Window
     public void CloseForShutdown()
     {
         _allowClose = true;
+        ScoreCards.Dispose();
         Close();
     }
 

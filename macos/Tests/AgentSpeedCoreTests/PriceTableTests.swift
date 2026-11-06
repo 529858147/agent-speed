@@ -69,40 +69,53 @@ struct PriceTableTests {
         }
     }
 
+    static func checkCost(_ spec: [String: Any], table: PriceTable) throws {
+        let name = spec.string("name") ?? "?"
+        let usage = Self.usage(try #require(spec["tokens"] as? [String: Any]))
+        let fast = spec["fast"] as? Bool ?? false
+        let at = Self.atMs(spec)
+        let model = spec.string("model")
+        let provider = spec.string("provider")
+        var pico: Int64?
+        var tier: Int?
+        let resolution = table.resolver.resolve(model: model, provider: provider)
+        switch resolution {
+        case .priced(let index, let byName):
+            if let pricing = table.models[index].pricing(endMs: at, fast: byName || fast) {
+                (pico, tier) = ResponseCost.picoUsd(usage: usage, pricing: pricing)
+            }
+        case .free:
+            pico = 0
+        case .unknown:
+            break
+        }
+        let micro = table.cost(model: model, provider: provider, usage: usage, endMs: at, fast: fast)
+        let expect = try #require(spec["expect"] as? [String: Any])
+        if expect.keys.contains("costPicoUsd") {
+            #expect(pico == expect.int64("costPicoUsd"), "\(name) costPicoUsd")
+        }
+        #expect(micro == expect.int64("costMicroUsd"), "\(name) costMicroUsd")
+        if expect.keys.contains("tier") {
+            #expect(tier == (expect["tier"] as? NSNumber)?.intValue, "\(name) tier")
+        }
+    }
+
     @Test func costCases() throws {
         let tables = try Self.tables()
         let cases = try #require(try Self.cases()["cost"] as? [[String: Any]])
         #expect(cases.count >= 20)
         for spec in cases {
-            let name = spec.string("name") ?? "?"
-            let table = try #require(tables[spec.string("table") ?? ""])
-            let usage = Self.usage(try #require(spec["tokens"] as? [String: Any]))
-            let fast = spec["fast"] as? Bool ?? false
-            let at = Self.atMs(spec)
-            let model = spec.string("model")
-            let provider = spec.string("provider")
-            var pico: Int64?
-            var tier: Int?
-            let resolution = table.resolver.resolve(model: model, provider: provider)
-            switch resolution {
-            case .priced(let index, let byName):
-                if let pricing = table.models[index].pricing(endMs: at, fast: byName || fast) {
-                    (pico, tier) = ResponseCost.picoUsd(usage: usage, pricing: pricing)
-                }
-            case .free:
-                pico = 0
-            case .unknown:
-                break
-            }
-            let micro = table.cost(model: model, provider: provider, usage: usage, endMs: at, fast: fast)
-            let expect = try #require(spec["expect"] as? [String: Any])
-            if expect.keys.contains("costPicoUsd") {
-                #expect(pico == expect.int64("costPicoUsd"), "\(name) costPicoUsd")
-            }
-            #expect(micro == expect.int64("costMicroUsd"), "\(name) costMicroUsd")
-            if expect.keys.contains("tier") {
-                #expect(tier == (expect["tier"] as? NSNumber)?.intValue, "\(name) tier")
-            }
+            try Self.checkCost(spec, table: try #require(tables[spec.string("table") ?? ""]))
+        }
+    }
+
+    @Test func bundledCostCases() throws {
+        let bundled = try #require(try Self.cases()["bundled"] as? [String: Any])
+        let cases = try #require(bundled["cost"] as? [[String: Any]])
+        #expect(!cases.isEmpty)
+        for spec in cases {
+            #expect(spec.string("at") != nil, "\(spec.string("name") ?? "?") needs an instant")
+            try Self.checkCost(spec, table: PriceBook.bundled)
         }
     }
 

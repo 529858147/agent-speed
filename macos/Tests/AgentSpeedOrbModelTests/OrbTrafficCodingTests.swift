@@ -18,11 +18,12 @@ struct OrbTrafficCodingTests {
         #expect(try decode(#"{"id":"a","traffic":null}"#).traffic == .sources)
         #expect(try decode(#"{"id":"a","traffic":"satellite"}"#).traffic == .off)
         #expect(try decode(#"{"id":"a","traffic":"machine","showName":false}"#).traffic == .machine)
+        #expect(try decode(#"{"id":"a","traffic":"intelligence"}"#).traffic == .intelligence)
         #expect(try decode(#"{"id":"a","showName":"yes"}"#).showName == nil)
     }
 
     @Test func roundTripKeepsBothFields() throws {
-        let orb = OrbConfig(id: "a", traffic: .off, showName: true)
+        let orb = OrbConfig(id: "a", traffic: .intelligence, showName: true)
         let copy = try JSONDecoder().decode(OrbConfig.self, from: JSONEncoder().encode(orb))
         #expect(copy == orb)
     }

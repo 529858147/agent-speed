@@ -5,6 +5,8 @@ struct ProbeArguments {
     enum Mode {
         case dumpToday
         case dumpHistory
+        /// The copied unpriced diagnostics text (METRICS 9.10), as `reference.py --dump-unpriced`.
+        case dumpUnpriced(UnpricedOptions)
         case watch(seconds: Int)
         /// Live network traffic for real (METRICS 10).
         case traffic(seconds: Int)
@@ -26,13 +28,29 @@ struct ProbeArguments {
     var trafficInterval: Int?
     /// `--no-live`: traffic without the live transcript monitor (no per-agent attribution), to measure its own cost.
     var noLive = false
+    /// `--now MS`: `--dump-today` evaluates the performance scores at this Unix ms instead of the capture time.
+    var now: Int64?
+
+    /// The range and source of `--dump-unpriced`.
+    struct UnpricedOptions: Equatable {
+        /// `--days N`: the last N local days with today (default 30).
+        var days: Int?
+        var first: String?
+        var last: String?
+        /// `--live`: today's engine responses instead of the history.
+        var live = false
+        var source: SourceKind?
+    }
 
     static let usage = """
-        usage: AgentSpeedProbe (--dump-today | --dump-history [--utc] [--history-store PATH] | --watch SECONDS
+        usage: AgentSpeedProbe (--dump-today [--now MS] | --dump-history [--utc] [--history-store PATH]
+                                | --dump-unpriced [--days N | --first YYYY-MM-DD --last YYYY-MM-DD | --live]
+                                  [--source ID] [--history-store PATH] | --watch SECONDS
                                 | --traffic SECONDS [--traffic-interval 0|1|5] [--no-live] [--history-store PATH])
                                [--prices PATH] [--codex PATH] [--claude PATH] [--dsh PATH] [--opencode PATH]
                                [--gemini PATH] [--omp PATH] [--antigravity PATH] [--workbuddy PATH] [--workbuddy-ai PATH]
-                               [--zcode PATH] [--kimi PATH] [--grok-build PATH]
+                               [--zcode PATH] [--kimi PATH] [--grok-build PATH] [--pi PATH]
+                               [--openclaw PATH] [--hermes PATH] [--droid PATH]
                AgentSpeedProbe --sync-prices DIR | --sync-rates DIR CURRENCY
         """
 
@@ -44,6 +62,9 @@ struct ProbeArguments {
         var prices: String?
         var trafficInterval: Int?
         var noLive = false
+        var unpriced = UnpricedOptions()
+        var dumpsUnpriced = false
+        var now: Int64?
         var iterator = arguments.makeIterator()
         while let argument = iterator.next() {
             switch argument {
@@ -51,6 +72,25 @@ struct ProbeArguments {
                 mode = .dumpToday
             case "--dump-history":
                 mode = .dumpHistory
+            case "--dump-unpriced":
+                dumpsUnpriced = true
+            case "--now":
+                guard let value = iterator.next(), let ms = Int64(value) else { return nil }
+                now = ms
+            case "--days":
+                guard let value = iterator.next(), let days = Int(value), days >= 1, days <= 1_000_000 else { return nil }
+                unpriced.days = days
+            case "--first":
+                guard let value = iterator.next(), isDate(value) else { return nil }
+                unpriced.first = value
+            case "--last":
+                guard let value = iterator.next(), isDate(value) else { return nil }
+                unpriced.last = value
+            case "--live":
+                unpriced.live = true
+            case "--source":
+                guard let value = iterator.next(), let source = SourceKind(rawValue: value) else { return nil }
+                unpriced.source = source
             case "--utc":
                 utc = true
             case "--history-store":
@@ -114,6 +154,24 @@ struct ProbeArguments {
             case "--grok-build":
                 guard let path = iterator.next() else { return nil }
                 configuration.grokBuildRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--pi":
+                // One Pi sessions folder; it replaces every automatic root, as `reference.py --pi`.
+                guard let path = iterator.next() else { return nil }
+                configuration.piRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--openclaw":
+                // One state folder, agent folder or openclaw-agent.sqlite; it replaces every automatic root, as
+                // `reference.py --openclaw`.
+                guard let path = iterator.next() else { return nil }
+                configuration.openclawRoot = URL(fileURLWithPath: path)
+            case "--hermes":
+                // A Hermes Agent home or one logs folder; it replaces the automatic home, as `reference.py --hermes`.
+                guard let path = iterator.next() else { return nil }
+                configuration.hermesRoot = URL(fileURLWithPath: path, isDirectory: true)
+            case "--droid":
+                // Factory Droid's .factory folder or its sessions folder; it replaces the automatic root, as
+                // `reference.py --droid`.
+                guard let path = iterator.next() else { return nil }
+                configuration.droidRoot = URL(fileURLWithPath: path, isDirectory: true)
             case "--opencode":
                 // The database file (as in reference.py) or the folder that contains it.
                 guard let path = iterator.next() else { return nil }
@@ -122,13 +180,31 @@ struct ProbeArguments {
                 return nil
             }
         }
+        let usesUnpricedOptions = unpriced != UnpricedOptions()
+        if dumpsUnpriced {
+            guard mode.map({ _ in false }) ?? true, (unpriced.first == nil) == (unpriced.last == nil),
+                  unpriced.first.map({ $0 <= unpriced.last! }) ?? true,
+                  unpriced.days == nil || unpriced.first == nil,
+                  !unpriced.live || (unpriced.days == nil && unpriced.first == nil) else { return nil }
+            mode = .dumpUnpriced(unpriced)
+        } else if usesUnpricedOptions {
+            return nil
+        }
         guard let mode else { return nil }
+        if now != nil {
+            guard case .dumpToday = mode else { return nil }
+        }
         return ProbeArguments(mode: mode, configuration: configuration, utc: utc, historyStore: historyStore, prices: prices,
-                              trafficInterval: trafficInterval, noLive: noLive)
+                              trafficInterval: trafficInterval, noLive: noLive, now: now)
     }
 }
 
 extension ProbeArguments {
+    /// `YYYY-MM-DD` of a real calendar date.
+    static func isDate(_ text: String) -> Bool {
+        UnpricedRange.isDate(text)
+    }
+
     /// The table of `--prices`, else the bundled one; exits when the file does not validate.
     func priceTable() -> PriceTable {
         guard let prices else { return PriceBook.bundled }

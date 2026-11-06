@@ -20,7 +20,11 @@ internal sealed class OffscreenTarget : IDisposable
     private int _generation = -1;
 
     /// <summary>Draws <paramref name="list"/> at <paramref name="width"/> × <paramref name="height"/> pixels and returns the pixels, or null.</summary>
-    public byte[]? Render(GpuDevice device, OrbDrawList list, int width, int height)
+    public byte[]? Render(GpuDevice device, OrbDrawList list, int width, int height) =>
+        Render(device, view => OrbGpuRenderer.Draw(device, list, view, width, height), width, height);
+
+    /// <summary>Runs <paramref name="draw"/> into the texture (the board harness) and returns the pixels, or null.</summary>
+    public byte[]? Render(GpuDevice device, Func<ID3D11RenderTargetView, bool> draw, int width, int height)
     {
         if (device.IsLost && !device.Recover())
         {
@@ -29,7 +33,7 @@ internal sealed class OffscreenTarget : IDisposable
 
         Ensure(device, width, height);
         var r = device.Current;
-        if (!OrbGpuRenderer.Draw(device, list, _view!, width, height))
+        if (!draw(_view!))
         {
             return null;
         }

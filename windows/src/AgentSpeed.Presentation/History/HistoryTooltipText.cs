@@ -64,9 +64,6 @@ public static class HistoryTooltipText
             AddCost(rows, day, money, loc, strong: false);
         }
 
-        foreach (var mode in ExecutionModeText.VisibleUsage(day.Modes))
-            rows.Add(new TooltipRow(mode.Model, ExecutionModeText.Usage(mode, loc), mode.Source));
-
         var models = day.Models.Take(3)
             .Select(m =>
             {

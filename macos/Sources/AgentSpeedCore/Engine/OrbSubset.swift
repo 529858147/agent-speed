@@ -27,6 +27,8 @@ public struct SubsetReading: Equatable, Sendable {
     /// Members that are disabled or not detected, in source order.
     public var unavailable: [SourceKind]
     public var state: SubsetState
+    /// Sum of the available sources' live intelligence sums (METRICS 6.9).
+    public var intelligence: IntelligenceSums
 
     public init(
         live: Rate = .zero,
@@ -36,7 +38,8 @@ public struct SubsetReading: Equatable, Sendable {
         today: TokenTotals = .zero,
         measuredPeakOutput: Double? = nil,
         unavailable: [SourceKind] = [],
-        state: SubsetState = .available
+        state: SubsetState = .available,
+        intelligence: IntelligenceSums = .zero
     ) {
         self.live = live
         self.estimatedShare = estimatedShare
@@ -46,6 +49,7 @@ public struct SubsetReading: Equatable, Sendable {
         self.measuredPeakOutput = measuredPeakOutput
         self.unavailable = unavailable
         self.state = state
+        self.intelligence = intelligence
     }
 }
 
@@ -158,7 +162,8 @@ public enum OrbSubset {
                 today: snapshot.today,
                 measuredPeakOutput: snapshot.peakToday.output,
                 unavailable: [],
-                state: .available
+                state: .available,
+                intelligence: snapshot.intelligence
             )
         }
         var included = sources.intersection(.everything)
@@ -167,6 +172,7 @@ public enum OrbSubset {
         var live = Rate.zero
         var estimated = 0.0
         var today = TokenTotals()
+        var intelligence = IntelligenceSums.zero
         for status in snapshot.sources where sources.contains(status.kind) {
             if status.enabled { anyEnabled = true }
             guard !isUnavailable(status) else {
@@ -177,6 +183,7 @@ public enum OrbSubset {
             live.add(status.live)
             estimated += status.liveEstimated.output
             today.add(status.today)
+            intelligence.add(status.intelligence)
         }
         let agents = filtered(snapshot.agents, to: included)
         let state: SubsetState = if !included.isEmpty {
@@ -194,7 +201,8 @@ public enum OrbSubset {
             today: today,
             measuredPeakOutput: snapshot.subsetPeaks[sources],
             unavailable: SourceKind.allCases.filter { unavailable.contains($0) },
-            state: state
+            state: state,
+            intelligence: intelligence
         )
     }
 

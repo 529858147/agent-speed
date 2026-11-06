@@ -5,6 +5,7 @@ using System.Text.Json;
 using AgentSpeed.Core;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Settings.Boards;
 using AgentSpeed.Presentation.Settings.Orbs;
 using AgentSpeed.Presentation.Titles;
 
@@ -43,6 +44,8 @@ public static class SettingsSerializer
             w.WriteBoolean("showUnit", s.BarShowUnit);
             w.WriteBoolean("secondary", s.BarSecondary);
             w.WriteBoolean("compact", s.BarCompact);
+            w.WriteBoolean("intelligence", s.BarIntelligence);
+            w.WriteNumber("offset", s.TaskbarOffset);
             w.WriteEndObject();
 
             w.WriteStartObject("orb");
@@ -73,6 +76,8 @@ public static class SettingsSerializer
             w.WriteString("orbNames", OrbNamesModes.Key(s.OrbNames));
             w.WritePropertyName("orbs");
             OrbsJson.Write(w, s.Orbs);
+            w.WritePropertyName("boards");
+            BoardsJson.Write(w, s.Boards);
             w.WritePropertyName("titleThemes");
             TitleThemesJson.Write(w, s.TitleThemes);
 
@@ -98,6 +103,9 @@ public static class SettingsSerializer
             w.WriteBoolean("kimi", s.KimiEnabled);
             w.WriteBoolean("grokBuild", s.GrokBuildEnabled);
             w.WriteBoolean("pi", s.PiEnabled);
+            w.WriteBoolean("openclaw", s.OpenClawEnabled);
+            w.WriteBoolean("hermes", s.HermesEnabled);
+            w.WriteBoolean("droid", s.DroidEnabled);
             WriteNullableString(w, "codexRoot", s.CodexRoot);
             WriteNullableString(w, "claudeRoot", s.ClaudeRoot);
             WriteNullableString(w, "dshRoot", s.DshRoot);
@@ -111,6 +119,9 @@ public static class SettingsSerializer
             WriteNullableString(w, "kimiRoot", s.KimiRoot);
             WriteNullableString(w, "grokBuildRoot", s.GrokBuildRoot);
             WriteNullableString(w, "piRoot", s.PiRoot);
+            WriteNullableString(w, "openclawRoot", s.OpenClawRoot);
+            WriteNullableString(w, "hermesRoot", s.HermesRoot);
+            WriteNullableString(w, "droidRoot", s.DroidRoot);
             w.WriteEndObject();
 
             w.WriteStartObject("dashboard");
@@ -134,6 +145,12 @@ public static class SettingsSerializer
             {
                 w.WriteNull("window");
             }
+
+            w.WriteString("modeKind", s.HistoryModeKind == ExecutionModeKind.Speed ? "speed" : "effort");
+            w.WriteStartObject("perfSort");
+            w.WriteString("column", PerfSortName(s.HistoryPerfSort.Column));
+            w.WriteBoolean("descending", s.HistoryPerfSort.Descending);
+            w.WriteEndObject();
 
             w.WriteEndObject();
 
@@ -216,6 +233,10 @@ public static class SettingsSerializer
         var traffic = Child(root, "traffic");
         var report = Child(root, "report");
 
+        // DESIGN 10: an earlier build's `traffic.bar = intelligence` becomes the network block off and the 性能 switch on.
+        var storedBar = ReadString(traffic, "bar");
+        var legacyIntelligence = storedBar == TrafficSettings.LegacyIntelligenceKey;
+
         var settings = new AppSettings
         {
             Appearance = ReadEnum(root, "appearance", d.Appearance),
@@ -229,6 +250,8 @@ public static class SettingsSerializer
             BarShowUnit = ReadBool(taskbar, "showUnit", d.BarShowUnit),
             BarSecondary = ReadBool(taskbar, "secondary", d.BarSecondary),
             BarCompact = ReadBool(taskbar, "compact", d.BarCompact),
+            BarIntelligence = legacyIntelligence || ReadBool(taskbar, "intelligence", d.BarIntelligence),
+            TaskbarOffset = ReadDouble(taskbar, "offset", d.TaskbarOffset),
             ShowOrb = ReadBool(orb, "show", d.ShowOrb),
             ShowOrbs = ReadBool(root, "showOrbs", ReadBool(orb, "show", d.ShowOrb)),
             OrbNames = OrbNamesModes.Parse(ReadString(root, "orbNames")),
@@ -257,6 +280,9 @@ public static class SettingsSerializer
             KimiEnabled = ReadBool(sources, "kimi", d.KimiEnabled),
             GrokBuildEnabled = ReadBool(sources, "grokBuild", d.GrokBuildEnabled),
             PiEnabled = ReadBool(sources, "pi", d.PiEnabled),
+            OpenClawEnabled = ReadBool(sources, "openclaw", d.OpenClawEnabled),
+            HermesEnabled = ReadBool(sources, "hermes", d.HermesEnabled),
+            DroidEnabled = ReadBool(sources, "droid", d.DroidEnabled),
             CodexRoot = ReadString(sources, "codexRoot"),
             ClaudeRoot = ReadString(sources, "claudeRoot"),
             DshRoot = ReadString(sources, "dshRoot"),
@@ -270,7 +296,12 @@ public static class SettingsSerializer
             KimiRoot = ReadString(sources, "kimiRoot"),
             GrokBuildRoot = ReadString(sources, "grokBuildRoot"),
             PiRoot = ReadString(sources, "piRoot"),
+            OpenClawRoot = ReadString(sources, "openclawRoot"),
+            HermesRoot = ReadString(sources, "hermesRoot"),
+            DroidRoot = ReadString(sources, "droidRoot"),
             HistoryWindow = ReadWindowFrame(history is { } h ? Child(h, "window") : null),
+            HistoryModeKind = ReadString(history, "modeKind") == "speed" ? ExecutionModeKind.Speed : ExecutionModeKind.Effort,
+            HistoryPerfSort = ReadPerfSort(history is { } ph ? Child(ph, "perfSort") : null),
             ChartSeconds = (int)Math.Round(ReadDouble(dashboard, "chartSeconds", d.ChartSeconds)),
             AgentsExpanded = ReadBool(dashboard, "agentsExpanded", d.AgentsExpanded),
             HeroLastTitle = ReadString(dashboard, "heroLastTitle"),
@@ -285,7 +316,7 @@ public static class SettingsSerializer
                 Enabled = ReadBool(traffic, "enabled", TrafficSettings.Default.Enabled),
                 IncludeTools = ReadBool(traffic, "includeTools", TrafficSettings.Default.IncludeTools),
                 Unit = ReadString(traffic, "unit") == "bits" ? TrafficUnit.Bits : TrafficUnit.Bytes,
-                Bar = TrafficSettings.ParseBar(ReadString(traffic, "bar")),
+                Bar = TrafficSettings.ParseBar(storedBar),
             },
             Report = ReportSettingsJson.Read(report),
         };
@@ -300,7 +331,11 @@ public static class SettingsSerializer
         var orbs = root.TryGetProperty("orbs", out var orbsValue) ? OrbsJson.Read(orbsValue) : null;
         // An absent value is a fresh install or an older version: Vehicles, no custom sets (DESIGN 1, Persistence).
         var titles = root.TryGetProperty("titleThemes", out var titlesValue) ? TitleThemesJson.Read(titlesValue) : null;
-        return validated with { Orbs = orbs ?? OrbsMigration.FromLegacy(validated), TitleThemes = titles ?? TitleThemesDocument.Default };
+        var boards = root.TryGetProperty("boards", out var boardsValue) ? BoardsJson.Read(boardsValue) : BoardsDocument.Empty;
+        return validated with
+        {
+            Orbs = orbs ?? OrbsMigration.FromLegacy(validated), Boards = boards, TitleThemes = titles ?? TitleThemesDocument.Default,
+        };
     }
 
     /// <summary>
@@ -403,6 +438,37 @@ public static class SettingsSerializer
             ? value.ToUniversalTime()
             : null;
     }
+
+    /// <summary>The 性能表現 table's remembered sort; anything unknown is the default (score, descending).</summary>
+    private static History.Perf.PerfSort ReadPerfSort(JsonElement? sort)
+    {
+        if (sort is not { ValueKind: JsonValueKind.Object } value)
+        {
+            return History.Perf.PerfSort.Default;
+        }
+
+        var column = Enum.GetValues<History.Perf.PerfSortColumn>()
+            .Cast<History.Perf.PerfSortColumn?>()
+            .FirstOrDefault(c => PerfSortName(c!.Value) == ReadString(value, "column"));
+        return column is { } known
+            ? new History.Perf.PerfSort(known, ReadBool(value, "descending", true))
+            : History.Perf.PerfSort.Default;
+    }
+
+    private static string PerfSortName(History.Perf.PerfSortColumn column) => column switch
+    {
+        History.Perf.PerfSortColumn.Model => "model",
+        History.Perf.PerfSortColumn.Score => "score",
+        History.Perf.PerfSortColumn.Usual => "usual",
+        History.Perf.PerfSortColumn.Timed => "timed",
+        History.Perf.PerfSortColumn.Throughput => "throughput",
+        History.Perf.PerfSortColumn.Latency => "latency",
+        History.Perf.PerfSortColumn.Reasoning => "reasoning",
+        History.Perf.PerfSortColumn.Pace => "pace",
+        History.Perf.PerfSortColumn.ToolTime => "toolTime",
+        History.Perf.PerfSortColumn.ToolSuccess => "toolSuccess",
+        _ => "cache",
+    };
 
     private static WindowFrame? ReadWindowFrame(JsonElement? window)
     {

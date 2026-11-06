@@ -103,7 +103,7 @@ enum OrbSceneBuilder {
     private static func draw(_ renderer: OrbStyleRenderer, _ frame: OrbFrame, into scene: inout OrbScene, animator: OrbAnimator) {
         var frame = frame
         if frame.content.showsReadout, !frame.content.isThumbnail, !frame.content.valueOnly {
-            frame.readoutShift = animator.traffic.stackShift(frame, placement: renderer.trafficPlacement,
+            frame.readoutShift = animator.lines.stackShift(frame, placement: renderer.linePlacement,
                                                              layout: renderer.readoutLayout)
         }
         frame.auraFlare = animator.flare.value
@@ -119,8 +119,8 @@ enum OrbSceneBuilder {
         if frame.content.showsReadout {
             OrbSharedLayers.addAgentDots(&scene, frame, layout: renderer.readoutLayout)
             renderer.buildReadout(into: &scene, frame, readout: animator.readout)
-            if frame.content.traffic != nil, !frame.content.isThumbnail, !thumbnail {
-                renderer.buildTraffic(into: &scene, frame, traffic: animator.traffic)
+            if frame.content.lines?.reading != nil, !frame.content.isThumbnail, !thumbnail {
+                renderer.buildLines(into: &scene, frame, lines: animator.lines)
             }
         } else {
             OrbSharedLayers.addAgentDots(&scene, frame, layout: renderer.readoutLayout)

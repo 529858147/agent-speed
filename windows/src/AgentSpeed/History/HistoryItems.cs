@@ -46,12 +46,6 @@ internal sealed class SourceOption(SourceKind? kind) : ObservableObject
     public override string ToString() => string.IsNullOrEmpty(_accessibleName) ? Name : _accessibleName;
 }
 
-/// <summary>A model of the range with unknown prices, for the footer's list (<c>history.unpricedNotice.show</c>).</summary>
-internal sealed record UnpricedModelView(string Name, string Requests, SourceKind Source, string SourceName, string AccessibleName)
-{
-    public Brush Dot => HeatPalette.SourceColor(Source).ToBrush();
-}
-
 /// <summary>A legend chip of the chart: a source, or the single filtered source.</summary>
 internal sealed record LegendItem(string Name, Brush Brush);
 

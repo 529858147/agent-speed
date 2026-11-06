@@ -69,8 +69,8 @@ final class TrafficController {
         var nextChange = TimeInterval.infinity
         if model.orbs.masterVisible {
             for orb in model.orbs.orbs where orb.visible && orb.traffic == .sources {
-                guard let reading = model.orbs.runtime(orb.id)?.feed.traffic else { continue }
-                let gone = reading.quietAt + OrbTrafficReading.fadeOut
+                guard let reading = model.orbs.runtime(orb.id)?.feed.lines?.reading else { continue }
+                let gone = reading.quietAt + OrbLineReading.fadeOut
                 if now < gone {
                     shown = true
                     nextChange = min(nextChange, gone)

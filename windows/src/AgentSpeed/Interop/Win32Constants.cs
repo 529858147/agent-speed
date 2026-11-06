@@ -80,6 +80,7 @@ internal static class WM
     public const uint LBUTTONDBLCLK = 0x0203;
     public const uint RBUTTONDOWN = 0x0204;
     public const uint RBUTTONUP = 0x0205;
+    public const uint CAPTURECHANGED = 0x0215;
     public const uint MOUSEHOVER = 0x02A1;
     public const uint MOUSELEAVE = 0x02A3;
     public const uint DPICHANGED = 0x02E0;
@@ -182,6 +183,8 @@ internal static class SM
     public const int CXICON = 11;
     public const int CXSMICON = 49;
     public const int CYSMICON = 50;
+    public const int CXDRAG = 68;
+    public const int CYDRAG = 69;
 }
 
 internal static class DWMWA
@@ -191,6 +194,7 @@ internal static class DWMWA
     public const int BORDER_COLOR = 34;
     public const int SYSTEMBACKDROP_TYPE = 38;
     public const int CLOAKED = 14;
+    public const int EXTENDED_FRAME_BOUNDS = 9;
 }
 
 internal static class DWMWCP
@@ -248,6 +252,8 @@ internal static class IDC
 {
     public const nint ARROW = 32512;
     public const nint HAND = 32649;
+    public const nint SIZEWE = 32644;
+    public const nint SIZENS = 32645;
 }
 
 internal static class Errors

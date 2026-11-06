@@ -21,6 +21,23 @@ public struct ModelResolver: Sendable {
         var fast: Bool
     }
 
+    /// A resolution with the key that decided it and, when unknown, which rule left it so.
+    struct Outcome: Sendable {
+        enum Cause: Sendable {
+            case noModel, notInTable, noFastPrice, rule
+        }
+
+        var resolution: ModelResolution
+        var key: String?
+        var cause: Cause?
+
+        init(_ resolution: ModelResolution, key: String? = nil, cause: Cause? = nil) {
+            self.resolution = resolution
+            self.key = key
+            self.cause = cause
+        }
+    }
+
     private let normalize: PriceNormalization
     private let byKey: [String: Int]
     private let freeModels: Set<Int>
@@ -52,11 +69,44 @@ public struct ModelResolver: Sendable {
     }
 
     public func resolve(model: String?, provider: String?) -> ModelResolution {
-        resolveWithKey(model: model, provider: provider).resolution
+        outcome(model: model, provider: provider).resolution
     }
 
     /// The resolution and the candidate key that decided it (nil when no lookup decided).
     public func resolveWithKey(model: String?, provider: String?) -> (resolution: ModelResolution, key: String?) {
+        let result = outcome(model: model, provider: provider)
+        return (result.resolution, result.key)
+    }
+
+    /// Why a response with these facts has no price (METRICS 9.10), or nil when it is priced or free: `Index.diagnose`
+    /// of `spec/tools/prices.py`.
+    public func diagnose(model: String?, provider: String?, fast: Bool) -> UnpricedDiagnosis? {
+        let result = outcome(model: model, provider: provider)
+        switch (result.resolution, result.cause) {
+        case (.free, _):
+            return nil
+        case (.priced(let index, let fastByName), _):
+            guard fastByName || fast, !fastModels.contains(index) else { return nil }
+            return UnpricedDiagnosis(reason: .noFastPrice, canonical: result.key)
+        case (.unknown, .noModel?):
+            return UnpricedDiagnosis(reason: .noModel)
+        case (.unknown, .notInTable?):
+            let exact = Self.exactKey(model ?? "")
+            return UnpricedDiagnosis(reason: .notInTable, canonical: exact.isEmpty ? nil : exact)
+        case (.unknown, .noFastPrice?):
+            return UnpricedDiagnosis(reason: .noFastPrice, canonical: result.key)
+        case (.unknown(let reason), _):
+            return UnpricedDiagnosis(reason: .unpriceable, canonical: result.key, rule: reason)
+        }
+    }
+
+    /// The `exact` step key of METRICS 9.2: brackets removed, whitespace collapsed, trimmed, lowercased.
+    static func exactKey(_ model: String) -> String {
+        let key = lowercasedKey(strip(collapseWhitespace(removeBrackets(Array(model.unicodeScalars)))))
+        return String(String.UnicodeScalarView(key))
+    }
+
+    private func outcome(model: String?, provider: String?) -> Outcome {
         let cacheKey = (provider.map { "1" + $0 } ?? "0") + "\u{0}" + (model.map { "1" + $0 } ?? "0")
         if let hit = cache.value(for: cacheKey) { return hit }
         let result = computeResolution(model: model, provider: provider)
@@ -78,28 +128,32 @@ public struct ModelResolver: Sendable {
         return !(cloud.map { key in normalize.cloudSuffixes.contains { Self.hasSuffix(key, $0) } } ?? false)
     }
 
-    private func computeResolution(model: String?, provider: String?) -> (resolution: ModelResolution, key: String?) {
-        if isLocalProvider(model: model, provider: provider) { return (.free, nil) }
-        guard let model, !Self.strip(Array(model.unicodeScalars)).isEmpty else { return (.unknown(reason: "no model"), nil) }
+    private func computeResolution(model: String?, provider: String?) -> Outcome {
+        if isLocalProvider(model: model, provider: provider) { return Outcome(.free) }
+        guard let model, !Self.strip(Array(model.unicodeScalars)).isEmpty else {
+            return Outcome(.unknown(reason: "no model"), cause: .noModel)
+        }
         var seen: Set<String> = []
         for candidate in candidates(model) {
-            guard let key = candidate.key else { return (.free, nil) }
+            guard let key = candidate.key else { return Outcome(.free) }
             guard !key.isEmpty, seen.insert((candidate.fast ? "1" : "0") + key).inserted else { continue }
-            if let hit = lookup(key, fast: candidate.fast) { return (hit, key) }
+            if let hit = lookup(key, fast: candidate.fast) { return hit }
         }
-        return (.unknown(reason: "not in table"), nil)
+        return Outcome(.unknown(reason: "not in table"), cause: .notInTable)
     }
 
-    private func lookup(_ key: String, fast: Bool) -> ModelResolution? {
+    private func lookup(_ key: String, fast: Bool) -> Outcome? {
         if let index = byKey[key] {
-            if freeModels.contains(index) { return .free }
-            if fast, !fastModels.contains(index) { return .unknown(reason: "no fast-mode price") }
-            return .priced(index: index, fast: fast)
+            if freeModels.contains(index) { return Outcome(.free, key: key) }
+            if fast, !fastModels.contains(index) {
+                return Outcome(.unknown(reason: "no fast-mode price"), key: key, cause: .noFastPrice)
+            }
+            return Outcome(.priced(index: index, fast: fast), key: key)
         }
-        if let reason = unknownExact[key] { return .unknown(reason: reason) }
+        if let reason = unknownExact[key] { return Outcome(.unknown(reason: reason), key: key, cause: .rule) }
         let scalars = Array(key.unicodeScalars)
         for (prefix, reason) in unknownPrefixes where scalars.starts(with: prefix) {
-            return .unknown(reason: reason)
+            return Outcome(.unknown(reason: reason), key: key, cause: .rule)
         }
         return nil
     }
@@ -112,6 +166,10 @@ public struct ModelResolver: Sendable {
         }
         var k = Self.lowercasedKey(Self.strip(Self.collapseWhitespace(Self.removeBrackets(Array(model.unicodeScalars)))))
         yield("exact", k)
+        if k.starts(with: Self.customPrefix) {
+            k = Self.stripCustomName(Self.removeCustomIndex(Array(k[Self.customPrefix.count...])))
+            yield("custom", k)
+        }
         if let slash = k.lastIndex(of: "/") {
             k = Array(k[(slash + 1)...])
             yield("route", k)
@@ -295,6 +353,24 @@ public struct ModelResolver: Sendable {
         return Array(key[..<at])
     }
 
+    /// Factory Droid's ids of the user's own models, `custom:<name>-<n>` (METRICS 4.16).
+    static let customPrefix: Key = Array("custom:".unicodeScalars)
+
+    /// `-[0-9]+$`: droid's index after the name.
+    static func removeCustomIndex(_ key: Key) -> Key {
+        var end = key.count
+        while end > 0, ("0"..."9").contains(key[end - 1]) { end -= 1 }
+        guard end < key.count, end > 0, key[end - 1] == "-" else { return key }
+        return Array(key[..<(end - 1)])
+    }
+
+    /// `str.strip(" -")`: spaces and hyphens at both ends (left by a removed `[…]` group).
+    static func stripCustomName(_ key: Key) -> Key {
+        let kept = { (scalar: Unicode.Scalar) in scalar != " " && scalar != "-" }
+        guard let first = key.firstIndex(where: kept), let last = key.lastIndex(where: kept) else { return [] }
+        return Array(key[first...last])
+    }
+
     /// Removes a trailing `-` + 8 digits.
     static func removeDateSuffix(_ key: Key) -> Key {
         guard key.count >= 9, key[key.count - 9] == "-", key[(key.count - 8)...].allSatisfy(isDigit) else { return key }
@@ -306,13 +382,13 @@ public struct ModelResolver: Sendable {
 private final class ResolutionCache: Sendable {
     static let limit = 4096
 
-    private let entries = OSAllocatedUnfairLock<[String: (resolution: ModelResolution, key: String?)]>(initialState: [:])
+    private let entries = OSAllocatedUnfairLock<[String: ModelResolver.Outcome]>(initialState: [:])
 
-    func value(for key: String) -> (resolution: ModelResolution, key: String?)? {
+    func value(for key: String) -> ModelResolver.Outcome? {
         entries.withLock { $0[key] }
     }
 
-    func store(_ value: (resolution: ModelResolution, key: String?), for key: String) {
+    func store(_ value: ModelResolver.Outcome, for key: String) {
         entries.withLock { entries in
             if entries.count >= Self.limit { entries.removeAll(keepingCapacity: true) }
             entries[key] = value

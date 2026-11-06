@@ -85,7 +85,7 @@ internal sealed partial class ReportController
     private void SwitchService(Func<ReportPreferences, ReportPreferences> change)
     {
         var wasEnabled = Preferences.Enabled;
-        if (_run is not null)
+        if (_run is not null || _stream is not null)
         {
             Post(ReportEvent.Stop);
         }
@@ -135,6 +135,7 @@ internal sealed partial class ReportController
     {
         UpdatePreferences(p => p.WithSection(section, on));
         ClearRejection();
+        FollowPerfWatch();
         Notify();
     }
 
@@ -200,13 +201,12 @@ internal sealed partial class ReportController
         ReportLog.Write($"discovery of {service.Host} for {caller}");
 
         ServiceState = ReportServiceState.Checking;
-        var etag = Identity?.Discovery is null ? null : Identity?.ETag;
         Notify();
         _ = FetchAsync();
 
         async Task FetchAsync()
         {
-            var outcome = await _api.DiscoverAsync(service, etag).ConfigureAwait(true);
+            var outcome = await _api.DiscoverAsync(service).ConfigureAwait(true);
             if (!Equals(SelectedService, service))
             {
                 return;
@@ -257,29 +257,31 @@ internal sealed partial class ReportController
                 ServiceState = new ReportServiceState(ReportServiceStateKind.Ready, fetched.Discovery);
                 if (Identity is not null)
                 {
-                    UpdateIdentity(service.Origin, i => i with { Discovery = fetched.Discovery, DiscoveryFetchedAt = DateTimeOffset.UtcNow, ETag = fetched.ETag });
+                    UpdateIdentity(service.Origin, i => i with { Discovery = fetched.Discovery, DiscoveryFetchedAt = DateTimeOffset.UtcNow });
                 }
 
-                _run?.Scheduler.Update(fetched.Discovery.Limits);
                 if (!fetched.Discovery.SupportsThisClient && Identity?.IsRegistered == true)
                 {
                     Problem = ReportProblem.Upgrade;
                 }
 
+                if (FollowEffectiveTransport())
+                {
+                    // The document added or dropped the WebSocket capability: the run starts over on the other transport.
+                    Tick();
+                }
+                else
+                {
+                    _run?.Scheduler.Update(fetched.Discovery.Limits);
+                    StreamDiscovery(fetched.Discovery);
+                }
+
                 ScheduleRefresh(RefreshInterval);
                 ConfirmInvitedIfCovered(fetched.Discovery, service);
                 break;
-            case ReportDiscoveryOutcome.NotModified:
-                if (Identity?.Discovery is { } stored)
-                {
-                    ServiceState = new ReportServiceState(ReportServiceStateKind.Ready, stored);
-                }
-
-                UpdateIdentity(service.Origin, i => i with { DiscoveryFetchedAt = DateTimeOffset.UtcNow });
-                ScheduleRefresh(RefreshInterval);
-                break;
             case ReportDiscoveryOutcome.NotSupported or ReportDiscoveryOutcome.Invalid:
                 ServiceState = new ReportServiceState(outcome is ReportDiscoveryOutcome.Invalid ? ReportServiceStateKind.Invalid : ReportServiceStateKind.NotSupported);
+                StreamDiscovery(null);
                 if (IsSettingUp)
                 {
                     ScheduleRefresh(RefreshInterval);
@@ -299,6 +301,7 @@ internal sealed partial class ReportController
                 break;
             case ReportDiscoveryOutcome.Failed failed:
                 ServiceState = new ReportServiceState(ReportServiceStateKind.Failed, Failure: failed.Failure);
+                StreamDiscovery(null);
                 ScheduleRefresh(TimeSpan.FromHours(1));
                 break;
         }

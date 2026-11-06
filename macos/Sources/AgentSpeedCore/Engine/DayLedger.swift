@@ -15,6 +15,8 @@ struct DayLedger: Sendable {
     private(set) var cost = CostTally()
     private(set) var costBySource: [SourceKind: CostTally] = [:]
     private(set) var costByModel: [SourceKind: [String: CostTally]] = [:]
+    /// Requests of today's responses without a known cost, per source and fact (METRICS 9.10 *Live*).
+    private(set) var unpricedFacts: [SourceKind: [UnpricedFactKey: Int]] = [:]
     private var validOutput = 0
     private var validDurationMs: Int64 = 0
     private var outputBuckets: [Double]
@@ -59,6 +61,12 @@ struct DayLedger: Sendable {
         costBySource[record.source, default: CostTally()].add(record.costMicroUsd, sign: sign, requestCount: record.requestCount)
         let model = record.model ?? ""
         costByModel[record.source, default: [:]][model, default: CostTally()].add(record.costMicroUsd, sign: sign, requestCount: record.requestCount)
+        if record.costMicroUsd == nil {
+            let fact = UnpricedFactKey(model: record.model, provider: record.provider, fast: record.fast,
+                                       noDate: !DayLabeler.hasDay(record.endMs))
+            let count = (unpricedFacts[record.source]?[fact] ?? 0) + sign * record.requestCount
+            unpricedFacts[record.source, default: [:]][fact] = count == 0 ? nil : count
+        }
         guard record.isFinal, let timed = TimedResponse(record) else { return }
         validOutput = validOutput.saturatingAdd(sign * record.usage.output)
         validDurationMs += Int64(sign) * timed.durationMs

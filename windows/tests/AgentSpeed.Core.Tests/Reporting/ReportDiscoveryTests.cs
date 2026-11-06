@@ -397,6 +397,7 @@ public sealed class ReportDiscoveryTests
         Assert.Equal("https://deng.codexradar.com", assumed.Api.Text);
         Assert.Equal(4, assumed.Sections.Count);
         Assert.Equal(ReportLimits.Standard, assumed.Limits);
+        Assert.Equal(new ReportExtensions(PerfScore: true), assumed.Extensions);
     }
 
     [Fact]
@@ -404,19 +405,51 @@ public sealed class ReportDiscoveryTests
     {
         var service = Service();
         var example = ReportSpec.Example("discovery.json");
-        Assert.IsType<ReportDiscoveryOutcome.Document>(ReportApi.DiscoveryOutcome(200, example, null, "\"v1\"", service));
-        Assert.Equal("\"v1\"", ((ReportDiscoveryOutcome.Document)ReportApi.DiscoveryOutcome(200, example, null, "\"v1\"", service)).ETag);
-        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(200, Encoding.UTF8.GetBytes("<html>"), null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(200, Edited(Example(), "protocol", "\"x\""), null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.Invalid>(ReportApi.DiscoveryOutcome(200, Edited(Example(), "service.terms", null), null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.NotModified>(ReportApi.DiscoveryOutcome(304, [], "\"v1\"", null, service));
-        Assert.IsType<ReportDiscoveryOutcome.Failed>(ReportApi.DiscoveryOutcome(304, [], null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.Gone>(ReportApi.DiscoveryOutcome(410, [], null, null, service));
-        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(429, [], null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(404, [], null, null, service));
-        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(403, [], null, null, service));
-        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(503, [], null, null, service));
-        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(302, [], null, null, service));
+        Assert.IsType<ReportDiscoveryOutcome.Document>(ReportApi.DiscoveryOutcome(200, example, service));
+        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(200, Encoding.UTF8.GetBytes("<html>"), service));
+        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(200, Edited(Example(), "protocol", "\"x\""), service));
+        Assert.IsType<ReportDiscoveryOutcome.Invalid>(ReportApi.DiscoveryOutcome(200, Edited(Example(), "service.terms", null), service));
+        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(304, [], service));
+        Assert.IsType<ReportDiscoveryOutcome.Gone>(ReportApi.DiscoveryOutcome(410, [], service));
+        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(429, [], service));
+        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(404, [], service));
+        Assert.IsType<ReportDiscoveryOutcome.NotSupported>(ReportApi.DiscoveryOutcome(403, [], service));
+        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(503, [], service));
+        Assert.Equal(new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable), ReportApi.DiscoveryOutcome(302, [], service));
+    }
+
+    [Fact]
+    public async Task DiscoveryIsAlwaysFetchedInFullWithoutIfNoneMatch()
+    {
+        // A service that keeps its ETag across a content change must not hide the new document (NETWORK 6).
+        var handler = new DiscoveryHandler(ReportSpec.Example("discovery.json"));
+        using var transport = new HttpReportTransport(handler);
+        var api = new ReportApi(transport, "AgentSpeed/1.0 (Windows)");
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.IsType<ReportDiscoveryOutcome.Document>(await api.DiscoverAsync(Service()));
+        }
+
+        Assert.Equal(2, handler.Headers.Count);
+        Assert.All(handler.Headers, names =>
+        {
+            Assert.DoesNotContain("If-None-Match", names, StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(["Accept", "User-Agent"], names.Order(StringComparer.Ordinal));
+        });
+    }
+
+    /// <summary>Answers every request with the document and an <c>ETag</c>, recording the request's header names.</summary>
+    private sealed class DiscoveryHandler(byte[] document) : HttpMessageHandler
+    {
+        public List<string[]> Headers { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Headers.Add([.. request.Headers.NonValidated.Select(h => h.Key)]);
+            var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(document) };
+            response.Headers.TryAddWithoutValidation("ETag", "\"same-for-ever\"");
+            return Task.FromResult(response);
+        }
     }
 
     private static bool Review(string path, string? rawJson, bool hasApiKey = false)

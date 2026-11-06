@@ -26,7 +26,9 @@ struct MenuBarPane: View {
                     .disabled(!settings.barMode.showsValue)
 
                 BarTrafficPicker(model: model)
-                    .disabled(!settings.trafficEnabled || settings.barMode == .glyph)
+                    .disabled(settings.barMode == .glyph)
+
+                BarIntelligenceToggle(model: model)
             }
 
             Section {

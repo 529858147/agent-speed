@@ -49,9 +49,11 @@ public struct ReportEnvelope: Equatable, Sendable {
     public var windowMs: Int64
     public var activity: ReportScheduler.Activity
     public var titleLevel: Int
+    /// Only for the WebSocket transport (METRICS 11.9); HTTP bodies never carry it.
+    public var realtime: ReportRealtime?
 
     public init(client: ReportClientInfo, deviceId: String, username: String, runId: String, seq: Int, sentAtMs: Int64,
-                windowMs: Int64, activity: ReportScheduler.Activity, titleLevel: Int) {
+                windowMs: Int64, activity: ReportScheduler.Activity, titleLevel: Int, realtime: ReportRealtime? = nil) {
         self.client = client
         self.deviceId = deviceId
         self.username = username
@@ -61,6 +63,7 @@ public struct ReportEnvelope: Equatable, Sendable {
         self.windowMs = windowMs
         self.activity = activity
         self.titleLevel = titleLevel
+        self.realtime = realtime
     }
 }
 
@@ -74,9 +77,12 @@ public struct ReportOptions: Equatable, Sendable {
     public var redline: Double
     public var priceVersion: Int
     public var extensions: ReportExtensions
+    /// `maxMessageBytes` of the WebSocket transport: the report message must fit as well (METRICS 11.9).
+    public var messageLimit: Int?
 
     public init(sections: Set<ReportSection>, maxModels: Int = 16, bodyLimit: Int = 16_384, metric: SpeedMetric = .output,
-                redline: Double = 2000, priceVersion: Int = 1, extensions: ReportExtensions = .none) {
+                redline: Double = 2000, priceVersion: Int = 1, extensions: ReportExtensions = .none,
+                messageLimit: Int? = nil) {
         self.sections = sections
         self.maxModels = maxModels
         self.bodyLimit = bodyLimit
@@ -84,7 +90,36 @@ public struct ReportOptions: Equatable, Sendable {
         self.redline = redline
         self.priceVersion = priceVersion
         self.extensions = extensions
+        self.messageLimit = messageLimit
     }
+
+    /// The `perfScore` extension is active (METRICS 11.10): advertised, with `models` sent by consent.
+    public var perfScoreActive: Bool { extensions.perfScore && sections.contains(.models) && maxModels >= 1 }
+
+    /// Only the retired `taskScore` is advertised: the report carries the thinking speed in its shape.
+    public var legacyTaskScoreActive: Bool {
+        !extensions.perfScore && extensions.taskScore && sections.contains(.models) && maxModels >= 1
+    }
+
+    /// Which score objects a report carries.
+    var scoreMode: ReportScoreMode {
+        perfScoreActive ? .perfScore : legacyTaskScoreActive ? .legacyTaskScore : .none
+    }
+
+    /// The body is small enough to send: within `bodyLimit` and, over WebSocket, its message within `messageLimit`.
+    func fits(_ body: Data) -> Bool {
+        guard body.count <= bodyLimit else { return false }
+        guard let messageLimit else { return true }
+        return ReportStreamMessage.messageBytes(body: body) <= messageLimit
+    }
+}
+
+/// Which score objects a report carries (METRICS 11.10 *Active*, *Legacy*).
+enum ReportScoreMode: Sendable {
+    case none
+    case perfScore
+    /// The retired `taskScore`: the thinking speed only.
+    case legacyTaskScore
 }
 
 /// The report body of REPORTING 6 from a window, the tick's values and the options (METRICS 11.2, 11.7).
@@ -93,7 +128,8 @@ public enum ReportBody {
     public static let maxCount = 100_000
     public static let maxWindowMs: Int64 = 900_000
 
-    /// The body as sent: within `bodyLimit`, dropping `models` and then `sources` when it would not fit.
+    /// The body as sent: within `bodyLimit`, dropping the per-model breakdowns, then `models`, then `sources` when it
+    /// would not fit; the top-level `perfScore` (or legacy `taskScore`) always stays (METRICS 11.10 *Size*).
     public static func data(_ envelope: ReportEnvelope, _ content: ReportWindowContent, _ sample: ReportSample,
                             _ options: ReportOptions) -> Data {
         fitted(envelope, content, sample, options).data
@@ -103,16 +139,18 @@ public enum ReportBody {
     public static func fitted(_ envelope: ReportEnvelope, _ content: ReportWindowContent, _ sample: ReportSample,
                               _ options: ReportOptions) -> (json: ReportJSON, data: Data) {
         var options = options
-        var document = json(envelope, content, sample, options)
+        let scores = options.scoreMode
+        var document = json(envelope, content, sample, options, scores: scores)
         var data = document.compactData
-        if data.count > options.bodyLimit, options.extensions != .none {
-            options.extensions = .none
-            document = json(envelope, content, sample, options)
+        if !options.fits(data), options.extensions.modelHarnessRequests || options.extensions.executionModes {
+            options.extensions.modelHarnessRequests = false
+            options.extensions.executionModes = false
+            document = json(envelope, content, sample, options, scores: scores)
             data = document.compactData
         }
-        for section in [ReportSection.models, .sources] where data.count > options.bodyLimit {
+        for section in [ReportSection.models, .sources] where !options.fits(data) {
             options.sections.remove(section)
-            document = json(envelope, content, sample, options)
+            document = json(envelope, content, sample, options, scores: scores)
             data = document.compactData
         }
         return (document, data)
@@ -120,6 +158,12 @@ public enum ReportBody {
 
     public static func json(_ envelope: ReportEnvelope, _ content: ReportWindowContent, _ sample: ReportSample,
                             _ options: ReportOptions) -> ReportJSON {
+        json(envelope, content, sample, options, scores: options.scoreMode)
+    }
+
+    /// `scores`: the extension was active before the size rule, so the top-level object stays without `models`.
+    static func json(_ envelope: ReportEnvelope, _ content: ReportWindowContent, _ sample: ReportSample,
+                     _ options: ReportOptions, scores: ReportScoreMode) -> ReportJSON {
         let total = content.usage.total
         let agents = sample.facts.agents.values.reduce(into: ReportAgentCounts()) {
             $0.generating += $1.generating
@@ -170,8 +214,23 @@ public enum ReportBody {
             members.append(.init("sources", .array(sourceEntries(content, sample, sections: sections))))
         }
         if sections.contains(.models), options.maxModels > 0 {
-            members.append(.init("models", .array(modelEntries(content, sample, maxModels: options.maxModels,
-                                                                withCost: sections.contains(.cost), extensions: options.extensions))))
+            let entries = modelEntries(content, sample, maxModels: options.maxModels, scores: scores)
+            members.append(.init("models", .array(entries.map {
+                modelJSON($0, withCost: sections.contains(.cost), extensions: options.extensions, scores: scores)
+            })))
+        }
+        let perf = sample.facts.perf
+        switch scores {
+        case .perfScore:
+            members.append(.init("perfScore", ReportPerfScoreValue(perf.value, thinking: perf.thinking).json))
+        case .legacyTaskScore:
+            members.append(.init("taskScore", ReportPerfScoreValue.legacy(thinking: perf.thinking).json))
+        case .none:
+            break
+        }
+        if let realtime = envelope.realtime {
+            let mixed = sections.contains(.traffic) && sample.traffic.status == .ok
+            members.append(.init("realtime", realtime.json(mixed: mixed, sentAtMs: envelope.sentAtMs)))
         }
         return .object(members)
     }
@@ -261,12 +320,19 @@ public enum ReportBody {
         var generating = 0
         var usageBySource: [SourceKind: ReportUsage] = [:]
         var modes: [ReportModeGroup: ReportUsage] = [:]
+        /// The performance score's set value, unrounded thinking and statistics rows (METRICS 11.10).
+        var perfValue = PerfSetValue.empty
+        var thinking = 0.0
+        var perfRows: [SourceKind: PerfRecord] = [:]
+        /// Listed only for the performance score: zero usage, so no mode rows (METRICS 11.10 *Other extensions*).
+        var perfOnly = false
     }
 
     /// One entry per model with any increment in the window (a late price included) or a generating agent, by output
-    /// then id, `other` last (REPORTING 6.6.4, METRICS 11.3, 11.7).
+    /// then id, `other` last (REPORTING 6.6.4, METRICS 11.3, 11.7); with `perfScore`, also every model an agent is live
+    /// with and every model with statistics rows (METRICS 11.10 *Membership*). The legacy `taskScore` adds no entry.
     private static func modelEntries(_ content: ReportWindowContent, _ sample: ReportSample, maxModels: Int,
-                                     withCost: Bool, extensions: ReportExtensions) -> [ReportJSON] {
+                                     scores: ReportScoreMode) -> [ModelEntry] {
         var byId: [String: ModelEntry] = [:]
         for (key, value) in content.usage.byModel {
             byId[key.modelId, default: ModelEntry(id: key.modelId)].usage += value
@@ -281,39 +347,94 @@ public enum ReportBody {
             byId[key.modelId, default: ModelEntry(id: key.modelId)].generating += count
             byId[key.modelId]?.sources.insert(key.source)
         }
+        let perf = sample.facts.perf
+        if scores == .perfScore {
+            for (id, model) in perf.models where !model.liveSources.isEmpty {
+                byId[id, default: ModelEntry(id: id, perfOnly: true)].sources.formUnion(model.liveSources)
+            }
+            for (id, rows) in content.perfStats where !rows.isEmpty {
+                byId[id, default: ModelEntry(id: id, perfOnly: true)].sources.formUnion(rows.keys)
+                byId[id]?.perfRows = rows
+            }
+        }
+        if scores != .none {
+            for id in byId.keys {
+                guard let model = perf.models[id] else { continue }
+                byId[id]?.perfValue = model.value
+                byId[id]?.thinking = model.thinking
+            }
+        }
         var entries = byId.values.sorted { lhs, rhs in
             lhs.usage.output != rhs.usage.output ? lhs.usage.output > rhs.usage.output : lhs.id < rhs.id
         }
         if entries.count > maxModels {
             var other = ModelEntry(id: ReportModelIds.other)
+            other.perfOnly = entries[(maxModels - 1)...].allSatisfy(\.perfOnly)
             for entry in entries[(maxModels - 1)...] {
                 other.usage += entry.usage
                 other.generating += entry.generating
                 other.sources.formUnion(entry.sources)
                 for (source, usage) in entry.usageBySource { other.usageBySource[source, default: .zero] += usage }
                 for (key, usage) in entry.modes { other.modes[key, default: .zero] += usage }
+                other.perfValue.merge(entry.perfValue)
+                other.thinking += entry.thinking
+                for (source, row) in entry.perfRows { other.perfRows[source, default: PerfRecord()].add(row) }
             }
             entries = Array(entries.prefix(maxModels - 1)) + [other]
         }
-        return entries.map { entry in
-            var members: [ReportJSON.Member] = [
-                .init("id", .string(entry.id)),
-                .init("sources", .array(SourceKind.allCases.filter(entry.sources.contains).map { .string($0.rawValue) })),
-                .init("requests", .int(entry.usage.requests)),
-                .init("output", .int(entry.usage.output)),
-                .init("measuredOutput", .int(entry.usage.measuredOutput)),
-                .init("measuredMs", .int(entry.usage.measuredMs)),
-                .init("generating", .int(min(entry.generating, maxCount))),
-            ]
-            if withCost { members.append(.init("deltaMicroUsd", .int(entry.usage.costMicroUsd))) }
-            if extensions.modelHarnessRequests, let rows = ReportModelBreakdown.harness(entry.usageBySource, total: entry.usage) {
-                members.append(.init("harnessRequests", rows))
-            }
-            if extensions.executionModes, let rows = ReportModelBreakdown.modes(entry.usageBySource, groups: entry.modes) {
-                members.append(.init("modeUsage", rows))
-            }
-            return .object(members)
+        return entries
+    }
+
+    private static func modelJSON(_ entry: ModelEntry, withCost: Bool, extensions: ReportExtensions,
+                                  scores: ReportScoreMode) -> ReportJSON {
+        var members: [ReportJSON.Member] = [
+            .init("id", .string(entry.id)),
+            .init("sources", .array(SourceKind.allCases.filter(entry.sources.contains).map { .string($0.rawValue) })),
+            .init("requests", .int(entry.usage.requests)),
+            .init("output", .int(entry.usage.output)),
+            .init("measuredOutput", .int(entry.usage.measuredOutput)),
+            .init("measuredMs", .int(entry.usage.measuredMs)),
+            .init("generating", .int(min(entry.generating, maxCount))),
+        ]
+        if withCost { members.append(.init("deltaMicroUsd", .int(entry.usage.costMicroUsd))) }
+        if extensions.modelHarnessRequests, let rows = ReportModelBreakdown.harness(entry.usageBySource, total: entry.usage) {
+            members.append(.init("harnessRequests", rows))
         }
+        if extensions.executionModes, !entry.perfOnly,
+           let rows = ReportModelBreakdown.modes(entry.usageBySource, groups: entry.modes,
+                                                 version: extensions.executionModesVersion) {
+            members.append(.init("modeUsage", rows))
+        }
+        switch scores {
+        case .perfScore:
+            members.append(.init("perfScore", ReportPerfScoreValue(entry.perfValue, thinking: entry.thinking).json))
+            let rows = SourceKind.allCases.compactMap { source in entry.perfRows[source].map { $0.reportJSON(source: source) } }
+            members.append(.init("perfStats", .array(rows)))
+        case .legacyTaskScore:
+            members.append(.init("taskScore", ReportPerfScoreValue.legacy(thinking: entry.thinking).json))
+            members.append(.init("taskStats", .array([])))
+        case .none:
+            break
+        }
+        return .object(members)
+    }
+
+    /// The score objects the report would carry, rounded as sent, without the size rule; nil while neither extension
+    /// is active (the changed rule of METRICS 11.10 *WebSocket*, *Legacy*).
+    public static func perfScoreValues(_ content: ReportWindowContent, _ sample: ReportSample,
+                                       _ options: ReportOptions) -> ReportPerfScoreValues? {
+        let scores = options.scoreMode
+        guard scores != .none else { return nil }
+        let legacy = scores == .legacyTaskScore
+        let perf = sample.facts.perf
+        func value(_ score: PerfSetValue, _ thinking: Double) -> ReportPerfScoreValue {
+            legacy ? .legacy(thinking: thinking) : ReportPerfScoreValue(score, thinking: thinking)
+        }
+        var entries: [String: ReportPerfScoreValue] = [:]
+        for entry in modelEntries(content, sample, maxModels: options.maxModels, scores: scores) {
+            entries[entry.id] = value(entry.perfValue, entry.thinking)
+        }
+        return ReportPerfScoreValues(top: value(perf.value, perf.thinking), entries: entries, legacy: legacy)
     }
 
     // MARK: - Values

@@ -1,3 +1,6 @@
+using AgentSpeed.Core.Perf;
+using AgentSpeed.Core.Work;
+
 namespace AgentSpeed.Core.Parsing;
 
 /// <summary>Receives complete lines (without the trailing newline) from a tailer.</summary>
@@ -7,6 +10,21 @@ internal interface ILineSink
 
     /// <summary>Input that never became a line (an undecodable zstd frame); counted as one malformed line.</summary>
     void OnMalformed();
+}
+
+/// <summary>
+/// A sink that also takes each line's byte offset in the file and its length before the newline, a trailing <c>\r</c>
+/// included (Factory Droid weighs calls by bytes, METRICS 4.16).
+/// </summary>
+internal interface IPositionedLineSink : ILineSink
+{
+    void OnLine(ReadOnlySpan<byte> line, long offset, int length);
+}
+
+/// <summary>Receives the tool calls whose first result was read live (METRICS 6.10, 11.10), in the order they are read.</summary>
+internal interface ICallSink
+{
+    void OnCallResult(string agentId, SourceKind source, WorkAction action);
 }
 
 /// <summary>Lines extracted off-thread, applied later to their parser in file order.</summary>
@@ -23,6 +41,8 @@ internal interface ILineBatch : ILineSink
 internal abstract class TranscriptParser
 {
     private AgentPhase _phase = AgentPhase.Idle;
+    private WorkLog? _work;
+    private bool _wholeFile;
 
     protected TranscriptParser(string agentId, IDeduper deduper, SourceKind initialSource)
     {
@@ -52,6 +72,15 @@ internal abstract class TranscriptParser
         protected set { if (!_modes.Equals(value)) { _modes = value; Version++; } }
     }
 
+    private ExecutionModes _sessionModes = ExecutionModes.Empty;
+
+    /// <summary>A session-current fact (EXECUTION-MODES, Current values): the agent's current value only, never a response's.</summary>
+    public ExecutionModes SessionModes
+    {
+        get => _sessionModes;
+        set { if (!_sessionModes.Equals(value)) { _sessionModes = value; Version++; } }
+    }
+
     public AgentPhase Phase => _phase;
 
     public long? PhaseSinceMs { get; private set; }
@@ -61,6 +90,21 @@ internal abstract class TranscriptParser
     public long? LastLineMs { get; private set; }
 
     public long MalformedLines { get; private set; }
+
+    /// <summary>The file's latest tool calls as actions, oldest first (METRICS 6.10); empty for sources without tool calls.</summary>
+    public IReadOnlyList<WorkAction> WorkActions => _work?.Actions ?? [];
+
+    /// <summary>The monitor is applying a seeding read: actions are stored as seeded and their results are not live (METRICS 6.10).</summary>
+    internal bool Seeding { get; set; }
+
+    /// <summary>
+    /// The order in which the agent's responses become measured and its calls get their first result (METRICS 6.11
+    /// <i>Completion order</i>); set by whole-file reads (history, dumps), which also keep every action.
+    /// </summary>
+    internal PerfCompletionLog? Completions { get; private set; }
+
+    /// <summary>Takes the calls whose first result is read live (not while seeding), in line order; set by the live monitor.</summary>
+    internal ICallSink? CallSink { get; set; }
 
     /// <summary>Changes whenever agent-visible state changes.</summary>
     public int Version { get; private set; }
@@ -87,15 +131,55 @@ internal abstract class TranscriptParser
         Project = null;
         Model = null;
         Modes = ExecutionModes.Empty;
+        SessionModes = ExecutionModes.Empty;
         IsSubagent = false;
         _phase = AgentPhase.Idle;
         PhaseSinceMs = null;
         InFlightStartMs = null;
         LastLineMs = null;
+        _work?.Clear();
+        Completions?.Clear();
         Version++;
     }
 
+    /// <summary>
+    /// A whole-file read (history analysis, dumps; call before any line): every action is kept and the completion order is
+    /// logged (METRICS 6.10 <i>Storage</i>, 6.11).
+    /// </summary>
+    public void ReadWholeFile()
+    {
+        _wholeFile = true;
+        Completions ??= new PerfCompletionLog();
+    }
+
     protected void CountMalformed() => MalformedLines++;
+
+    /// <summary>
+    /// Logs a line's tool calls and results; callers skip copied history and lines another file owns, and call it after the
+    /// line set the agent's model, which each call records (METRICS 6.10).
+    /// </summary>
+    protected void RecordTools(in LineTools tools, long atMs)
+    {
+        if (tools.Calls is null && tools.Outcomes is null)
+        {
+            return;
+        }
+
+        _work ??= new WorkLog(_wholeFile ? null : WorkLog.MaxActions) { Completed = OnCallCompleted };
+        if (_work.Apply(tools, atMs, Model, Seeding))
+        {
+            Version++;
+        }
+    }
+
+    private void OnCallCompleted(WorkAction action)
+    {
+        Completions?.Add(action);
+        if (!Seeding)
+        {
+            CallSink?.OnCallResult(AgentId, Source, action);
+        }
+    }
 
     protected void MarkChanged() => Version++;
 
@@ -190,7 +274,7 @@ internal abstract class TranscriptParser<TLine> : TranscriptParser
 
     protected abstract TLine Extract(ReadOnlySpan<byte> line);
 
-    private sealed class Batch(TranscriptParser<TLine> owner) : ILineBatch
+    private sealed class Batch(TranscriptParser<TLine> owner) : ILineBatch, IPositionedLineSink
     {
         private readonly List<TLine> _lines = [];
         private int _malformed;
@@ -198,6 +282,8 @@ internal abstract class TranscriptParser<TLine> : TranscriptParser
         public int Count => _lines.Count;
 
         public void OnLine(ReadOnlySpan<byte> line) => _lines.Add(owner.Extract(line));
+
+        public void OnLine(ReadOnlySpan<byte> line, long offset, int length) => _lines.Add(owner.Extract(line));
 
         public void OnMalformed() => _malformed++;
 

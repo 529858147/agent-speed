@@ -232,7 +232,8 @@ public abstract record ReportJson
         return Math.Round(value * scale, MidpointRounding.AwayFromZero) / scale;
     }
 
-    private static string Quoted(string text)
+    /// <summary>A JSON string literal with only <c>"</c>, <c>\</c> and control characters escaped (METRICS 11.9, Messages).</summary>
+    public static string Quoted(string text)
     {
         var builder = new StringBuilder(text.Length + 2);
         Quote(builder, text);

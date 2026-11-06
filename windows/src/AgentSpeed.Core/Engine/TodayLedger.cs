@@ -1,4 +1,6 @@
+using AgentSpeed.Core.History;
 using AgentSpeed.Core.Parsing;
+using AgentSpeed.Core.Unpriced;
 
 namespace AgentSpeed.Core.Engine;
 
@@ -19,6 +21,9 @@ internal sealed partial class TodayLedger
     private readonly CostTally[] _costPerSource = new CostTally[Enum.GetValues<SourceKind>().Length];
     private readonly Dictionary<(SourceKind Source, string Model), CostTally> _costPerModel = [];
     private readonly Dictionary<string, ParsedResponse> _unpriced = new(StringComparer.Ordinal);
+    private readonly Dictionary<UnpricedFact, long>[] _unpricedFacts =
+        [.. Enum.GetValues<SourceKind>().Select(_ => new Dictionary<UnpricedFact, long>())];
+    private readonly IReadOnlyList<UnpricedCount>?[] _sortedFacts = new IReadOnlyList<UnpricedCount>?[Enum.GetValues<SourceKind>().Length];
     private double _validOutput;
     private double _validSeconds;
     private long _validCount;
@@ -70,6 +75,10 @@ internal sealed partial class TodayLedger
         return models.ConvertAll(m => m.Model);
     }
 
+    /// <summary>A source's unpriced facts of today (METRICS 9.10 <i>Live</i>), in the fact order.</summary>
+    public IReadOnlyList<UnpricedCount> UnpricedFacts(SourceKind source) =>
+        _sortedFacts[(int)source] ??= Unpriced.UnpricedFacts.Sorted(_unpricedFacts[(int)source]);
+
     /// <summary>Sources with measured buckets today (METRICS 6.6).</summary>
     public SourceSet MeasuredSources => _sourceOutput.Allocated;
 
@@ -98,6 +107,13 @@ internal sealed partial class TodayLedger
         Array.Clear(_costPerSource);
         _costPerModel.Clear();
         _unpriced.Clear();
+        foreach (var facts in _unpricedFacts)
+        {
+            facts.Clear();
+        }
+
+        Array.Clear(_sortedFacts);
+
         ResetModes();
         Cost = default;
         Totals = default;
@@ -141,7 +157,8 @@ internal sealed partial class TodayLedger
             response.Final,
             response.Final && SpeedMath.TryGetSpeedInterval(response, out var interval) ? interval : null,
             response.Model ?? string.Empty,
-            response.CostMicroUsd, response.Requests, response.Modes);
+            response.CostMicroUsd, response.Requests, response.Modes,
+            UnpricedFact.Of(response.Model, response.Provider, response.FastForPricing, !DayLabeler.HasDate(response.EndMs)));
         Apply(entry, 1);
         _entries[response.Key] = entry;
         if (response.CostMicroUsd is not null)
@@ -161,6 +178,12 @@ internal sealed partial class TodayLedger
         Cost = Cost.Add(entry.Cost, sign, entry.Requests);
         ApplyModes(entry, sign);
         _costPerSource[(int)entry.Source] = _costPerSource[(int)entry.Source].Add(entry.Cost, sign, entry.Requests);
+        if (entry.Cost is null)
+        {
+            Unpriced.UnpricedFacts.Add(_unpricedFacts[(int)entry.Source], entry.Fact, sign * entry.Requests);
+            _sortedFacts[(int)entry.Source] = null;
+        }
+
         var modelKey = (entry.Source, entry.Model);
         var modelCost = _costPerModel.GetValueOrDefault(modelKey).Add(entry.Cost, sign, entry.Requests);
         if (modelCost == default)
@@ -199,5 +222,7 @@ internal sealed partial class TodayLedger
         totals.Reasoning + sign * tokens.Reasoning);
 
     /// <param name="Measured">The speed interval when the response is final and valid (METRICS 3.3).</param>
-    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured, string Model, long? Cost, long Requests, ExecutionModes Modes);
+    /// <param name="Fact">What the response says about itself when it has no known cost (METRICS 9.10).</param>
+    private readonly record struct Entry(SourceKind Source, TokenCounts Tokens, bool Final, Interval? Measured, string Model, long? Cost, long Requests,
+        ExecutionModes Modes, UnpricedFact Fact);
 }

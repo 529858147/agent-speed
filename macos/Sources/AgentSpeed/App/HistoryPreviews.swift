@@ -21,6 +21,8 @@ enum HistoryPreviews {
         var sort: HistoryColumn?
         /// Renders the full scrolling column instead of the window.
         var tall = false
+        /// Scrolls the window to the end of the table, where its column titles stay at the top.
+        var scrolled = false
         /// DESIGN 9: display currency, chart metric, sources marked as subscriptions and the window's choice.
         var currency = "USD"
         var metric: HistoryChartMetric = .output
@@ -29,6 +31,8 @@ enum HistoryPreviews {
         /// DESIGN 10: a source whose token usage is left out (it only used the network), and sources turned off.
         var tokenless: SourceKind?
         var disabled: Set<SourceKind> = []
+        /// DESIGN 12: the performance records of 性能表現 (none while the first analysis of this version runs).
+        var perf = true
     }
 
     enum Days { case full, none, recent(Int) }
@@ -68,7 +72,17 @@ enum HistoryPreviews {
         Case(name: "today-ja-min", size: HistoryWindowController.minimumSize, source: .omp, range: .today, language: .ja),
         Case(name: "today-zh-hans-min", size: HistoryWindowController.minimumSize, range: .today, language: .zhHans),
         Case(name: "table", tall: true),
+        // 性能表現 (DESIGN 12): one source chosen, the minimum width in English, a single day, and the first re-analysis.
+        Case(name: "perf-source", source: .claudeCode, tall: true),
+        Case(name: "perf-min-en", size: HistoryWindowController.minimumSize, language: .en, tall: true),
+        Case(name: "perf-yesterday", range: .yesterday, tall: true),
+        Case(name: "perf-analyzing", state: .analyzing(0.36, 112, 304), tall: true, perf: false),
         Case(name: "table-sorted", source: .claudeDesktop, sort: .speed, tall: true),
+        // Scrolled into the table: the column titles stay pinned under the toolbar (issue #21 keeps them in place).
+        Case(name: "table-scrolled", sort: .cost, scrolled: true),
+        Case(name: "table-scrolled-hover", hoverDaysAgo: 3, selectDaysAgo: [5], sort: .date, scrolled: true),
+        Case(name: "table-scrolled-min", size: HistoryWindowController.minimumSize, language: .en, scrolled: true),
+        Case(name: "table-scrolled-year", range: .year, sort: .cost, scrolled: true, currency: "TWD"),
         // Cost (DESIGN 9).
         Case(name: "cost-en", language: .en, metric: .cost),
         Case(name: "cost-twd-hover", hoverDaysAgo: 4, currency: "TWD", metric: .cost),
@@ -119,21 +133,12 @@ enum HistoryPreviews {
                 if item.tall {
                     renderColumn(viewModel: viewModel, model: model, width: item.size.width, dark: dark, to: url)
                 } else {
-                    renderWindow(viewModel: viewModel, model: model, size: item.size, dark: dark, to: url)
+                    renderWindow(viewModel: viewModel, model: model, size: item.size, dark: dark, scrolled: item.scrolled, to: url)
                 }
             }
         }
         if only?.contains("unpriced-popover") ?? true {
-            for (language, currency) in [(LanguagePreference.zhHant, "TWD"), (.en, "USD")] {
-                let viewModel = prepare(Case(name: "unpriced-popover", range: .days90, language: language, currency: currency), model: model)
-                for dark in [false, true] {
-                    PreviewSnapshot.writeHosted(
-                        UnpricedModelsList(models: viewModel.content.unpricedModels, l10n: model.l10n).appEnvironment(model),
-                        dark: dark,
-                        to: directory.appendingPathComponent("history-unpriced-popover-\(language.rawValue)-\(dark ? "dark" : "light").png")
-                    )
-                }
-            }
+            renderUnpricedPopovers(model: model, into: directory)
         }
         if only?.contains("popover") ?? true {
             let viewModel = prepare(Case(name: "popover", range: .custom, custom: (40, 12)), model: model)
@@ -157,8 +162,83 @@ enum HistoryPreviews {
         model.history.publish(state: .notLoaded, days: [])
     }
 
+    /// The unknown-prices popover (DESIGN 9) over facts like this Mac's and the Windows box's: router aliases and an
+    /// internal model (no public price), a model the table lacks, a Fast request without a Fast price, a response
+    /// without a model, a long lookup key, more than 20 rows in one group and requests priced now; in every language
+    /// and both appearances, with the copy button's states.
+    private static func renderUnpricedPopovers(model: AppModel, into directory: URL) {
+        let languages: [(LanguagePreference, String)] = [(.zhHant, "TWD"), (.zhHans, "CNY"), (.en, "USD"), (.ja, "JPY")]
+        for (language, currency) in languages {
+            let viewModel = prepare(Case(name: "unpriced-popover", range: .days90, language: language, currency: currency), model: model,
+                                    unpriced: true)
+            let view = viewModel.content.unpriced
+            let states: [(String, CopyDiagnosticsButton.Outcome?)] = [("", nil), ("-copied", .copied), ("-failed", .failed)]
+            for dark in [false, true] {
+                for (suffix, state) in states {
+                    PreviewSnapshot.writeHosted(
+                        UnpricedPopover(view: view, l10n: model.l10n, copyState: state).appEnvironment(model),
+                        dark: dark,
+                        to: directory.appendingPathComponent(
+                            "history-unpriced-popover-\(language.rawValue)\(suffix)-\(dark ? "dark" : "light").png")
+                    )
+                }
+            }
+            if language == .zhHant || language == .en {
+                for dark in [false, true] {
+                    PreviewSnapshot.writeHosted(
+                        UnpricedPopover(view: view, l10n: model.l10n, unboundedGroups: true).appEnvironment(model),
+                        dark: dark,
+                        to: directory.appendingPathComponent("history-unpriced-popover-\(language.rawValue)-all-\(dark ? "dark" : "light").png")
+                    )
+                }
+            }
+            if language == .zhHant {
+                let text = UnpricedText.render(view, app: .current(version: AppInfo.version))
+                try? text.write(to: directory.appendingPathComponent("history-unpriced-copied.txt"), atomically: true, encoding: .utf8)
+                renderWindow(viewModel: viewModel, model: model, size: HistoryWindowController.minimumSize, dark: false,
+                             to: directory.appendingPathComponent("history-unpriced-window-light.png"))
+            }
+        }
+    }
+
+    /// Recent days carry the facts of the popover preview; their costs count them as unpriced.
+    static func withUnpricedFacts(_ days: [DailyUsage], today: DayKey) -> [DailyUsage] {
+        func fact(_ model: String, _ provider: String?, fast: Bool = false, _ requests: Int) -> UnpricedFact {
+            UnpricedFact(key: UnpricedFactKey(model: model, provider: provider, fast: fast), requests: requests)
+        }
+        let aliases = ["ab", "f1097c63", "7", "routed-1", "routed-2", "q4", "zz", "k", "mini", "b2", "c3", "d4", "e5"]
+        // Per source, the facts of its most recent days before today, one list per day.
+        var pending: [SourceKind: [[UnpricedFact]]] = [
+            .codex: [
+                aliases.enumerated().map { fact("neko-model-\($1)", "neko-route", 70 - $0 * 4) }
+                    + [fact("codex-auto-review", "openai", 27), fact("mimo-v2.5-pro", "custom", 115)],
+                [fact("", "openai", 4), fact("gpt-6.1-sol-preview", "openai", 9), fact("o9-research", "azure", 3),
+                 fact("my-proxy/sonnet", "custom", 6), fact("internal-eval", "openai", 2), fact("glm-5.3-air", "zhipu", 5),
+                 fact("qwen3.6-plus-0915", "dashscope", 8), fact("mimo-v2.5-flash", "custom", 12)],
+            ],
+            .claudeCode: [[fact("claude-sonnet-5-5", nil, fast: true, 12)]],
+            .workbuddyAi: [[fact("Accounts/Fireworks/Models/Qwen3-Coder-480B-A35B-Instruct-Preview-Long-Context-2026", nil, 3),
+                            fact("Kimi-K3-Thinking-Turbo", "custom", 2)]],
+            .antigravity: [[fact("gemini-3.1-pro", nil, 6)]],
+        ]
+        var result = days
+        for index in result.indices.reversed() {
+            let day = result[index]
+            guard let key = DayKey(day.day), key < today, day.cost != nil, let facts = pending[day.source]?.first else { continue }
+            pending[day.source]?.removeFirst()
+            let added = facts.reduce(0) { $0 + $1.requests }
+            var tally: [UnpricedFactKey: Int] = [:]
+            for fact in day.unpriced.facts + facts { tally[fact.key, default: 0] += fact.requests }
+            result[index].totals.requests += added
+            result[index].cost?.unpricedRequests += added
+            result[index].unpriced = UnpricedReading(requests: day.unpriced.requests + added, facts: UnpricedFact.list(tally),
+                                                     derived: day.unpriced.derived)
+        }
+        return result
+    }
+
     /// Fills the store and builds a view model in the case's state.
-    static func prepare(_ item: Case, model: AppModel) -> HistoryViewModel {
+    static func prepare(_ item: Case, model: AppModel, unpriced: Bool = false) -> HistoryViewModel {
         let calendar = HistoryDates.calendar
         let now = Date()
         let all = PreviewHistory.days(endingAt: now, count: 160, calendar: calendar)
@@ -170,7 +250,8 @@ enum HistoryPreviews {
         case .recent(let count):
             all.filter { DayKey($0.day).map { $0 >= DayKey(now, calendar: calendar).adding(days: -count) } ?? false }
         }
-        let days = stored.filter { $0.source != item.tokenless && !item.disabled.contains($0.source) }
+        let kept = stored.filter { $0.source != item.tokenless && !item.disabled.contains($0.source) }
+        let days = unpriced ? withUnpricedFacts(kept, today: DayKey(now, calendar: calendar)) : kept
         model.settings.enabledSources = Set(SourceKind.allCases).subtracting(item.disabled)
         let state: HistoryState = switch item.state {
         case .ready: .ready(updatedAt: now.addingTimeInterval(-240))
@@ -178,6 +259,8 @@ enum HistoryPreviews {
         case .notLoaded: .notLoaded
         }
         model.history.publish(state: state, days: days)
+        let perf = days.isEmpty || !item.perf ? [] : PerfPreviewData.historyRecords(today: DayKey(now, calendar: calendar))
+        model.history.publish(perfRecords: perf.filter { !item.disabled.contains($0.source) })
         TrafficPreviewData.publish(into: model.traffic, now: now)
         model.settings.currency = item.currency
         model.rates.preview(rates: previewRates, currency: item.currency)
@@ -202,7 +285,8 @@ enum HistoryPreviews {
 
 
     /// The real window with its toolbar, drawn off screen.
-    private static func renderWindow(viewModel: HistoryViewModel, model: AppModel, size: NSSize, dark: Bool, to url: URL) {
+    private static func renderWindow(viewModel: HistoryViewModel, model: AppModel, size: NSSize, dark: Bool, scrolled: Bool = false,
+                                     to url: URL) {
         let host = NSHostingController(rootView: HistoryView(model: viewModel).appEnvironment(model))
         host.sizingOptions = []
         let window = HistoryWindowController.makeWindow(content: host)
@@ -215,6 +299,7 @@ enum HistoryPreviews {
         window.orderFront(nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.6))
         defer { window.orderOut(nil) }
+        if scrolled { scrollToEnd(window) }
         guard let frame = window.contentView?.superview else { return }
         frame.layoutSubtreeIfNeeded()
         frame.displayIfNeeded()
@@ -224,10 +309,29 @@ enum HistoryPreviews {
         _ = toolbar
     }
 
+    /// Scrolls to the end; a lazy table refines its estimated height as rows come in, so until the end stays put.
+    private static func scrollToEnd(_ window: NSWindow) {
+        guard let scroll = window.contentView.flatMap(firstScrollView) else { return }
+        for _ in 0..<12 {
+            guard let document = scroll.documentView else { return }
+            let end = document.frame.height - scroll.contentView.bounds.height + scroll.contentInsets.bottom
+            if abs(scroll.contentView.bounds.origin.y - end) < 0.5 { break }
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: end))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    }
+
+    private static func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        return view.subviews.lazy.compactMap(firstScrollView).first
+    }
+
     /// The whole scrolling column at its natural height, to review the table.
     private static func renderColumn(viewModel: HistoryViewModel, model: AppModel, width: CGFloat, dark: Bool, to url: URL) {
         let rows = viewModel.content.rows.count
-        let height = 460 + HistoryLayout.chartHeight + CGFloat(min(rows, 40)) * HistoryLayout.rowHeight + 120
+        let height = 460 + HistoryLayout.chartHeight + 520 + CGFloat(min(rows, 40)) * HistoryLayout.rowHeight + 120
         PreviewSnapshot.writeHosted(
             HistoryView(model: viewModel)
                 .appEnvironment(model)

@@ -107,6 +107,18 @@ enum TranscriptLocations {
         return !(store as NSString).lastPathComponent.hasSuffix("-backup")
     }
 
+    /// `config/config.json` in the folder that holds an Antigravity store (EXECUTION-MODES, Configured values).
+    static func antigravityConfig(ofRoot conversations: String) -> String {
+        let store = (TranscriptDiscovery.normalizedRoot(conversations) as NSString).deletingLastPathComponent
+        return ((store as NSString).deletingLastPathComponent as NSString).appendingPathComponent("config/config.json")
+    }
+
+    /// `<home>/.gemini/settings.json`, where `<home>` is `$GEMINI_CLI_HOME`, else the user's home (METRICS 2).
+    static var defaultGeminiSettings: String {
+        (environment("GEMINI_CLI_HOME").map { URL(fileURLWithPath: $0, isDirectory: true) } ?? home)
+            .appendingPathComponent(".gemini/settings.json").path
+    }
+
     /// WorkBuddy's data folders (METRICS 2, 4.9). `WORKBUDDY_CONFIG_DIR` and `CODEBUDDY_CONFIG_DIR` are not honoured.
     static var defaultWorkBuddyDataFolder: URL { home.appendingPathComponent(".workbuddy", isDirectory: true) }
     static var defaultWorkBuddyAiDataFolder: URL { home.appendingPathComponent(".workbuddy-ai", isDirectory: true) }
@@ -142,6 +154,18 @@ enum TranscriptLocations {
         return base.appendingPathComponent("sessions", isDirectory: true)
     }
 
+    /// Pi's automatic roots (METRICS 2, 4.13) for this process's environment and home folder.
+    static var defaultPiRoots: [URL] { PiHome.current.roots }
+
+    /// OpenClaw's state folders (METRICS 2, 4.14) for this process's environment and home folder.
+    static var defaultOpenclawRoots: [URL] { OpenClawHome.current.stateFolders }
+
+    /// The Hermes Agent home (METRICS 2, 4.15) for this process's environment and home folder.
+    static var defaultHermesHome: URL { URL(fileURLWithPath: HermesHome.current.folder, isDirectory: true) }
+
+    /// Factory Droid's sessions folder (METRICS 2, 4.16); no environment variable moves it.
+    static var defaultDroidRoot: URL { DroidPaths.defaultRoot(home: home) }
+
     static func sessionsFolder(_ folder: URL) -> URL {
         folder.lastPathComponent == "sessions" ? folder : folder.appendingPathComponent("sessions", isDirectory: true)
     }
@@ -159,6 +183,8 @@ enum TranscriptLocations {
         case .workbuddyAi: [workbuddyProjects(defaultWorkBuddyAiDataFolder)]
         case .kimi: [defaultKimiRoot]
         case .grokBuild: [defaultGrokBuildRoot]
+        case .pi: defaultPiRoots
+        case .droid: [defaultDroidRoot]
         }
     }
 
@@ -194,6 +220,8 @@ extension MonitorConfiguration {
         case .workbuddyAi: workbuddyAiRoot.map(TranscriptLocations.workbuddyProjects)
         case .kimi: kimiRoot.map(TranscriptLocations.sessionsFolder)
         case .grokBuild: grokBuildRoot.map(TranscriptLocations.sessionsFolder)
+        case .pi: piRoot
+        case .droid: droidRoot.map(DroidPaths.sessionsFolder)
         }
     }
 
@@ -207,13 +235,28 @@ extension MonitorConfiguration {
             default: urls
             }
         }
-        let urls = configuredRoot(for: family).map { [$0] } ?? automatic ?? TranscriptLocations.defaultRoots(for: family)
+        let fallback = family == .pi ? piHome?.roots : nil
+        var urls = configuredRoot(for: family).map { [$0] } ?? automatic ?? fallback ?? TranscriptLocations.defaultRoots(for: family)
+        if family == .codex, configuredRoot(for: .codex) == nil {
+            // OpenClaw's agent-scoped Codex homes are automatic Codex roots; a Codex setting replaces them too.
+            urls += openclawCodexRoots.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        }
         var roots: [String] = []
         for url in urls {
             let root = TranscriptDiscovery.normalizedRoot(url.path)
             if !roots.contains(root) { roots.append(root) }
         }
         return roots
+    }
+
+    /// Gemini CLI's user settings: next to the `tmp` folder of a set root, else the file of the automatic home.
+    var resolvedGeminiSettings: String {
+        guard let root = configuredRoot(for: .gemini) ?? automaticRoots[.gemini]?.first else {
+            return TranscriptLocations.defaultGeminiSettings
+        }
+        let folder = TranscriptDiscovery.normalizedRoot(root.path)
+        let home = (folder as NSString).lastPathComponent == "tmp" ? (folder as NSString).deletingLastPathComponent : folder
+        return (home as NSString).appendingPathComponent("settings.json")
     }
 
     /// The first root of a family.
@@ -225,6 +268,61 @@ extension MonitorConfiguration {
     static func isReadable(root: String, family: TranscriptFamily) -> Bool {
         family != .antigravity || TranscriptLocations.isReadableAntigravityRoot(root)
     }
+
+    /// Every resolved root of every family, and whether it is read: never an Antigravity `*-backup` store, and never an
+    /// omp root that is a Pi root or lies inside one, which holds Pi's files (METRICS 4.7), also while Pi is off.
+    func allRoots() -> [(family: TranscriptFamily, path: String, readable: Bool)] {
+        let pi = resolvedRoots(for: .pi)
+        return TranscriptFamily.allCases.flatMap { family in
+            (family == .pi ? pi : resolvedRoots(for: family)).map { root in
+                (family, root, Self.isReadable(root: root, family: family, piRoots: pi))
+            }
+        }
+    }
+
+    static func isReadable(root: String, family: TranscriptFamily, piRoots: [String]) -> Bool {
+        isReadable(root: root, family: family) && (family != .omp || !PiHome.contains(piRoots, root))
+    }
+
+    /// OpenClaw's roots: the configured folder or database, else every state folder (METRICS 2, 4.14).
+    var resolvedOpenclawRoots: [String] {
+        let urls = openclawRoot.map { [$0] } ?? (openclawHome ?? .current).stateFolders
+        var roots: [String] = []
+        for url in urls {
+            let root = TranscriptDiscovery.normalizedRoot(url.path)
+            if !roots.contains(root) { roots.append(root) }
+        }
+        return roots
+    }
+
+    /// The agent-scoped Codex homes next to every OpenClaw agent database: automatic Codex roots (METRICS 2, 4.14),
+    /// also while OpenClaw itself is off.
+    var openclawCodexRoots: [String] {
+        var seen: Set<String> = []
+        return resolvedOpenclawRoots.flatMap(OpenClawHome.databases(in:))
+            .map(OpenClawHome.codexRoot(ofDatabase:))
+            .filter { seen.insert($0).inserted }
+    }
+
+    var readsOpenclaw: Bool { enabledSources.contains(.openclaw) }
+
+    /// The Hermes Agent home, or the folder of the setting (a home or one log folder), and whether it is the setting
+    /// (METRICS 2, 4.15).
+    var resolvedHermesRoot: (path: String, isSetting: Bool) {
+        if let hermesRoot { return (TranscriptDiscovery.normalizedRoot(hermesRoot.path), true) }
+        return ((hermesHome ?? .current).folder, false)
+    }
+
+    /// The log folders Hermes Agent's root names now: the home's own and every profile's, or the setting's.
+    var resolvedHermesFolders: [String] {
+        let root = resolvedHermesRoot
+        return root.isSetting ? HermesHome.settingFolders(root.path) : HermesHome.logFolders(ofHome: root.path)
+    }
+
+    /// The zone Hermes's wall-clock times are read in: this computer's, unless a test sets one.
+    var resolvedHermesTimeZone: TimeZone { hermesTimeZone ?? .autoupdatingCurrent }
+
+    var readsHermes: Bool { enabledSources.contains(.hermes) }
 
     func reads(_ family: TranscriptFamily) -> Bool {
         family.sources.contains { enabledSources.contains($0) }
@@ -239,8 +337,11 @@ extension MonitorConfiguration {
     }
 
     /// Codex archives finished sessions next to the sessions folder (METRICS 8).
-    var resolvedCodexArchiveRoot: String {
-        ((resolvedCodexRoot as NSString).deletingLastPathComponent as NSString).appendingPathComponent("archived_sessions")
+    var resolvedCodexArchiveRoot: String { Self.codexArchiveRoot(of: resolvedCodexRoot) }
+
+    /// The `archived_sessions` folder next to a Codex sessions root.
+    static func codexArchiveRoot(of root: String) -> String {
+        ((root as NSString).deletingLastPathComponent as NSString).appendingPathComponent("archived_sessions")
     }
 
     var readsCodex: Bool { reads(.codex) }
@@ -256,5 +357,7 @@ extension MonitorConfiguration {
             || TranscriptFamily.allCases.contains { resolvedRoots(for: $0) != other.resolvedRoots(for: $0) }
             || resolvedOpencodeRoot != other.resolvedOpencodeRoot
             || resolvedZcodeRoot != other.resolvedZcodeRoot
+            || resolvedOpenclawRoots != other.resolvedOpenclawRoots
+            || resolvedHermesRoot != other.resolvedHermesRoot
     }
 }

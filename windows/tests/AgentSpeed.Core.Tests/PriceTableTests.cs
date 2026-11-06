@@ -89,49 +89,72 @@ public sealed class PriceTableTests
         var mismatches = new List<string>();
         foreach (var spec in cases.Select(c => c!))
         {
-            var name = (string?)spec["name"];
-            var table = FixtureTables.Value[(string)spec["table"]!];
-            var tokens = Tokens(spec["tokens"]!);
-            var fast = (bool?)spec["fast"] ?? false;
-            var at = UtcDay.InstantMs((string?)spec["at"]);
-            var model = (string?)spec["model"];
-            var provider = (string?)spec["provider"];
-            long? pico = null;
-            int? tier = null;
-            var resolution = table.Resolver.Resolve(model, provider);
-            switch (resolution.Kind)
-            {
-                case ResolutionKind.Priced:
-                    if (table.Models[resolution.Index].PricingFor(at, resolution.Fast || fast) is { } pricing)
-                    {
-                        (pico, tier) = ResponseCost.PicoUsd(tokens, pricing);
-                    }
-
-                    break;
-                case ResolutionKind.Free:
-                    pico = 0;
-                    break;
-            }
-
-            var micro = table.Cost(model, provider, tokens, at, fast);
-            var expect = spec["expect"]!.AsObject();
-            if (expect.ContainsKey("costPicoUsd") && pico != (long?)expect["costPicoUsd"])
-            {
-                mismatches.Add($"{name} costPicoUsd: expected {expect["costPicoUsd"]} got {pico}");
-            }
-
-            if (micro != (long?)expect["costMicroUsd"])
-            {
-                mismatches.Add($"{name} costMicroUsd: expected {expect["costMicroUsd"]} got {micro}");
-            }
-
-            if (expect.ContainsKey("tier") && tier != (int?)expect["tier"])
-            {
-                mismatches.Add($"{name} tier: expected {expect["tier"]} got {tier}");
-            }
+            CheckCost(spec, FixtureTables.Value[(string)spec["table"]!], mismatches);
         }
 
         Assert.Empty(mismatches);
+    }
+
+    [Fact]
+    public void BundledCostCases()
+    {
+        var cases = Cases.Value["bundled"]!["cost"]!.AsArray();
+        Assert.NotEmpty(cases);
+        var mismatches = new List<string>();
+        foreach (var spec in cases.Select(c => c!))
+        {
+            if (spec["at"] is null)
+            {
+                mismatches.Add($"{spec["name"]}: needs an instant");
+            }
+
+            CheckCost(spec, PriceBook.Bundled, mismatches);
+        }
+
+        Assert.Empty(mismatches);
+    }
+
+    private static void CheckCost(JsonNode spec, PriceTable table, List<string> mismatches)
+    {
+        var name = (string?)spec["name"];
+        var tokens = Tokens(spec["tokens"]!);
+        var fast = (bool?)spec["fast"] ?? false;
+        var at = UtcDay.InstantMs((string?)spec["at"]);
+        var model = (string?)spec["model"];
+        var provider = (string?)spec["provider"];
+        long? pico = null;
+        int? tier = null;
+        var resolution = table.Resolver.Resolve(model, provider);
+        switch (resolution.Kind)
+        {
+            case ResolutionKind.Priced:
+                if (table.Models[resolution.Index].PricingFor(at, resolution.Fast || fast) is { } pricing)
+                {
+                    (pico, tier) = ResponseCost.PicoUsd(tokens, pricing);
+                }
+
+                break;
+            case ResolutionKind.Free:
+                pico = 0;
+                break;
+        }
+
+        var micro = table.Cost(model, provider, tokens, at, fast);
+        var expect = spec["expect"]!.AsObject();
+        if (expect.ContainsKey("costPicoUsd") && pico != (long?)expect["costPicoUsd"])
+        {
+            mismatches.Add($"{name} costPicoUsd: expected {expect["costPicoUsd"]} got {pico}");
+        }
+
+        if (micro != (long?)expect["costMicroUsd"])
+        {
+            mismatches.Add($"{name} costMicroUsd: expected {expect["costMicroUsd"]} got {micro}");
+        }
+
+        if (expect.ContainsKey("tier") && tier != (int?)expect["tier"])
+        {
+            mismatches.Add($"{name} tier: expected {expect["tier"]} got {tier}");
+        }
     }
 
     [Fact]

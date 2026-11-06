@@ -82,30 +82,18 @@ enum HistoryAggregator {
         measuredMs > 0 && measuredOutput > 0 ? Double(measuredOutput) / (Double(measuredMs) / 1000) : nil
     }
 
-    /// Models with responses of unknown price in `days` over the counted sources, most unpriced requests first
-    /// (`history.unpricedNotice`). Contributions stored before costs existed are not unknown prices and are left out.
-    static func unpricedModels(_ usage: [DailyUsage], source: SourceKind?, range: DayRange, excluded: Set<SourceKind>) -> [UnpricedModel] {
-        var counts: [UnpricedModel.Key: Int] = [:]
-        for record in usage {
-            if let source, record.source != source { continue }
-            guard !excluded.contains(record.source), record.cost != nil, let day = DayKey(record.day), range.contains(day) else { continue }
-            var named = 0
-            for model in record.models {
-                guard let unpriced = model.cost?.unpricedRequests, unpriced > 0 else { continue }
-                let name = model.model.trimmingCharacters(in: .whitespaces)
-                counts[UnpricedModel.Key(model: name, source: record.source), default: 0] += unpriced
-                named += unpriced
-            }
-            let rest = (record.cost?.unpricedRequests ?? 0) - named
-            if rest > 0 { counts[UnpricedModel.Key(model: "", source: record.source), default: 0] += rest }
+    /// The unpriced diagnostics of the window's view (METRICS 9.10 *Rows*): the stored days of the range for the
+    /// selected source, without the sources counted as subscriptions, explained with the current table.
+    static func unpriced(_ usage: [DailyUsage], source: SourceKind?, rangeKind: HistoryRangeKind, range: DayRange,
+                         excluded: Set<SourceKind>, table: PriceTable) -> UnpricedView {
+        let first = range.start.description, last = range.end.description
+        let parts = usage.compactMap { record -> UnpricedPart? in
+            guard first <= record.day, record.day <= last, source.map({ $0 == record.source }) ?? true,
+                  !excluded.contains(record.source) else { return nil }
+            return record.unpricedPart
         }
-        return counts
-            .map { UnpricedModel(model: $0.key.model, source: $0.key.source, requests: $0.value) }
-            .sorted { lhs, rhs in
-                if lhs.requests != rhs.requests { return lhs.requests > rhs.requests }
-                if lhs.model != rhs.model { return lhs.model < rhs.model }
-                return (SourceKind.allCases.firstIndex(of: lhs.source) ?? 0) < (SourceKind.allCases.firstIndex(of: rhs.source) ?? 0)
-            }
+        let view = UnpricedRange(view: rangeKind.diagnosticsName, first: first, last: last, source: source, excluded: excluded)
+        return UnpricedView(parts: parts, table: table, range: view)
     }
 
     static func hasUsage(_ record: DailyUsage) -> Bool {
@@ -194,18 +182,4 @@ enum HistoryAggregator {
             cost: dayCost, totalCost: totalCost, priceVersion: totalCost == nil ? nil : priceVersion, modelCosts: modelCosts
         )
     }
-}
-
-/// A model whose price is unknown, with the requests it left out of the range's cost.
-struct UnpricedModel: Equatable, Sendable, Identifiable {
-    struct Key: Hashable, Sendable {
-        let model: String
-        let source: SourceKind
-    }
-
-    var id: Key { Key(model: model, source: source) }
-    /// Empty for responses without a model name.
-    let model: String
-    let source: SourceKind
-    let requests: Int
 }

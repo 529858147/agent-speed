@@ -1,3 +1,7 @@
+using System.Collections.ObjectModel;
+using AgentSpeed.Core.Perf;
+using AgentSpeed.Core.Unpriced;
+
 namespace AgentSpeed.Core;
 
 /// <summary>One model's share of a source's day (METRICS 8).</summary>
@@ -33,6 +37,9 @@ public sealed record DailyUsage(
 
     /// <summary>The price table version bound to the day; null without cost data.</summary>
     public int? PriceVersion { get; init; }
+
+    /// <summary>The day's unpriced facts after <i>Reading</i> (METRICS 9.10), in the fact order.</summary>
+    public UnpricedReading Unpriced { get; init; } = UnpricedReading.None;
 
     /// <summary>Output tok/s over the day's measured responses.</summary>
     public double? AverageSpeed => MeasuredMs > 0 ? MeasuredOutput / (MeasuredMs / 1000.0) : null;
@@ -82,6 +89,9 @@ public sealed class HistoryHub
     /// <summary>Every stored day of every source, sorted by day then source.</summary>
     public IReadOnlyList<DailyUsage> Days { get; private set; } = [];
 
+    /// <summary>The stored performance records of the enabled sources (METRICS 6.11), by day, source and model.</summary>
+    public IReadOnlyList<PerfRecord> PerfRecords { get; private set; } = [];
+
     public event EventHandler? Changed;
 
     public Action? RefreshHandler { get; set; }
@@ -98,6 +108,28 @@ public sealed class HistoryHub
 
         Changed?.Invoke(this, EventArgs.Empty);
     });
+
+    /// <summary>The days together with the performance records (METRICS 6.11).</summary>
+    public void Publish(HistoryState state, IReadOnlyList<DailyUsage> days, IReadOnlyList<PerfRecord> perfRecords)
+    {
+        ArgumentNullException.ThrowIfNull(days);
+        ArgumentNullException.ThrowIfNull(perfRecords);
+        Post(() =>
+        {
+            State = state;
+            Days = days;
+            PerfRecords = perfRecords;
+            Changed?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    /// <summary>
+    /// The 性能表現 rows of [<paramref name="first"/>, <paramref name="last"/>] (METRICS 6.11 <i>History window</i>): per
+    /// source and model the pooled values and the daily trend.
+    /// </summary>
+    /// <param name="source">Only this source's records; every source when null.</param>
+    public IReadOnlyList<PerfRangeRow> PerfRange(string first, string last, SourceKind? source = null) =>
+        PerfHistory.RangeOf(PerfRecords, first, last, source);
 
     public void Refresh() => RefreshHandler?.Invoke();
 
@@ -174,6 +206,7 @@ public static class PreviewHistory
                 var totals = new TokenTotals(requests, input, (long)(input * 0.9), input / 40, output, output / 3);
                 usage = [.. usage.Select(m => m with { Cost = PreviewCost(m, totals) })];
                 var dayCost = usage.Aggregate(CostTally.Zero, (sum, m) => sum + m.Cost!.Value);
+                var withoutCost = offset > count * 3 / 4 && (offset * 7 + (int)source) % 4 == 0;
                 result.Add(new DailyUsage(
                     date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                     source,
@@ -186,8 +219,13 @@ public static class PreviewHistory
                     usage)
                 {
                     // A quarter of the oldest days predate costs, as after an upgrade whose logs are gone.
-                    Cost = offset > count * 3 / 4 && (offset * 7 + (int)source) % 4 == 0 ? null : dayCost,
+                    Cost = withoutCost ? null : dayCost,
                     PriceVersion = Pricing.PriceBook.Bundled.Version,
+                    Unpriced = withoutCost
+                        ? new UnpricedReading(requests, 0, [])
+                        : new UnpricedReading(0, 0, UnpricedFacts.Sorted(usage
+                            .Where(m => m.Cost is { UnpricedRequests: > 0 })
+                            .Select(m => KeyValuePair.Create(UnpricedFact.Of(m.Model, null, false), m.Cost!.Value.UnpricedRequests)))),
                 });
             }
         }

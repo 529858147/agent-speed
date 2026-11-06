@@ -42,6 +42,7 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
     private bool _forcePresent = true;
     private ulong _presented;
     private double _unitHoverUntil = double.NegativeInfinity;
+    private double? _glyphRetry;
     private int _presentedGeneration = -1;
     private FrameClass _demand = FrameClass.Fps60;
     private string _accessibleName = string.Empty;
@@ -167,7 +168,8 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
 
     public FrameClass Cap { get; set; } = FrameClass.Fps60;
 
-    public double? NextWake => _orb.NextWake;
+    /// <summary>The orb's next scheduled change, or sooner the retry of a string its last frame could not draw.</summary>
+    public double? NextWake => _glyphRetry is { } retry && (_orb.NextWake is not { } wake || retry < wake) ? retry : _orb.NextWake;
 
     /// <summary>Window side in physical pixels and the display scale (dpi / 96) it is drawn at.</summary>
     public void SetPixels(int pixels, double scale)
@@ -239,17 +241,17 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
         _clock.Kick(this);
     }
 
-    public void SetTraffic(Core.Traffic.TrafficRate? rate, bool bits, bool enabled)
+    public void SetLines(Presentation.Orb.Lines.OrbLinesSample? sample, bool enabled)
     {
-        if (_orb.SetTraffic(Now(), rate, bits, enabled))
+        if (_orb.SetLines(Now(), sample, enabled))
         {
             _clock.Kick(this);
         }
     }
 
-    public bool TrafficVisible => _orb.TrafficVisible(Now());
+    public bool LinesVisible => _orb.LinesVisible(Now());
 
-    public Presentation.Orb.Traffic.OrbTrafficReading? TrafficReading => _orb.TrafficReading;
+    public Presentation.Orb.Lines.OrbLinesReading? LinesReading => _orb.LinesReading;
 
     public void Pulse(double speed, long outputTokens)
     {
@@ -284,8 +286,8 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
             // The needle's unit on the dial face (DESIGN 10): its click target follows it.
             layout = layout with
             {
-                UnitSize = Presentation.Orb.Traffic.OrbTrafficPlacement.NeedleDialUnitSize,
-                UnitGap = Presentation.Orb.Traffic.OrbTrafficPlacement.NeedleDialUnitBaseline - layout.ValueBaseline,
+                UnitSize = Presentation.Orb.Lines.OrbLinesPlacement.NeedleDialUnitSize,
+                UnitGap = Presentation.Orb.Lines.OrbLinesPlacement.NeedleDialUnitBaseline - layout.ValueBaseline,
             };
             width = _orb.DialUnitWidth;
         }
@@ -314,7 +316,9 @@ internal sealed class GpuOrbSurface : IOrbSurface, IOrbFrameClient, IDisposable
 
         _device.Atlas.BeginFrame();
         var motion = Motion?.Invoke(now) ?? new OrbWindowMotion(1, 1, FrameClass.None);
+        var blankMisses = _device.Atlas.BlankMisses;
         _orb.Render(now, motion.Scale, motion.Opacity);
+        _glyphRetry = _device.Atlas.BlankMisses != blankMisses ? now + (_device.Atlas.SecondsToRetry ?? OrbBlankGlyphs.FirstDelay) : null;
         var demand = FramePolicy.Max(_orb.Demand, motion.Demand);
         if (now < _unitHoverUntil)
         {

@@ -6,6 +6,16 @@ enum HistoryRangeKind: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// The `view` of the copied diagnostics text (METRICS 9.10).
+    var diagnosticsName: String {
+        switch self {
+        case .days7: "7d"
+        case .days30: "30d"
+        case .days90: "90d"
+        case .today, .yesterday, .year, .all, .custom: rawValue
+        }
+    }
+
     var titleKey: String {
         switch self {
         case .today: "history.range.today"

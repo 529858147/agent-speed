@@ -25,7 +25,8 @@ internal readonly record struct OpenCodeData(
     bool HasTokens,
     TokenCounts Tokens,
     string? Provider = null,
-    string? ServiceTier = null);
+    string? ServiceTier = null,
+    string? Variant = null);
 
 /// <param name="Data">Null when <c>data</c> is not a JSON object (a malformed row).</param>
 internal sealed record OpenCodeRow(
@@ -68,6 +69,7 @@ internal static class OpenCodeDataReader
             long? created = null, streamed = null, completed = null;
             string? model = null;
             string? provider = null;
+            string? variant = null;
             string? serviceTier = null;
             var toolCalls = false;
             var hasTokens = false;
@@ -83,7 +85,7 @@ internal static class OpenCodeDataReader
                 else if (reader.ValueTextEquals("model"u8))
                 {
                     reader.Read();
-                    (model, provider) = ReadModel(ref reader);
+                    (model, provider, variant) = ReadModel(ref reader);
                 }
                 else if (reader.ValueTextEquals("native"u8))
                 {
@@ -128,7 +130,7 @@ internal static class OpenCodeDataReader
                 return null;
             }
 
-            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens, provider, serviceTier);
+            return new OpenCodeData(created, streamed, completed, model, toolCalls, hasTokens, tokens, provider, serviceTier, variant);
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException)
         {
@@ -185,21 +187,23 @@ internal static class OpenCodeDataReader
         return reader.TryGetDouble(out var real) && double.IsFinite(real) && Math.Abs(real) < 9e15 ? (long)real : null;
     }
 
-    // model.id and model.providerID (METRICS 3.2).
-    private static (string? Id, string? Provider) ReadModel(ref Utf8JsonReader reader)
+    // model.id and model.providerID (METRICS 3.2); model.variant is the reasoning effort (EXECUTION-MODES, OpenCode).
+    private static (string? Id, string? Provider, string? Variant) ReadModel(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             JsonScan.SkipValue(ref reader);
-            return (null, null);
+            return (null, null, null);
         }
 
         string? id = null;
         string? provider = null;
+        string? variant = null;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var isId = reader.ValueTextEquals("id"u8);
             var isProvider = !isId && reader.ValueTextEquals("providerID"u8);
+            var isVariant = !isId && !isProvider && reader.ValueTextEquals("variant"u8);
             reader.Read();
             if (isId)
             {
@@ -209,13 +213,17 @@ internal static class OpenCodeDataReader
             {
                 provider = JsonScan.ReadString(ref reader);
             }
+            else if (isVariant)
+            {
+                variant = JsonScan.ReadToken(ref reader);
+            }
             else
             {
                 JsonScan.SkipValue(ref reader);
             }
         }
 
-        return (id, provider);
+        return (id, provider, variant);
     }
 
     // input = input + cache.read + cache.write; output = output + reasoning (OpenCode reports reasoning separately).

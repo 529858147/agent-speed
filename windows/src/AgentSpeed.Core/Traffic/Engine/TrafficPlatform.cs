@@ -66,18 +66,22 @@ internal sealed class TrafficPlatform
         return IsWindows ? normalized.ToLowerInvariant() : normalized;
     }
 
-    /// <summary>The executable's file name without <c>.exe</c> (Windows); case is kept.</summary>
+    /// <summary>
+    /// The executable's file name: as is on macOS; lower-case without <c>.exe</c> on Windows, where an image path has the
+    /// case the process was launched with (METRICS 10.5).
+    /// </summary>
     public string Name(string? executable)
     {
         var path = (executable ?? string.Empty).Replace('\\', '/');
         var slash = path.LastIndexOf('/');
         var name = slash >= 0 ? path[(slash + 1)..] : path;
-        if (IsWindows && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        if (!IsWindows)
         {
-            name = name[..^4];
+            return name;
         }
 
-        return name;
+        name = name.ToLowerInvariant();
+        return name.EndsWith(".exe", StringComparison.Ordinal) ? name[..^4] : name;
     }
 
     /// <summary><paramref name="path"/> lies under (or is) one of <paramref name="prefixes"/> (already normalized, without a trailing slash).</summary>

@@ -50,9 +50,13 @@ struct DshParser: Sendable {
             if let created = state.thread?.createdMs, timestamp < created - Self.inheritedHistoryToleranceMs { return }
             state.noteLine(at: timestamp)
             switch kind {
-            case .requestHeader(let model, let provider):
-                if let model { state.model = model }
-                if let provider { self.provider = provider }
+            case .requestHeader(let config):
+                if let model = config.model { state.model = model }
+                if let provider = config.provider { self.provider = provider }
+                // Each header replaces (or clears) the effort; a response takes a snapshot of the context.
+                var modes = ExecutionModes(state.modes.facts.filter { $0.kind != .effort })
+                if let effort = config.effort { modes.insert(effort) }
+                state.modes = modes
             case .stepStart:
                 pendingStartMs = timestamp
                 state.setPhase(.generating, at: timestamp, inFlightStartMs: timestamp)
@@ -86,7 +90,8 @@ struct DshParser: Sendable {
                 startMs: pendingStartMs,
                 endMs: timestamp,
                 usage: usage,
-                provider: message.provider ?? provider
+                provider: message.provider ?? provider,
+                modes: state.modes
             )
             if let model { state.model = model }
             emit(ResponseUpsert(record: record, isCompletion: true))

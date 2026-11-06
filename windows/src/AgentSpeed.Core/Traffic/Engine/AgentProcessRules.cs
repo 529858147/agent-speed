@@ -1,15 +1,30 @@
+using System.Text.RegularExpressions;
+
 namespace AgentSpeed.Core.Traffic.Engine;
 
 /// <summary>The agent-process rows of METRICS 10.5: which source, if any, a process runs.</summary>
 internal sealed class AgentProcessRules
 {
     private static readonly HashSet<string> ScriptHosts = new(StringComparer.Ordinal) { "node", "nodejs", "bun", "deno" };
-    private static readonly string[] DesktopPackages = ["/windowsapps/claude_", "/windowsapps/openai.codex_", "/windowsapps/openai.chatgpt"];
+
+    /// <summary>Hermes Agent's launchers and entry modules in a Python host's arguments (METRICS 10.5).</summary>
+    private static readonly string[] HermesMarkers = ["hermes_bootstrap", "hermes_cli", "acp_adapter"];
+
+    /// <summary>Hermes Agent's console scripts and Windows launcher, by file name without <c>.exe</c>.</summary>
+    private static readonly HashSet<string> HermesScripts = new(StringComparer.Ordinal) { "hermes", "hermes-agent", "hermes-acp" };
+
+    /// <summary>
+    /// Windows desktop apps by location: an executable directly in the <c>app</c> folder of their packages. The tools a package
+    /// bundles deeper (<c>app/resources/codex.exe</c>) follow the rows. Matched against normalized (lower-case) paths.
+    /// </summary>
+    private static readonly Regex DesktopPackageApp = new("/windowsapps/(claude_|openai\\.codex_|openai\\.chatgpt)[^/]*/app/[^/]+$",
+        RegexOptions.CultureInvariant);
     private static readonly string[] CodexTargets = ["x86_64", "aarch64", "apple-darwin", "linux", "windows"];
     private static readonly string[] OpenCodeTargets = ["darwin", "linux", "windows"];
 
     /// <summary>
-    /// WorkBuddy runs its embedded CLI on the app's own executable (Electron as Node): macOS by bundle id, Windows by name.
+    /// WorkBuddy runs its embedded CLI on the app's own executable (Electron as Node): macOS by bundle id, Windows by its
+    /// (lower-case) name.
     /// The editions are resolved by their source names (METRICS 1), so a build without those sources skips the rows.
     /// </summary>
     private readonly Dictionary<string, SourceKind> _workBuddyBundles;
@@ -30,7 +45,7 @@ internal sealed class AgentProcessRules
         _platform = platform;
         sources ??= History.SourceNames.Parse;
         _workBuddyBundles = Editions(sources, ("com.tencent.workbuddy.mac", "workbuddy"), ("com.workbuddy.workbuddy-ai", "workbuddyAi"));
-        _workBuddyNames = Editions(sources, ("WorkBuddy", "workbuddy"), ("WorkBuddyAI", "workbuddyAi"));
+        _workBuddyNames = Editions(sources, ("workbuddy", "workbuddy"), ("workbuddyai", "workbuddyAi"));
         _claudeDesktopCode = platform.IsWindows
             ? platform.Prefixes("%LOCALAPPDATA%/Claude/claude-code/", "%LOCALAPPDATA%/Claude-3p/claude-code/", "%APPDATA%/Claude/claude-code/")
             : platform.Prefixes("~/Library/Application Support/Claude/claude-code/");
@@ -56,7 +71,8 @@ internal sealed class AgentProcessRules
     public bool NeedsArguments(string executable, Func<string?> bundle)
     {
         var name = _platform.Name(executable);
-        return IsScriptHostName(name) || name == "claude" || _platform.IsUnder(executable, _claudeVersions) || WorkBuddyEdition(name, bundle) is not null;
+        return IsScriptHostName(name) || IsPythonHostName(name) || name == "claude" || _platform.IsUnder(executable, _claudeVersions)
+            || WorkBuddyEdition(name, bundle) is not null;
     }
 
     private static Dictionary<string, SourceKind> Editions(Func<string, SourceKind?> sources, params (string Key, string Source)[] pairs)
@@ -82,6 +98,29 @@ internal sealed class AgentProcessRules
 
     private static bool IsScriptHostName(string name) => ScriptHosts.Contains(name.ToLowerInvariant());
 
+    /// <summary><c>python</c>, <c>pythonw</c>, or <c>python</c> followed by digits and dots, compared case-insensitively (macOS <c>Python</c>).</summary>
+    private static bool IsPythonHostName(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        if (lower.EndsWith(".exe", StringComparison.Ordinal))
+        {
+            lower = lower[..^4];
+        }
+
+        if (!lower.StartsWith("python", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rest = lower.AsSpan(6);
+        return rest.IsEmpty || rest is "w" || (char.IsAsciiDigit(rest[0]) && !rest.ContainsAnyExcept("0123456789."));
+    }
+
+    /// <summary>A Python host running Hermes Agent: a launcher bootstrap, <c>-m hermes_cli.main</c>, or a console script.</summary>
+    private bool IsHermes(string name, Func<IReadOnlyList<string>?> arguments) =>
+        IsPythonHostName(name) && arguments() is { Count: > 1 } args
+        && args.Skip(1).Any(a => HermesMarkers.Any(m => a.Contains(m, StringComparison.Ordinal)) || HermesScripts.Contains(_platform.Name(a)));
+
     public bool IsClaudeDesktopApp(string executable)
     {
         if (_platform.IsUnder(executable, _claudeDesktopApp))
@@ -89,8 +128,8 @@ internal sealed class AgentProcessRules
             return true;
         }
 
-        return _platform.IsWindows && _platform.Name(executable) == "Claude"
-            && _platform.Normalize(executable).Contains("/windowsapps/claude_", StringComparison.Ordinal);
+        return _platform.IsWindows && _platform.Name(executable) == "claude"
+            && DesktopPackageApp.Match(_platform.Normalize(executable)) is { Success: true } match && match.Groups[1].Value == "claude_";
     }
 
     public bool IsDesktopApp(string executable)
@@ -105,9 +144,7 @@ internal sealed class AgentProcessRules
             return false;
         }
 
-        var normalized = _platform.Normalize(executable);
-        var name = _platform.Name(executable);
-        return name.Length > 0 && char.IsUpper(name[0]) && DesktopPackages.Any(p => normalized.Contains(p, StringComparison.Ordinal));
+        return DesktopPackageApp.IsMatch(_platform.Normalize(executable));
     }
 
     private string ScriptArguments(string executable, IReadOnlyList<string>? arguments)
@@ -177,12 +214,6 @@ internal sealed class AgentProcessRules
             return SourceKind.GrokBuild;
         }
 
-        if (name == "pi" || script.Contains("/@earendil-works/pi-coding-agent/", StringComparison.Ordinal)
-            || script.Contains("/@mariozechner/pi-coding-agent/", StringComparison.Ordinal))
-        {
-            return SourceKind.Pi;
-        }
-
         if (name == "dsh" || _platform.IsUnder(executable, _deepseekApp) || (_platform.IsWindows && name == "deepseek harness"))
         {
             return SourceKind.DeepSeek;
@@ -211,6 +242,31 @@ internal sealed class AgentProcessRules
         if (name == "agy" || name.StartsWith("language_server_", StringComparison.Ordinal))
         {
             return SourceKind.Antigravity;
+        }
+
+        if (name == "pi" || script.Contains("/@earendil-works/pi-coding-agent/", StringComparison.Ordinal)
+            || script.Contains("/@mariozechner/pi-coding-agent/", StringComparison.Ordinal))
+        {
+            return SourceKind.Pi;
+        }
+
+        // The Gateway sends OpenClaw's own requests; the agents it starts for delegated turns match their own rows.
+        if (name == "openclaw" || script.Contains("/openclaw.mjs", StringComparison.Ordinal)
+            || script.Contains("/openclaw/dist/", StringComparison.Ordinal))
+        {
+            return SourceKind.OpenClaw;
+        }
+
+        // The Python process sends Hermes's model requests; a launcher sends nothing (`hermes` is also another engine's tool).
+        if (IsHermes(name, arguments))
+        {
+            return SourceKind.Hermes;
+        }
+
+        // Factory Droid's CLI binary, also as `droid exec` workers and Factory Desktop's daemon; its npm shim sends nothing.
+        if (name == "droid")
+        {
+            return SourceKind.Droid;
         }
 
         // WorkBuddy's embedded CLI, never its app, helper or daemon processes (the same executable without the CLI entry).

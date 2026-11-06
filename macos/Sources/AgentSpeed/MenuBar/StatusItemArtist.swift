@@ -22,8 +22,8 @@ enum StatusItemArtist {
         return image
     }
 
-    private static func render(_ state: StatusItemState, dark: Bool, size: NSSize) -> CGImage? {
-        let scale: CGFloat = 2
+    /// The item's bitmap at `scale` device pixels per point (2 in the menu bar; previews also check 1).
+    static func render(_ state: StatusItemState, dark: Bool, size: NSSize, scale: CGFloat = 2) -> CGImage? {
         guard let context = CGContext(
             data: nil,
             width: Int(size.width * scale),
@@ -49,7 +49,8 @@ enum StatusItemArtist {
         if layout.showsGlyph { drawGauge(state, palette: palette, layout: layout, in: context) }
         if layout.showsValue { drawText(state, palette: palette, layout: layout) }
         state.secondary?.draw(at: layout.secondaryX, height: layout.height, palette: palette)
-        state.traffic?.draw(at: layout.trafficX, height: layout.height, palette: palette)
+        state.traffic?.draw(at: layout.readoutX, height: layout.height, palette: palette)
+        state.intelligence?.draw(at: layout.intelligenceX, height: layout.height, palette: palette)
     }
 
     private static func drawGauge(_ state: StatusItemState, palette: StatusItemPalette, layout: StatusItemLayout, in context: CGContext) {
@@ -66,13 +67,14 @@ enum StatusItemArtist {
         context.setStrokeColor(palette.track.cgColor)
         context.strokePath()
 
-        let fraction = state.fraction.clamped(to: 0...1)
+        let ring = state.ring
+        let fraction = ring.fraction.clamped(to: 0...1)
         guard fraction > 0.004 else { return }
-        let fill = state.colored ? palette.heat(state.heat) : palette.primary
+        let fill = state.colored ? palette.heat(fraction) : palette.primary
         let end = start + 1.5 * .pi * CGFloat(fraction)
-        context.setAlpha(state.fillOpacity)
-        if state.glow > 0.001 {
-            let glowColor = fill.opacity(state.glow * palette.glowOpacity)
+        context.setAlpha(ring.fillOpacity)
+        if ring.glow > 0.001 {
+            let glowColor = fill.opacity(ring.glow * palette.glowOpacity)
             context.setShadow(offset: .zero, blur: 6 * context.ctm.a.magnitude, color: glowColor.cgColor)
         }
         context.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)

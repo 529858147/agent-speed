@@ -7,23 +7,30 @@ struct InFlightEstimate: Sendable {
     var source: SourceKind
     var startMs: Int64
     var endMs: Int64?
-    var speed: Rate
-    /// micro-USD per second of the same reference responses (METRICS 9.5); nil when none has a known cost.
-    var costRate: Double?
+    var reference: SpeedEstimate
+    /// The model the estimate counts for (METRICS 6.9 *Model sums*): an unmeasured response's own, else the agent's
+    /// current model.
+    var model = LiveModelKey(model: nil, provider: nil)
+
+    var speed: Rate { reference.speed }
 }
 
-/// A reference speed with the cost rate of the same responses.
+/// A reference speed with the cost rate and reasoning share of the same responses.
 struct SpeedEstimate: Equatable, Sendable {
     var speed: Rate
+    /// micro-USD per second (METRICS 9.5); nil when no reference response has a known cost.
     var costRate: Double?
+    /// Σ min(reasoning, output) ÷ Σ output (METRICS 6.9, `share_ref`).
+    var reasoningShare = 0.0
 }
 
-/// Reference speeds (METRICS 6.2) and their cost rates (METRICS 9.5) for agents.
+/// Reference speeds (METRICS 6.2) with their cost rates (9.5) and reasoning shares (6.9) for agents.
 struct SpeedReferences: Sendable {
     private struct Sums {
         var count = 0
         var output = 0.0
         var total = 0.0
+        var reasoning = 0.0
         var durationMs: Int64 = 0
         var costMicroUsd: Int64 = 0
         var costDurationMs: Int64 = 0
@@ -33,6 +40,7 @@ struct SpeedReferences: Sendable {
             count += 1
             output += response.output
             total += response.total
+            reasoning += response.reasoning
             durationMs += response.durationMs
             if let cost = response.record.costMicroUsd {
                 costMicroUsd += cost
@@ -46,7 +54,8 @@ struct SpeedReferences: Sendable {
             let costSeconds = Double(costDurationMs) / 1000
             return SpeedEstimate(
                 speed: Rate(output: output / seconds, total: total / seconds),
-                costRate: hasCost && costSeconds > 0 ? Double(costMicroUsd) / costSeconds : nil
+                costRate: hasCost && costSeconds > 0 ? Double(costMicroUsd) / costSeconds : nil,
+                reasoningShare: output > 0 ? reasoning / output : 0
             )
         }
     }
@@ -76,8 +85,8 @@ struct SpeedReferences: Sendable {
         recentByAgent[agentId]?.speed
     }
 
-    /// The agent's recent speed, else the same-model fallback, else the same-source fallback; the cost rate comes
-    /// from the same reference set.
+    /// The agent's recent speed, else the same-model fallback, else the same-source fallback; the cost rate and
+    /// reasoning share come from the same reference set.
     func estimate(for agent: EngineAgent) -> SpeedEstimate? {
         if let own = recentByAgent[agent.id] { return own }
         if let model = agent.model, let byModel = fallback(where: { $0.model == model }) { return byModel }
@@ -131,7 +140,13 @@ struct LiveWindow: Sendable {
     /// METRICS 9.5, in the same units as the rates (per second).
     private(set) var cost = LiveCost.zero
     private(set) var costBySource: [SourceKind: LiveCost] = [:]
-    private(set) var costByAgent: [String: LiveCost] = [:]
+    /// METRICS 6.9, per second like the rates.
+    private(set) var intelligence = IntelligenceSums.zero
+    private(set) var intelligenceBySource: [SourceKind: IntelligenceSums] = [:]
+    /// Each agent's own contributions (METRICS 6.9, Agent intelligence); they add up to `intelligence`.
+    private(set) var intelligenceByAgent: [String: IntelligenceSums] = [:]
+    /// The model sums (METRICS 6.9 *Model sums*), by raw model and provider; they add up to `intelligence`.
+    private(set) var intelligenceByModel: [LiveModelKey: IntelligenceSums] = [:]
 
     /// `latestEnds` holds the latest end of any stored response per agent; an estimate starts no earlier, so a
     /// response that is still being written is never counted twice.
@@ -142,7 +157,8 @@ struct LiveWindow: Sendable {
         unmeasured: [TimedResponse],
         agents: [String: EngineAgent],
         latestEnds: [String: Int64],
-        references: SpeedReferences
+        references: SpeedReferences,
+        providers: [String: String] = [:]
     ) {
         let windowStart = nowMs - SpeedEngine.liveWindowMs
         let seconds = Double(SpeedEngine.liveWindowMs) / 1000
@@ -153,7 +169,15 @@ struct LiveWindow: Sendable {
         var agentTokens: [String: Rate] = [:]
         // Cost in micro-USD and known output tokens inside the window, before dividing by its length.
         var sourceCost: [SourceKind: LiveCost] = [:]
-        var agentCost: [String: LiveCost] = [:]
+        var sourceIntelligence: [SourceKind: IntelligenceSums] = [:]
+        var agentIntelligence: [String: IntelligenceSums] = [:]
+        var modelIntelligence: [LiveModelKey: IntelligenceSums] = [:]
+
+        func addIntelligence(output: Double, reasoning: Double, source: SourceKind, agentId: String, model: LiveModelKey) {
+            sourceIntelligence[source, default: .zero].add(output: output, reasoning: reasoning, from: source)
+            agentIntelligence[agentId, default: .zero].add(output: output, reasoning: reasoning, from: source)
+            modelIntelligence[model, default: .zero].add(output: output, reasoning: reasoning, from: source)
+        }
 
         for response in measuredResponses {
             let overlap = ResponseTiming.overlap(windowStart, nowMs, response.startMs, response.endMs)
@@ -163,10 +187,14 @@ struct LiveWindow: Sendable {
             measured.add(tokens)
             sourceTokens[response.record.source, default: .zero].add(tokens)
             agentTokens[response.record.agentId, default: .zero].add(tokens)
+            addIntelligence(
+                output: tokens.output, reasoning: response.reasoning * share,
+                source: response.record.source, agentId: response.record.agentId,
+                model: LiveModelKey(model: response.record.model, provider: response.record.provider)
+            )
             if let microUsd = response.record.costMicroUsd {
-                let known = LiveCost(microUsdPerSecond: Double(microUsd) * share, knownOutput: tokens.output)
-                sourceCost[response.record.source, default: .zero].add(known)
-                agentCost[response.record.agentId, default: .zero].add(known)
+                sourceCost[response.record.source, default: .zero]
+                    .add(LiveCost(microUsdPerSecond: Double(microUsd) * share, knownOutput: tokens.output))
             }
         }
 
@@ -180,10 +208,12 @@ struct LiveWindow: Sendable {
             sourceTokens[estimate.source, default: .zero].add(tokens)
             estimatedSourceTokens[estimate.source, default: .zero].add(tokens)
             agentTokens[estimate.agentId, default: .zero].add(tokens)
-            if let costRate = estimate.costRate {
-                let known = LiveCost(microUsdPerSecond: costRate * overlap, knownOutput: tokens.output)
-                sourceCost[estimate.source, default: .zero].add(known)
-                agentCost[estimate.agentId, default: .zero].add(known)
+            addIntelligence(
+                output: tokens.output, reasoning: tokens.output * estimate.reference.reasoningShare,
+                source: estimate.source, agentId: estimate.agentId, model: estimate.model
+            )
+            if let costRate = estimate.reference.costRate {
+                sourceCost[estimate.source, default: .zero].add(LiveCost(microUsdPerSecond: costRate * overlap, knownOutput: tokens.output))
             }
         }
 
@@ -194,7 +224,7 @@ struct LiveWindow: Sendable {
             guard let reference = references.estimate(for: agent) else { continue }
             addEstimate(InFlightEstimate(
                 agentId: record.agentId, source: record.source, startMs: response.startMs, endMs: response.endMs,
-                speed: reference.speed, costRate: reference.costRate
+                reference: reference, model: LiveModelKey(model: record.model, provider: record.provider)
             ))
         }
 
@@ -206,8 +236,8 @@ struct LiveWindow: Sendable {
             else { continue }
             let start = max(inFlightStart, latestEnds[agent.id] ?? inFlightStart)
             addEstimate(InFlightEstimate(
-                agentId: agent.id, source: agent.source, startMs: start, endMs: nil, speed: reference.speed,
-                costRate: reference.costRate
+                agentId: agent.id, source: agent.source, startMs: start, endMs: nil, reference: reference,
+                model: LiveModelKey(model: agent.model, provider: providers[agent.id])
             ))
         }
 
@@ -215,12 +245,17 @@ struct LiveWindow: Sendable {
             LiveCost(microUsdPerSecond: value.microUsdPerSecond / seconds, knownOutput: value.knownOutput / seconds)
         }
         costBySource = sourceCost.mapValues(perSecond)
-        costByAgent = agentCost.mapValues(perSecond)
         var all = LiveCost.zero
         for kind in SourceKind.allCases {
             if let value = sourceCost[kind] { all.add(value) }
         }
         cost = perSecond(all)
+        intelligenceBySource = sourceIntelligence.mapValues { $0.scaled(by: 1 / seconds) }
+        intelligenceByAgent = agentIntelligence.mapValues { $0.scaled(by: 1 / seconds) }
+        intelligenceByModel = modelIntelligence.mapValues { $0.scaled(by: 1 / seconds) }
+        for kind in SourceKind.allCases {
+            if let value = intelligenceBySource[kind] { intelligence.add(value) }
+        }
 
         total = Rate(output: (measured.output + estimated.output) / seconds, total: (measured.total + estimated.total) / seconds)
         let combined = measured.output + estimated.output
@@ -229,6 +264,13 @@ struct LiveWindow: Sendable {
         estimatedBySource = estimatedSourceTokens.mapValues { Rate(output: $0.output / seconds, total: $0.total / seconds) }
         byAgent = agentTokens.mapValues { Rate(output: $0.output / seconds, total: $0.total / seconds) }
     }
+}
+
+/// A raw model with the provider it came with, as the model sums key it (METRICS 6.9 *Model sums*); live reporting
+/// adds the sums of the keys that resolve to one id (11.3).
+struct LiveModelKey: Hashable, Sendable {
+    var model: String?
+    var provider: String?
 }
 
 extension Rate {

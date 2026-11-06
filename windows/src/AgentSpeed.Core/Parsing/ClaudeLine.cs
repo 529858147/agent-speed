@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentSpeed.Core.Work;
 
 namespace AgentSpeed.Core.Parsing;
 
@@ -8,6 +9,16 @@ internal enum ClaudeLineKind : byte
     User,
     Assistant,
     ApiRequest,
+    Attachment,
+}
+
+/// <summary>The ultracode markers among <c>attachment.type</c> values (EXECUTION-MODES, Claude Code).</summary>
+internal enum UltraMarker : byte
+{
+    None,
+    SessionEnter,
+    SessionExit,
+    WorkflowKeyword,
 }
 
 internal enum EntrypointKind : byte
@@ -35,6 +46,14 @@ internal struct ClaudeLine
     public EntrypointKind Entrypoint;
     public bool IsSidechain;
     public bool IsInterrupt;
+    public bool IsMeta;
+
+    /// <summary><c>message.content</c> is a string or holds a <c>text</c> block.</summary>
+    public bool HasPromptContent;
+    public UltraMarker Marker;
+
+    /// <summary><c>toolEndsTurn == true</c>: the tool result ends the agent's run, no request follows.</summary>
+    public bool ToolEndsTurn;
     public bool HasToolUse;
     public StopReasonKind StopReason;
     public string? Cwd;
@@ -48,7 +67,21 @@ internal struct ClaudeLine
     public bool Fast;
     public string? Speed;
 
+    /// <summary>Top-level <c>effort</c> and <c>perTurnEffort</c> strings of an assistant line.</summary>
+    public string? Effort;
+    public string? PerTurnEffort;
+
+    /// <summary>An assistant line's <c>tool_use</c> blocks and a user line's <c>tool_result</c> blocks (METRICS 6.10).</summary>
+    public LineTools Tools;
+
+
     public readonly string? Key => MessageId ?? RequestId ?? Uuid;
+
+    /// <summary>A user line a person typed (an interrupt marker included), not a tool result or a meta line.</summary>
+    public readonly bool IsPrompt => Kind == ClaudeLineKind.User && !IsMeta && HasPromptContent;
+
+    /// <summary><c>perTurnEffort</c> when it is a string, else <c>effort</c>.</summary>
+    public readonly string? RecordedEffort => PerTurnEffort ?? Effort;
 }
 
 /// <summary>Pure, thread-safe extraction of <see cref="ClaudeLine"/> from one JSONL line.</summary>
@@ -68,7 +101,9 @@ internal static class ClaudeLineReader
         var hints = new Hints(
             line.IndexOf("\"assistant\""u8) >= 0,
             line.IndexOf(InterruptPrefix) >= 0,
-            line.IndexOf("\"tool_use\""u8) >= 0);
+            line.IndexOf("\"tool_use\""u8) >= 0,
+            line.IndexOf("\"user\""u8) >= 0,
+            line.IndexOf("\"ultra_effort_"u8) >= 0 || line.IndexOf("\"workflow_keyword_request\""u8) >= 0);
         try
         {
             var reader = new Utf8JsonReader(line, JsonScan.Options);
@@ -79,7 +114,7 @@ internal static class ClaudeLineReader
 
             while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
             {
-                ReadTopLevelProperty(ref reader, ref result, hints);
+                ReadTopLevelProperty(ref reader, ref result, hints, line);
             }
 
             if (reader.TokenType != JsonTokenType.EndObject || reader.Read())
@@ -92,6 +127,10 @@ internal static class ClaudeLineReader
             return Malformed();
         }
 
+        // Calls are the assistant's, results the user's (METRICS 6.10).
+        result.Tools = new LineTools(
+            result.Kind == ClaudeLineKind.Assistant ? result.Tools.Calls : null,
+            result.Kind == ClaudeLineKind.User ? result.Tools.Outcomes : null);
         return result;
     }
 
@@ -107,7 +146,7 @@ internal static class ClaudeLineReader
         return reader.ValueSpan.StartsWith("claude-desktop"u8);
     }
 
-    private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref ClaudeLine result, Hints hints)
+    private static void ReadTopLevelProperty(ref Utf8JsonReader reader, ref ClaudeLine result, Hints hints, ReadOnlySpan<byte> line)
     {
         if (reader.ValueTextEquals("type"u8))
         {
@@ -116,6 +155,7 @@ internal static class ClaudeLineReader
                 : reader.ValueTextEquals("assistant"u8) ? ClaudeLineKind.Assistant
                 : reader.ValueTextEquals("user"u8) ? ClaudeLineKind.User
                 : reader.ValueTextEquals("api-request"u8) ? ClaudeLineKind.ApiRequest
+                : reader.ValueTextEquals("attachment"u8) ? ClaudeLineKind.Attachment
                 : ClaudeLineKind.Other;
             JsonScan.SkipValue(ref reader);
         }
@@ -127,9 +167,9 @@ internal static class ClaudeLineReader
         else if (reader.ValueTextEquals("message"u8))
         {
             reader.Read();
-            if (reader.TokenType == JsonTokenType.StartObject && (hints.Assistant || hints.Interrupt || hints.ToolUse))
+            if (reader.TokenType == JsonTokenType.StartObject && (hints.Assistant || hints.Interrupt || hints.ToolUse || hints.User))
             {
-                ReadMessage(ref reader, ref result, hints);
+                ReadMessage(ref reader, ref result, hints, line);
             }
             else
             {
@@ -159,6 +199,33 @@ internal static class ClaudeLineReader
             result.IsSidechain = reader.TokenType == JsonTokenType.True;
             JsonScan.SkipValue(ref reader);
         }
+        else if (reader.ValueTextEquals("toolEndsTurn"u8))
+        {
+            reader.Read();
+            result.ToolEndsTurn = reader.TokenType == JsonTokenType.True;
+            JsonScan.SkipValue(ref reader);
+        }
+        else if (reader.ValueTextEquals("isMeta"u8))
+        {
+            reader.Read();
+            result.IsMeta = reader.TokenType == JsonTokenType.True;
+            JsonScan.SkipValue(ref reader);
+        }
+        else if (hints.Ultra && reader.ValueTextEquals("attachment"u8))
+        {
+            reader.Read();
+            result.Marker = ReadMarker(ref reader);
+        }
+        else if (hints.Assistant && reader.ValueTextEquals("effort"u8))
+        {
+            reader.Read();
+            result.Effort = JsonScan.ReadToken(ref reader);
+        }
+        else if (hints.Assistant && reader.ValueTextEquals("perTurnEffort"u8))
+        {
+            reader.Read();
+            result.PerTurnEffort = JsonScan.ReadToken(ref reader);
+        }
         else if (hints.Assistant && reader.ValueTextEquals("requestId"u8))
         {
             reader.Read();
@@ -176,7 +243,7 @@ internal static class ClaudeLineReader
         }
     }
 
-    private static void ReadMessage(ref Utf8JsonReader reader, ref ClaudeLine result, Hints hints)
+    private static void ReadMessage(ref Utf8JsonReader reader, ref ClaudeLine result, Hints hints, ReadOnlySpan<byte> line)
     {
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
@@ -214,10 +281,10 @@ internal static class ClaudeLineReader
                     JsonScan.SkipValue(ref reader);
                 }
             }
-            else if ((hints.Interrupt || hints.ToolUse) && reader.ValueTextEquals("content"u8))
+            else if ((hints.Interrupt || hints.ToolUse || hints.User) && reader.ValueTextEquals("content"u8))
             {
                 reader.Read();
-                (result.IsInterrupt, result.HasToolUse) = ReadContent(ref reader);
+                (result.IsInterrupt, result.HasToolUse, result.HasPromptContent, result.Tools) = ReadContent(ref reader, line);
             }
             else
             {
@@ -311,21 +378,26 @@ internal static class ClaudeLineReader
         return count;
     }
 
-    /// <summary>Inspects the direct content blocks: an interrupt marker text and any <c>tool_use</c> block.</summary>
-    private static (bool Interrupt, bool ToolUse) ReadContent(ref Utf8JsonReader reader)
+    /// <summary>
+    /// Inspects the direct content blocks: an interrupt marker text, any <c>tool_use</c> block, whether the content is a
+    /// string or holds a <c>text</c> block, and the tool calls and results (<c>input</c> only as its digest).
+    /// </summary>
+    private static (bool Interrupt, bool ToolUse, bool Text, LineTools Tools) ReadContent(ref Utf8JsonReader reader, ReadOnlySpan<byte> line)
     {
         if (reader.TokenType == JsonTokenType.String)
         {
-            return (JsonScan.StringStartsWith(ref reader, InterruptPrefix), false);
+            return (JsonScan.StringStartsWith(ref reader, InterruptPrefix), false, true, default);
         }
 
         if (reader.TokenType != JsonTokenType.StartArray)
         {
             JsonScan.SkipValue(ref reader);
-            return (false, false);
+            return (false, false, false, default);
         }
 
-        bool interrupt = false, toolUse = false;
+        bool interrupt = false, toolUse = false, text = false;
+        List<ToolCall>? calls = null;
+        List<ToolOutcome>? outcomes = null;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartObject)
@@ -334,7 +406,9 @@ internal static class ClaudeLineReader
                 continue;
             }
 
-            bool isText = false, isToolUse = false, startsWithPrefix = false;
+            bool isText = false, isToolUse = false, isToolResult = false, startsWithPrefix = false, isError = false;
+            string? id = null, name = null, toolUseId = null;
+            var input = ActionDigest.Empty;
             while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
             {
                 if (reader.ValueTextEquals("type"u8))
@@ -342,12 +416,39 @@ internal static class ClaudeLineReader
                     reader.Read();
                     isText = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("text"u8);
                     isToolUse = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("tool_use"u8);
+                    isToolResult = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("tool_result"u8);
                     JsonScan.SkipValue(ref reader);
                 }
                 else if (reader.ValueTextEquals("text"u8))
                 {
                     reader.Read();
                     startsWithPrefix = JsonScan.StringStartsWith(ref reader, InterruptPrefix);
+                    JsonScan.SkipValue(ref reader);
+                }
+                else if (reader.ValueTextEquals("id"u8))
+                {
+                    reader.Read();
+                    id = JsonScan.ReadToken(ref reader);
+                }
+                else if (reader.ValueTextEquals("name"u8))
+                {
+                    reader.Read();
+                    name = JsonScan.ReadToken(ref reader);
+                }
+                else if (reader.ValueTextEquals("input"u8))
+                {
+                    reader.Read();
+                    input = ActionDigest.ReadInput(ref reader, line);
+                }
+                else if (reader.ValueTextEquals("tool_use_id"u8))
+                {
+                    reader.Read();
+                    toolUseId = JsonScan.ReadToken(ref reader);
+                }
+                else if (reader.ValueTextEquals("is_error"u8))
+                {
+                    reader.Read();
+                    isError = reader.TokenType == JsonTokenType.True;
                     JsonScan.SkipValue(ref reader);
                 }
                 else
@@ -359,10 +460,48 @@ internal static class ClaudeLineReader
 
             interrupt |= isText && startsWithPrefix;
             toolUse |= isToolUse;
+            text |= isText;
+            if (isToolUse && id is not null)
+            {
+                (calls ??= []).Add(new ToolCall(id, name, input));
+            }
+            else if (isToolResult && toolUseId is not null)
+            {
+                (outcomes ??= []).Add(new ToolOutcome(toolUseId, isError));
+            }
         }
 
-        return (interrupt, toolUse);
+        return (interrupt, toolUse, text, LineTools.Of(calls, outcomes));
     }
 
-    private readonly record struct Hints(bool Assistant, bool Interrupt, bool ToolUse);
+    /// <summary><c>attachment.type</c> when it is one of the ultracode markers.</summary>
+    private static UltraMarker ReadMarker(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            JsonScan.SkipValue(ref reader);
+            return UltraMarker.None;
+        }
+
+        var marker = UltraMarker.None;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var isType = reader.ValueTextEquals("type"u8);
+            reader.Read();
+            if (isType)
+            {
+                marker = reader.TokenType != JsonTokenType.String ? UltraMarker.None
+                    : reader.ValueTextEquals("ultra_effort_enter"u8) ? UltraMarker.SessionEnter
+                    : reader.ValueTextEquals("ultra_effort_exit"u8) ? UltraMarker.SessionExit
+                    : reader.ValueTextEquals("workflow_keyword_request"u8) ? UltraMarker.WorkflowKeyword
+                    : UltraMarker.None;
+            }
+
+            JsonScan.SkipValue(ref reader);
+        }
+
+        return marker;
+    }
+
+    private readonly record struct Hints(bool Assistant, bool Interrupt, bool ToolUse, bool User, bool Ultra);
 }

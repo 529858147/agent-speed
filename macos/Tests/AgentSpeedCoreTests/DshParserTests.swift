@@ -118,6 +118,26 @@ struct DshParserTests {
         #expect(parser.state.malformedLines == 1)
     }
 
+    @Test func eachRequestHeaderReplacesOrClearsTheEffort() {
+        var deduper = Deduper()
+        func header(_ seq: Int, _ time: Int64, _ config: String) -> String {
+            Self.event("request/header", seq, time, data: #"{"header":{"config":{\#(config)}}}"#)
+        }
+        let (parser, upserts) = Self.run([
+            Self.header(),
+            header(1, 1_001_000, #""model":"deepseek-flash","reasoningEffort":"max""#),
+            Self.message(2, 1_002_000, id: "m1", usage: Self.usage),
+            header(3, 1_003_000, #""reasoningEffort":"HIGH""#),
+            Self.message(4, 1_004_000, id: "m2", usage: Self.usage),
+            header(5, 1_005_000, #""model":"deepseek-flash""#),
+            Self.message(6, 1_006_000, id: "m3", usage: Self.usage),
+        ], deduper: &deduper)
+        let efforts = upserts.map { $0.record.modes.effortAndSpeed.effort?.mode }
+        #expect(efforts == ["max", "high", nil])
+        #expect(upserts.first?.record.modes.effortAndSpeed.effort?.evidence == "recorded")
+        #expect(parser.state.modes.effortAndSpeed.effort == nil)
+    }
+
     @Test func sessionFileNames() {
         let names = TranscriptNames.dshSession
         #expect(names.matches("session.v4.jsonl.zstd"))

@@ -1,0 +1,118 @@
+name: Linux
+
+# The Linux desktop version: core tests on every push and pull request; on a vX.Y.Z tag, the AppImage and the .deb of
+# both architectures are attached to that release with their own checksum files (UPDATES 1, SHA256SUMS-Linux-<arch>.txt).
+# Run it by hand with an existing release tag to build the packages again and attach them to that release.
+on:
+  push:
+    branches: [main, linux]
+    tags: ["v*"]
+    paths: ["linux/**", "spec/**", ".github/workflows/linux.yml"]
+  pull_request:
+    paths: ["linux/**", "spec/**", ".github/workflows/linux.yml"]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Existing release tag (vX.Y.Z) to build for and attach the packages to"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-12 cmake ninja-build pkg-config \
+            libzstd-dev libbrotli-dev libsqlite3-dev libssl-dev libpcre2-dev libicu-dev
+      - name: Build and test the core
+        env:
+          CXX: g++-12
+        run: |
+          cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAGENTSPEED_BUILD_TESTS=ON
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+  package:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            qtarch: linux_gcc_64
+            host: linux
+          # Qt's arm64 binaries are built on Ubuntu 24.04 (glibc 2.38+, the GCC 13 runtime), so arm64 packages are too.
+          - runner: ubuntu-24.04-arm
+            qtarch: linux_gcc_arm64
+            host: linux_arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-12 cmake ninja-build pkg-config file dpkg-dev \
+            libzstd-dev libbrotli-dev libsqlite3-dev libssl-dev libpcre2-dev libicu-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb1-dev libxcb-shape0-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xinput0 libfontconfig1 libdbus-1-3 libfuse2
+      - name: Qt 6.8
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: ${{ matrix.host }}
+          target: desktop
+          arch: ${{ matrix.qtarch }}
+          modules: qtwebsockets
+          cache: true
+      - name: Version
+        id: version
+        env:
+          RELEASE: ${{ github.event.inputs.release }}
+        run: |
+          if [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "value=${RELEASE#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=$RELEASE" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$RELEASE" ]]; then
+            echo "Not a release tag: $RELEASE" >&2
+            exit 1
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(sed -nE 's/^project\(AgentSpeedLinux VERSION ([0-9.]+).*/\1/p' linux/CMakeLists.txt)-dev" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build the app
+        env:
+          CXX: g++-12
+        run: |
+          cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAGENTSPEED_BUILD_TESTS=OFF -DAGENTSPEED_BUILD_APP=ON \
+            -DAGENTSPEED_VERSION="${{ steps.version.outputs.value }}" -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          cmake --build build
+      - name: Package
+        env:
+          QMAKE: ${{ env.QT_ROOT_DIR }}/bin/qmake
+        run: linux/packaging/package.sh build dist "${{ steps.version.outputs.value }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-speed-linux-${{ matrix.host }}
+          path: dist/*
+      - name: Attach to the release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # release.yml creates the release; wait for it before uploading.
+          for attempt in $(seq 1 30); do
+            gh release view "$TAG" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "$TAG" dist/* --clobber
+    permissions:
+      contents: write

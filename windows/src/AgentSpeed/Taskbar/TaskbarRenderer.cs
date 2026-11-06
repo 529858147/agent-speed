@@ -30,6 +30,7 @@ internal sealed class TaskbarRenderer
     private readonly DrawingVisual _visual = new();
     private readonly TaskbarSecondaryText _secondary = new();
     private readonly TaskbarTrafficText _traffic = new();
+    private readonly TaskbarIntelligenceText _intelligence = new();
     private RenderTargetBitmap? _bitmap;
     private double _cacheScale = -1;
     private Color _cachePrimary;
@@ -77,6 +78,8 @@ internal sealed class TaskbarRenderer
 
     private static bool ShowsTraffic(TaskbarState state) => state.Traffic is not null && state.Mode != BarDisplayMode.GlyphOnly;
 
+    private static bool ShowsIntelligence(TaskbarState state) => state.Intelligence is not null && state.Mode != BarDisplayMode.GlyphOnly;
+
     /// <summary>Widget length along the taskbar in physical pixels: the content width.</summary>
     public int MeasureLength(TaskbarState state, double scale, bool vertical)
     {
@@ -86,7 +89,8 @@ internal sealed class TaskbarRenderer
         {
             var lines = state.Mode == BarDisplayMode.GlyphAndValue ? 2 : 1;
             var height = Padding + lines * 20 + (state.ShowUnit && state.Mode != BarDisplayMode.GlyphOnly ? 14 : 0)
-                + (ShowsSecondary(state) ? TaskbarSecondaryText.Height : 0) + (ShowsTraffic(state) ? TaskbarTrafficText.Height : 0) + Padding;
+                + (ShowsSecondary(state) ? TaskbarSecondaryText.Height : 0) + (ShowsTraffic(state) ? TaskbarTrafficText.Height : 0)
+                + (ShowsIntelligence(state) ? TaskbarIntelligenceText.Height : 0) + Padding;
             return (int)Math.Ceiling(height * scale);
         }
 
@@ -124,6 +128,12 @@ internal sealed class TaskbarRenderer
             {
                 var colors = Palette(state);
                 width += _traffic.Width(state.Traffic!, _cacheScale, colors.Primary, colors.Secondary);
+            }
+
+            if (ShowsIntelligence(state))
+            {
+                var colors = Palette(state);
+                width += _intelligence.Width(state.Intelligence!, _cacheScale, colors.Primary, colors.Secondary, state.HighContrast);
             }
         }
 
@@ -222,9 +232,16 @@ internal sealed class TaskbarRenderer
             x += _secondary.Width(state.Secondary!, SecondaryCell, scale, colors.Primary, colors.Secondary);
         }
 
+        // DESIGN 10: the network block, then the intelligence block, each with its own 8 px gap and fixed width.
         if (ShowsTraffic(state))
         {
             _traffic.Draw(dc, state.Traffic!, x, centerY, scale, colors.Primary, colors.Secondary);
+            x += _traffic.Width(state.Traffic!, scale, colors.Primary, colors.Secondary);
+        }
+
+        if (ShowsIntelligence(state))
+        {
+            _intelligence.Draw(dc, state.Intelligence!, x, centerY, scale, colors.Primary, colors.Secondary, state.HighContrast);
         }
     }
 
@@ -270,6 +287,14 @@ internal sealed class TaskbarRenderer
             var blockWidth = _traffic.Width(state.Traffic!, 1, colors.Primary, colors.Secondary) - TaskbarTrafficText.Gap;
             _traffic.Draw(dc, state.Traffic!, (width - blockWidth) / 2 - TaskbarTrafficText.Gap, y + TaskbarTrafficText.Height / 2, 1,
                 colors.Primary, colors.Secondary);
+            y += TaskbarTrafficText.Height;
+        }
+
+        if (ShowsIntelligence(state))
+        {
+            var blockWidth = _intelligence.Width(state.Intelligence!, 1, colors.Primary, colors.Secondary, state.HighContrast) - TaskbarIntelligenceText.Gap;
+            _intelligence.Draw(dc, state.Intelligence!, (width - blockWidth) / 2 - TaskbarIntelligenceText.Gap,
+                y + TaskbarIntelligenceText.Height / 2, 1, colors.Primary, colors.Secondary, state.HighContrast);
         }
     }
 

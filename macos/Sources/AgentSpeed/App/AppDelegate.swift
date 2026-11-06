@@ -1,4 +1,5 @@
 import AgentSpeedCore
+import AgentSpeedOrbModel
 import AppKit
 
 @MainActor
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     private var model: AppModel?
     private var statusItem: StatusItemController?
     private var orbs: OrbWindowManager?
+    private var boardWindows: BoardWindowManager?
     private var dashboard: DashboardController?
     private var settingsWindow: SettingsWindowController?
     private var historyWindow: HistoryWindowController?
@@ -27,6 +29,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
         if let directory = options.orbFramesDirectory {
             OrbFrameHarness.run(into: directory)
             NSApp.terminate(nil)
+            return
+        }
+        if let directory = options.boardFramesDirectory {
+            BoardFrameHarness.run(into: directory)
+            NSApp.terminate(nil)
+            return
+        }
+        if let directory = options.boardBenchDirectory {
+            BoardBenchmark.start(into: directory)
+            return
+        }
+        if let demo = options.boardDemo {
+            BoardDemoHarness.start(demo)
             return
         }
         if let directory = options.orbBenchDirectory {
@@ -81,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
             if !shown { model?.updates.clearUpdatedNotice() }
         }
         orbs = OrbWindowManager(model: model)
+        boardWindows = BoardWindowManager(model: model) { [weak self] in self?.orbShapes() ?? [] }
+        orbs?.boardShapes = { [weak self] in self?.boardWindows?.shapes() ?? [] }
 
         MainMenu.install(model: model)
         if options.demo { model.startDemoLoop() }
@@ -179,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
 
     func applicationWillTerminate(_ notification: Notification) {
         updateScheduler?.stop()
+        boardWindows?.shutdown()
         orbs?.shutdown()
         model?.shutdown()
     }
@@ -232,6 +250,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands {
     func showOrbSettings(_ id: String?) {
         if let id { model?.orbs.settingsSelection = id }
         showSettings(.orb)
+    }
+
+    func addBoard(from origin: BoardAddOrigin) {
+        let anchor: FloatingShape? = switch origin {
+        case .none: nil
+        case .orb(let id): orbs?.window(for: id).map { FloatingShape($0.disc) }
+        case .board(let id): boardWindows?.window(for: id)?.shape
+        }
+        model?.boards.add(near: anchor)
+    }
+
+    func showBoardSettings(_ id: String?) {
+        if let id { model?.boards.settingsSelection = id }
+        showSettings(.orb)
+    }
+
+    /// The shown orbs as obstacles for the boards (DESIGN 2c: boards and orbs never overlap).
+    private func orbShapes() -> [FloatingShape] {
+        guard let orbs else { return [] }
+        return NSScreen.screens.flatMap { orbs.otherDiscs(excluding: "", on: $0) }.map(FloatingShape.init)
     }
 
     func showUpdate() {

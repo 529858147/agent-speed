@@ -475,6 +475,22 @@ internal sealed class OrbsPaneViewModel : ObservableObject
         }
     }
 
+    /// <summary>What the orb's two-line readout shows (DESIGN 10): the popup under the unit control, in <see cref="OrbTraffic"/> order.</summary>
+    public int TrafficIndex
+    {
+        get => (int)(Orb?.Traffic ?? OrbTraffic.Sources);
+        set
+        {
+            if (SelectedId is { } id && !_syncing && Enum.IsDefined((OrbTraffic)value))
+            {
+                Update(d => OrbEditing.SetTraffic(d, id, (OrbTraffic)value));
+            }
+        }
+    }
+
+    /// <summary><c>orbs.traffic.hint</c>, or <c>orbs.traffic.hint.intel</c> while the intelligence readout is chosen.</summary>
+    public string TrafficHint => _loc[Orb?.Traffic == OrbTraffic.Intelligence ? "orbs.traffic.hint.intel" : "orbs.traffic.hint"];
+
     public bool SizeSmall { get => SizePresetIndex == 0; set => SetPreset(value, 0); }
 
     public bool SizeMedium { get => SizePresetIndex == 1; set => SetPreset(value, 1); }
@@ -859,6 +875,8 @@ internal sealed class OrbsPaneViewModel : ObservableObject
         OnPropertyChanged(nameof(UnitTokens));
         OnPropertyChanged(nameof(UnitCost));
         OnPropertyChanged(nameof(UnitCostLabel));
+        OnPropertyChanged(nameof(TrafficIndex));
+        OnPropertyChanged(nameof(TrafficHint));
         OnPropertyChanged(nameof(AlwaysOnTop));
         OnPropertyChanged(nameof(ClickThrough));
         OnPropertyChanged(nameof(FadeWhenIdle));

@@ -17,7 +17,7 @@ struct ReportSectionsSection: View {
                         report.setSection(section, on: new.contains(section))
                     }
                 }
-            ), accepted: report.discovery?.sections)
+            ), discovery: report.discovery)
             HStack {
                 Spacer()
                 Button(l10n("report.preview")) { ReportPreviewWindow.show(model: model) }
@@ -35,14 +35,27 @@ struct ReportSectionsSection: View {
 struct ReportSectionToggles: View {
     let model: AppModel
     @Binding var selection: Set<ReportSection>
-    /// The sections the service lists; nil while its document is unknown (every switch stays usable).
-    let accepted: Set<ReportSection>?
+    /// The service's document; nil while it is unknown (every switch stays usable).
+    let discovery: ReportDiscovery?
+
+    /// The caption under the models switch (DESIGN 11, What's sent): `report.section.models.perfScore` while the known
+    /// document lists `models` and advertises the `perfScore` extension, and before any document is known;
+    /// `report.section.models.thinking` while it advertises only the retired `taskScore`; none otherwise. The switch's
+    /// own state does not matter.
+    static func modelsCaptionKey(_ discovery: ReportDiscovery?) -> String? {
+        guard let discovery else { return "report.section.models.perfScore" }
+        guard discovery.sections.contains(.models) else { return nil }
+        if discovery.extensions?.perfScore == true { return "report.section.models.perfScore" }
+        if discovery.extensions?.taskScore == true { return "report.section.models.thinking" }
+        return nil
+    }
 
     var body: some View {
         let l10n = model.l10n
         let trafficOn = model.settings.trafficEnabled
+        let modelsCaption = Self.modelsCaptionKey(discovery)
         ForEach(ReportSection.allCases, id: \.self) { section in
-            let listed = accepted?.contains(section) ?? true
+            let listed = discovery?.sections.contains(section) ?? true
             let isTraffic = section == .traffic
             Toggle(isOn: Binding(
                 get: { listed && selection.contains(section) },
@@ -54,6 +67,8 @@ struct ReportSectionToggles: View {
                     RowTitle(l10n(section.titleKey))
                     if !listed {
                         Footnote(l10n("report.section.notAccepted"))
+                    } else if section == .models, let modelsCaption {
+                        Footnote(l10n(modelsCaption))
                     } else if isTraffic, !trafficOn {
                         Footnote(l10n("report.section.trafficOff"))
                     }

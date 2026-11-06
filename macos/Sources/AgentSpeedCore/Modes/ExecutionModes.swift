@@ -1,11 +1,30 @@
 import Foundation
 
+/// Fact kinds, plus `speed`: a breakdown derived from the facts (EXECUTION-MODES, Reasoning effort and speed) that
+/// is never a fact's own kind.
 public enum ExecutionModeKind: String, CaseIterable, Codable, Sendable {
-    case serviceTier, accelerator, modelVariant, routing, workflow
+    case serviceTier, accelerator, modelVariant, routing, workflow, effort, speed
+
+    /// The kinds of report extension version 1; version 2 adds `effort`. `speed` stays local.
+    public static let reported: [ExecutionModeKind] = [.serviceTier, .accelerator, .modelVariant, .routing, .workflow]
+
+    /// The kinds a report carries under the negotiated extension `version` (EXECUTION-MODES, *Report extension*).
+    public static func reported(version: Int) -> [ExecutionModeKind] {
+        switch version {
+        case 1: reported
+        case 2: reported + [.effort]
+        default: []
+        }
+    }
+
+    public var isFactKind: Bool { self != .speed }
 }
 
 public enum ExecutionModeEvidence: String, Codable, Sendable {
     case configured, selected, recorded, served
+
+    /// What a response or an agent's own facts may be attributed from: a configured value never counts.
+    static let attributable: Set<ExecutionModeEvidence> = [.selected, .recorded, .served]
 
     var rank: Int {
         switch self { case .configured: 0; case .selected: 1; case .recorded: 2; case .served: 3 }
@@ -30,7 +49,8 @@ public struct ExecutionModeFact: Equatable, Hashable, Codable, Sendable {
 
     public init?(kind: ExecutionModeKind, rawValue: String, evidence: ExecutionModeEvidence,
                  provider: String? = nil, scope: ExecutionModeScope, openAI: Bool = false) {
-        guard Self.isIdentifier(rawValue, limit: 64), provider.map({ Self.isIdentifier($0, limit: 32) }) ?? true else { return nil }
+        guard kind.isFactKind, Self.isIdentifier(rawValue, limit: 64),
+              provider.map({ Self.isIdentifier($0, limit: 32) }) ?? true else { return nil }
         self.kind = kind
         self.rawValue = rawValue
         self.evidence = evidence
@@ -97,7 +117,13 @@ public struct ExecutionModes: Equatable, Hashable, Codable, Sendable {
     public func merging(_ other: ExecutionModes) -> ExecutionModes { ExecutionModes(facts + other.facts) }
 
     public func attribution(for kind: ExecutionModeKind) -> ExecutionModeAttribution {
-        let candidates = facts.filter { $0.kind == kind && $0.evidence != .configured }
+        attribution(for: kind, among: ExecutionModeEvidence.attributable)
+    }
+
+    /// Served first, then recorded, then selected, among `evidence`; a tie that disagrees is unknown.
+    func attribution(for kind: ExecutionModeKind, among evidence: Set<ExecutionModeEvidence>) -> ExecutionModeAttribution {
+        guard kind.isFactKind else { return speed(among: evidence) }
+        let candidates = facts.filter { $0.kind == kind && evidence.contains($0.evidence) }
         guard let best = candidates.max(by: {
             ($0.evidence.rank, $0.scope.rank) < ($1.evidence.rank, $1.scope.rank)
         }), best.isResolved else { return ExecutionModeAttribution(kind: kind) }
@@ -108,7 +134,26 @@ public struct ExecutionModes: Equatable, Hashable, Codable, Sendable {
         return ExecutionModeAttribution(kind: kind, mode: best.value, evidence: best.evidence.rawValue, provider: best.provider)
     }
 
-    public var attributed: [ExecutionModeAttribution] {
+    /// The service tier when resolved, else the accelerator, else a `highspeed` model variant.
+    private func speed(among evidence: Set<ExecutionModeEvidence>) -> ExecutionModeAttribution {
+        for kind in [ExecutionModeKind.serviceTier, .accelerator, .modelVariant] {
+            let result = attribution(for: kind, among: evidence)
+            if !result.isUnknown, kind != .modelVariant || result.mode == "highspeed" {
+                return ExecutionModeAttribution(kind: .speed, mode: result.mode, evidence: result.evidence,
+                                                provider: result.provider)
+            }
+        }
+        return ExecutionModeAttribution(kind: .speed)
+    }
+
+    /// Known attributions of the newest report extension's kinds: the ledger freezes them all, and a report sends those
+    /// of the version its service negotiated.
+    public var reportedAttributions: [ExecutionModeAttribution] {
+        ExecutionModeKind.reported(version: 2).map { attribution(for: $0) }.filter { !$0.isUnknown }
+    }
+
+    /// Known attributions of every local breakdown, `effort` and `speed` included.
+    public var breakdownAttributions: [ExecutionModeAttribution] {
         ExecutionModeKind.allCases.map { attribution(for: $0) }.filter { !$0.isUnknown }
     }
 

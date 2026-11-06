@@ -29,6 +29,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     /// Shows the window filtered to `source` (all sources when nil).
     func show(source: SourceKind?, metric: HistoryChartMetric? = nil) {
         let (window, viewModel) = ensureWindow()
+        viewModel.isOpen = true
         viewModel.select(source: source)
         if let metric { viewModel.select(metric: metric) }
         if viewModel.showsLiveDay { viewModel.refreshToday() }
@@ -49,6 +50,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         liveDayTimer?.invalidate()
         liveDayTimer = nil
+        viewModel?.isOpen = false
     }
 
     /// Keeps a single-day view of today current while the window is on screen.

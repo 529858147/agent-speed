@@ -7,7 +7,9 @@ import AppKit
 /// network off, turning off and Forget — against a local reference server (`spec/tools/report_server.py`). Run it with
 /// `AGENT_SPEED_APP_DATA` pointing at a temporary folder and `AGENT_SPEED_REPORT_PRESET_URL` set to the same URL, so
 /// the preset never reaches the real service; settings live in the `AgentSpeedReportE2E` suite. Prints one line per
-/// check and quits.
+/// check and quits. With `AGENT_SPEED_REPORT_E2E_WEBSOCKET=1` (and the server started with `--websocket`) it drives the
+/// WebSocket transport instead, see `ReportStreamHarness`; with `AGENT_SPEED_REPORT_E2E_PERFSCORE=1` (and the server
+/// started with `--perf-score`) it first checks the performance score extension, see `ReportPerfScoreHarness`.
 @MainActor
 enum ReportHarness {
     private static var feed: Timer?
@@ -42,6 +44,7 @@ enum ReportHarness {
                                      measuredMs: 900, costMicroUsd: 1800), to: ReportModelKey(modelId: "claude-opus-5-5", source: .claudeCode))
         }
         var snapshot = PreviewData.snapshot(speed: busy ? 240 : 0, redline: 2000)
+        if busy { snapshot.observedAtMs = ReportClock.monotonicMs - 4 }
         if !busy {
             snapshot.live = .zero
             snapshot.liveCost = .zero
@@ -54,7 +57,7 @@ enum ReportHarness {
         snapshot.report = ReportLiveFacts(
             agents: [.claudeCode: ReportAgentCounts(generating: busy ? 1 : 0, active: 1)],
             generatingModels: busy ? [ReportModelKey(modelId: "claude-opus-5-5", source: .claudeCode): 1] : [:],
-            counters: counters)
+            counters: counters, perf: ReportPerfScoreHarness.facts(busy: busy))
         model.store.publishLive(snapshot)
     }
 
@@ -91,12 +94,30 @@ enum ReportHarness {
             return
         }
 
+        if ReportPerfScoreHarness.enabled {
+            busy = true
+            await ReportPerfScoreHarness.run(model, publish: { publish(model) }, check: { check($0, $1) },
+                                             wait: { name, seconds, condition in await check(name, within: seconds, condition) })
+        }
+
+        if ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_E2E_WEBSOCKET"] == "1" {
+            await ReportStreamHarness.run(model, busy: { busy = $0 }, check: { check($0, $1) },
+                                          wait: { name, seconds, condition in await check(name, within: seconds, condition) })
+            feed?.invalidate()
+            return
+        }
+
         if ProcessInfo.processInfo.environment["AGENT_SPEED_REPORT_BENCH"] != nil {
             await bench(model)
         }
 
         busy = true
         await check("reports delivered while busy", within: 20) { report.lastDeliveryAt != nil && report.mode == .active }
+        if report.discovery?.websocket == nil {
+            check("WebSocket chosen by default, the service lacks it: reports go over HTTP",
+                  report.transport == .websocket && report.effectiveTransport == .http && report.run != nil
+                      && report.stream == nil)
+        }
         let firstDelivery = report.lastDeliveryAt
         await check("a second active report", within: 8) { report.lastDeliveryAt != firstDelivery }
 
@@ -164,10 +185,11 @@ enum ReportHarness {
 
         report.updatePreferences { $0.invite = nil }
         check("offered again once the answer is reset", report.invitationOffered && counting.count == 0)
+        let fitted = report.nextUsername(rules: report.usernameRules)
         report.acceptInvitation()
         check("accepted: the done line shows and the indicator waits", report.inviteJustAccepted && !report.indicatorShown)
         await check("accepted: registered as the fitted computer name", within: 10) {
-            report.isOn && report.identity?.username == "Zoes MacBook Pro"
+            report.isOn && report.identity?.username == fitted
         }
         check("accepted: answered, the default sections kept", report.preferences.invite == .accepted
               && report.preferences.sections == ReportPreferences.defaultSections)
@@ -177,8 +199,11 @@ enum ReportHarness {
         }
         busy = false
         await check("accepted: the indicator appears after the done line", within: 5) { report.indicatorShown }
+        // Discovery and registration over HTTP; the reports too, or over WebSocket to the same server when it offers it.
         let requests = counting.count
-        check("accepted: requests went to the local server only", requests >= 3)
+        let streamed = report.stream?.scheduler.counters.accepted ?? 0
+        check("accepted: requests went to the local server only",
+              report.effectiveTransport == .websocket ? requests >= 2 && streamed >= 1 : requests >= 3)
 
         report.forget()
         await check("invitation device forgotten on the service", within: 10) { report.forgetState == .done }
@@ -284,10 +309,10 @@ private final class CountingReportTransport: ReportTransport, @unchecked Sendabl
 
     private func bump() { lock.withLock { calls += 1 } }
 
-    func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval)
+    func get(_ url: URL, userAgent: String, maxBytes: Int, timeout: TimeInterval)
         async throws(ReportTransportError) -> ReportHTTPResponse {
         bump()
-        return try await base.get(url, etag: etag, userAgent: userAgent, maxBytes: maxBytes, timeout: timeout)
+        return try await base.get(url, userAgent: userAgent, maxBytes: maxBytes, timeout: timeout)
     }
 
     func send(_ request: ReportRequest, maxBytes: Int, timeout: TimeInterval)

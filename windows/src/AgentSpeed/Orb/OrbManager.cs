@@ -17,8 +17,10 @@ using AgentSpeed.Presentation.Menus;
 using AgentSpeed.Presentation.Motion;
 using AgentSpeed.Presentation.Orb;
 using AgentSpeed.Presentation.Quota;
+using AgentSpeed.Presentation.Orb.Lines;
 using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Presentation.Settings.Orbs;
+using AgentSpeed.Presentation.Perf;
 using AgentSpeed.Presentation.Titles;
 using AgentSpeed.Services;
 using AgentSpeed.Theme;
@@ -332,6 +334,11 @@ internal sealed class OrbManager : IDisposable
             var feed = entry.Feed;
             feed.Previewing = _speed.IsPreviewing;
             var fired = feed.Update(snapshot, now);
+            if (entry.Definition.Traffic == OrbTraffic.Intelligence)
+            {
+                FeedLines(entry);
+            }
+
             Push(entry, single);
             if (fired)
             {
@@ -348,33 +355,56 @@ internal sealed class OrbManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Applies one traffic sample to every orb's readout (DESIGN 10): its sources' rates with tools per the setting
-    /// (<c>sources</c>), this computer (<c>machine</c>) or nothing; not drawn while measuring is off or, for sources, while
-    /// per-process traffic is unavailable. The quiet rule keeps a quiet orb free of frames.
-    /// </summary>
+    /// <summary>Applies one traffic sample to the readout of every orb that shows network speed (DESIGN 10).</summary>
     public void UpdateTraffic(TrafficSnapshot traffic)
     {
         ArgumentNullException.ThrowIfNull(traffic);
         _traffic = traffic;
-        var settings = Settings.Traffic;
         foreach (var entry in _entries.Values)
         {
-            var mode = entry.Definition.Traffic;
-            var enabled = settings.Enabled && traffic.Enabled && mode != OrbTraffic.Off
-                && (mode == OrbTraffic.Machine || traffic.ProcessState.UnavailableReason is null);
-            TrafficRate? rate = !enabled ? null
-                : mode == OrbTraffic.Machine ? traffic.MachineLive ?? TrafficRate.Zero
-                : traffic.Live(entry.Definition.TrackedSources, settings.IncludeTools) ?? TrafficRate.Zero;
-            entry.Window.Surface.SetTraffic(rate, settings.Bits, enabled);
+            if (entry.Definition.Traffic != OrbTraffic.Intelligence)
+            {
+                FeedLines(entry);
+            }
         }
     }
+
+    /// <summary>
+    /// The orb's two-line readout (DESIGN 10): its sources' traffic with tools per the setting (<c>sources</c>), this
+    /// computer (<c>machine</c>), the live intelligence of its sources (<c>intelligence</c>, METRICS 6.9) or nothing. Network
+    /// speed is not drawn while measuring is off or, for sources, while per-process traffic is unavailable; intelligence
+    /// needs neither. The quiet rule keeps a quiet orb free of frames.
+    /// </summary>
+    private void FeedLines(Entry entry)
+    {
+        var mode = entry.Definition.Traffic;
+        var settings = Settings.Traffic;
+        var network = settings.Enabled && _traffic.Enabled
+            && (mode == OrbTraffic.Machine || (mode == OrbTraffic.Sources && _traffic.ProcessState.UnavailableReason is null));
+        OrbLinesSample? sample = mode switch
+        {
+            OrbTraffic.Intelligence => IntelligenceSample(entry.Feed.Reading),
+            OrbTraffic.Machine when network => OrbLinesText.Traffic(_traffic.MachineLive ?? TrafficRate.Zero, settings.Bits, _loc),
+            OrbTraffic.Sources when network => OrbLinesText.Traffic(
+                _traffic.Live(entry.Definition.TrackedSources, settings.IncludeTools) ?? TrafficRate.Zero, settings.Bits, _loc),
+            _ => null,
+        };
+        entry.Window.Surface.SetLines(sample, sample is not null);
+    }
+
+    /// <summary>
+    /// 性能 of the orb's agents <c>A</c> (METRICS 6.8, 6.9 <i>Sets and groups</i>): the highest score, live before resting,
+    /// with the supplying agent's state and N, over the thinking rate of the orb's sources.
+    /// </summary>
+    private OrbLinesSample IntelligenceSample(SubsetReading reading) =>
+        OrbLinesText.Intelligence(PerfSetReading.Of(reading.Intelligence, reading.Agents), reading.Intelligence,
+            reading.GeneratingSources.Count > 0, _loc);
 
     /// <summary>
     /// Some visible orb shows its sources' traffic right now (until its readout has faded out): per-source sampling runs
     /// every second (METRICS 10.10).
     /// </summary>
-    public bool ShowsSourceTraffic => _entries.Values.Any(e => e.Definition.Traffic == OrbTraffic.Sources && e.Window.Surface.TrafficVisible);
+    public bool ShowsSourceTraffic => _entries.Values.Any(e => e.Definition.Traffic == OrbTraffic.Sources && e.Window.Surface.LinesVisible);
 
     /// <summary>Delivers an engine event to the orbs it belongs to (completions by source, all-sources new peak).</summary>
     public void OnEvent(SpeedEvent speedEvent)
@@ -765,7 +795,6 @@ internal sealed class OrbManager : IDisposable
         var money = unavailableTitle is null ? feed.Money : null;
         surface.Scene.SetMoney(money);
         var info = money?.HoverLine ?? _loc.Format("today.summary", SpeedFormat.Tokens(reading.Today.Output), reading.Agents.Count);
-        if (reading.Agents.Count > 0) info += " · " + _loc["mode.label"] + ": " + ExecutionModeText.Aggregate(reading.Agents.Select(a => a.Modes), _loc);
         surface.SetData(feed.Value, feed.Tier, feed.Title, reading.GeneratingSources, info, unavailableTitle);
         surface.SetIdentity(orb.TrackedSources?.ToArray(), UnavailableOf(entry));
         entry.Window.SetDimmed(unavailableTitle is not null);
@@ -791,10 +820,10 @@ internal sealed class OrbManager : IDisposable
             accessible = _loc.Format("a11y.orb.named", name, SpeedFormat.Speed(feed.Value), ThemeOf(orb).Text(feed.Title, _loc));
         }
 
-        if (unavailableTitle is null && surface.TrafficVisible && surface.TrafficReading is { } traffic)
+        var lines = unavailableTitle is null && surface.LinesVisible ? surface.LinesReading : null;
+        if (lines is { } shown)
         {
-            accessible += DisplayText.SpokenSeparator(_loc)
-                + _loc.Format("a11y.orb.traffic", DisplayText.SpokenTrafficRate(traffic.Rx), DisplayText.SpokenTrafficRate(traffic.Tx));
+            accessible += DisplayText.SpokenSeparator(_loc) + shown.Spoken(_clock.Now);
         }
 
         if (Settings.CodexQuotaEnabled && Settings.CodexEnabled && (orb.TrackedSources is not { } quotaSources || quotaSources.Contains(SourceKind.Codex)))
@@ -802,6 +831,7 @@ internal sealed class OrbManager : IDisposable
             var quota = CodexQuotaDisplay.Create(_codexQuota.Snapshot, _codexQuota.Status, DateTimeOffset.UtcNow, _loc);
             accessible += DisplayText.SpokenSeparator(_loc) + quota.Prefix + " " + quota.Value;
         }
+        entry.Window.SetDiscHint(lines?.Content.Detail);
 
         if (accessible != entry.PendingName)
         {

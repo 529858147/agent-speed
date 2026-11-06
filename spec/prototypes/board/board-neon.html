@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排行看板 · 霓虹座艙</title>
+<style>
+  /* Direction C — 霓虹座艙: a night cockpit in the LED orb's language. A neon tube frames the square, hyperspace
+     streaks fly behind the board when it is hot, digits are lit like LEDs, and lightning marks every overtake. */
+  :root {
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang TC",
+          "Microsoft JhengHei", system-ui, sans-serif;
+    --num: "SF Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --heat: rgb(124,135,152); --heat-soft: rgba(124,135,152,.3); --gold: #FACC15; --amber: #F5A524; --mint: #34D399;
+  }
+  [data-theme="dark"] {
+    --stage: #030409; --deck: #05060c; --deck-2: #0a0d18; --ink: #f3f6ff; --ink-2: rgba(214,224,255,.66); --ink-3: rgba(214,224,255,.36);
+    --line: rgba(140,170,255,.10); --fill: rgba(140,170,255,.07); --fill-2: rgba(140,170,255,.13); --unlit: rgba(140,170,255,.16);
+    --amber-ink: #FFC24B; --grid: rgba(120,150,255,.05); color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --stage: #dfe3ee; --deck: #f7f8fc; --deck-2: #eceff7; --ink: #0a0d18; --ink-2: rgba(10,13,24,.62); --ink-3: rgba(10,13,24,.38);
+    --line: rgba(20,30,80,.08); --fill: rgba(20,30,80,.05); --fill-2: rgba(20,30,80,.09); --unlit: rgba(20,30,80,.14);
+    --amber-ink: #B86E00; --grid: rgba(20,30,80,.04); color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: var(--ui); color: var(--ink); overflow: hidden; background: var(--stage);
+         background-image: radial-gradient(800px 520px at 50% 42%, color-mix(in oklab, var(--deck-2) 70%, transparent), transparent 70%); }
+  .wall { display: none; }
+  .controls { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 14px; flex-wrap: wrap;
+              justify-content: center; align-items: center; padding: 8px 12px; border-radius: 12px; font-size: 12px; color: var(--ink-2);
+              background: var(--fill); border: 1px solid var(--line); max-width: calc(100vw - 24px); }
+  .seg { display: inline-flex; background: var(--fill); border-radius: 8px; padding: 2px; }
+  .seg button, .controls > button { font: inherit; color: inherit; background: none; border: 0; padding: 4px 9px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--fill-2); color: var(--ink); }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+  .panel { --w: 340px; --h: 340px; --pad: 16px; --row: 30px; --sub: 22px; --hero: 92px; --big: 40px;
+           position: fixed; left: calc(50% - var(--w) / 2); top: calc(46% - var(--h) / 2); width: var(--w); height: var(--h);
+           border-radius: 22px; overflow: hidden; isolation: isolate; cursor: grab; user-select: none;
+           background: radial-gradient(120% 80% at 85% 0%, color-mix(in oklab, var(--heat) calc(var(--heat-amount, 0) * 22%), transparent), transparent 60%),
+                       repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 22px),
+                       repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 22px), var(--deck);
+           box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 calc(var(--bloom, .15) * 80px) calc(var(--bloom, .15) * 8px) var(--heat-soft);
+           transition: width .45s cubic-bezier(.2,.8,.2,1), height .45s cubic-bezier(.2,.8,.2,1), left .45s, top .45s, box-shadow 1s; }
+  .panel[data-size="S"] { --w: 280px; --h: 280px; --pad: 14px; --hero: 82px; --big: 34px; }
+  .panel[data-size="L"] { --w: 420px; --h: 420px; --pad: 18px; --row: 32px; --sub: 23px; --hero: 100px; --big: 46px; }
+  /* The neon tube: always lit, brighter and breathing faster as heat rises. */
+  .panel::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 7;
+                  box-shadow: inset 0 0 0 1.2px color-mix(in oklab, var(--heat) 75%, white 10%),
+                              inset 0 0 calc(6px + var(--heat-amount, 0) * 18px) color-mix(in oklab, var(--heat) 55%, transparent);
+                  opacity: calc(.45 + var(--heat-amount, 0) * .55); animation: tube var(--breath, 3s) ease-in-out infinite; }
+  @keyframes tube { 50% { opacity: calc(.3 + var(--heat-amount, 0) * .5); } }
+  .rm .panel::after { animation: none; }
+  .aurora { display: none; }
+
+  .hero { position: absolute; left: var(--pad); right: var(--pad); top: calc(var(--pad) - 2px); height: var(--hero); z-index: 2; }
+  .value { display: flex; align-items: baseline; gap: 7px; position: relative; }
+  /* The glow lives on the wrapper so it follows the glyphs instead of the clipped roll box. */
+  .glow { display: inline-flex; filter: drop-shadow(0 0 3px var(--heat)) drop-shadow(0 0 10px var(--heat)) drop-shadow(0 0 calc(4px + var(--heat-amount, 0) * 16px) var(--heat)); }
+  .glow.rgb { filter: drop-shadow(-1.5px 0 rgba(255,40,110,.75)) drop-shadow(1.5px 0 rgba(0,225,255,.75)) drop-shadow(0 0 10px var(--heat)) drop-shadow(0 0 22px var(--heat)); }
+  [data-theme="light"] .glow { filter: drop-shadow(0 0 8px var(--heat-soft)); }
+  .num { font: 700 var(--big)/1 var(--num); letter-spacing: -.03em; display: inline-flex; height: 1.08em; overflow: hidden; color: #FFFDF5; }
+  [data-theme="light"] .num { color: var(--ink); }
+  .num .slot { position: relative; display: inline-block; height: 1em; }
+  .num .ch { display: inline-block; transition: transform .24s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+  .num .ch.out { position: absolute; left: 0; top: 0; filter: blur(1.4px); }
+  .num .ch.in { animation: nin .55s cubic-bezier(.2,.8,.2,1); }
+  .num .ch.in.hot { animation: nhot .8s cubic-bezier(.2,.8,.2,1); }
+  @keyframes nin { 0% { filter: blur(1.6px) brightness(1.8); } 50% { filter: none; } }
+  @keyframes nhot { 0% { filter: blur(2px) brightness(2.4); color: #fff; } 40% { filter: brightness(1.6); } 100% { filter: none; } }
+  .num.punch { animation: npunch .4s cubic-bezier(.3,1.6,.4,1); transform-origin: left 80%; }
+  @keyframes npunch { 35% { transform: scale(1.07); filter: brightness(1.5); } }
+  .num.gild .ch { color: transparent; background: linear-gradient(100deg, #FFFDF5 38%, #FFE58A 47%, #FFFFFF 50%, #FFE58A 53%, #FFFDF5 62%);
+                  background-size: 320% 100%; -webkit-background-clip: text; background-clip: text; animation: gild 1.3s cubic-bezier(.3,.6,.2,1); }
+  @keyframes gild { from { background-position: 120% 0; } to { background-position: -40% 0; } }
+  .peakchip { position: absolute; left: 0; top: -13px; font: 700 9.5px/1 var(--num); letter-spacing: .16em; color: #241a00;
+              background: #FACC15; padding: 3px 6px; border-radius: 4px; opacity: 0; pointer-events: none; box-shadow: 0 0 16px rgba(250,204,21,.7); }
+  .peakchip.go { animation: peakchip 2.2s cubic-bezier(.2,.9,.2,1); }
+  @keyframes peakchip { 0% { opacity: 0; transform: translateY(6px) scale(.7); } 12%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  .unit { font: 700 10.5px/1 var(--num); color: var(--heat); letter-spacing: .14em; text-shadow: 0 0 8px var(--heat-soft); }
+  .meta { margin-top: 8px; font: 600 10.5px/1 var(--num); color: var(--ink-3); display: flex; gap: 8px; align-items: center; letter-spacing: .06em; white-space: nowrap; }
+  .title { font: 700 12px/1 var(--ui); color: var(--heat); letter-spacing: .06em; text-shadow: 0 0 10px var(--heat-soft); display: inline-block; }
+  .title.swap { animation: titleIn .45s cubic-bezier(.2,.8,.2,1); }
+  @keyframes titleIn { from { transform: translateY(70%); opacity: 0; filter: blur(3px); } }
+  .spark, .peakring { display: none; }
+  /* LED bar: 24 segments lit by heat, the latest peak marked. */
+  .led { position: absolute; left: 0; right: 0; bottom: 6px; height: 7px; display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+  .led i { border-radius: 1.5px; background: var(--unlit); transition: background .25s, box-shadow .25s; }
+  .led i.on { background: var(--c); box-shadow: 0 0 6px var(--c); }
+  .led i.pk { background: #FFF7D6; box-shadow: 0 0 8px #FFF7D6; }
+
+  .board { position: absolute; left: calc(var(--pad) - 6px); right: calc(var(--pad) - 6px); top: calc(var(--pad) + var(--hero) + 2px);
+           bottom: 36px; overflow: hidden; z-index: 2; }
+  .item { position: absolute; left: 0; right: 0; top: 0; will-change: transform, opacity; transition: opacity .3s ease; }
+  .item.gone { opacity: 0; }
+  .row { height: var(--row); display: grid; align-items: center; column-gap: 8px; padding: 0 6px; border-radius: 9px; position: relative;
+         grid-template-columns: 16px 10px minmax(0,1fr) var(--capw, auto) 46px; }
+  .row:hover { background: var(--fill); box-shadow: inset 0 0 0 1px var(--line); }
+  .lead .row { background: linear-gradient(100deg, rgba(250,204,21,.12), rgba(232,121,249,.07) 45%, transparent 75%);
+               background-size: 200% 100%; animation: plasma 6s ease-in-out infinite alternate; }
+  @keyframes plasma { to { background-position: 100% 0; } }
+  .rm .lead .row { animation: none; }
+  .bar { position: absolute; left: 40px; right: 6px; bottom: 1px; height: 2px; border-radius: 2px; z-index: -1; pointer-events: none; }
+  .bar::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; width: calc(100% * var(--share, 0));
+                 transition: width .55s cubic-bezier(.2,.8,.2,1); background: linear-gradient(90deg, transparent, var(--rowheat));
+                 box-shadow: 0 0 8px var(--rowheat), 0 0 2px var(--rowheat); }
+  .bar::after { content: ""; position: absolute; top: -2px; width: 22px; height: 6px; border-radius: 6px; opacity: 0; left: 0;
+                background: radial-gradient(closest-side, #fff, transparent); }
+  .gen .bar::after { opacity: 1; animation: comet var(--sheen, 2s) cubic-bezier(.45,0,.55,1) infinite; }
+  @keyframes comet { 0% { transform: translateX(-22px); opacity: 0; } 15%, 85% { opacity: 1; } 100% { transform: translateX(calc(var(--track) * var(--share) - 8px)); opacity: 0; } }
+  .rm .gen .bar::after { animation: none; opacity: 0; }
+  .rank { font: 700 12px/1 var(--num); color: var(--ink-3); text-align: center; position: relative; height: 16px; overflow: hidden; }
+  .rank span { display: block; line-height: 16px; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+  .lead .rank { color: #FFE58A; text-shadow: 0 0 8px rgba(250,204,21,.9); }
+  [data-theme="light"] .lead .rank { color: #B07800; text-shadow: none; }
+  .badge { width: 10px; height: 10px; position: relative; }
+  .badge.idle::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--ink-3); }
+  .badge.gen::before { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--src); box-shadow: 0 0 6px var(--src), 0 0 12px var(--src);
+                       animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(.65); opacity: .7; } }
+  .badge.gen i { display: none; }
+  .rm .badge.gen::before { animation: none; }
+  .badge.tools::before { content: ""; position: absolute; inset: 1px; border-radius: 3px; border: 1.5px solid var(--src); transform: rotate(45deg) scale(.7); box-shadow: 0 0 6px var(--src); }
+  .name { min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .name b { font-weight: 650; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 22px; }
+  .name small { font: 500 10px/1 var(--num); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; letter-spacing: .02em; }
+  .speed { font: 700 13px/1 var(--num); text-align: right; letter-spacing: -.02em; }
+  .speed.dim { color: var(--ink-3); font-weight: 500; }
+  .speed.up { animation: vu .8s cubic-bezier(.2,.8,.2,1); }
+  .speed.down { animation: vd .8s ease-out; }
+  @keyframes vu { 0% { color: #fff; text-shadow: 0 0 12px var(--rowheat), 0 0 2px #fff; transform: translateY(-2px) scale(1.06); } }
+  @keyframes vd { 0% { opacity: .4; filter: blur(.6px); } }
+  .rm .speed.up, .rm .speed.down, .rm .num .ch.in, .rm .num.punch, .rm .num.gild .ch { animation: none; }
+  .sub .row { height: var(--sub); }
+  .sub .name { padding-left: 12px; position: relative; }
+  .sub .name::before { content: ""; position: absolute; left: 2px; top: -12px; bottom: 50%; width: 7px; border-left: 1px solid var(--line);
+                       border-bottom: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .sub .name b { font-weight: 540; font-size: 11.5px; color: var(--ink-2); }
+  .sub .speed { font-size: 11px; color: var(--ink-2); }
+  .sub .bar { left: 46px; height: 1.5px; opacity: .7; }
+  .more .row { height: 20px; }
+  .more .name { padding-left: 12px; font: 500 10px/1 var(--num); color: var(--ink-3); letter-spacing: .03em; }
+  .more .stack { display: inline-flex; margin-right: 6px; }
+  .more .stack i { width: 5px; height: 5px; border-radius: 50%; background: var(--src); margin-left: -1px; box-shadow: 0 0 4px var(--src); }
+  .sweep { position: absolute; inset: 0; border-radius: 9px; pointer-events: none; opacity: 0;
+           background: linear-gradient(100deg, transparent 20%, color-mix(in oklab, var(--src) 50%, transparent) 44%, rgba(255,255,255,.75) 50%, transparent 58%);
+           background-size: 260% 100%; mix-blend-mode: screen; }
+  .sweep.go { animation: sweep .6s cubic-bezier(.3,.7,.2,1); }
+  @keyframes sweep { 0% { opacity: 1; background-position: 130% 0; } 100% { opacity: 1; background-position: -60% 0; } }
+  .chip { position: absolute; right: 52px; top: 50%; transform: translateY(-50%); opacity: 0; z-index: 2; font: 700 10px/1 var(--num);
+          color: #021a10; background: var(--mint); padding: 3px 5px; border-radius: 4px; pointer-events: none; box-shadow: 0 0 12px rgba(52,211,153,.8); }
+  .chip.go { animation: chip 1.6s cubic-bezier(.2,.8,.2,1); }
+  @keyframes chip { 0% { opacity: 0; transform: translate(6px,-50%) scale(.6); } 14%, 75% { opacity: 1; transform: translate(0,-50%); } 100% { opacity: 0; } }
+  .crown { display: none; }
+
+  .cap { height: 18px; border-radius: 9px; display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; background: var(--fill);
+         box-shadow: inset 0 0 0 1px var(--line); justify-self: stretch; }
+  .cap.none { opacity: 0; }
+  .sub .cap { height: 16px; }
+  .meter { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+  .meter i { width: 2.5px; border-radius: .75px; background: var(--unlit); transition: background .22s, box-shadow .22s; }
+  .meter i:nth-child(1) { height: 4px; } .meter i:nth-child(2) { height: 5.5px; } .meter i:nth-child(3) { height: 7px; }
+  .meter i:nth-child(4) { height: 8.5px; } .meter i:nth-child(5) { height: 10px; }
+  .meter i.on { background: #cfe0ff; box-shadow: 0 0 4px rgba(170,200,255,.8); }
+  [data-theme="light"] .meter i.on { background: var(--ink-2); box-shadow: none; }
+  .cap.max .meter i.on { background: var(--maxc); box-shadow: 0 0 5px var(--maxc); }
+  .cap.top .meter i.on { background: linear-gradient(0deg, var(--topa), var(--topb)); box-shadow: 0 0 6px var(--topb); }
+  .cap.top .meter { position: relative; }
+  .cap.top .meter::after { content: ""; position: absolute; inset: -2px -3px; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.85) 50%, transparent 65%);
+                           background-size: 300% 100%; mix-blend-mode: overlay; animation: shimmer 2.2s ease-in-out infinite; }
+  @keyframes shimmer { 0% { background-position: 140% 0; } 35%, 100% { background-position: -60% 0; } }
+  .rm .cap.top .meter::after { display: none; }
+  .word { font: 700 10px/1 var(--num); color: var(--ink-2); letter-spacing: .04em; }
+  .cap.max .word { color: var(--maxc); text-shadow: 0 0 6px var(--maxc); }
+  .cap.top .word { background: linear-gradient(90deg, var(--topa), var(--topb)); -webkit-background-clip: text; background-clip: text; color: transparent;
+                   filter: drop-shadow(0 0 4px color-mix(in oklab, var(--topb) 70%, transparent)); }
+  .bolts { display: inline-flex; margin-left: auto; }
+  .bolts svg { width: 8px; height: 10px; fill: var(--amber-ink); filter: drop-shadow(0 0 3px var(--amber)); }
+  .bolts svg + svg { margin-left: -3px; }
+  .bolts svg:first-child:not(:only-child) { opacity: .6; }
+  .bolts:empty { display: none; }
+  .panel[data-size="S"] .word { display: none; }
+
+  .foot { position: absolute; left: var(--pad); right: var(--pad); bottom: 11px; height: 18px; display: flex; justify-content: space-between;
+          align-items: center; font: 600 10px/1 var(--num); color: var(--ink-3); letter-spacing: .06em; z-index: 2; }
+  .foot b { color: var(--ink-2); font-weight: 700; }
+  .panel[data-size="S"] .foot .peak { display: none; }
+  .tip { position: fixed; z-index: 20; min-width: 190px; padding: 10px 12px; border-radius: 10px; font-size: 11.5px; background: var(--deck-2);
+         box-shadow: 0 20px 50px rgba(0,0,0,.5), 0 0 0 1px var(--line); color: var(--ink-2); line-height: 1.55; pointer-events: none; opacity: 0; transition: opacity .15s; }
+  .tip.on { opacity: 1; }
+  .tip b { color: var(--ink); }
+</style>
+</head>
+<body data-theme="dark">
+<div class="wall" aria-hidden="true">
+  <i style="width:520px;height:520px;left:6%;top:8%;background:#5b3cc4"></i>
+  <i style="width:460px;height:460px;right:8%;top:18%;background:#0e7c86"></i>
+  <i style="width:600px;height:420px;left:30%;bottom:-12%;background:#b8336a"></i>
+</div>
+
+<section class="panel" id="panel" data-size="M" aria-label="排行看板">
+  <div class="aurora" aria-hidden="true"><i></i><i></i></div>
+  <div class="hero">
+    <div>
+      <div class="value" style="position:relative"><span class="peakchip" id="peakchip">新峰值</span><span class="glow" id="glow"><span class="num" id="num" aria-live="off"></span></span><span class="unit">tok/s</span></div>
+      <div class="meta"><span class="title" id="title"></span><span id="counts"></span></div>
+    </div>
+    <div class="led" id="led" aria-hidden="true"></div>
+    <div style="position:relative">
+      <svg class="spark" id="spark" viewBox="0 0 104 40" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="sg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".35"/>
+          <stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+        <path id="sparkArea" fill="url(#sg)"/><path id="sparkLine" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle id="sparkDot" r="2.4" fill="currentColor"/>
+      </svg>
+      <div class="peakring" id="peakring"></div>
+    </div>
+  </div>
+  <div class="board" id="board" role="list"></div>
+  <div class="foot"><span>今日 <b id="today"></b> tok</span><span><b id="cost"></b></span><span class="peak">峰值 <b id="peak"></b></span></div>
+</section>
+<div class="tip" id="tip"></div>
+
+<div class="controls">
+  <span class="seg" id="scenarios">
+    <button data-v="swarm" aria-pressed="true">100 子 agent</button><button data-v="team">團隊</button>
+    <button data-v="duel">對決</button><button data-v="calm">安靜</button></span>
+  <span class="seg" id="sizes"><button data-v="S">S</button><button data-v="M" aria-pressed="true">M</button><button data-v="L">L</button></span>
+  <span class="seg" id="themes"><button data-v="dark" aria-pressed="true">深色</button><button data-v="light">淺色</button></span>
+  <label><input type="checkbox" id="rm"> 減少動態</label>
+  <button id="pause">暫停</button><button id="step">單步</button>
+</div>
+
+<script src="sim.js"></script>
+<script src="fx.js"></script>
+<script>
+(() => {
+  "use strict";
+  const S = window.AgentSim;
+  const $ = (id) => document.getElementById(id);
+  const panel = $("panel"), board = $("board"), tip = $("tip");
+  const fx = window.BoardFX.create(panel, { radius: 22, comets: [1, 2, 3, 4, 4], ringWidth: 1.4, warp: true });
+  const led = $("led");
+  for (let i = 0; i < 24; i++) led.appendChild(document.createElement("i"));
+  const LIMITS = { S: { groups: 4, subs: [0, 0, 0, 0] }, M: { groups: 6, subs: [2, 1, 1] }, L: { groups: 8, subs: [3, 3, 3, 2, 2] } };
+  const BOLT = '<svg viewBox="0 0 8 10"><path d="M4.8 0 0.6 5.6h2.7L2.6 10 7.4 4.1H4.6z"/></svg>';
+  let size = "M", reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches, last = null;
+  const expanded = new Set();
+  $("rm").checked = reduceMotion; document.body.classList.toggle("rm", reduceMotion);
+  let lastPeak = null;
+  const center = (el) => { const p = panel.getBoundingClientRect(), r = el.getBoundingClientRect();
+                           return [r.left - p.left + r.width / 2, r.top - p.top + r.height / 2, r]; };
+
+  // ── Hero number: per-digit rolling slots ──────────────────────────────────────────────
+  let shownNum = "";
+  function setNumber(text, up) {
+    const el = $("num");
+    if (text === shownNum) return;
+    const old = shownNum; shownNum = text;
+    if (reduceMotion || old.length !== text.length) {
+      el.innerHTML = [...text].map(c => `<span class="slot"><span class="ch">${c}</span></span>`).join("");
+      return;
+    }
+    [...text].forEach((c, i) => {
+      if (old[i] === c) return;
+      const slot = el.children[i];
+      const prev = slot.querySelector(".ch:not(.out)");
+      const next = document.createElement("span");
+      next.className = "ch in" + (up ? " hot" : ""); next.textContent = c;
+      next.style.transform = `translateY(${up ? 100 : -100}%)`; next.style.opacity = "0";
+      if (prev) { prev.classList.add("out"); }
+      slot.appendChild(next);
+      requestAnimationFrame(() => {
+        next.style.transform = ""; next.style.opacity = "";
+        if (prev) { prev.style.transform = `translateY(${up ? -100 : 100}%)`; prev.style.opacity = "0"; }
+      });
+      setTimeout(() => prev && prev.remove(), 300);
+    });
+  }
+
+  // ── Effort capsule ───────────────────────────────────────────────────────────────────
+  function capsule() {
+    const el = document.createElement("span");
+    el.className = "cap none";
+    el.innerHTML = '<span class="meter"><i></i><i></i><i></i><i></i><i></i></span><span class="word"></span><span class="bolts"></span>';
+    return el;
+  }
+  function paintCapsule(el, agent) {
+    const e = agent.effort, bolts = agent.bolts;
+    const key = (e ? e.value : "-") + "/" + bolts;
+    if (el.dataset.key === key) return;
+    el.dataset.key = key;
+    const meter = el.querySelector(".meter");
+    el.classList.toggle("none", !e && !bolts);
+    el.classList.toggle("max", !!e && e.value === "max");
+    el.classList.toggle("top", !!e && e.top);
+    meter.style.display = e && e.level !== null ? "" : "none";
+    [...meter.children].forEach((bar, i) => {
+      const on = !!e && e.level > i;
+      if (bar.classList.contains("on") === on) return;
+      bar.style.transitionDelay = reduceMotion ? "0ms" : (on ? i : 4 - i) * 30 + "ms";
+      bar.classList.toggle("on", on);
+    });
+    el.querySelector(".word").textContent = e ? e.value : "";
+    el.querySelector(".word").style.display = e ? "" : "none";
+    el.querySelector(".bolts").innerHTML = BOLT.repeat(bolts);
+  }
+
+  // ── Board items (keyed) and spring positions ─────────────────────────────────────────
+  const items = new Map();
+  function makeItem(kind) {
+    const el = document.createElement("div");
+    el.className = "item " + kind;
+    el.setAttribute("role", "listitem");
+    if (kind === "more") {
+      el.innerHTML = '<div class="row"><span></span><span></span><span class="name"><span class="stack"><i></i><i></i><i></i></span><span class="label"></span></span><span></span><span class="speed dim"></span></div>';
+    } else {
+      el.innerHTML = '<div class="row"><span class="bar"></span><span class="sweep"></span><span class="rank"><span></span></span><span class="badge"></span>' +
+        '<span class="name"><b></b><small></small></span><span class="capslot"></span><span class="speed"></span><span class="chip"></span></div>';
+      el.querySelector(".capslot").replaceWith(capsule());
+    }
+    el.style.opacity = "0";
+    board.appendChild(el);
+    const it = { el, kind, y: null, target: 0, v: 0, alive: true };
+    if (kind === "group") {
+      el.addEventListener("click", () => { const id = el.dataset.id; expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(last, true); });
+      el.addEventListener("mouseenter", (ev) => showTip(el.dataset.id, ev));
+      el.addEventListener("mouseleave", () => tip.classList.remove("on"));
+    }
+    return it;
+  }
+
+  function badge(el, agent) {
+    const cls = agent.phase === "generating" ? "gen" : agent.phase === "tools" ? "tools" : "idle";
+    if (el.dataset.phase === cls) return;
+    el.dataset.phase = cls;
+    el.className = "badge " + cls;
+    el.innerHTML = cls === "gen" ? "<i></i><i></i><i></i>" : "";
+  }
+
+  function paintRow(it, agent, opts) {
+    const el = it.el, row = el.firstElementChild;
+    el.dataset.id = opts.id;
+    row.style.setProperty("--src", agent.sourceColor);
+    const share = opts.total > 0 ? Math.min(1, opts.live / opts.total) : 0;
+    const h = S.heatOf(opts.live);
+    row.style.setProperty("--share", share.toFixed(4));
+    row.style.setProperty("--track", (row.clientWidth - 46) + "px");
+    row.style.setProperty("--rowheat", S.heatColor(Math.max(0.12, h)));
+    row.style.setProperty("--sheen", (3.2 - 2.4 * h).toFixed(2) + "s");
+    row.classList.toggle("gen", agent.phase === "generating" || opts.generating > 0);
+    badge(row.querySelector(".badge"), opts.generating > 0 && agent.phase !== "generating" ? Object.assign({}, agent, { phase: "generating" }) : agent);
+    row.querySelector(".name b").textContent = opts.name;
+    row.querySelector(".name small").textContent = opts.detail;
+    const sp = row.querySelector(".speed");
+    const before = Number(sp.dataset.v || 0);
+    sp.dataset.v = opts.live;
+    const nextText = opts.live > 0.05 ? S.formatSpeed(opts.live) : "–";
+    if (!reduceMotion && sp.textContent && sp.textContent !== nextText && before > 0.05) {
+      const cls = opts.live > before * 1.05 ? "up" : opts.live < before * 0.95 ? "down" : null;
+      if (cls) { sp.classList.remove("up", "down"); void sp.offsetWidth; sp.classList.add(cls); }
+    }
+    sp.textContent = nextText;
+    sp.classList.toggle("dim", !(opts.live > 0.05));
+    sp.style.color = opts.live > 0.05 && h > 0.45 ? S.heatColor(h) : "";
+    paintCapsule(row.querySelector(".cap"), agent);
+    if (opts.rank !== undefined) {
+      const r = row.querySelector(".rank span");
+      if (r.textContent !== String(opts.rank)) {
+        const prev = Number(r.textContent) || opts.rank;
+        if (!reduceMotion && r.textContent) {
+          r.style.transition = "none"; r.style.transform = `translateY(${opts.rank < prev ? 100 : -100}%)`;
+          requestAnimationFrame(() => { r.style.transition = ""; r.style.transform = ""; });
+        }
+        r.textContent = opts.rank;
+      }
+      el.classList.toggle("lead", opts.rank === 1);
+    }
+  }
+
+  function accent(it, ev) {
+    if (reduceMotion) return;
+    const sweep = it.el.querySelector(".sweep"), chip = it.el.querySelector(".chip");
+    sweep.classList.remove("go"); void sweep.offsetWidth; sweep.classList.add("go");
+    chip.textContent = "▲" + (ev.from - ev.to);
+    chip.classList.remove("go"); void chip.offsetWidth; chip.classList.add("go");
+    const row = it.el.firstElementChild;
+    const [, y, r] = center(row);
+    const p = panel.getBoundingClientRect();
+    const src = getComputedStyle(row).getPropertyValue("--src").trim() || "#ffffff";
+    fx.streak(r.left - p.left, y, r.right - p.left, src);
+    const [rx, ry] = center(row.querySelector(".rank"));
+    if (ev.type === "newLeader") {
+      fx.lightning(rx + 30 + Math.random() * 120, -6, rx, ry, "#FACC15", { branches: 3, life: 0.45 });
+      fx.celebrate(rx, ry);
+      panel.animate([{ filter: "brightness(1.6)" }, { filter: "brightness(1)" }], { duration: 380, easing: "ease-out" });
+    } else {
+      const passed = [...items.values()].find(x => x.kind === "group" && x !== it && Math.abs(x.target - it.target - row.offsetHeight - 2) < 6);
+      if (passed) { const [, py] = center(passed.el.firstElementChild); fx.lightning(rx, ry, rx + 8, py, src, { branches: 1, life: 0.3 }); }
+      fx.burst(rx, ry, { count: 16, speed: 140, life: .7, colors: [src, "#FFFFFF"], size: 1.5, gravity: 60 });
+    }
+  }
+
+  // Groups first, then sub rows in rank order while room remains, so a square never trades a whole group for a sub.
+  function layout(snap) {
+    const lim = LIMITS[size];
+    const rowH = parseFloat(getComputedStyle(panel).getPropertyValue("--row")) + 2;
+    const subH = parseFloat(getComputedStyle(panel).getPropertyValue("--sub"));
+    // From the target size, not the measured one: the window may still be animating to it.
+    const box = { S: [280, 14, 78], M: [340, 16, 86], L: [420, 18, 94] }[size];
+    const room = box[0] - (box[1] + box[2] + 4) - 38 - 8;
+    const all = snap.groups;
+    let groups = all.slice(0, lim.groups);
+    const restRow = () => all.length > groups.length ? 20 : 0;
+    while (groups.length > 1 && groups.length * rowH + restRow() > room) groups = groups.slice(0, -1);
+    let free = room - groups.length * rowH - restRow();
+    const plan = groups.map((g, i) => {
+      const wanted = expanded.has(g.id) ? Math.min(8, g.subs.length) : (lim.subs[i] || 0);
+      return { g, subs: g.subs.filter(s => s.live > 0.05 || expanded.has(g.id)).slice(0, wanted), more: false };
+    });
+    for (const p of plan) {
+      const keep = [];
+      for (const s of p.subs) {
+        const needMore = p.g.subs.length - keep.length - 1 > 0 && !p.more ? 20 : 0;
+        if (free >= subH + needMore) { keep.push(s); free -= subH; if (needMore && !p.more) { p.more = true; free -= 20; } }
+      }
+      if (keep.length && p.g.subs.length > keep.length && !p.more && free >= 20) { p.more = true; free -= 20; }
+      if (p.more && keep.length === p.g.subs.length) { p.more = false; free += 20; }
+      p.subs = keep;
+    }
+    const list = [];
+    let y = 6;
+    for (const p of plan) {
+      list.push({ key: p.g.id, kind: "group", g: p.g, h: rowH, y }); y += rowH;
+      for (const sub of p.subs) { list.push({ key: sub.id, kind: "sub", g: p.g, s: sub, h: subH, y }); y += subH; }
+      if (p.more) { list.push({ key: p.g.id + "#more", kind: "more", g: p.g, rest: p.g.subs.length - p.subs.length, h: 20, y }); y += 20; }
+    }
+    const hidden = all.slice(groups.length);
+    if (hidden.length) list.push({ key: "#rest", kind: "more", groups: true, g: hidden[0], rest: hidden.length,
+                                   restLive: hidden.reduce((s, g) => s + g.live, 0), h: 20, y });
+    return list;
+  }
+
+  function render(snap, instant) {
+    last = snap;
+    const total = snap.total;
+    // Hero
+    const goingUp = !lastTotal || total.live >= lastTotal;
+    setNumber(S.formatSpeed(total.live), goingUp);
+    const numEl = $("num");
+    if (!reduceMotion && lastTotal && total.live > lastTotal * 1.08 + 20) {
+      numEl.classList.remove("punch"); void numEl.offsetWidth; numEl.classList.add("punch");
+      const [x, y, r] = center(numEl);
+      const n = Math.min(22, 6 + Math.round((total.live - lastTotal) / Math.max(1, lastTotal) * 40));
+      fx.burst(x, y - r.height * 0.3, { count: n, speed: 90, angle: -Math.PI / 2, spread: 1.6, life: 1.1, gravity: -30, drag: 1.2,
+                                       colors: [S.heatColor(Math.min(1, total.heat + 0.1)), "#FFF7D6"], size: 1.6 });
+      const p = panel.getBoundingClientRect(), x0 = r.left - p.left + r.width * (0.1 + Math.random() * 0.3), x1 = r.left - p.left + r.width * (0.6 + Math.random() * 0.35);
+      fx.lightning(x0, y - r.height * 0.15, x1, y + r.height * 0.2, S.heatColor(Math.min(1, total.heat + 0.15)), { branches: 1, life: 0.28 });
+    }
+    if (lastPeak !== null && total.peak > lastPeak + 1 && !reduceMotion) {
+      numEl.classList.remove("gild"); void numEl.offsetWidth; numEl.classList.add("gild");
+      const chip = $("peakchip"); chip.classList.remove("go"); void chip.offsetWidth; chip.classList.add("go");
+      const [x, y] = center(numEl);
+      fx.shockwave(x, y, "#FACC15", 160, 0.9);
+    }
+    lastPeak = total.peak;
+    lastTotal = total.live;
+    fx.setHeat(total.heat, total.overdrive);
+    panel.style.setProperty("--breath", (3.2 - 2.2 * total.heat).toFixed(2) + "s");
+    $("glow").classList.toggle("rgb", total.heat > 0.85 && !reduceMotion);
+    const lit = Math.round(total.heat * 24), pk = Math.min(23, Math.round(S.heatOf(total.peak) * 24) - 1);
+    [...led.children].forEach((seg, i) => {
+      seg.classList.toggle("on", i < lit); seg.classList.toggle("pk", i === pk && i >= lit);
+      seg.style.setProperty("--c", S.heatColor((i + 1) / 24));
+    });
+    const heat = S.heatColor(Math.max(0.06, total.heat));
+    panel.style.setProperty("--heat", heat);
+    panel.style.setProperty("--heat-2", S.heatColor(Math.min(1, total.heat + 0.18)));
+    panel.style.setProperty("--heat-soft", S.heatColor(total.heat, .55));
+    panel.style.setProperty("--heat-amount", total.heat.toFixed(3));
+    panel.style.setProperty("--maxc", S.heatColor(0.82));
+    panel.style.setProperty("--topa", S.heatColor(0.72));
+    panel.style.setProperty("--topb", S.heatColor(1));
+    const t = $("title");
+    if (t.dataset.key !== total.title.key) { t.dataset.key = total.title.key; t.textContent = total.title.zh; if (!reduceMotion) { t.classList.remove("swap"); void t.offsetWidth; t.classList.add("swap"); } }
+    $("counts").textContent = `· 生成中 ${total.generating} · 工具 ${total.tools}`;
+    $("today").textContent = S.formatSpeed(total.today);
+    $("cost").textContent = "$" + total.cost.toFixed(2);
+    $("peak").textContent = S.formatSpeed(total.peak);
+    drawSpark(snap.history, heat);
+
+    // Board
+    const list = layout(snap), seen = new Set();
+    for (const entry of list) {
+      seen.add(entry.key);
+      let it = items.get(entry.key);
+      const fresh = !it;
+      if (fresh) { it = makeItem(entry.kind); items.set(entry.key, it); }
+      it.alive = true; it.el.classList.remove("gone");
+      if (entry.kind === "group") {
+        const g = entry.g, r = g.root;
+        const subs = g.subs.length ? `${g.subs.length} 個子 agent` : "";
+        paintRow(it, r, { id: g.id, live: g.live, total: total.live, rank: g.rank, generating: g.generating,
+                          name: r.project, detail: [r.model, subs].filter(Boolean).join(" · ") });
+      } else if (entry.kind === "sub") {
+        paintRow(it, entry.s, { id: entry.s.id, live: entry.s.live, total: total.live, generating: 0, name: entry.s.label, detail: "" });
+      } else {
+        const row = it.el.firstElementChild;
+        row.style.setProperty("--src", entry.g.root.sourceColor);
+        const restLive = entry.groups ? entry.restLive : entry.g.subs.slice(entry.g.subs.length - entry.rest).reduce((s, a) => s + a.live, 0);
+        row.querySelector(".label").textContent = entry.groups ? `還有 ${entry.rest} 個 agent` : `+${entry.rest} 個子 agent`;
+        row.querySelector(".speed").textContent = restLive > 0.05 ? S.formatSpeed(restLive) : "";
+      }
+      it.target = entry.y;
+      if (fresh || instant || reduceMotion) { it.y = it.y === null || reduceMotion || instant ? entry.y + (fresh && !reduceMotion ? 10 : 0) : it.y; it.v = 0; }
+      requestAnimationFrame(() => { it.el.style.opacity = ""; });
+    }
+    for (const [key, it] of items) {
+      if (seen.has(key)) continue;
+      if (it.alive) { it.alive = false; it.el.classList.add("gone"); setTimeout(() => { if (!it.alive) { it.el.remove(); items.delete(key); } }, 320); }
+    }
+    for (const ev of snap.events) { const it = items.get(ev.id); if (it) accent(it, ev); }
+    sizeCapsules();
+    kick();
+  }
+  let lastTotal = 0;
+
+  // Shared capsule column: as wide as the widest visible capsule.
+  function sizeCapsules() {
+    let w = 0;
+    board.querySelectorAll(".item:not(.gone) .cap:not(.none)").forEach(c => { c.style.width = "auto"; w = Math.max(w, c.scrollWidth); });
+    board.querySelectorAll(".cap").forEach(c => { c.style.width = ""; });
+    panel.style.setProperty("--capw", w ? Math.ceil(w) + "px" : "0px");
+  }
+
+  // Positions: a critically damped spring per item; the loop stops when everything has settled (no idle frames).
+  let raf = 0, lastT = 0;
+  function kick() { if (!raf) { lastT = performance.now(); raf = requestAnimationFrame(frame); } }
+  function frame(now) {
+    const dt = Math.max(0, Math.min(0.05, (now - lastT) / 1000)); lastT = now;
+    let moving = false;
+    const k = 170, c = 2 * Math.sqrt(k) * 0.9;
+    for (const it of items.values()) {
+      if (it.y === null) it.y = it.target;
+      const a = -k * (it.y - it.target) - c * it.v;
+      it.v += a * dt; it.y += it.v * dt;
+      if (Math.abs(it.y - it.target) < 0.05 && Math.abs(it.v) < 0.05) { it.y = it.target; it.v = 0; } else moving = true;
+      it.el.style.transform = `translate3d(0, ${it.y.toFixed(2)}px, 0)`;
+    }
+    raf = moving ? requestAnimationFrame(frame) : 0;
+  }
+
+  function drawSpark(hist, color) {
+    const svg = $("spark"); svg.style.color = color;
+    const n = hist.length; if (n < 2) return;
+    const max = Math.max(10, ...hist) * 1.12, W = 104, H = 40;
+    const pts = hist.map((v, i) => [i / (n - 1) * W, H - 2 - v / max * (H - 6)]);
+    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], mx = (x0 + x1) / 2;
+      d += ` Q${x0.toFixed(1)},${y0.toFixed(1)} ${mx.toFixed(1)},${((y0 + y1) / 2).toFixed(1)}`;
+    }
+    const lp = pts[pts.length - 1]; d += ` T${lp[0].toFixed(1)},${lp[1].toFixed(1)}`;
+    $("sparkLine").setAttribute("d", d);
+    $("sparkArea").setAttribute("d", d + ` L${W},${H} L0,${H} Z`);
+    $("sparkDot").setAttribute("cx", lp[0]); $("sparkDot").setAttribute("cy", lp[1]);
+  }
+
+  function showTip(id, ev) {
+    if (!last) return;
+    const g = last.groups.find(x => x.id === id); if (!g) return;
+    const r = g.root, e = r.effort;
+    const speed = r.bolts === 2 ? "Ultrafast" : r.bolts === 1 ? "Fast" : "標準";
+    tip.innerHTML = `<b>${r.project}</b> · ${r.sourceName}<br>${r.model}<br>推理強度：${e ? e.value : "未記錄"}<br>加速：${speed}` +
+      `<br>速度 <b>${S.formatSpeed(g.live)}</b> tok/s（子 agent ${S.formatSpeed(g.subLive)}）<br>今日輸出 ${S.formatSpeed(r.todayOutput)} tok`;
+    const rect = ev.currentTarget.getBoundingClientRect();
+    tip.style.left = Math.min(innerWidth - 220, rect.right + 12) + "px"; tip.style.top = rect.top - 6 + "px";
+    tip.classList.add("on");
+  }
+
+  // ── Drag the window ─────────────────────────────────────────────────────────────────
+  let drag = null;
+  panel.addEventListener("pointerdown", (e) => { if (e.target.closest(".group")) return; drag = { x: e.clientX - panel.offsetLeft, y: e.clientY - panel.offsetTop }; panel.setPointerCapture(e.pointerId); panel.style.cursor = "grabbing"; panel.style.transition = "none"; });
+  panel.addEventListener("pointermove", (e) => { if (!drag) return; panel.style.left = e.clientX - drag.x + "px"; panel.style.top = e.clientY - drag.y + "px"; });
+  panel.addEventListener("pointerup", () => { drag = null; panel.style.cursor = ""; panel.style.transition = ""; });
+
+  // ── Controls ───────────────────────────────────────────────────────────────────────
+  const sim = S.create({ scenario: "swarm" });
+  function seg(id, fn) {
+    $(id).addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      $(id).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      fn(b.dataset.v);
+    });
+  }
+  seg("scenarios", (v) => { expanded.clear(); sim.setScenario(v); });
+  seg("sizes", (v) => { size = v; panel.dataset.size = v; setTimeout(() => render(last, false), 20); });
+  seg("themes", (v) => { document.body.dataset.theme = v; });
+  $("rm").addEventListener("change", (e) => { reduceMotion = e.target.checked; document.body.classList.toggle("rm", reduceMotion); fx.setReduceMotion(reduceMotion); });
+  $("pause").addEventListener("click", () => { if (sim.running) { sim.stop(); $("pause").textContent = "繼續"; } else { sim.start(); $("pause").textContent = "暫停"; } });
+  $("step").addEventListener("click", () => sim.step());
+  const params = new URLSearchParams(location.search);
+  if (params.has("theme")) { document.body.dataset.theme = params.get("theme"); }
+  if (params.has("size")) { size = params.get("size"); panel.style.transition = "none"; panel.dataset.size = size; }
+  if (params.has("steps")) {
+    reduceMotion = !params.has("fx"); document.body.classList.toggle("rm", reduceMotion); fx.setReduceMotion(reduceMotion);
+    if (params.has("scenario")) sim.setScenario(params.get("scenario"));
+    let snapLast = null;
+    const off = sim.subscribe((snap) => { snapLast = snap; });
+    for (let i = 0; i < Number(params.get("steps")); i++) sim.step();
+    off();
+    render(snapLast, true);
+    if (params.has("fx")) {
+      fx.setHeat(snapLast.total.heat, snapLast.total.overdrive);
+      const lead = items.get(snapLast.groups[0].id);
+      setTimeout(() => accent(lead, { type: "newLeader", from: 2, to: 1 }), 300);
+    }
+    return;
+  }
+  sim.subscribe((snap) => render(snap, false));
+  sim.start();
+})();
+</script>
+</body>
+</html>

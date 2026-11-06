@@ -32,8 +32,11 @@ final class NettopChild {
 
     static var isAvailable: Bool { access(path, X_OK) == 0 }
 
+    /// `-t external -t undefined`: every socket except loopback ones. `undefined` holds sockets on tunnel interfaces
+    /// (a TUN-mode proxy, a VPN), which `external` alone leaves out; nettop lists a socket once in either.
     static func arguments(interval: Int) -> [String] {
-        ["nettop", "-P", "-L", "0", "-s", String(interval), "-x", "-n", "-t", "external", "-J", "bytes_in,bytes_out"]
+        ["nettop", "-P", "-L", "0", "-s", String(interval), "-x", "-n", "-t", "external", "-t", "undefined",
+         "-J", "bytes_in,bytes_out"]
     }
 
     static func launch(interval: Int) throws -> NettopChild {

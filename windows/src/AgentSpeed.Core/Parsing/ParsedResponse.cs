@@ -21,9 +21,15 @@ internal sealed record ParsedResponse(
 {
     public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
 
-    /// <summary>Codex records the selected tier, which is an estimate rather than proof of the served tier.</summary>
+    /// <summary>Codex explicitly selected Fast for a verified OpenAI-compatible provider.</summary>
+    public bool CodexFastSelectionVerified { get; init; }
+
+    /// <summary>Codex's selected tier gives an estimate rather than proof of the served tier.</summary>
     public bool FastForPricing => Fast || (Source == SourceKind.Codex
+        && CodexFastSelectionVerified
         && Modes.Attribute(ExecutionModeKind.ServiceTier) is { Mode: "fast", Provider: "openai" });
+    /// <summary>When the response's first content was written (METRICS 3.3); null for every source but Claude and Codex.</summary>
+    public long? FirstMs { get; init; }
 
     public long Requests => Math.Clamp(RequestCount, 0, TokenCounts.MaxValue);
 }

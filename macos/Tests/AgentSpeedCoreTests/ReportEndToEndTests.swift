@@ -65,7 +65,7 @@ struct ReportEndToEndTests {
 
     static func device(on server: ReferenceServer, apiKey: String? = nil) async throws -> Device {
         let api = ReportAPI(transport: URLSessionReportTransport(), userAgent: userAgent)
-        guard case .document(let document, _) = await api.discover(server.service) else {
+        guard case .document(let document) = await api.discover(server.service) else {
             throw ReferenceServer.Failure.discovery
         }
         return Device(api: api, document: document, apiKey: apiKey)

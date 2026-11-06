@@ -3,7 +3,8 @@ import os
 
 /// Hands snapshots from the background reader to the main actor, coalescing bursts.
 ///
-/// Only the newest snapshot is delivered; events accumulate until the main actor drains them.
+/// Only the newest snapshot is delivered, carrying the earliest observation of the snapshots it replaced (METRICS
+/// 11.9); events accumulate until the main actor drains them.
 final class SnapshotMailbox: Sendable {
     typealias Delivery = @MainActor @Sendable (SpeedSnapshot, [SpeedEvent]) -> Void
 
@@ -26,6 +27,10 @@ final class SnapshotMailbox: Sendable {
     func post(_ snapshot: SpeedSnapshot, events: [SpeedEvent] = []) {
         let shouldSchedule = state.withLock { state -> Bool in
             guard !state.closed else { return false }
+            var snapshot = snapshot
+            if let earlier = state.snapshot?.observedAtMs {
+                snapshot.observedAtMs = min(earlier, snapshot.observedAtMs ?? earlier)
+            }
             state.snapshot = snapshot
             state.events.append(contentsOf: events)
             if state.events.count > Self.maxQueuedEvents {

@@ -34,8 +34,17 @@ internal enum TranscriptNaming
     KimiSession,
     GrokBuildSession,
 
-    /// <summary><c>&lt;bucket&gt;/*.jsonl</c> and <c>&lt;bucket&gt;/&lt;name&gt;/*/*/session.jsonl</c> (pi, METRICS 4.13).</summary>
+    /// <summary><c>*.jsonl</c> in a root or below it, nothing starting with <c>.</c> (Pi, METRICS 4.13).</summary>
     PiSession,
+
+    /// <summary><c>openclaw-agent.sqlite</c> and its WAL below an <c>agents</c> folder (OpenClaw, METRICS 4.14); not enumerated.</summary>
+    OpenClawDatabase,
+
+    /// <summary><c>agent.log</c> and its rotated copies directly in a log folder (Hermes Agent, METRICS 4.15); not enumerated.</summary>
+    HermesLog,
+
+    /// <summary><c>*.jsonl</c> directly in a root or one folder below it, nothing starting with <c>.</c> (Factory Droid, METRICS 4.16).</summary>
+    DroidSession,
 }
 
 /// <summary>Recursive transcript enumeration that never follows reparse points or symlinks (METRICS 2).</summary>
@@ -55,13 +64,14 @@ internal static class TranscriptDiscovery
             TranscriptNaming.CodexRollout => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
                 || fileName.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase),
             TranscriptNaming.GeminiSession => Gemini.GeminiDiscovery.IsSessionFileName(fileName),
-            TranscriptNaming.OpenCodeDatabase or TranscriptNaming.ZCodeDatabase => false,
+            TranscriptNaming.OpenCodeDatabase or TranscriptNaming.ZCodeDatabase or TranscriptNaming.OpenClawDatabase
+                or TranscriptNaming.HermesLog => false,
             TranscriptNaming.KimiSession => fileName.SequenceEqual("wire.jsonl"),
             TranscriptNaming.GrokBuildSession => fileName.SequenceEqual("updates.jsonl"),
-            TranscriptNaming.OmpSession => Omp.OmpDiscovery.IsSessionFileName(fileName),
-            TranscriptNaming.PiSession => Pi.PiDiscovery.IsTranscriptName(fileName),
+            TranscriptNaming.OmpSession or TranscriptNaming.PiSession => Omp.OmpDiscovery.IsSessionFileName(fileName),
             TranscriptNaming.AntigravityDatabase => Antigravity.AntigravityPaths.IsDatabaseName(fileName),
             TranscriptNaming.WorkBuddySession => WorkBuddy.WorkBuddyDiscovery.IsSessionFileName(fileName),
+            TranscriptNaming.DroidSession => Droid.DroidPaths.IsTranscriptName(fileName),
             _ => fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
         };
 
@@ -98,19 +108,15 @@ internal static class TranscriptDiscovery
             return Gemini.GeminiDiscovery.Enumerate(root, limit, cancellationToken);
         }
 
-        if (naming is TranscriptNaming.OpenCodeDatabase or TranscriptNaming.ZCodeDatabase)
+        if (naming is TranscriptNaming.OpenCodeDatabase or TranscriptNaming.ZCodeDatabase or TranscriptNaming.OpenClawDatabase
+            or TranscriptNaming.HermesLog)
         {
             return [];
         }
 
-        if (naming == TranscriptNaming.OmpSession)
+        if (naming is TranscriptNaming.OmpSession or TranscriptNaming.PiSession)
         {
-            return Omp.OmpDiscovery.Enumerate(root, limit, cancellationToken);
-        }
-
-        if (naming == TranscriptNaming.PiSession)
-        {
-            return Pi.PiDiscovery.Enumerate(root, limit, cancellationToken);
+            return Omp.OmpDiscovery.Enumerate(root, limit, cancellationToken, flat: naming == TranscriptNaming.PiSession);
         }
 
         if (naming == TranscriptNaming.AntigravityDatabase)
@@ -126,6 +132,11 @@ internal static class TranscriptDiscovery
         if (naming is TranscriptNaming.KimiSession or TranscriptNaming.GrokBuildSession)
         {
             return Harnesses.HarnessDiscovery.Enumerate(root, naming == TranscriptNaming.KimiSession, limit, cancellationToken);
+        }
+
+        if (naming == TranscriptNaming.DroidSession)
+        {
+            return Droid.DroidDiscovery.Enumerate(root, limit, cancellationToken);
         }
 
         var scanCap = limit == int.MaxValue ? int.MaxValue : MaxScannedEntries;
@@ -190,14 +201,9 @@ internal static class TranscriptDiscovery
             return Gemini.GeminiDiscovery.IsSessionPath(root, path);
         }
 
-        if (naming == TranscriptNaming.OmpSession)
+        if (naming is TranscriptNaming.OmpSession or TranscriptNaming.PiSession)
         {
-            return Omp.OmpDiscovery.IsSessionPath(root, path);
-        }
-
-        if (naming == TranscriptNaming.PiSession)
-        {
-            return Pi.PiDiscovery.IsSessionPath(root, path);
+            return Omp.OmpDiscovery.IsSessionPath(root, path, flat: naming == TranscriptNaming.PiSession);
         }
 
         if (naming == TranscriptNaming.AntigravityDatabase)
@@ -213,6 +219,11 @@ internal static class TranscriptDiscovery
         if (naming is TranscriptNaming.KimiSession or TranscriptNaming.GrokBuildSession)
         {
             return Harnesses.HarnessDiscovery.IsSessionPath(root, path, naming == TranscriptNaming.KimiSession);
+        }
+
+        if (naming == TranscriptNaming.DroidSession)
+        {
+            return Droid.DroidDiscovery.IsSessionPath(root, path);
         }
 
         if (!IsTranscriptName(System.IO.Path.GetFileName(path.AsSpan()), naming))

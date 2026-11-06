@@ -23,6 +23,8 @@ final class OrbPreviewStage {
         didSet { interaction.isHovered = hovered }
     }
     var language: AppLanguage?
+    /// Pixels per point of the stills and of the text the scenes draw (a 1× external display, a 2× built-in one).
+    var backingScale: CGFloat = 2
     /// The title theme the orb names its levels with (nil = General).
     var titleTheme: TitleTheme?
     private var nextTick: TimeInterval
@@ -80,7 +82,7 @@ final class OrbPreviewStage {
         }
         gauge.ingest(self.value, now: time)
         OrbSceneBuilder.build(into: &scene, content: content, animator: animator, model: model, feed: feed,
-                              canvasSide: diameter * OrbView.canvasScale, scale: 2, time: time,
+                              canvasSide: diameter * OrbView.canvasScale, scale: backingScale, time: time,
                               contentScale: hovered && !model.accessibility.reduceMotion ? 1.03 : 1)
     }
 
@@ -106,11 +108,11 @@ final class OrbPreviewStage {
     /// The scene of the last step (GPU timing).
     var lastScene: OrbScene { scene }
 
-    /// The current frame: body and dynamic layers at @2x, `canvasSide` points square.
+    /// The current frame: body and dynamic layers at `backingScale`, `canvasSide` points square.
     func image() -> CGImage? {
-        guard let dynamic = OrbSnapshot.image(scene, side: canvasSide, scale: 2) else { return nil }
+        guard let dynamic = OrbSnapshot.image(scene, side: canvasSide, scale: backingScale) else { return nil }
         let side = canvasSide
-        guard let canvas = PreviewCanvas(size: CGSize(width: side, height: side), background: .clear) else { return nil }
+        guard let canvas = PreviewCanvas(size: CGSize(width: side, height: side), scale: backingScale, background: .clear) else { return nil }
         canvas.context.clear(CGRect(x: 0, y: 0, width: side, height: side))
         let scale: CGFloat = hovered && !model.accessibility.reduceMotion ? 1.03 : 1
         if let body = bodyImage() {
@@ -124,12 +126,12 @@ final class OrbPreviewStage {
     private func bodyImage() -> CGImage? {
         let style = animator.style
         let rim = feed.bezel == nil
-        let key = "\(diameter)-\(dark)-\(style.rawValue)-\(rim)-\(increaseContrast)-\(reduceTransparency)"
+        let key = "\(diameter)-\(dark)-\(style.rawValue)-\(rim)-\(increaseContrast)-\(reduceTransparency)-\(backingScale)"
         if let cached = Self.bodyCache[key] { return cached }
         let body = OrbBody(diameter: diameter, canvasSide: canvasSide, tokens: dark ? .dark : .light, opacity: 1, solid: true,
                            increaseContrast: increaseContrast, style: style, rim: rim)
         let renderer = ImageRenderer(content: body.environment(\.colorScheme, dark ? .dark : .light))
-        renderer.scale = 2
+        renderer.scale = backingScale
         renderer.isOpaque = false
         guard let image = renderer.cgImage else { return nil }
         if Self.bodyCache.count > 64 { Self.bodyCache.removeAll() }

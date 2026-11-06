@@ -221,7 +221,7 @@ internal static class OrbGpuRenderer
         return true;
     }
 
-    private static int Grow(int count)
+    internal static int Grow(int count)
     {
         var capacity = 1;
         while (capacity < count)
@@ -232,7 +232,7 @@ internal static class OrbGpuRenderer
         return capacity;
     }
 
-    private static unsafe bool Upload(ID3D11DeviceContext context, ID3D11Buffer buffer, ReadOnlySpan<byte> bytes)
+    internal static unsafe bool Upload(ID3D11DeviceContext context, ID3D11Buffer buffer, ReadOnlySpan<byte> bytes)
     {
         var result = context.Map(buffer, 0, MapMode.WriteDiscard, MapFlags.None, out var mapped);
         if (result.Failure)

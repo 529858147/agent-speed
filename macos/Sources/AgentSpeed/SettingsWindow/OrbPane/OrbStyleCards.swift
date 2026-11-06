@@ -138,7 +138,7 @@ struct OrbStyleCards: View {
     }
 }
 
-private struct StyleCardBackground: View {
+struct StyleCardBackground: View {
     let selected: Bool
     @Environment(\.colorScheme) private var colorScheme
 
@@ -151,7 +151,7 @@ private struct StyleCardBackground: View {
     }
 }
 
-private struct StyleCardRing: View {
+struct StyleCardRing: View {
     let selected: Bool
 
     var body: some View {

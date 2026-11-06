@@ -34,14 +34,14 @@ enum SourcePreviews {
         model.l10n.apply(original)
     }
 
-    /// New harnesses, a mixed set and DSH in every style.
+    /// The newest harnesses, a mixed set and DSH in every style.
     private static func orbs(model: AppModel, dark: Bool) -> NameplatePreviewSheet? {
         guard let sheet = NameplatePreviewSheet(model: model, size: CGSize(width: 840, height: 300), dark: dark, seed: 23) else {
             return nil
         }
         let entries: [(OrbStyleKind, [SourceKind])] = [
-            (.liquid, [.zcode]), (.needle, [.kimi]), (.led, [.grokBuild]),
-            (.reactor, [.codex, .zcode, .kimi, .grokBuild]), (.minimal, [.deepseek]),
+            (.liquid, [.droid]), (.needle, [.hermes]), (.led, [.openclaw]),
+            (.reactor, [.codex, .claudeCode, .hermes, .droid]), (.minimal, [.deepseek]),
         ]
         for (index, entry) in entries.enumerated() {
             let config = OrbConfig(id: UUID().uuidString, sources: .explicit(entry.1), style: entry.0, size: 148)

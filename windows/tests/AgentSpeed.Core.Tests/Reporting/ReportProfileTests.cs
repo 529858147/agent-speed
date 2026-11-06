@@ -121,7 +121,7 @@ public sealed class ReportProfileTests
             Request = request;
             return Task.FromResult(new ReportHttpResponse(200, new Dictionary<string, string>(), Encoding.UTF8.GetBytes(Profile)));
         }
-        public Task<ReportHttpResponse> GetAsync(Uri url, string? etag, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default)
+        public Task<ReportHttpResponse> GetAsync(Uri url, string userAgent, int maxBytes, TimeSpan timeout, CancellationToken cancellationToken = default)
         { Discoveries++; throw new InvalidOperationException(); }
     }
     private static byte[] Png(int width, int height, bool animate = false)

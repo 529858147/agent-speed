@@ -163,7 +163,10 @@ public class DisplayTextTests
     [InlineData(SourceKind.ZCode, "source.zcode", "ZCode")]
     [InlineData(SourceKind.Kimi, "source.kimi", "Kimi Code CLI")]
     [InlineData(SourceKind.GrokBuild, "source.grokBuild", "Grok Build")]
-    [InlineData(SourceKind.Pi, "source.pi", "pi")]
+    [InlineData(SourceKind.Pi, "source.pi", "Pi")]
+    [InlineData(SourceKind.OpenClaw, "source.openclaw", "OpenClaw")]
+    [InlineData(SourceKind.Hermes, "source.hermes", "Hermes Agent")]
+    [InlineData(SourceKind.Droid, "source.droid", "Factory Droid")]
     public void EverySourceHasItsOwnName(SourceKind source, string key, string english)
     {
         Assert.Equal(key, DisplayText.SourceKey(source));
@@ -180,6 +183,59 @@ public class DisplayTextTests
             Assert.Contains("dsh", hint, StringComparison.Ordinal);
             Assert.True(Embedded.TryGet("state.noSources", language, out var noSources), language);
             Assert.False(string.IsNullOrWhiteSpace(noSources), language);
+        }
+    }
+
+    [Fact]
+    public void PiStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.pi", language, out var pi), language);
+            Assert.Equal("Pi", pi);
+            Assert.True(Embedded.TryGet("settings.sources.piHint", language, out var hint), language);
+            Assert.Contains("~/.pi/agent/sessions", hint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void OpenClawStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.openclaw", language, out var name), language);
+            Assert.Equal("OpenClaw", name);
+            Assert.True(Embedded.TryGet("settings.sources.openclawHint", language, out var hint), language);
+            Assert.Contains("~/.openclaw", hint, StringComparison.Ordinal);
+            Assert.Contains("openclaw-agent.sqlite", hint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void HermesStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.hermes", language, out var name), language);
+            Assert.Equal("Hermes Agent", name);
+            Assert.True(Embedded.TryGet("settings.sources.hermesHint", language, out var hint), language);
+            Assert.Contains("logs/agent.log", hint, StringComparison.Ordinal);
+            Assert.Contains("%LOCALAPPDATA%\\hermes", hint, StringComparison.Ordinal);
+            Assert.Contains("Codex", hint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void DroidStringsExistInEveryLanguage()
+    {
+        foreach (var language in LanguageCodes.All)
+        {
+            Assert.True(Embedded.TryGet("source.droid", language, out var name), language);
+            Assert.Equal("Factory Droid", name);
+            Assert.True(Embedded.TryGet("settings.sources.droidHint", language, out var hint), language);
+            Assert.Contains("~/.factory/sessions", hint, StringComparison.Ordinal);
+            Assert.Contains("%USERPROFILE%\\.factory\\sessions", hint, StringComparison.Ordinal);
+            Assert.Contains(".settings.json", hint, StringComparison.Ordinal);
         }
     }
 

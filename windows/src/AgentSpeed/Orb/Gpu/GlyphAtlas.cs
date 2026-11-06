@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -13,7 +14,8 @@ namespace AgentSpeed.Orb.Gpu;
 /// The orb's glyph atlas (DESIGN 2a, Techniques): every string the readout draws, rasterized once per size and display scale
 /// with WPF's own DirectWrite text stack (so the typography is the one the WPF readout always had: Segoe UI Variable, tabular
 /// digits, the same tracking and CJK fallbacks), packed into one R8G8 texture: R the coverage, G the coverage blurred for the
-/// glow. Shared by every orb; rebuilt when it fills up.
+/// glow. Shared by every orb; rebuilt when it fills up. A string that rasterizes to no ink although it has something to show
+/// is never kept (<see cref="OrbBlankGlyphs"/>): it is retried, so a hole never stays in an idle orb.
 /// </summary>
 internal sealed class GlyphAtlas
 {
@@ -27,11 +29,13 @@ internal sealed class GlyphAtlas
     private static readonly Typeface InfoFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI"), FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
     private static readonly Typeface PillFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft YaHei UI, Yu Gothic UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
     private static readonly Typeface TrafficNumberFace = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static readonly long Started = Stopwatch.GetTimestamp();
 
     private readonly Dictionary<(OrbTextKey Key, int Scale), OrbGlyph> _entries = new();
     private readonly Dictionary<(OrbFont Font, int Size), double> _digitCells = new();
     private readonly Dictionary<(OrbFont Font, int Size), double> _capHeights = new();
     private readonly Dictionary<int, View> _views = new();
+    private readonly OrbBlankGlyphs _blank = new(() => Stopwatch.GetElapsedTime(Started).TotalSeconds);
     private readonly List<(int X, int Y, int Width, int Height, byte[] Pixels)> _pending = [];
     private int _side = InitialSide;
     private int _shelfX;
@@ -42,6 +46,13 @@ internal sealed class GlyphAtlas
     private ID3D11ShaderResourceView? _view;
     private CultureInfo _culture = CultureInfo.CurrentUICulture;
 
+    private enum Raster
+    {
+        Done,
+        Full,
+        Blank,
+    }
+
     /// <summary>Incremented whenever entries are dropped (the atlas filled up or the language changed).</summary>
     public int Generation { get; private set; }
 
@@ -50,6 +61,15 @@ internal sealed class GlyphAtlas
 
     /// <summary>Strings rasterized since start (for the benchmark log).</summary>
     public long Rasterized { get; private set; }
+
+    /// <summary>
+    /// Requests answered with nothing because the string rasterized blank (counted, so an orb can tell that its frame
+    /// misses one and wake for the retry).
+    /// </summary>
+    public long BlankMisses { get; private set; }
+
+    /// <summary>Seconds until the next retry of a blank string falls due, or null when none is ahead.</summary>
+    public double? SecondsToRetry => _blank.SecondsToRetry;
 
     /// <summary>The language strings are shaped for (font fallback differs between zh-Hant, zh-Hans and ja).</summary>
     public CultureInfo Culture
@@ -140,6 +160,7 @@ internal sealed class GlyphAtlas
         _digitCells.Clear();
         _capHeights.Clear();
         _pending.Clear();
+        _blank.Clear();
         _shelfX = 0;
         _shelfY = 0;
         _shelfHeight = 0;
@@ -171,12 +192,24 @@ internal sealed class GlyphAtlas
             return false;
         }
 
-        if (!Rasterize(key, scaleKey / 100.0, out glyph))
+        if (_blank.IsWaiting(key, scaleKey))
         {
-            _full = true;
+            BlankMisses++;
             return false;
         }
 
+        switch (Rasterize(key, scaleKey / 100.0, out glyph))
+        {
+            case Raster.Full:
+                _full = true;
+                return false;
+            case Raster.Blank:
+                _blank.Failed(key, scaleKey);
+                BlankMisses++;
+                return false;
+        }
+
+        _blank.Succeeded(key, scaleKey);
         _entries[(key, scaleKey)] = glyph;
         return true;
     }
@@ -197,7 +230,7 @@ internal sealed class GlyphAtlas
         return true;
     }
 
-    private bool Rasterize(in OrbTextKey key, double scale, out OrbGlyph glyph)
+    private Raster Rasterize(in OrbTextKey key, double scale, out OrbGlyph glyph)
     {
         glyph = default;
         if (key.Font == OrbFont.Arrow)
@@ -260,24 +293,28 @@ internal sealed class GlyphAtlas
         var rows = (int)Math.Ceiling(heightPoints * scale);
         if (width <= 0 || rows <= 0 || width > _side || rows > _side)
         {
-            return true;
+            return Raster.Done;
         }
-
-        // The entry is uploaded with a one-texel border of zeros: the texture keeps the strings of earlier generations,
-        // and bilinear sampling at a quad's edge reads one texel beyond it.
-        if (!Allocate(width + 2, rows + 2, out var bx, out var by))
-        {
-            return false;
-        }
-
-        var ax = bx + 1;
-        var ay = by + 1;
 
         var bitmap = new RenderTargetBitmap(width, rows, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
         bitmap.Render(visual);
         var bgra = new byte[width * rows * 4];
         bitmap.CopyPixels(bgra, width * 4, 0);
         Rasterized++;
+        if (!OrbBlankGlyphs.HasInk(bgra) && OrbBlankGlyphs.ExpectsInk(text))
+        {
+            return Raster.Blank;
+        }
+
+        // The entry is uploaded with a one-texel border of zeros: the texture keeps the strings of earlier generations,
+        // and bilinear sampling at a quad's edge reads one texel beyond it.
+        if (!Allocate(width + 2, rows + 2, out var bx, out var by))
+        {
+            return Raster.Full;
+        }
+
+        var ax = bx + 1;
+        var ay = by + 1;
 
         var coverage = new float[width * rows];
         for (var i = 0; i < coverage.Length; i++)
@@ -313,14 +350,14 @@ internal sealed class GlyphAtlas
             (float)(ay * inverse),
             (float)((ax + width) * inverse),
             (float)((ay + rows) * inverse));
-        return true;
+        return Raster.Done;
     }
 
     /// <summary>
     /// The traffic readout's arrow (DESIGN 10): a vector glyph 0.50 t wide and 0.66 t tall on the baseline, stroke
     /// max(0.9 pt, 0.11 t) with round caps, pointing down (<c>↓</c>, download) or up (<c>↑</c>, upload).
     /// </summary>
-    private bool RasterizeArrow(in OrbTextKey key, double scale, out OrbGlyph glyph)
+    private Raster RasterizeArrow(in OrbTextKey key, double scale, out OrbGlyph glyph)
     {
         glyph = default;
         var t = (double)key.Size;
@@ -360,12 +397,7 @@ internal sealed class GlyphAtlas
         var pixelsHigh = (int)Math.Ceiling((height + 2 * pad) * scale);
         if (pixelsWide <= 0 || pixelsHigh <= 0 || pixelsWide > _side || pixelsHigh > _side)
         {
-            return true;
-        }
-
-        if (!Allocate(pixelsWide + 2, pixelsHigh + 2, out var bx, out var by))
-        {
-            return false;
+            return Raster.Done;
         }
 
         var bitmap = new RenderTargetBitmap(pixelsWide, pixelsHigh, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
@@ -373,6 +405,16 @@ internal sealed class GlyphAtlas
         var bgra = new byte[pixelsWide * pixelsHigh * 4];
         bitmap.CopyPixels(bgra, pixelsWide * 4, 0);
         Rasterized++;
+        if (!OrbBlankGlyphs.HasInk(bgra))
+        {
+            return Raster.Blank;
+        }
+
+        if (!Allocate(pixelsWide + 2, pixelsHigh + 2, out var bx, out var by))
+        {
+            return Raster.Full;
+        }
+
         Upload(bx, by, pixelsWide, pixelsHigh, bgra, sigma * scale);
 
         var inverse = 1.0 / _side;
@@ -389,7 +431,7 @@ internal sealed class GlyphAtlas
             (float)(ay * inverse),
             (float)((ax + pixelsWide) * inverse),
             (float)((ay + pixelsHigh) * inverse));
-        return true;
+        return Raster.Done;
     }
 
     /// <summary>Queues an entry's coverage (and its blurred copy for the glow) with a one-texel border of zeros.</summary>

@@ -1,6 +1,9 @@
 namespace AgentSpeed.Core.Parsing;
 
-/// <summary>DeepSeek Harness (dsh) session state machine (METRICS 4.3), including fork-inherited history.</summary>
+/// <summary>
+/// DeepSeek Harness (dsh) session state machine (METRICS 4.3), including fork-inherited history. Its only execution-mode
+/// fact is the effort each request header carries; a response takes the context's facts (EXECUTION-MODES).
+/// </summary>
 internal sealed class DshParser : TranscriptParser<DshLine>
 {
     private const long InheritedHistoryToleranceMs = 2000;
@@ -90,6 +93,7 @@ internal sealed class DshParser : TranscriptParser<DshLine>
             case DshEventKind.RequestHeader:
                 SetModel(item.ConfigModel);
                 _provider = item.ConfigProvider ?? _provider;
+                Modes = ExecutionModes.Of(ExecutionModeNative.Effort(item.ConfigEffort, ExecutionModeEvidence.Recorded, ExecutionModeScope.Request));
                 break;
             case DshEventKind.StepStart:
                 _pendingStartMs = ts;
@@ -134,7 +138,8 @@ internal sealed class DshParser : TranscriptParser<DshLine>
         {
             var model = item.SourceModel ?? Model;
             sink.OnResponse(
-                new ParsedResponse(key, SourceKind.DeepSeek, AgentId, model, _pendingStartMs, ts, item.Usage, Provider: item.SourceProvider ?? _provider),
+                new ParsedResponse(key, SourceKind.DeepSeek, AgentId, model, _pendingStartMs, ts, item.Usage, Provider: item.SourceProvider ?? _provider)
+                { Modes = Modes },
                 true);
             SetModel(model);
         }

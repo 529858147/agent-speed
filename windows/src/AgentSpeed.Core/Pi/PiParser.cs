@@ -5,35 +5,31 @@ using AgentSpeed.Core.Parsing;
 namespace AgentSpeed.Core.Pi;
 
 /// <summary>
-/// pi session state machine (METRICS 4.13). Every assistant message is written once, after its stream ended; the
-/// request start is <c>message.timestamp</c> and the end is <c>durationMs</c> (recent versions) or the entry timestamp.
-/// In-flight state is inferred from neighbouring entries.
+/// Pi session state machine (METRICS 4.13): the omp rules of 4.7 with Pi's root, <c>durationMs</c>, side usage (usage
+/// entries, tool results, compaction and branch summaries) and thinking levels (EXECUTION-MODES, Pi).
 /// </summary>
 internal sealed class PiParser : TranscriptParser<PiLine>
 {
-    /// <summary>Entries this much older than the header were copied from another session (forks, clones).</summary>
+    /// <summary>Entries this much older than the header were copied from another session (forks, branches).</summary>
     public const long CopiedHistoryMs = 2000;
 
     private const int HeaderProbeLines = 2;
 
     private readonly HashSet<string> _pendingToolCalls = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ParsedResponse> _responses = new(StringComparer.Ordinal);
+    private ExecutionModes _context = ExecutionModes.Empty;
     private bool _headerSeen;
     private bool _headerProbed;
 
-    /// <param name="root">The <c>sessions</c> root the file was found in: files three or more levels below it are sub-agent runs.</param>
-    public PiParser(string agentId, IDeduper deduper, string root)
+    /// <param name="parentPath">The session file a package sub-agent belongs to (<see cref="PiPaths.ParentFileOf"/>); null for a main session.</param>
+    public PiParser(string agentId, IDeduper deduper, string? parentPath)
         : base(agentId, deduper, SourceKind.Pi)
     {
-        PathIsSubagent = PiDiscovery.DepthBelow(root, agentId) >= PiDiscovery.SubagentMinDepth;
-        ParentPath = PathIsSubagent ? PiDiscovery.ParentPath(root, agentId) : null;
+        ParentPath = parentPath;
         RestorePathState();
     }
 
-    /// <summary>The file lives inside a main session's artifacts folder (an extension's run sub-session).</summary>
-    public bool PathIsSubagent { get; }
-
-    /// <summary>The main session a sub-agent run attaches to, or null for a main session.</summary>
+    /// <summary>A package sub-agent's session file (<c>&lt;stem&gt;.jsonl</c> next to its folder); null for a main session.</summary>
     public string? ParentPath { get; }
 
     /// <summary>The header <c>timestamp</c>; null until a header with a parseable timestamp was read.</summary>
@@ -41,11 +37,15 @@ internal sealed class PiParser : TranscriptParser<PiLine>
 
     public bool HeaderSeen => _headerSeen;
 
+    /// <summary>A file in a folder named after a session file is that session's sub-agent (METRICS 4.13).</summary>
+    public static PiParser ForPath(string path, IDeduper deduper) => new(path, deduper, PiPaths.ParentFileOf(path));
+
     public override void Reset()
     {
         base.Reset();
         _pendingToolCalls.Clear();
         _responses.Clear();
+        _context = ExecutionModes.Empty;
         _headerSeen = false;
         _headerProbed = false;
         HeaderMs = null;
@@ -53,8 +53,8 @@ internal sealed class PiParser : TranscriptParser<PiLine>
     }
 
     /// <summary>
-    /// Reading that starts at an offset above 0 first takes the header from the file's first lines. Runs on the reading
-    /// thread; the header is applied before the batch's lines.
+    /// Reading that starts at an offset above 0 first takes the header from the file's first two lines (METRICS 4.7).
+    /// Runs on the reading thread; the header is applied before the batch's lines.
     /// </summary>
     public override void PrepareBatch(ILineBatch batch, long startOffset)
     {
@@ -88,7 +88,7 @@ internal sealed class PiParser : TranscriptParser<PiLine>
             return;
         }
 
-        if (!_headerSeen || line.TimestampMs is not { } ts
+        if (!_headerSeen || line.Id is null || line.TimestampMs is not { } ts
             || (HeaderMs is { } header && ts < header - CopiedHistoryMs))
         {
             return;
@@ -100,8 +100,18 @@ internal sealed class PiParser : TranscriptParser<PiLine>
             case PiEntryKind.Message:
                 ApplyMessage(in line, ts, sink);
                 break;
-            case PiEntryKind.SideUsage:
-                ApplySideUsage(in line, ts, sink);
+            case PiEntryKind.Usage:
+                if (line.Call.IsGuardedEntry)
+                {
+                    ApplySide(line.Id, ts, in line.Call, line.Call.Model, line.Call.Provider, sink);
+                }
+
+                break;
+            case PiEntryKind.Summary:
+                ApplySide(line.Id, ts, in line.Call, null, null, sink);
+                break;
+            case PiEntryKind.ThinkingLevelChange:
+                SelectEffort(line.ThinkingLevel, ExecutionModeEvidence.Selected, ExecutionModeScope.Session);
                 break;
         }
     }
@@ -164,7 +174,7 @@ internal sealed class PiParser : TranscriptParser<PiLine>
     {
         switch (line.Role)
         {
-            case PiRole.User:
+            case PiRole.User or PiRole.Developer:
                 _pendingToolCalls.Clear();
                 SetPhase(AgentPhase.Generating, ts, ts);
                 break;
@@ -172,15 +182,13 @@ internal sealed class PiParser : TranscriptParser<PiLine>
                 ApplyAssistant(in line, ts, sink);
                 break;
             case PiRole.ToolResult:
+                RecordTools(in line.Tools, ts);
+
+                // A tool's own model calls (METRICS 4.13); tool results never end a run in Pi (no yield).
+                ApplySide(line.Id!, ts, in line.Call, null, null, sink);
                 if (line.ToolCallId is { } callId)
                 {
                     _pendingToolCalls.Remove(callId);
-                }
-
-                // Nested model work a tool performed: totals only, like the other side usages.
-                if (line.Call.HasUsage)
-                {
-                    ApplySideUsage(in line, ts, sink);
                 }
 
                 if (Phase == AgentPhase.Tools && _pendingToolCalls.Count == 0)
@@ -194,34 +202,36 @@ internal sealed class PiParser : TranscriptParser<PiLine>
 
     private void ApplyAssistant(in PiLine line, long ts, IResponseSink sink)
     {
-        var call = line.Call;
-        if (!call.Guarded)
-        {
-            return;
-        }
-
-        var key = Key(line.Id, line.StartedMs ?? ts);
+        var key = Key(line.Id!, line.StartedMs ?? ts);
         if (Deduper.TryGetOwner(key, out var owner) && !string.Equals(owner, AgentId, StringComparison.Ordinal))
         {
             return;
         }
 
-        var failed = line.Stop is PiStop.Error or PiStop.Aborted;
+        var call = line.Call;
+        if (!call.IsGuardedMessage)
+        {
+            return;
+        }
+
         var end = line.StartedMs is { } started && line.DurationMs is { } duration
             ? (duration > long.MaxValue - started ? long.MaxValue : started + duration)
             : ts;
+        SelectEffort(line.ThinkingLevel, ExecutionModeEvidence.Recorded, ExecutionModeScope.Request);
         if (call.HasUsage)
         {
-            Emit(key, failed ? null : line.StartedMs, end, call.Model, in call, sink);
+            Emit(key, line.Failed ? null : line.StartedMs, end, in call, call.Model, call.Provider, _context, sink);
             SetModel(call.Model);
         }
 
-        if (failed)
+        RecordTools(in line.Tools, ts);
+
+        if (line.Failed)
         {
             _pendingToolCalls.Clear();
             SetPhase(AgentPhase.Idle, ts, null);
         }
-        else if (line.ToolCallIds is { Length: > 0 } calls)
+        else if (line.ToolCallIds is { Length: > 0 } calls && line.Stop is PiStop.ToolUse or PiStop.Stop or PiStop.Length)
         {
             _pendingToolCalls.Clear();
             _pendingToolCalls.UnionWith(calls);
@@ -233,29 +243,39 @@ internal sealed class PiParser : TranscriptParser<PiLine>
         }
     }
 
-    // usage, compaction and branch_summary entries: side model work counts in totals only and never sets the agent's model.
-    private void ApplySideUsage(in PiLine line, long ts, IResponseSink sink)
+    // Side usage counts in totals only: no timing, no execution-mode facts, never the agent's model.
+    private void ApplySide(string id, long ts, in PiCall call, string? model, string? provider, IResponseSink sink)
     {
-        var call = line.Call;
-        if (!call.HasUsage)
+        if (!call.HasUsageObject || !call.HasUsage)
         {
             return;
         }
 
-        var key = Key(line.Id, ts);
+        var key = Key(id, ts);
         if (Deduper.TryGetOwner(key, out var owner) && !string.Equals(owner, AgentId, StringComparison.Ordinal))
         {
             return;
         }
 
-        // Compaction, branch summaries and tool results carry no model of their own; they belong to the session's current one.
-        Emit(key, null, ts, call.Model ?? Model, in call, sink);
+        Emit(key, null, ts, in call, model, provider, ExecutionModes.Empty, sink);
     }
 
-    private void Emit(string key, long? startMs, long endMs, string? model, in PiCall call, IResponseSink sink)
+    // The context holds one effort fact; the later of a selection and a recorded level replaces it (EXECUTION-MODES, Pi).
+    private void SelectEffort(string? level, ExecutionModeEvidence evidence, ExecutionModeScope scope)
+    {
+        if (ExecutionModeNative.Effort(level, evidence, scope) is { } fact)
+        {
+            _context = new ExecutionModes(_context.Facts.Where(f => f.Kind != ExecutionModeKind.Effort).Append(fact));
+            Modes = _context;
+        }
+    }
+
+    private void Emit(string key, long? startMs, long endMs, in PiCall call, string? model, string? provider, ExecutionModes modes,
+        IResponseSink sink)
     {
         var isCompletion = Deduper.TryClaim(key, AgentId, out _);
-        var response = new ParsedResponse(key, SourceKind.Pi, AgentId, model, startMs, endMs, call.Tokens, Final: true, Provider: call.Provider);
+        var response = new ParsedResponse(key, SourceKind.Pi, AgentId, model, startMs, endMs, call.Tokens, Final: true, Provider: provider)
+        { Modes = modes };
         if (_responses.TryGetValue(key, out var previous) && previous == response)
         {
             return;
@@ -265,27 +285,29 @@ internal sealed class PiParser : TranscriptParser<PiLine>
         sink.OnResponse(response, isCompletion);
     }
 
-    private static string Key(string? id, long stamp) =>
-        string.Create(CultureInfo.InvariantCulture, $"pi:{id ?? string.Empty}:{stamp}");
+    private static string Key(string id, long stamp) => string.Create(CultureInfo.InvariantCulture, $"pi:{id}:{stamp}");
 
     private void RestorePathState()
     {
         SetSource(SourceKind.Pi);
-        SetSubagent(PathIsSubagent);
+        SetSubagent(ParentPath is not null);
     }
 
     /// <summary>Lines of one read, with the header probed from the file start applied first.</summary>
-    private sealed class PiBatch(PiParser owner) : ILineBatch
+    private sealed class PiBatch(PiParser owner) : ILineBatch, IPositionedLineSink
     {
-        private readonly ILineBatch _lines = new Lines(owner);
+        private readonly List<PiLine> _items = [];
+        private int _malformed;
 
         public PiLine? Header { get; set; }
 
-        public int Count => _lines.Count;
+        public int Count => _items.Count;
 
-        public void OnLine(ReadOnlySpan<byte> line) => _lines.OnLine(line);
+        public void OnLine(ReadOnlySpan<byte> line) => _items.Add(owner.Extract(line));
 
-        public void OnMalformed() => _lines.OnMalformed();
+        public void OnLine(ReadOnlySpan<byte> line, long offset, int length) => OnLine(line);
+
+        public void OnMalformed() => _malformed++;
 
         public void ApplyTo(IResponseSink sink)
         {
@@ -294,43 +316,25 @@ internal sealed class PiParser : TranscriptParser<PiLine>
                 owner.Apply(in header, sink);
             }
 
-            _lines.ApplyTo(sink);
+            for (var i = 0; i < _malformed; i++)
+            {
+                owner.Apply(new PiLine { Status = LineStatus.Malformed }, sink);
+            }
+
+            foreach (var item in _items)
+            {
+                owner.Apply(in item, sink);
+            }
         }
 
         public void Clear()
         {
             Header = null;
-            _lines.Clear();
-        }
-
-        private sealed class Lines(PiParser parser) : ILineBatch
-        {
-            private readonly List<PiLine> _items = [];
-            private int _malformed;
-
-            public int Count => _items.Count;
-
-            public void OnLine(ReadOnlySpan<byte> line) => _items.Add(PiLineReader.Read(line));
-
-            public void OnMalformed() => _malformed++;
-
-            public void ApplyTo(IResponseSink sink)
+            _items.Clear();
+            _malformed = 0;
+            if (_items.Capacity > 4096)
             {
-                for (var i = 0; i < _malformed; i++)
-                {
-                    parser.Apply(new PiLine { Status = LineStatus.Malformed }, sink);
-                }
-
-                foreach (var item in _items)
-                {
-                    parser.Apply(in item, sink);
-                }
-            }
-
-            public void Clear()
-            {
-                _items.Clear();
-                _malformed = 0;
+                _items.Capacity = 4096;
             }
         }
     }

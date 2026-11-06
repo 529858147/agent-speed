@@ -1,5 +1,4 @@
 using AgentSpeed.Core;
-using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.History;
 using AgentSpeed.Presentation.Localization;
 
@@ -7,30 +6,6 @@ namespace AgentSpeed.Presentation.Tests;
 
 public sealed class ExecutionModePresentationTests
 {
-    private static readonly Localizer Loc = new(Localizer.LoadEmbeddedTable(), "en");
-    [Fact]
-    public void FormatterKeepsSelectedAndServedEvidenceAndWorkflowDimensionsDistinct()
-    {
-        var selected = ExecutionModeNative.OpenAiTier("priority", ExecutionModeEvidence.Selected, ExecutionModeScope.Request);
-        var served = ExecutionModeNative.OpenAiTier("default");
-        var modes = selected.Merge(served).Merge(ExecutionModeNative.Workflow("fast"));
-        var detail = ExecutionModeText.Detail(modes, Loc);
-        Assert.Contains("Selected by task", detail, StringComparison.Ordinal);
-        Assert.Contains("Served response", detail, StringComparison.Ordinal);
-        Assert.Contains("priority", detail, StringComparison.Ordinal);
-        var summary = ExecutionModeText.Summary(modes, Loc);
-        Assert.Contains("Service tier: Standard", summary, StringComparison.Ordinal);
-        Assert.Contains("Workflow: Fast", summary, StringComparison.Ordinal);
-        Assert.DoesNotContain("Service tier: Fast", summary, StringComparison.Ordinal);
-    }
-    [Fact]
-    public void ConfiguredDefaultsExplainTheirLimitAndMultipleAgentsNeverPickAnArbitraryMode()
-    {
-        var configured = ExecutionModeNative.OpenAiTier("ultrafast", ExecutionModeEvidence.Configured, ExecutionModeScope.Configuration);
-        Assert.Contains(Loc["mode.defaultNote"], ExecutionModeText.Detail(configured, Loc), StringComparison.Ordinal);
-        Assert.Equal(Loc["mode.unknown"], ExecutionModeText.Summary(ExecutionModes.Empty, Loc));
-        Assert.Equal(Loc["mode.mixed"], ExecutionModeText.Aggregate([ExecutionModeNative.ClaudeSpeed("fast"), ExecutionModeNative.ClaudeSpeed("standard")], Loc));
-    }
     [Fact]
     public void ModeCsvIsIndependentQuotesUnsafeModelsAndUsesTheExistingWeightedAverage()
     {
@@ -48,6 +23,25 @@ public sealed class ExecutionModePresentationTests
         Assert.Contains("2026-10-24,claudeCode,\"'=cmd,model\",serviceTier,fast,served,anthropic,2,40,40,2000,20.0\r\n", csv, StringComparison.Ordinal);
         Assert.Contains(",unknown,unknown,,1,50,0,0,\r\n", csv, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ModeCsvBreaksDownEffortAndSpeedLikeEveryOtherKind()
+    {
+        var day = new DaySummary(new(2026, 10, 24), 2, 0, 0, 0, 30, 0, 30, 3000, 0, 1, null, [], [])
+        {
+            Modes =
+            [
+                new("gpt-5", SourceKind.Codex, ExecutionModeKind.Effort, "xhigh", "recorded", null, 2, 30, 30, 3000),
+                new("gpt-5", SourceKind.Codex, ExecutionModeKind.Speed, "ultrafast", "selected", "openai", 1, 10, 10, 1000),
+                new("gpt-5", SourceKind.Codex, ExecutionModeKind.Speed, "unknown", "unknown", null, 1, 20, 20, 2000),
+            ],
+        };
+        var csv = ExecutionModeCsv.Build([day]);
+        Assert.Contains("2026-10-24,codex,gpt-5,effort,xhigh,recorded,,2,30,30,3000,10.0\r\n", csv, StringComparison.Ordinal);
+        Assert.Contains("2026-10-24,codex,gpt-5,speed,ultrafast,selected,openai,1,10,10,1000,10.0\r\n", csv, StringComparison.Ordinal);
+        Assert.Contains("2026-10-24,codex,gpt-5,speed,unknown,unknown,,1,20,20,2000,10.0\r\n", csv, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void DailyAggregationKeepsSourceAndEvidenceInSeparateGroups()
     {
@@ -58,16 +52,23 @@ public sealed class ExecutionModePresentationTests
         Assert.Equal(2, day.Modes.Count);
         Assert.Equal(day.Requests, day.Modes.Sum(m => m.Requests));
         Assert.Equal(day.AverageSpeed, day.Modes.Sum(m => m.MeasuredOutput) / (day.Modes.Sum(m => m.MeasuredMs) / 1000.0));
-        Assert.Equal(2, ExecutionModeText.VisibleUsage(day.Modes).Count());
     }
+
     [Fact]
-    public void EveryLanguageHasModeAndProfileLabels()
+    public void EveryLanguageHasTheEffortAndSpeedLabels()
     {
         foreach (var language in new[] { "en", "zh-Hant", "zh-Hans", "ja" })
         {
             var loc = new Localizer(Localizer.LoadEmbeddedTable(), language);
-            foreach (var key in new[] { "mode.label", "mode.exportCsv", "mode.evidence.recorded", "mode.defaultNote", "profile.title", "profile.identity.unlinkNote", "profile.pairing.approve" })
+            foreach (var key in new[]
+                     {
+                         "mode.exportCsv", "effort.label", "effort.tooltip", "effort.ultra.detail", "effort.ultracode.detail",
+                         "speed.label", "speed.tooltip", "speed.value.standard", "modes.unrecorded", "modes.history.title",
+                         "modes.history.empty", "profile.title",
+                     })
+            {
                 Assert.NotEqual(key, loc[key]);
+            }
         }
     }
 }

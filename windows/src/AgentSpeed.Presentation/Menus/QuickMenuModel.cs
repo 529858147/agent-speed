@@ -1,5 +1,6 @@
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Settings.Boards;
 using AgentSpeed.Presentation.Settings.Orbs;
 using AgentSpeed.Presentation.Updates;
 using static AgentSpeed.Presentation.Menus.MenuParts;
@@ -57,6 +58,7 @@ public static class QuickMenuModel
         }
 
         entries.Add(new MenuRow(localizer[MasterSwitchKey(orbs.Length, shown)]) { Action = new MenuAction.SetShowOrbs(!shown) });
+        entries.AddRange(BoardRows(settings.Boards ?? BoardsDocument.Empty, localizer));
         entries.Add(Toggle(localizer["settings.bar.show"], settings.ShowOnTaskbar, new MenuAction.SetShowOnTaskbar(!settings.ShowOnTaskbar)));
         entries.Add(MenuSeparator.Instance);
         entries.Add(Command(localizer["menu.settings"], new MenuAction.OpenSettings(null), MenuGlyph.Settings));
@@ -65,6 +67,23 @@ public static class QuickMenuModel
         entries.Add(MenuSeparator.Instance);
         entries.Add(Command(localizer["menu.quit"], new MenuAction.Quit(), MenuGlyph.Quit));
         return new MenuLevel([.. entries]);
+    }
+
+    /// <summary>
+    /// The boards' rows (DESIGN 2c): <c>boards.hide</c> while any board shows, else <c>boards.show</c> (all boards; none
+    /// without a board), then <c>boards.add</c>.
+    /// </summary>
+    public static IEnumerable<MenuRow> BoardRows(BoardsDocument boards, Localizer localizer)
+    {
+        ArgumentNullException.ThrowIfNull(boards);
+        ArgumentNullException.ThrowIfNull(localizer);
+        if (boards.Count > 0)
+        {
+            var shown = BoardEditing.AnyVisible(boards);
+            yield return new MenuRow(localizer[shown ? "boards.hide" : "boards.show"]) { Action = new MenuAction.SetShowBoards(!shown) };
+        }
+
+        yield return BoardMenuModel.AddRow(boards, null, localizer);
     }
 
     /// <summary><c>report.menu.on</c> (or <c>report.menu.paused</c>) with pause or resume, the leaderboard and the settings.</summary>

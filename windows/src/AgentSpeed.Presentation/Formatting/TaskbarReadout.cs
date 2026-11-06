@@ -54,7 +54,8 @@ public sealed record TaskbarDetailRow(string Label, string Value);
 public sealed record TaskbarDetails(
     string Value, string Unit, string Metric, string Status, string Measurement, IReadOnlyList<TaskbarDetailRow> Sources,
     string TodayLabel, string Today, string LiveLabel, string Live,
-    string SpeedScope, string CostScope, string Subscriptions, string Notice, string Hint, string Actions, double Heat, string Traffic = "")
+    string SpeedScope, string CostScope, string Subscriptions, string Notice, string Hint, string Actions, double Heat, string Traffic = "",
+    string Intelligence = "", string DragHint = "")
 {
     public string Primary => $"{Value} {Unit} · {Metric}";
 

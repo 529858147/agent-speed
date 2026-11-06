@@ -69,12 +69,13 @@ public sealed class CodexExecutionModeTests
     [InlineData("{\"service_tier\":\"priority\"}")]
     [InlineData("{\"service_tier\":\"priority\",\"model_provider_id\":null}")]
     [InlineData("{\"service_tier\":\"priority\",\"model_provider_id\":\"my-router\"}")]
-    public void UnverifiedProviderNeverBecomesOpenAiFast(string settings)
+    public void UnverifiedProviderNeverSelectsFastPricing(string settings)
     {
         var parser = new CodexParser("/fixture/a.jsonl", new Deduper());
         var sink = new RecordingSink();
-        Feed.Lines(parser, sink, Settings(T0, settings));
-        Assert.Empty(parser.Modes.Facts);
+        Feed.Lines(parser, sink, TurnContext(T0, "gpt-6.1-terra"), Settings(T0 + 1, settings),
+            UsageRecord(T0 + 2, "r", Usage(1000, 800, 200, 0)));
+        Assert.False(Assert.Single(sink.Latest).FastForPricing);
     }
 
     [Fact]

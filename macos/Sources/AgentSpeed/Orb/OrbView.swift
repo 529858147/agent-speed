@@ -189,8 +189,7 @@ enum OrbContentBuilder {
                 OrbMoneyText(number: style == .minimal ? $0.inline : $0.number, value: $0.value, atLeast: $0.atLeast,
                              unknown: $0.unknown)
             },
-            trafficEnabled: showsReadout && feed.trafficEnabled,
-            traffic: showsReadout && feed.trafficEnabled ? feed.traffic : nil
+            lines: showsReadout ? feed.lines : nil
         )
     }
 }

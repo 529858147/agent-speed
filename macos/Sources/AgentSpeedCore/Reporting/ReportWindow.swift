@@ -120,6 +120,8 @@ public struct ReportWindowContent: Equatable, Sendable {
     public var peak: Rate
     public var peakCost: Double
     public var peakRate: TrafficRate?
+    /// The statistics ledger's rows a build takes with the window (METRICS 11.10); the window itself never holds them.
+    public var perfStats: ReportPerfStats = [:]
 }
 
 /// The open window of a run: a baseline of the cumulative counters and the peaks since the window started.
@@ -142,6 +144,13 @@ public struct ReportWindow: Equatable, Sendable {
     /// The ledger received a token increment since the previous tick (the activity rule of METRICS 11.5).
     public func hasTokenIncrement(_ sample: ReportSample) -> Bool {
         sample.facts.counters.since(lastCounters).byModel.values.contains { $0.hasTokens }
+    }
+
+    /// The ledger received any increment since the previous tick: a counter, or agent traffic when the report carries
+    /// it (the changed rule of METRICS 11.9).
+    public func hasIncrement(_ sample: ReportSample, traffic: Bool) -> Bool {
+        sample.facts.counters.since(lastCounters).byModel.values.contains { !$0.isZero }
+            || (traffic && !sample.traffic.agentBytes(since: lastTraffic).isEmpty)
     }
 
     /// Empties the window. `keepingTick` keeps this tick's increments (the gap rule, METRICS 11.1).

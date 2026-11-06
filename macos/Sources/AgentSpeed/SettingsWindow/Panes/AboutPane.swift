@@ -64,15 +64,17 @@ struct AboutPane: View {
         }
     }
 
-    /// DESIGN 11, About: while reporting is on no sentence claims that nothing is sent.
+    /// DESIGN 11, About: while reporting is on no sentence claims that nothing is sent. The performance score's paragraph
+    /// follows the traffic one either way (DESIGN 12): it says itself what only live reporting sends.
     private var privacyParagraphs: [String] {
         let l10n = model.l10n
         let report = model.report
         guard report.isOn else {
-            return [l10n("privacy.statement"), l10n("privacy.traffic"), l10n("privacy.report")]
+            return [l10n("privacy.statement"), l10n("privacy.traffic"), l10n("privacy.perfScore"), l10n("privacy.report")]
         }
         let host = report.destinationHost ?? ""
-        return [l10n("privacy.statement.report", host), l10n("privacy.traffic.report"), l10n("privacy.report")]
+        return [l10n("privacy.statement.report", host), l10n("privacy.traffic.report"), l10n("privacy.perfScore"),
+                l10n("privacy.report")]
     }
 
     private func privacyCard(_ paragraphs: [String]) -> some View {

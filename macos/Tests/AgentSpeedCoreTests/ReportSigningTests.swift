@@ -145,12 +145,19 @@ import Testing
     /// answer maps to the client reaction of REPORTING 8.3.
     @Test func serverSequences() throws {
         let cases = try #require(Self.vectors["server"] as? [[String: Any]])
-        #expect(cases.count == 4)
+        #expect(cases.count == 7)
         let keys = try ["device", "other", "rotated"].map { try Self.key($0).signer.publicKey }
         var steps = 0
+        var advertised = 0
         for item in cases {
             let config = try #require(item["config"] as? [String: Any])
             let authority = try #require(config["authority"] as? String)
+            // The service's extensions as a discovery document advertises them (METRICS 11.10 for taskScore).
+            let extensions = try (config["extensions"]).map {
+                ReportExtensions(try JSONParser.parse(try JSONSerialization.data(withJSONObject: $0)))
+            } ?? .none
+            #expect(extensions.taskScore == ((config["extensions"] as? [String: Any])?["taskScore"] as? Int == 1))
+            if extensions.taskScore { advertised += 1 }
             for step in try #require(item["steps"] as? [[String: Any]]) {
                 steps += 1
                 let request = try #require(step["request"] as? [String: Any])
@@ -190,6 +197,7 @@ import Testing
             }
         }
         #expect(steps > 40)
+        #expect(advertised == 1)
     }
 
     @Test func base64URLIsStrict() {

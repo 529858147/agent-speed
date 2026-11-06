@@ -7,8 +7,8 @@ enum BundledPriceAssets {
 {
   "_comment": "API list prices for API-equivalent costs (METRICS 9). USD per million tokens. Edit by hand: raise version by one, set updated and each changed entry's checked date, add tests for new id forms, run python3 spec/tools/prices.py. Apps sync this file from main daily (spec/NETWORK.md).",
   "schema": 1,
-  "version": 3,
-  "updated": "2026-10-27",
+  "version": 4,
+  "updated": "2026-10-28",
   "currency": "USD",
   "unit": "perMillionTokens",
   "providers": {
@@ -59,6 +59,10 @@ enum BundledPriceAssets {
     "opencode": {
       "name": "OpenCode Zen",
       "url": "https://opencode.ai/docs/zen"
+    },
+    "xiaomi": {
+      "name": "Xiaomi MiMo",
+      "url": "https://mimo.mi.com/docs/price/pay-as-you-go"
     }
   },
   "normalize": {
@@ -731,8 +735,9 @@ enum BundledPriceAssets {
           }
         ]
       },
-      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
-      "checked": "2026-10-27"
+      "source": "https://developers.openai.com/api/docs/pricing",
+      "checked": "2026-10-28",
+      "note": "Cache writes (30-minute lifetime) cost 1.25x input; 12-hour writes (2.5x) are not separated in logs and are priced as 30-minute writes."
     },
     {
       "id": "gpt-6-sol",
@@ -4289,6 +4294,51 @@ enum BundledPriceAssets {
       "note": "Tencent Cloud TokenHub list price; API id hy3."
     },
     {
+      "id": "mimo-v2.6-pro",
+      "provider": "xiaomi",
+      "name": "MiMo-V2.6-Pro",
+      "status": "current",
+      "prices": {
+        "input": 0.435,
+        "cachedInput": 0.0036,
+        "cacheWrite": 0,
+        "output": 0.87
+      },
+      "source": "https://mimo.mi.com/docs/price/pay-as-you-go",
+      "checked": "2026-10-28",
+      "note": "Overseas pay-as-you-go prices in USD (mainland China bills ¥3 / ¥0.025 / ¥6 in CNY); cache writes are free for a limited time with no end date published; Batch API at half price is not modeled."
+    },
+    {
+      "id": "mimo-v2.6-flash",
+      "provider": "xiaomi",
+      "name": "MiMo-V2.6-Flash",
+      "status": "current",
+      "prices": {
+        "input": 0.14,
+        "cachedInput": 0.0028,
+        "cacheWrite": 0,
+        "output": 0.28
+      },
+      "source": "https://mimo.mi.com/docs/price/pay-as-you-go",
+      "checked": "2026-10-28",
+      "note": "Overseas pay-as-you-go prices in USD (mainland China bills ¥1 / ¥0.02 / ¥2 in CNY); cache writes are free for a limited time with no end date published; Batch API at half price is not modeled."
+    },
+    {
+      "id": "mimo-v2.6-pro-ultraspeed",
+      "provider": "xiaomi",
+      "name": "MiMo-V2.6-Pro-UltraSpeed",
+      "status": "current",
+      "prices": {
+        "input": 4.35,
+        "cachedInput": 0.036,
+        "cacheWrite": 0,
+        "output": 8.7
+      },
+      "source": "https://mimo.mi.com/docs/price/pay-as-you-go",
+      "checked": "2026-10-28",
+      "note": "Overseas pay-as-you-go prices in USD (mainland China bills ¥30 / ¥0.25 / ¥60 in CNY); cache writes are free for a limited time with no end date published; Batch API at half price is not modeled."
+    },
+    {
       "id": "big-pickle",
       "provider": "opencode",
       "name": "Big Pickle (OpenCode Zen)",
@@ -4405,6 +4455,22 @@ enum BundledPriceAssets {
     {
       "model": "gpt-6.1-sol",
       "expect": "gpt-6.1-sol"
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "expect": "gpt-6.1-terra"
+    },
+    {
+      "model": "openai/gpt-6.1-terra",
+      "expect": "gpt-6.1-terra"
+    },
+    {
+      "model": "gpt-6.1-terra-fast",
+      "expect": "gpt-6.1-terra fast"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "expect": "gpt-5.6-terra"
     },
     {
       "model": "claude-fable-5",
@@ -4707,16 +4773,29 @@ enum BundledPriceAssets {
       "expect": "gemini-4-argon"
     },
     {
-      "model": "gpt-6.1-terra",
-      "expect": "gpt-6.1-terra"
+      "model": "mimo-v2.6-pro",
+      "provider": "custom",
+      "expect": "mimo-v2.6-pro"
     },
     {
-      "model": "openai/gpt-6.1-terra",
-      "expect": "gpt-6.1-terra"
+      "model": "MiMo-V2.6-Pro",
+      "expect": "mimo-v2.6-pro"
     },
     {
-      "model": "gpt-6.1-terra-fast",
-      "expect": "gpt-6.1-terra fast"
+      "model": "xiaomi/mimo-v2.6-pro",
+      "expect": "mimo-v2.6-pro"
+    },
+    {
+      "model": "mimo-v2.6-flash",
+      "expect": "mimo-v2.6-flash"
+    },
+    {
+      "model": "mimo-v2.6-pro-ultraspeed",
+      "expect": "mimo-v2.6-pro-ultraspeed"
+    },
+    {
+      "model": "mimo-v2.5-pro",
+      "expect": "unknown"
     },
     {
       "model": "gpt-6.1-terra-unpublished",

@@ -3,6 +3,10 @@ import Foundation
 /// The agent-process rows of METRICS 10.5: which source, if any, a process runs.
 struct AgentProcessRules: Sendable {
     static let scriptHosts: Set<String> = ["node", "nodejs", "bun", "deno"]
+    /// Arguments of a Python host that mark Hermes Agent: its launcher bootstrap, `hermes_cli` and its ACP adapter.
+    static let hermesMarkers = ["hermes_bootstrap", "hermes_cli", "acp_adapter"]
+    /// Console scripts that run Hermes Agent on a Python host.
+    static let hermesScripts: Set<String> = ["hermes", "hermes-agent", "hermes-acp"]
 
     let platform: TrafficPlatform
 
@@ -25,24 +29,34 @@ struct AgentProcessRules: Sendable {
                "/Applications/Antigravity.app/Contents/MacOS/Antigravity"]
     }
 
-    private static let desktopPackages = ["/windowsapps/claude_", "/windowsapps/openai.codex_", "/windowsapps/openai.chatgpt"]
+    private static let desktopPackages = ["claude_", "openai.codex_", "openai.chatgpt"]
+
+    /// Windows desktop apps by location: the package prefix when a normalized (lower-case) path lies directly in the `app`
+    /// folder of one of their packages. The tools a package bundles deeper (`app/resources/codex.exe`) follow the rows.
+    private static func desktopPackage(_ normalized: String) -> String? {
+        let parts = normalized.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 4, parts[parts.count - 2] == "app", parts[parts.count - 4] == "windowsapps" else { return nil }
+        let package = parts[parts.count - 3]
+        return desktopPackages.first { package.hasPrefix($0) }
+    }
 
     private var deepseekApp: [String] {
         platform.isWindows ? [] : ["/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"]
     }
 
-    /// WorkBuddy runs its embedded CLI on the app's own executable: macOS by the app's bundle id, Windows by name.
+    /// WorkBuddy runs its embedded CLI on the app's own executable: macOS by the app's bundle id, Windows by its (lower-case)
+    /// name.
     private static let workbuddyBundles: [String: SourceKind] = [
         "com.tencent.workbuddy.mac": .workbuddy, "com.workbuddy.workbuddy-ai": .workbuddyAi,
     ]
-    private static let workbuddyExecutables: [String: SourceKind] = ["WorkBuddy": .workbuddy, "WorkBuddyAI": .workbuddyAi]
+    private static let workbuddyExecutables: [String: SourceKind] = ["workbuddy": .workbuddy, "workbuddyai": .workbuddyAi]
     private static let workbuddyCLI = "/app.asar.unpacked/cli/"
 
     /// The rules read a process's arguments only for script hosts, `claude` executables (the Chrome bridge check) and
     /// WorkBuddy's executables; everything else is decided by the path.
     func needsArguments(executable: String, bundleIdentifier: () -> String?) -> Bool {
         let name = platform.name(executable)
-        return Self.scriptHosts.contains(name.lowercased()) || name == "claude"
+        return Self.scriptHosts.contains(name.lowercased()) || isPythonHost(executable) || name == "claude"
             || platform.isUnder(executable, ["~/.local/share/claude/versions"])
             || workbuddyEdition(executable: executable, bundleIdentifier: bundleIdentifier) != nil
     }
@@ -57,18 +71,37 @@ struct AgentProcessRules: Sendable {
         Self.scriptHosts.contains(platform.name(executable).lowercased())
     }
 
+    /// `python`, `pythonw` or `python` followed by digits and dots (`python3`, `python3.14`), with or without `.exe`,
+    /// in any case (macOS framework builds run `Python`).
+    func isPythonHost(_ executable: String) -> Bool {
+        var name = platform.name(executable).lowercased()
+        if name.hasSuffix(".exe") { name.removeLast(4) }
+        guard name.hasPrefix("python") else { return false }
+        let rest = name.utf8.dropFirst(6)
+        if rest.isEmpty || rest.elementsEqual("w".utf8) { return true }
+        guard let first = rest.first, (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(first) else { return false }
+        return rest.allSatisfy { (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) || $0 == UInt8(ascii: ".") }
+    }
+
+    /// A Python host running Hermes Agent: an argument after the first contains one of its module names, or names
+    /// one of its console scripts.
+    private func isHermes(executable: String, arguments: () -> [String]?) -> Bool {
+        guard isPythonHost(executable) else { return false }
+        return (arguments() ?? []).dropFirst().contains { argument in
+            Self.hermesMarkers.contains(where: argument.contains) || Self.hermesScripts.contains(platform.name(argument))
+        }
+    }
+
     func isClaudeDesktopApp(_ executable: String) -> Bool {
         if platform.isUnder(executable, claudeDesktopApp) { return true }
-        return platform.isWindows && platform.name(executable) == "Claude"
-            && platform.normalize(executable).contains("/windowsapps/claude_")
+        return platform.isWindows && platform.name(executable) == "claude"
+            && Self.desktopPackage(platform.normalize(executable)) == "claude_"
     }
 
     func isDesktopApp(_ executable: String) -> Bool {
         if platform.isUnder(executable, desktopApps) { return true }
         guard platform.isWindows else { return false }
-        let normalized = platform.normalize(executable)
-        return Self.desktopPackages.contains { normalized.contains($0) }
-            && (platform.name(executable).first?.isUppercase ?? false)
+        return Self.desktopPackage(platform.normalize(executable)) != nil
     }
 
     private func scriptArguments(executable: String, arguments: [String]?) -> String {
@@ -116,6 +149,13 @@ struct AgentProcessRules: Sendable {
         if name == "zcode" || name == "zcode-cli" || script.contains("/@zcode/cli/") { return .zcode }
         if name == "kimi" || name == "kimi-code" || script.contains("/@moonshot-ai/kimi-code/") { return .kimi }
         if name == "grok" || name == "grok-build" { return .grokBuild }
+        if name == "pi" || script.contains("/@earendil-works/pi-coding-agent/") || script.contains("/@mariozechner/pi-coding-agent/") {
+            return .pi
+        }
+        if name == "openclaw" || script.contains("/openclaw.mjs") || script.contains("/openclaw/dist/") { return .openclaw }
+        if isHermes(executable: executable, arguments: arguments) { return .hermes }
+        // Factory Droid is one native executable for the CLI, its `droid exec` children and Factory Desktop's daemon.
+        if name == "droid" { return .droid }
         // Only the embedded CodeBuddy Code CLI is the agent; the app, its helpers and its daemon are not.
         if let edition = workbuddyEdition(executable: executable, bundleIdentifier: bundleIdentifier),
            (arguments() ?? []).dropFirst().contains(where: { platform.normalize($0).contains(Self.workbuddyCLI) }) {

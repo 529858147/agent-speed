@@ -2,7 +2,8 @@ import AgentSpeedCore
 import SwiftUI
 
 /// `report.status` (DESIGN 11, Status): one line with a dot that always has text, the rank when the service gives one,
-/// and Pause or Resume. Changes are announced politely, at most once a minute, except when the user must act.
+/// the WebSocket stats line, and Pause or Resume (or Try Again for a WebSocket stop that offers it). Changes are
+/// announced politely, at most once a minute, except when the user must act.
 struct ReportStatusSection: View {
     let model: AppModel
 
@@ -32,11 +33,23 @@ struct ReportStatusSection: View {
                         if let rank = report.rank, report.isOn {
                             Footnote(l10n("report.status.rank", rank))
                         }
+                        if report.effectiveTransport == .websocket, report.isOn, let stats = report.streamStats,
+                           stats.isShown {
+                            ReportStreamStatsLine(model: model, stats: stats)
+                                .padding(.top, 1)
+                                .transition(model.accessibility.reduceMotion ? .identity : .opacity)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.updatesFrequently)
-                    if report.isOn {
+                    .accessibilityHint(streamCounters ?? "")
+                    if case .stream(let issue) = status, issue.offersRetry {
+                        Button(l10n("report.service.retry")) { report.retryStream() }
+                            .controlSize(.small)
+                            .fixedSize()
+                            .disabled(!model.settings.networkEnabled)
+                    } else if report.isOn {
                         ReportPauseControl(model: model)
                     } else if status == .review {
                         Button(l10n("report.service.review")) { report.reviewInvitation() }
@@ -55,6 +68,15 @@ struct ReportStatusSection: View {
         }
     }
 
+    /// Every WebSocket counter, for VoiceOver (sighted users get it as the stats line's tooltip).
+    private var streamCounters: String? {
+        let report = model.report
+        guard report.effectiveTransport == .websocket, report.isOn, let stats = report.streamStats, stats.isShown else {
+            return nil
+        }
+        return stats.tooltip(model.l10n)
+    }
+
     /// Setting up after the invitation: a failed fetch or registration can be tried again at once.
     private static func offersRetry(_ status: ReportStatus) -> Bool {
         switch status {
@@ -70,6 +92,8 @@ struct ReportStatusSection: View {
         case .paused: "paused"
         case .rateLimited: "rateLimited"
         case .retrying: "retrying"
+        case .streaming: "streaming"
+        case .stream(.reconnecting): "reconnecting"
         default: "\(status)"
         }
     }
@@ -103,5 +127,24 @@ struct ReportPauseControl: View {
             .font(.system(size: 12))
             .fixedSize()
         }
+    }
+}
+
+/// `report.ws.stats` under the status line (DESIGN 11, Status): latency p50 and p95, delivered and not delivered, with
+/// every counter in the tooltip and in VoiceOver's help.
+struct ReportStreamStatsLine: View {
+    let model: AppModel
+    let stats: ReportStreamStats
+
+    var body: some View {
+        let l10n = model.l10n
+        Text(stats.line(l10n))
+            .font(.system(size: 11))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .contentTransition(.numericText())
+            .help(stats.tooltip(l10n))
+            .animation(model.accessibility.reduceMotion ? nil : Motion.digits, value: stats)
     }
 }

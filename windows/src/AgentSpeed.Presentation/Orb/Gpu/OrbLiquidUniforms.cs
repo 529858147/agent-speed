@@ -72,6 +72,36 @@ public struct OrbLiquidUniforms
 
     public const int Size = 21 * 16;
 
+    /// <summary>
+    /// The front surface's height (points, y down) at canvas <paramref name="x"/>, as the shader's <c>orb_liquid_surface_y</c>
+    /// evaluates it: what splits the readout into its above- and below-surface colors.
+    /// </summary>
+    public readonly double SurfaceY(double x)
+    {
+        const double Tau = 2 * Math.PI;
+        var s = (double)Frame.Z;
+        if (!(s > 0))
+        {
+            return Surface.X;
+        }
+
+        var xr = x - Frame.X;
+        var y = (double)Surface.X;
+        if (Surface.Y > 0)
+        {
+            y += Surface.Y * (0.55 * Math.Sin(xr / (0.9 * s) * Tau + Phases.X)
+                + 0.30 * Math.Sin(xr / (0.47 * s) * Tau - Phases.Y)
+                + 0.15 * Math.Sin(xr / (0.23 * s) * Tau + Phases.Z));
+        }
+
+        if (Surface.Z > 0)
+        {
+            y += Surface.Z * Math.Sin(xr / (0.11 * s) * Tau + Phases.W) * (0.7 + 0.3 * Math.Sin(xr / (0.05 * s) + Phases.W * 1.7));
+        }
+
+        return y - Ripple(Ripple0, x, s) - Ripple(Ripple1, x, s) - Ripple(Ripple2, x, s) - Ripple(Ripple3, x, s);
+    }
+
     public void SetRipple(int index, Vector4 value)
     {
         switch (index)
@@ -89,5 +119,17 @@ public struct OrbLiquidUniforms
                 Ripple3 = value;
                 break;
         }
+    }
+
+    private static double Ripple(Vector4 ripple, double x, double s)
+    {
+        if (!(ripple.W > 0))
+        {
+            return 0;
+        }
+
+        var u = Math.Abs(x - ripple.X) - ripple.Y;
+        var k = u / (0.075 * s);
+        return ripple.Z * Math.Exp(-k * k) * Math.Cos(2 * Math.PI * u / (0.1 * s));
     }
 }

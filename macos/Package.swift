@@ -59,5 +59,10 @@ let package = Package(
             dependencies: ["AgentSpeedOrbModel", "AgentSpeedCore"],
             path: "Tests/AgentSpeedOrbModelTests"
         ),
+        .testTarget(
+            name: "AgentSpeedAppTests",
+            dependencies: ["AgentSpeed", "AgentSpeedCore"],
+            path: "Tests/AgentSpeedAppTests"
+        ),
     ]
 )

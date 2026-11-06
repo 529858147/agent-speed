@@ -164,6 +164,51 @@ internal static class WorkBuddyFixture
         : throw new ArgumentOutOfRangeException(nameof(relative), relative, null);
 }
 
+/// <summary>
+/// The fixture folder <c>pi</c> plays <c>~/.pi</c> with the fixture folder as home: its automatic roots are the default
+/// root and the custom session folder its settings name (<c>~/pi/custom-sessions</c>).
+/// </summary>
+internal static class PiFixture
+{
+    private static readonly Lazy<IReadOnlyList<string>> LazyRoots = new(() => RootsIn(FixtureLocator.FixturesDirectory));
+
+    public static IReadOnlyList<string> Roots => LazyRoots.Value;
+
+    public static IReadOnlyList<string> RootsIn(string fixtures) => Pi.PiPaths.Roots(
+        name => name == "PI_CODING_AGENT_DIR" ? Path.Combine(fixtures, "pi", "agent") : null, fixtures);
+}
+
+/// <summary>The fixture folder <c>openclaw</c> plays the home folder: its state folders are <c>.openclaw</c> and <c>.openclaw-work</c>.</summary>
+internal static class OpenClawFixture
+{
+    public static string Home => FixtureLocator.PathOf("openclaw");
+
+    public static IReadOnlyList<string> StateFoldersIn(string fixtures) =>
+        OpenClaw.OpenClawPaths.StateFolders(_ => null, Path.Combine(fixtures, "openclaw"));
+}
+
+/// <summary>The fixture folder <c>hermes/home</c> plays the Hermes home (<c>~/.hermes</c>); wall times are in <c>hermes.timeZone</c>.</summary>
+internal static class HermesFixture
+{
+    public static string Home => HomeIn(FixtureLocator.FixturesDirectory);
+
+    public static string HomeIn(string fixtures) => Path.Combine(fixtures, "hermes", "home");
+
+    public static System.Text.Json.JsonElement Expected => ParserFixtureTests.Expected.GetProperty("hermes");
+
+    public static TimeZoneInfo Zone => Hermes.HermesClock.FindZone(Expected.GetProperty("timeZone").GetString()!);
+}
+
+/// <summary>The fixture folder <c>droid</c> plays the home folder: its sessions root is <c>droid/.factory/sessions</c> (METRICS 4.16).</summary>
+internal static class DroidFixture
+{
+    public static string Root => RootIn(FixtureLocator.FixturesDirectory);
+
+    public static string RootIn(string fixtures) => Droid.DroidPaths.DefaultRoot(Path.Combine(fixtures, "droid"));
+
+    public static System.Text.Json.JsonElement Expected => ParserFixtureTests.Expected.GetProperty("droid");
+}
+
 /// <summary>The fixture folder <c>omp</c> plays <c>~/.omp</c>: its automatic roots are the default root and every profile.</summary>
 internal static class OmpFixture
 {

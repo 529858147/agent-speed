@@ -115,10 +115,6 @@ public readonly record struct HistoryCost(CostTally? Tally, long Requests, Sourc
 /// <param name="Requests">Requests of the model from counted sources; 0 when only subscription sources used it.</param>
 public readonly record struct ModelCost(CostTally? Cost, long Requests);
 
-/// <summary>A model whose price is unknown, with the requests it left out of the range's cost.</summary>
-/// <param name="Model">Empty for responses without a model name.</param>
-public sealed record UnpricedModel(string Model, SourceKind Source, long Requests);
-
 public static class HistoryCostMath
 {
     /// <summary>

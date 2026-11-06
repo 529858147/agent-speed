@@ -251,12 +251,23 @@ public sealed class ReportSigningTests
     public void ServerSequences()
     {
         var cases = ReportSpec.Vector("server").EnumerateArray().ToList();
-        Assert.Equal(4, cases.Count);
+        Assert.Equal(7, cases.Count);
         var keys = new[] { "device", "other", "rotated" }.Select(name => ReportSpec.Key(name).PublicKey).ToArray();
         var steps = 0;
+        var advertised = 0;
         foreach (var item in cases)
         {
             var authority = item.GetProperty("config").Text("authority");
+            if (item.GetProperty("config").TryGetProperty("extensions", out var extensions))
+            {
+                // The service's extensions as the client reads them from a discovery document (METRICS 11.10, Active).
+                var raw = System.Text.Json.Nodes.JsonNode.Parse(ReportSpec.Example("discovery.json"))!.AsObject();
+                raw["extensions"] = System.Text.Json.Nodes.JsonNode.Parse(extensions.GetRawText());
+                var document = ReportDiscovery.Parse(ReportSpec.Utf8(raw.ToJsonString()), ReportServiceUrl.Parse("https://example.com")!, out _);
+                Assert.True(document!.Extensions.PerfScore || document.Extensions.TaskScore, item.Text("name"));
+                advertised++;
+            }
+
             foreach (var step in item.GetProperty("steps").EnumerateArray())
             {
                 steps++;
@@ -333,6 +344,7 @@ public sealed class ReportSigningTests
         }
 
         Assert.True(steps > 40);
+        Assert.Equal(2, advertised);
     }
 
     [Fact]

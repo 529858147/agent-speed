@@ -70,6 +70,9 @@ public static class DisplayText
         SourceKind.Kimi => "source.kimi",
         SourceKind.GrokBuild => "source.grokBuild",
         SourceKind.Pi => "source.pi",
+        SourceKind.OpenClaw => "source.openclaw",
+        SourceKind.Hermes => "source.hermes",
+        SourceKind.Droid => "source.droid",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
     };
 
@@ -103,9 +106,6 @@ public static class DisplayText
         LanguageCodes.En => ", ",
         _ => "，",
     };
-
-    /// <summary>A traffic rate read as words (DESIGN 10 Accessibility).</summary>
-    public static string SpokenTrafficRate(Core.Traffic.TrafficFormat.Parts parts) => TrafficText.Spoken(parts);
 
     /// <summary><c>今日 1.2M · 3 個 agent</c></summary>
     public static string TodaySummary(SpeedSnapshot snapshot, Localizer localizer)

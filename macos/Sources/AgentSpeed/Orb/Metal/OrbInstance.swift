@@ -20,6 +20,7 @@ struct OrbInstance {
         case blade = 8
         case polyline = 9
         case flare = 10
+        case perimeter = 11
     }
 
     enum Fill: Float {
@@ -154,6 +155,30 @@ struct OrbInstance {
                       tangentialWidth: CGFloat, color: RGBColor) -> OrbInstance {
         OrbInstance(shape: .flare, center: center, rotation: rotation, size: SIMD2(Float(tangential), Float(radial)),
                     glow: 0, color: color, core: 0, glowAlpha: 0, p0: Float(radialWidth), p1: Float(tangentialWidth))
+    }
+
+    /// A stroke along the outline of a rounded rectangle (the board's perimeter, DESIGN 2c): the whole outline when
+    /// `length` is 0, else the `length` points behind `head` (the distance along the outline, clockwise on screen from
+    /// the end of the top-left corner, as `BoardPerimeter`) with round caps. Along the segment the color runs
+    /// `tailColor` → `color`, the width `tailWidth` × → 1 × and the alpha `tailAlpha` × → 1 × (raised to `alphaCurve`).
+    static func perimeter(center: CGPoint, halfSize: CGSize, corner: CGFloat, width: CGFloat, head: CGFloat = 0,
+                          length: CGFloat = 0, color: RGBColor, tailColor: RGBColor? = nil, tailWidth: Double = 1,
+                          tailAlpha: Double = 1, alphaCurve: Double = 1, core: Double = 1, glow: CGFloat = 0,
+                          glowAlpha: Double = 0) -> OrbInstance {
+        OrbInstance(shape: .perimeter, center: center, rotation: Double(head),
+                    size: SIMD2(Float(halfSize.width), Float(halfSize.height)), corner: Float(corner), glow: glow,
+                    color: color, tail: tailColor, core: core, glowAlpha: glowAlpha, p0: Float(width), p1: Float(length),
+                    extra2: SIMD4(0, Float(tailWidth), Float(tailAlpha), Float(alphaCurve)))
+    }
+
+    /// Light outside a rounded rectangle only (a CSS `box-shadow` bloom): `spread` points of full light, then the
+    /// edge of a Gaussian blur of standard deviation `sigma`, times (1 − (d / reach)²)² of the distance d from the
+    /// rectangle; nothing inside it. It fades out along the rounded outline's offsets and ends `reach` points out.
+    static func outsideBloom(center: CGPoint, halfSize: CGSize, corner: CGFloat, spread: CGFloat, sigma: CGFloat,
+                             reach: CGFloat, color: RGBColor) -> OrbInstance {
+        OrbInstance(shape: .perimeter, center: center, size: SIMD2(Float(halfSize.width), Float(halfSize.height)),
+                    corner: Float(corner), glow: sigma, color: color, core: 0, glowAlpha: 1, p0: Float(spread),
+                    p1: Float(reach), extra2: SIMD4(1, 1, 1, 1))
     }
 
     /// A polyline of `count` points starting at `first` in the scene's point buffer, drawn as three round-joined strokes

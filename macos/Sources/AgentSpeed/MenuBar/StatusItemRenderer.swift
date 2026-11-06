@@ -11,6 +11,7 @@ final class StatusItemRenderer {
     private let item: NSStatusItem
     private var widthGovernor = StatusItemWidthGovernor()
     private var secondaryGovernor = StatusItemWidthGovernor()
+    private var intelligenceGovernor = StatusItemWidthGovernor()
     private var shrinkTimer: Timer?
     private var scheduledShrink: TimeInterval?
     private var loop: ObservationLoop?
@@ -34,10 +35,15 @@ final class StatusItemRenderer {
                 _ = (self.model.snapshot.sources, self.model.cost.currency, self.model.cost.rate, settings.billableSources)
             }
             _ = settings.liveUnit
-            _ = (settings.trafficEnabled, settings.barTraffic, settings.trafficUnit)
-            if settings.trafficEnabled, settings.barTraffic != .off {
+            _ = (settings.trafficEnabled, settings.barTraffic, settings.trafficUnit, settings.barIntelligence)
+            if settings.trafficEnabled, settings.barTraffic.isNetwork {
                 let traffic = self.model.visibleTraffic
                 _ = (traffic.machineLive, traffic.sources, settings.trafficIncludeTools)
+            }
+            // The intelligence block follows every engine tick (the score, its supplying agent's provisional mark) and
+            // the end of the thinking hold (DESIGN 10, 12).
+            if settings.barIntelligence {
+                _ = (self.model.snapshot.intelligence, self.model.snapshot.agents, self.model.barThinking.hidden)
             }
             self.render()
         }
@@ -85,12 +91,14 @@ final class StatusItemRenderer {
         let needed = StatusItemLayout.valueWidth(of: StatusItemValue.current(model).text)
         _ = widthGovernor.update(needed: needed, now: time)
         _ = secondaryGovernor.update(needed: StatusItemSecondary(model: model)?.numberWidth ?? 0, now: time)
+        _ = intelligenceGovernor.update(needed: StatusItemIntelligence(model: model)?.cell ?? 0, now: time)
         return StatusItemState(model: model, time: time, valueWidth: widthGovernor.width,
-                               secondaryWidth: secondaryGovernor.width)
+                               secondaryWidth: secondaryGovernor.width, intelligenceWidth: intelligenceGovernor.width)
     }
 
     private func scheduleShrink() {
-        let deadline = [widthGovernor.shrinkDeadline, secondaryGovernor.shrinkDeadline].compactMap { $0 }.min()
+        let deadline = [widthGovernor.shrinkDeadline, secondaryGovernor.shrinkDeadline, intelligenceGovernor.shrinkDeadline]
+            .compactMap { $0 }.min()
         guard deadline != scheduledShrink else { return }
         scheduledShrink = deadline
         shrinkTimer?.invalidate()

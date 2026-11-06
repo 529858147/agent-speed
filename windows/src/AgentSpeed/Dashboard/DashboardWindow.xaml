@@ -5,6 +5,8 @@
         xmlns:loc="clr-namespace:AgentSpeed.Localization"
         xmlns:controls="clr-namespace:AgentSpeed.Controls"
         xmlns:dash="clr-namespace:AgentSpeed.Dashboard"
+        xmlns:modes="clr-namespace:AgentSpeed.Modes"
+        xmlns:perf="clr-namespace:AgentSpeed.Perf"
         Title="{loc:Loc app.name}"
         Width="368"
         WindowStyle="SingleBorderWindow"
@@ -296,7 +298,26 @@
 
                     <!-- Agents -->
                     <Rectangle Style="{StaticResource Hairline}" Margin="0,12,0,12" />
-                    <TextBlock Text="{loc:Loc dashboard.agents}" Style="{StaticResource BodyStrongText}" Margin="0,0,0,6" />
+                    <!-- Column captions over the intelligence cell and the live value, while rows exist (DESIGN 4, Header). -->
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="56" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{loc:Loc dashboard.agents}" Style="{StaticResource BodyStrongText}" />
+                        <dash:ColumnCaption Grid.Column="1" Text="{loc:Loc intel.glyph}" Width="{Binding IntelligenceWidth}" Margin="0,0,6,0.75"
+                                            Background="Transparent" ToolTipService.InitialShowDelay="400"
+                                            Visibility="{Binding HasAgents, Converter={StaticResource Visible}}">
+                            <dash:ColumnCaption.ToolTip>
+                                <ToolTip>
+                                    <TextBlock Text="{loc:Loc agents.intel.hint}" TextWrapping="Wrap" MaxWidth="280" />
+                                </ToolTip>
+                            </dash:ColumnCaption.ToolTip>
+                        </dash:ColumnCaption>
+                        <dash:ColumnCaption Grid.Column="2" Text="{loc:Loc unit.tokS}" Margin="0,0,0,0.75"
+                                            Visibility="{Binding HasAgents, Converter={StaticResource Visible}}" />
+                    </Grid>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,4" Visibility="{Binding HasAgents, Converter={StaticResource Hidden}}">
                         <controls:GaugeGlyph Width="18" Height="18" TextElement.Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{loc:Loc agents.empty}" Style="{StaticResource CaptionText}" Margin="8,0,0,0" VerticalAlignment="Center" />
@@ -305,28 +326,60 @@
                          between modes. It reaches 20 DIP into the right padding, where its scroll bar has a gutter of its own. -->
                     <ScrollViewer x:Name="AgentsViewport" Style="{StaticResource GutterScrollViewer}" Margin="0,0,-20,0"
                                   VerticalScrollBarVisibility="Hidden" PanningMode="VerticalOnly" PreviewMouseWheel="OnAgentsWheel">
-                        <ItemsControl x:Name="AgentsItems" ItemsSource="{Binding Agents}" Focusable="False" VerticalAlignment="Top">
+                        <!-- Rows that show a score take keyboard focus (DESIGN 12, Keyboard): Tab enters the list once, the arrow keys
+                             move between rows, Space shows the focused row's score card and Esc closes it. -->
+                        <ItemsControl x:Name="AgentsItems" ItemsSource="{Binding Agents}" Focusable="False" VerticalAlignment="Top"
+                                      KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Contained">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type dash:AgentRow}">
                                     <!-- Rows stack without gaps so each row's connector piece joins its neighbors. -->
+                                    <!-- The row's tooltip is its score card (DESIGN 12), beside the panel; the card's text is its help text. -->
                                     <Grid Height="{x:Static dash:DashboardViewModel.AgentRowHeight}" AutomationProperties.Name="{Binding AccessibleName}"
-                                          Background="Transparent" ToolTip="{Binding TrafficTooltip}">
+                                          AutomationProperties.HelpText="{Binding CardDescription}" Background="Transparent"
+                                          FocusVisualStyle="{StaticResource RoundedFocusVisual}"
+                                          perf:PerfCardRow.Host="Dashboard" perf:PerfCardRow.Source="{Binding}"
+                                          perf:PerfCardRow.Presenter="{Binding ScoreCards, RelativeSource={RelativeSource AncestorType=Window}}">
                                         <dash:TreeConnectors Guides="{Binding Guides}" Stroke="{DynamicResource DividerStrokeColorDefaultBrush}" />
                                         <Grid Margin="{Binding Indent}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="30" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="56" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel VerticalAlignment="Center" Margin="0,3,8,3">
-                                                <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Detail}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <!-- The looping mark sits before the project name and never moves the row (DESIGN 4). -->
+                                                <DockPanel>
+                                                    <dash:LoopingMark DockPanel.Dock="Left" IsLooping="{Binding IsLooping}"
+                                                                      Appearance="{Binding DataContext.CapsuleAppearance, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                    <TextBlock Text="{Binding Project}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                                <!-- The detail truncates; the traffic suffix after it stays whole (DESIGN 4, Room). -->
+                                                <controls:ShrinkFirstPanel TextElement.FontSize="12" TextElement.Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                                    <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding DetailSuffix}" Typography.NumeralAlignment="Tabular" />
+                                                </controls:ShrinkFirstPanel>
                                             </StackPanel>
                                             <dash:PhaseBadge Grid.Column="1" Phase="{Binding Phase}" Color="{Binding Color}"
                                                              ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            <!-- The shared capsule column: as wide as the widest capsule, 8 DIP before the intelligence cell (DESIGN 4.4). -->
+                                            <modes:EffortCapsuleView Grid.Column="2" Capsule="{Binding Capsule}" Gap="8"
+                                                                     ColumnWidth="{Binding DataContext.CapsuleColumn.Width, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                     Compact="{Binding DataContext.CapsuleColumn.Compact, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                     Appearance="{Binding DataContext.CapsuleAppearance, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                     LanguageCode="{Binding DataContext.LanguageCode, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                     Mark="{Binding DataContext.ConfiguredMark, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            <!-- The fixed 性能 cell, 6 DIP before the live value: the score in compact form, pale resting, or a dash, with the
+                                                 provisional mark under a provisional score (DESIGN 4, DESIGN 12). -->
+                                            <dash:IntelligenceCell Grid.Column="3" Text="{Binding IntelligenceText}" Form="{Binding IntelligenceForm}" Margin="0,0,6,0"
+                                                                   Value="{Binding IntelligenceShown}" Provisional="{Binding IntelligenceProvisional}"
+                                                                   ReduceMotion="{Binding DataContext.ReduceMotion, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Width="{Binding DataContext.IntelligenceWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   HighContrast="{Binding DataContext.CapsuleAppearance.HighContrast, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   AutomationProperties.Name="{Binding IntelligenceAccessibleName}" />
                                             <!-- Below 0.05 tok/s the slot shows a dash or, while tools run, an hourglass (DESIGN 4.4). -->
-                                            <dash:LiveValue Grid.Column="2" Text="{Binding LiveText}" Kind="{Binding LiveKind}"
+                                            <dash:LiveValue Grid.Column="4" Text="{Binding LiveText}" Kind="{Binding LiveKind}"
                                                             TextElement.FontSize="13" TextElement.FontWeight="SemiBold"
                                                             HorizontalAlignment="Right" VerticalAlignment="Center"
                                                             AutomationProperties.Name="{Binding LiveAccessibleName}"
@@ -586,6 +639,11 @@
                     <CheckBox x:Name="OrbToggle" Style="{StaticResource ToggleSwitch}" Content="{loc:Loc settings.orb}"
                               Click="OnOrbToggled" AutomationProperties.Name="{loc:Loc settings.orb.show}" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <!-- The leaderboard boards' menu (DESIGN 2c): show or hide them, add one -->
+                        <Button x:Name="BoardsButton" Style="{StaticResource SubtleButton}" Click="OnBoardsMenu" Margin="0,0,2,0"
+                                ToolTip="{loc:Loc boards.title}" AutomationProperties.Name="{loc:Loc boards.title}">
+                            <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE8FD;" />
+                        </Button>
                         <Button x:Name="InfoButton" Style="{StaticResource SubtleButton}" Click="OnInfo"
                                 ToolTip="{loc:Loc win.dashboard.metricInfo}" AutomationProperties.Name="{loc:Loc win.dashboard.metricInfo}">
                             <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE946;" />

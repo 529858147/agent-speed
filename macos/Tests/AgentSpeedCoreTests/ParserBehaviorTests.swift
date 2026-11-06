@@ -52,6 +52,22 @@ struct ParserBehaviorTests {
         #expect(upserts.first?.record.startMs == nil)
     }
 
+    @Test func claudeToolResultThatEndsTheRunSetsIdle() {
+        var deduper = Deduper()
+        let result = #"{"type":"user","toolEndsTurn":true,"entrypoint":"cli","cwd":"/w/p","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]},"timestamp":"2026-10-20T10:00:03Z"}"#
+        let (ended, _) = Self.run(.claude, [
+            Self.claudeUser("2026-10-20T10:00:00Z", content: #""count""#),
+            Self.claudeAssistant("2026-10-20T10:00:02Z", id: "m1", output: 10, stop: #""tool_use""#),
+            result,
+        ], deduper: &deduper)
+        #expect(ended.state.phase == .idle)
+        #expect(ended.state.inFlightStartMs == nil)
+        let (continued, _) = Self.run(.claude, [
+            result.replacingOccurrences(of: #""toolEndsTurn":true"#, with: #""toolEndsTurn":false"#),
+        ], deduper: &deduper)
+        #expect(continued.state.phase == .generating)
+    }
+
     @Test func claudeMergesRepeatedLinesAndMarksOnlyTheFirstAsCompletion() {
         var deduper = Deduper()
         let (parser, upserts) = Self.run(.claude, [
@@ -140,6 +156,64 @@ struct ParserBehaviorTests {
         ], deduper: &deduper)
         #expect(upserts.map(\.record.key) == ["recent"])
         #expect(parser.state.lastLineMs == 1_792_490_410_000)
+    }
+
+    /// A paginated sub-agent whose first `session_meta` names its start ordinal: `start` is the raw JSON value.
+    static func pagedSubagent(start: String, prefixOrdinals: [String] = ["1", "2", "3", "4", "5"]) -> [String] {
+        let o = prefixOrdinals
+        return [
+            #"{"timestamp":"2026-10-20T10:00:00Z","ordinal":0,"type":"session_meta","payload":{"id":"child","cwd":"/w/child","thread_source":"subagent","agent_path":"/root/scout","history_mode":"paginated","subagent_history_start_ordinal":\#(start)}}"#,
+            #"{"timestamp":"2026-10-20T10:00:00.010Z","ordinal":\#(o[0]),"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50,"output_tokens":7,"total_tokens":57},"last_token_usage":{"input_tokens":50,"output_tokens":7,"total_tokens":57}}}}"#,
+            #"{"timestamp":"2026-10-20T10:00:00.020Z","ordinal":\#(o[1]),"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}"#,
+            #"{"timestamp":"2026-10-20T10:00:00.030Z","ordinal":\#(o[2]),"type":"turn_context","payload":{"cwd":"/w/parent","model":"parent-model","effort":"xhigh"}}"#,
+            #"{"timestamp":"2026-10-20T10:00:00.040Z","ordinal":\#(o[3]),"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"ls","call_id":"copied"}}"#,
+            #"{"timestamp":"2026-10-20T10:00:00.050Z","ordinal":\#(o[4]),"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":90,"output_tokens":9,"total_tokens":99},"last_token_usage":{"input_tokens":40,"output_tokens":2,"total_tokens":42}}}}"#,
+            #"{"timestamp":"2026-10-20T10:00:01Z","ordinal":6,"type":"event_msg","payload":{"type":"task_started"}}"#,
+            #"{"timestamp":"2026-10-20T10:00:01.100Z","ordinal":7,"type":"turn_context","payload":{"model":"child-model","effort":"low"}}"#,
+            #"{"timestamp":"2026-10-20T10:00:03Z","ordinal":8,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24},"last_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}}"#,
+        ]
+    }
+
+    @Test func codexSkipsTheCopiedPrefixOfAPaginatedSubagent() {
+        var deduper = Deduper()
+        let (parser, upserts) = Self.run(.codex, Self.pagedSubagent(start: "6"), deduper: &deduper)
+        #expect(upserts.map(\.record.key) == ["codex-legacy:child:24"])
+        #expect(upserts.first?.record.model == "child-model")
+        #expect(upserts.first?.record.startMs == Timestamp.parse("2026-10-20T10:00:01Z"))
+        #expect(upserts.first?.record.usage.output == 4)
+        #expect(upserts.first?.record.modes.effortAndSpeed.speed == nil)
+        #expect(parser.state.project == "child")
+        #expect(parser.state.actions.actions.isEmpty)
+        #expect(parser.state.lastLineMs == Timestamp.parse("2026-10-20T10:00:03Z"))
+    }
+
+    @Test func codexWithoutAValidStartOrdinalKeepsEveryLine() {
+        for start in ["null", "-1", "6.0", "6e0", #""6""#, "true", "9223372036854775808"] {
+            var deduper = Deduper()
+            let (_, upserts) = Self.run(.codex, Self.pagedSubagent(start: start), deduper: &deduper)
+            #expect(upserts.map(\.record.key) == ["codex-legacy:child:57", "codex-legacy:child:99", "codex-legacy:child:24"],
+                    "start ordinal \(start)")
+            #expect(upserts.first?.record.model == nil)
+        }
+        var deduper = Deduper()
+        let missing = Self.pagedSubagent(start: "6").map {
+            $0.replacingOccurrences(of: #","subagent_history_start_ordinal":6"#, with: "")
+        }
+        #expect(Self.run(.codex, missing, deduper: &deduper).1.count == 3)
+    }
+
+    @Test func codexStartOrdinalUsesEachLinesOwnOrdinal() {
+        var deduper = Deduper()
+        // An invalid line ordinal is no copy; a malformed line in the prefix does not shift the boundary.
+        var lines = Self.pagedSubagent(start: "6", prefixOrdinals: ["1", "2", "3", "4", "-5"])
+        lines.insert(#"{"timestamp":"2026-10-20T10:00:00.045Z","ordinal":4,"type":"resp"#, at: 5)
+        let (parser, upserts) = Self.run(.codex, lines, deduper: &deduper)
+        #expect(upserts.map(\.record.key) == ["codex-legacy:child:99", "codex-legacy:child:24"])
+        #expect(upserts.first?.record.model == nil)
+        #expect(parser.state.malformedLines == 1)
+        var fresh = Deduper()
+        let maxStart = Self.pagedSubagent(start: "9223372036854775807")
+        #expect(Self.run(.codex, maxStart, deduper: &fresh).1.isEmpty)
     }
 
     @Test func codexSurvivesHostileNumbers() {

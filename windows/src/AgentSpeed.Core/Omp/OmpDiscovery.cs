@@ -5,7 +5,8 @@ namespace AgentSpeed.Core.Omp;
 
 /// <summary>
 /// omp session files (METRICS 4.7): <c>*.jsonl</c> at least one folder below a root, within the depth limit. Every file
-/// or folder whose name starts with <c>.</c> (gc staging, rewrite temps) and every reparse point is skipped.
+/// or folder whose name starts with <c>.</c> (gc staging, rewrite temps) and every reparse point is skipped. Pi
+/// (METRICS 4.13) uses the same rules but also takes files directly in its root (custom session folders are flat).
 /// </summary>
 internal static class OmpDiscovery
 {
@@ -15,8 +16,9 @@ internal static class OmpDiscovery
         fileName.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase) && !fileName.StartsWith('.');
 
     /// <summary>Session files under <paramref name="root"/>; when more than <paramref name="limit"/>, the newest ones.</summary>
+    /// <param name="flat">Files directly in the root count too (Pi); omp needs at least one folder between them.</param>
     public static List<DiscoveredFile> Enumerate(
-        string root, int limit = TranscriptDiscovery.MaxFilesPerRoot, CancellationToken cancellationToken = default)
+        string root, int limit = TranscriptDiscovery.MaxFilesPerRoot, CancellationToken cancellationToken = default, bool flat = false)
     {
         var scanCap = limit == int.MaxValue ? int.MaxValue : MaxScannedEntries;
         var options = new EnumerationOptions
@@ -37,12 +39,7 @@ internal static class OmpDiscovery
                     entry.ToFullPath(), entry.Length, entry.LastWriteTimeUtc.UtcDateTime),
                 options)
             {
-                ShouldIncludePredicate = static (ref FileSystemEntry entry) =>
-                    !entry.IsDirectory
-                    && (entry.Attributes & FileAttributes.ReparsePoint) == 0
-                    && IsSessionFileName(entry.FileName)
-                    && Path.TrimEndingDirectorySeparator(entry.Directory).Length
-                        > Path.TrimEndingDirectorySeparator(entry.RootDirectory).Length,
+                ShouldIncludePredicate = flat ? IsFlatSessionEntry : IsNestedSessionEntry,
                 ShouldRecursePredicate = static (ref FileSystemEntry entry) =>
                     (entry.Attributes & FileAttributes.ReparsePoint) == 0 && !entry.FileName.StartsWith('.'),
             };
@@ -72,7 +69,7 @@ internal static class OmpDiscovery
     }
 
     /// <summary>Validates a watcher-reported path with the rules of <see cref="Enumerate"/>.</summary>
-    public static bool IsSessionPath(string root, string path)
+    public static bool IsSessionPath(string root, string path, bool flat = false)
     {
         if (!TranscriptDiscovery.IsAcceptablePath(root, path, TranscriptNaming.Jsonl)
             || !IsSessionFileName(Path.GetFileName(path.AsSpan())))
@@ -91,8 +88,17 @@ internal static class OmpDiscovery
         }
 
         var parts = relative.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2 && parts.All(p => !p.StartsWith('.'));
+        return parts.Length >= (flat ? 1 : 2) && parts.All(p => !p.StartsWith('.'));
     }
+
+    private static bool IsFlatSessionEntry(ref FileSystemEntry entry) =>
+        !entry.IsDirectory
+        && (entry.Attributes & FileAttributes.ReparsePoint) == 0
+        && IsSessionFileName(entry.FileName);
+
+    private static bool IsNestedSessionEntry(ref FileSystemEntry entry) =>
+        IsFlatSessionEntry(ref entry)
+        && Path.TrimEndingDirectorySeparator(entry.Directory).Length > Path.TrimEndingDirectorySeparator(entry.RootDirectory).Length;
 
     /// <summary>Components of <paramref name="path"/> below <paramref name="root"/>; 0 when it is not inside it.</summary>
     public static int DepthBelow(string root, string path)

@@ -69,6 +69,16 @@ struct DailyTableHeader: View {
     }
 }
 
+extension View {
+    /// Keeps the view at the top of its scroll view once it would scroll past it, like a pinned section header. The
+    /// offset is applied while drawing, so scrolling never changes state or layout.
+    func stickyInScrollView() -> some View {
+        visualEffect { content, geometry in
+            content.offset(y: max(0, -geometry.frame(in: .scrollView).minY))
+        }
+    }
+}
+
 /// One day of the table: tabular digits, numbers right-aligned, a subtle tint on every other row, hover linked with
 /// the chart, and a 1.2 s flash when the chart reveals it.
 struct DailyTableRow: View {
@@ -87,12 +97,8 @@ struct DailyTableRow: View {
     let onSelect: (DayKey) -> Void
     let onCopy: (DayKey) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        let dark = colorScheme == .dark
         let selected = interaction.selection.contains(row.day)
-        let hovered = interaction.hoveredDay == row.day
         let emphasized = selected && tableFocused
         HStack(spacing: gap) {
             ForEach(Array(columns.enumerated()), id: \.element) { position, column in
@@ -104,13 +110,13 @@ struct DailyTableRow: View {
         .frame(height: HistoryLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(background(dark: dark, selected: selected, hovered: hovered, emphasized: emphasized))
+            RowHighlight(mark: interaction.mark(for: row.day), striped: !index.isMultiple(of: 2), selected: selected,
+                         emphasized: emphasized)
         }
         .background { FlashHighlight(day: row.day, interaction: interaction) }
         .contentShape(Rectangle())
         .onHover { inside in
-            if inside { interaction.hover(row.day, from: .table) } else { interaction.unhover(row.day, from: .table) }
+            interaction.trackTableHover(row.day, inside: inside)
         }
         .onTapGesture { onSelect(row.day) }
         .contextMenu {
@@ -121,13 +127,6 @@ struct DailyTableRow: View {
         .accessibilityValue(HistoryText.accessible(row, today: today, money: money, traffic: columns.contains(.traffic), l10n))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
         .accessibilityAction { onSelect(row.day) }
-    }
-
-    private func background(dark: Bool, selected: Bool, hovered: Bool, emphasized: Bool) -> Color {
-        if emphasized { return Color(nsColor: .selectedContentBackgroundColor) }
-        if selected { return Color(nsColor: .unemphasizedSelectedContentBackgroundColor) }
-        if hovered { return HistoryPalette.hover(dark: dark) }
-        return index.isMultiple(of: 2) ? .clear : HistoryPalette.stripe(dark: dark)
     }
 
     @ViewBuilder
@@ -205,6 +204,29 @@ struct DailyTableRow: View {
                 .minimumScaleFactor(0.8)
                 .help(help ?? text)
         }
+    }
+}
+
+/// A row's selection, hover or stripe fill. Only this view reads the row's hover flag, so moving the pointer redraws
+/// two of these and never re-evaluates a row's cells, their tooltips or the table's layout (macOS issue #21).
+private struct RowHighlight: View {
+    let mark: HistoryRowMark
+    let striped: Bool
+    let selected: Bool
+    let emphasized: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(fill(dark: colorScheme == .dark))
+    }
+
+    private func fill(dark: Bool) -> Color {
+        if emphasized { return Color(nsColor: .selectedContentBackgroundColor) }
+        if selected { return Color(nsColor: .unemphasizedSelectedContentBackgroundColor) }
+        if mark.hovered { return HistoryPalette.hover(dark: dark) }
+        return striped ? HistoryPalette.stripe(dark: dark) : .clear
     }
 }
 

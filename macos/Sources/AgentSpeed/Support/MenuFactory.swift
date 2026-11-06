@@ -52,6 +52,7 @@ enum MenuFactory {
         menu.addItem(.separator())
         menu.addItem(orbVisibilityItem(model: model))
         OrbMenus.addQuickItems(to: menu, model: model)
+        BoardMenus.addQuickItems(to: menu, model: model)
         menu.addItem(.separator())
         menu.addItem(effectsItem(model: model))
         let preview = ActionMenuItem(l10n(model.isPreviewing ? "settings.effects.previewing" : "settings.effects.preview")) { [weak model] in

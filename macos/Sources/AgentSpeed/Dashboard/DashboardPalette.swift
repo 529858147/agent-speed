@@ -33,6 +33,9 @@ enum DashboardPalette {
         return base.opacity(increasedContrast ? 0.34 : (dark ? 0.16 : 0.13))
     }
 
+    /// The amber of speed bolts and the looping mark (DESIGN 4).
+    static func amber(dark: Bool) -> RGBColor { RGBColor(hex: dark ? 0xF5A524 : 0xB86E00) }
+
     /// Heat color legible as text: the palette color, pushed in OKLab lightness until it reaches the contrast target.
     static func heatText(_ heat: Double, dark: Bool, increasedContrast: Bool) -> Color {
         legible(HeatPalette.color(heat, dark: dark), dark: dark, minimum: increasedContrast ? 7 : 4.5).color

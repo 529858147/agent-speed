@@ -158,6 +158,26 @@ public class TrafficSurfaceTests
     }
 
     [Fact]
+    public void TheIntelligenceReadoutIsStoredAsIntelligenceAndOlderFilesStayAsTheyWere()
+    {
+        Assert.Equal(OrbTraffic.Intelligence, OrbTraffics.Parse("intelligence"));
+        Assert.Equal("intelligence", OrbTraffics.Key(OrbTraffic.Intelligence));
+        Assert.False(OrbTraffics.IsNetwork(OrbTraffic.Intelligence));
+
+        var settings = AppSettings.Default with { Orbs = new OrbsDocument([new OrbDefinition("A") { Traffic = OrbTraffic.Intelligence }]) };
+        var json = SettingsSerializer.Serialize(settings);
+        Assert.Contains("\"traffic\":\"intelligence\"", json.Replace(" ", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Equal(OrbTraffic.Intelligence, SettingsSerializer.Deserialize(json).Orbs.Orbs[0].Traffic);
+
+        // A file written before this mode keeps every orb's readout as it was.
+        var older = SettingsSerializer.Serialize(AppSettings.Default with
+        {
+            Orbs = new OrbsDocument([new OrbDefinition("A") { Traffic = OrbTraffic.Machine }, new OrbDefinition("B")]),
+        });
+        Assert.Equal([OrbTraffic.Machine, OrbTraffic.Sources], SettingsSerializer.Deserialize(older).Orbs.Orbs.Select(o => o.Traffic));
+    }
+
+    [Fact]
     public void AnOrbsTrafficIsStoredAndOlderOrbsShowTheirSources()
     {
         Assert.Equal(OrbTraffic.Sources, OrbTraffics.Parse(null));
@@ -186,7 +206,8 @@ public class TrafficSurfaceTests
         var traffic = menu.Rows.Single(r => r.Label == En["orbs.traffic"]);
         Assert.True(traffic.IsEnabled);
         var choices = traffic.Submenu!.Rows.ToArray();
-        Assert.Equal([En["orbs.traffic.sources"], En["orbs.traffic.machine"], En["orbs.traffic.off"]], choices.Select(r => r.Label));
+        Assert.Equal([En["orbs.traffic.sources"], En["orbs.traffic.machine"], En["orbs.traffic.intelligence"], En["orbs.traffic.off"]],
+            choices.Select(r => r.Label));
         Assert.True(choices[0].IsChecked);
         Assert.Null(choices[0].Detail);
         Assert.Equal(new MenuAction.SetOrbTraffic("A", OrbTraffic.Machine), choices[1].Action);
@@ -194,7 +215,10 @@ public class TrafficSurfaceTests
         var unavailable = OrbMenuModel.Build("A", settings, SourceAvailability.All, En, sourceTraffic: false)!;
         Assert.Equal(En["traffic.unavailable.short"], unavailable.Rows.Single(r => r.Label == En["orbs.traffic"]).Submenu!.Rows.First().Detail);
 
+        // Without measuring only the network choices are disabled: intelligence needs no traffic data.
         var off = OrbMenuModel.Build("A", settings with { Traffic = TrafficSettings.Default with { Enabled = false } }, SourceAvailability.All, En)!;
-        Assert.False(off.Rows.Single(r => r.Label == En["orbs.traffic"]).IsEnabled);
+        var offChoices = off.Rows.Single(r => r.Label == En["orbs.traffic"]).Submenu!.Rows.Cast<MenuRow>().ToArray();
+        Assert.Equal([false, false, true, true], offChoices.Select(r => r.IsEnabled));
+        Assert.Equal(new MenuAction.SetOrbTraffic("A", OrbTraffic.Intelligence), offChoices[2].Action);
     }
 }

@@ -16,6 +16,12 @@ internal static class RepositoryPaths
     /// <summary>The hero vehicle art (DESIGN 4c), found the same way as <see cref="SharedStringsFile"/>.</summary>
     public static string VehiclesFile() => RepositoryFile(VehiclesRelativePath);
 
+    /// <summary>A file under spec/, for example <c>fixtures/execution-mode-cases.json</c>.</summary>
+    public static string Spec(string relativePath) => RepositoryFile("spec/" + relativePath);
+
+    /// <summary>A shared fixture under <c>spec/fixtures</c>, found the same way.</summary>
+    public static string FixtureFile(string name) => RepositoryFile("spec/fixtures/" + name);
+
     private static string RepositoryFile(string relativePath)
     {
         foreach (var start in StartDirectories())

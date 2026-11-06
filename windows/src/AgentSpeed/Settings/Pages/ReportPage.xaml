@@ -32,6 +32,11 @@
             <Setter Property="LineHeight" Value="17" />
         </Style>
 
+        <!-- An amber note under a control: the caution symbol and a sentence that wraps beside it. -->
+        <Style x:Key="CautionNote" TargetType="Grid">
+            <Setter Property="Margin" Value="0,8,0,0" />
+        </Style>
+
         <!-- An inline message under a field: errors with the critical symbol, results with a check, both with text. -->
         <Style x:Key="InlineError" TargetType="StackPanel">
             <Setter Property="Orientation" Value="Horizontal" />
@@ -187,6 +192,62 @@
                         </Grid>
                     </StackPanel>
                 </Grid>
+
+                <!-- 2b. Transport: WebSocket by default (HTTP while the service lacks it); HTTP by the user's choice -->
+                <StackPanel Visibility="{Binding ShowsTransport, Converter={StaticResource Visible}}">
+                    <Rectangle Style="{StaticResource Hairline}" Margin="-16,14,-16,12" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="TransportLabel" Text="{loc:Loc report.transport}" Style="{StaticResource BodyText}" VerticalAlignment="Center"
+                                   Margin="0,0,16,0" />
+                        <Border Grid.Column="1" Style="{StaticResource SegmentedContainer}" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource SegmentedItem}" GroupName="ReportTransport" MinWidth="76"
+                                             Content="{loc:Loc report.transport.http}" IsChecked="{Binding TransportHttp, Mode=TwoWay}"
+                                             AutomationProperties.Name="{loc:Loc report.transport.http}"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=TransportLabel}"
+                                             AutomationProperties.HelpText="{Binding TransportHelpText}" />
+                                <RadioButton Style="{StaticResource SegmentedItem}" GroupName="ReportTransport" MinWidth="76"
+                                             IsChecked="{Binding TransportWebSocket, Mode=TwoWay}"
+                                             AutomationProperties.Name="{loc:Loc report.transport.websocket}"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=TransportLabel}"
+                                             AutomationProperties.HelpText="{Binding TransportHelpText}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE945;" FontSize="11" Margin="0,1,5,0" VerticalAlignment="Center"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" />
+                                        <TextBlock Text="{loc:Loc report.transport.websocket}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding TransportCaption}" Style="{StaticResource Footnote}" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="{Binding TransportCaption, Converter={StaticResource HasText}}" />
+                    <!-- WebSocket chosen, the service lacks it: a quiet note in the caption's place, since reports go over HTTP meanwhile -->
+                    <Grid Margin="0,8,0,0" Visibility="{Binding TransportUnsupportedText, Converter={StaticResource HasText}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE946;" FontSize="13" Margin="0,2,8,0" VerticalAlignment="Top"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding TransportUnsupportedText}" Style="{StaticResource Footnote}" TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </Grid>
+                    <Grid Style="{StaticResource CautionNote}" Visibility="{Binding TransportThrottledText, Converter={StaticResource HasText}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource SymbolIcon}" Text="&#xE7BA;" FontSize="13" Margin="0,2,8,0" VerticalAlignment="Top"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding TransportThrottledText}" Style="{StaticResource Footnote}" TextWrapping="Wrap"
+                                   Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </Grid>
+                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -340,6 +401,21 @@
                                AutomationProperties.LiveSetting="Polite" />
                     <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource Footnote}" Margin="0,2,0,0"
                                Visibility="{Binding StatusDetail, Converter={StaticResource HasText}}" />
+                    <!-- WebSocket: latency and delivery counts; every counter in the tooltip (also on keyboard focus) -->
+                    <Grid x:Name="StreamStats" Margin="0,3,0,0" HorizontalAlignment="Left" Background="Transparent"
+                          Focusable="True" FocusVisualStyle="{StaticResource RoundedFocusVisual}"
+                          ToolTip="{Binding StreamCountersText}" ToolTipService.InitialShowDelay="250" ToolTipService.ShowDuration="20000"
+                          AutomationProperties.Name="{Binding StreamStatsText}" AutomationProperties.HelpText="{Binding StreamCountersText}"
+                          Visibility="{Binding StreamStatsText, Converter={StaticResource HasText}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding StreamStatsText}" Style="{StaticResource Footnote}" Typography.NumeralAlignment="Tabular"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SymbolIcon}" Text="&#xE946;" FontSize="11" Margin="6,3,0,0"
+                                   VerticalAlignment="Top" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    </Grid>
                     <TextBlock Text="{Binding RankText}" Style="{StaticResource Footnote}" Margin="0,2,0,0"
                                Visibility="{Binding RankText, Converter={StaticResource HasText}}" />
                 </StackPanel>
@@ -361,6 +437,9 @@
                             Visibility="{Binding ShowsResume, Converter={StaticResource Visible}}" />
                     <Button Content="{loc:Loc report.service.retry}" Command="{Binding RetryCommand}" MinWidth="96" Margin="8,0,0,0"
                             Visibility="{Binding ShowsStatusRetry, Converter={StaticResource Visible}}" />
+                    <Button Content="{loc:Loc report.service.retry}" Command="{Binding StreamRetryCommand}" MinWidth="96" Margin="8,0,0,0"
+                            AutomationProperties.HelpText="{Binding StatusText}"
+                            Visibility="{Binding ShowsStreamRetry, Converter={StaticResource Visible}}" />
                     <Button Content="{loc:Loc report.service.review}" Command="{Binding ReviewCommand}" MinWidth="96" Margin="8,0,0,0"
                             Style="{DynamicResource AccentButtonStyle}" Visibility="{Binding ShowsStatusReview, Converter={StaticResource Visible}}" />
                 </StackPanel>

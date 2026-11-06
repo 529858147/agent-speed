@@ -15,6 +15,9 @@ final class OrbAccessibilityReporter {
     private weak var host: OrbHostView?
     private var loop: ObservationLoop?
     private var timer: Timer?
+    /// Publishes again when the thinking line's hold ends, which changes nothing the loop observes.
+    private var holdTimer: Timer?
+    private var holdEnd: TimeInterval?
     private var publishedAt: TimeInterval = -.infinity
     /// The unit last published; a change is announced once (DESIGN 9, Accessibility).
     private var publishedUnit: OrbUnit?
@@ -30,12 +33,15 @@ final class OrbAccessibilityReporter {
         loop?.cancel()
         timer?.invalidate()
         timer = nil
+        holdTimer?.invalidate()
+        holdTimer = nil
+        holdEnd = nil
     }
 
     private func observe() {
         let gauge = runtime.feed.gauge
         _ = (gauge.readoutValue, gauge.title, runtime.feed.unavailableTitleKey, model.l10n.language)
-        _ = (runtime.feed.money, runtime.feed.unit, runtime.feed.traffic, runtime.feed.trafficEnabled)
+        _ = (runtime.feed.money, runtime.feed.unit, runtime.feed.lines)
         _ = model.orbs.document
         _ = model.titles.document
         let elapsed = Clock.now - publishedAt
@@ -101,11 +107,12 @@ final class OrbAccessibilityReporter {
                 : runtime.config.sources.knownSources.map { l10n($0.titleKey) }.joined(separator: l10n("list.separator"))
             help = l10n("a11y.orb.sources", names)
         }
-        if let traffic = trafficSentence(l10n) {
+        if let lines = lineSentence(l10n) {
             let separator = l10n.language == .ja ? "、" : l10n.language.usesLatinCase ? ", " : "，"
-            if single { value += separator + traffic } else { label += separator + traffic }
+            if single { value += separator + lines } else { label += separator + lines }
         }
         host.accessibilityHelpText = help
+        scheduleHoldEnd()
         let labelChanged = label != host.accessibilityLabelText
         let valueChanged = value != host.accessibilityValueText
         host.accessibilityLabelText = label
@@ -123,18 +130,55 @@ final class OrbAccessibilityReporter {
         publishedUnit = unit
     }
 
-    /// `a11y.orb.traffic` while the readout is visible (DESIGN 10, Accessibility): rates read as words, units as written.
-    private func trafficSentence(_ l10n: Localizer) -> String? {
-        let feed = runtime.feed
+    private func scheduleHoldEnd() {
+        let now = Clock.now
+        let end = runtime.feed.lines?.reading?.thinking.holdEnd(after: now)
+        guard end != holdEnd else { return }
+        holdTimer?.invalidate()
+        holdTimer = nil
+        holdEnd = end
+        guard let end else { return }
+        let timer = Timer(timeInterval: end - now + 0.05, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.holdTimer = nil
+                self.holdEnd = nil
+                self.observe()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        holdTimer = timer
+    }
+
+    /// While the readout is visible (DESIGN 10, Accessibility): `a11y.orb.traffic` with rates read as words and units as
+    /// written, or `a11y.orb.intel` with the score words (`a11y.orb.intel.only` while the thinking line is hidden).
+    private func lineSentence(_ l10n: Localizer) -> String? {
         let config = runtime.config
-        guard feed.trafficEnabled, let reading = feed.traffic, !runtime.isUnavailable else { return nil }
+        guard let lines = runtime.feed.lines, let reading = lines.reading, !runtime.isUnavailable else { return nil }
         let now = Clock.now
         guard now >= reading.shownAt, !reading.isGone(at: now) || now < reading.quietAt,
-              OrbTrafficMetrics.fits(.of(config.style), diameter: CGFloat(config.size), bits: reading.bits) else { return nil }
-        func spoken(_ parts: TrafficFormat.Parts) -> String {
-            let unit = parts.unit.hasSuffix("/s") ? String(parts.unit.dropLast(2)) : parts.unit
-            return parts.number + " " + unit
+              OrbLineMetrics.fits(.of(config.style), diameter: CGFloat(config.size), format: lines.format,
+                                  language: l10n.language) else { return nil }
+        switch reading.content {
+        case .traffic(let rx, let tx):
+            return l10n("a11y.orb.traffic", TrafficText.spoken(rx), TrafficText.spoken(tx))
+        case .intelligence(let score, let thinking):
+            return Self.intelligenceSentence(score, thinking: reading.thinking.isHidden(at: now) ? nil : thinking, l10n)
         }
-        return l10n("a11y.orb.traffic", spoken(reading.rx), spoken(reading.tx))
+    }
+
+    /// The performance readout's words (DESIGN 12, *Accessibility*): the score words in `a11y.orb.intel` with the
+    /// thinking rate, or in `a11y.orb.intel.only` without it (`thinking` nil); while the value is none `intel.none`
+    /// replaces the 性能 words and the thinking words stay.
+    static func intelligenceSentence(_ value: PerfSetReading, thinking: String?, _ l10n: Localizer) -> String {
+        guard let words = PerfScoreText.words(value, l10n) else {
+            guard let thinking else { return l10n("intel.none") }
+            let marker = "\u{E000}"
+            let full = l10n("a11y.orb.intel", marker, thinking)
+            let intelligence = l10n("a11y.orb.intel.only", marker)
+            guard let range = full.range(of: intelligence) else { return l10n("intel.none") }
+            return full.replacingCharacters(in: range, with: l10n("intel.none"))
+        }
+        return thinking.map { l10n("a11y.orb.intel", words, $0) } ?? l10n("a11y.orb.intel.only", words)
     }
 }

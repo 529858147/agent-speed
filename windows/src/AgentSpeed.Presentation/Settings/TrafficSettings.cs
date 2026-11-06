@@ -1,6 +1,9 @@
 namespace AgentSpeed.Presentation.Settings;
 
-/// <summary>The taskbar's traffic block (DESIGN 10, Menu bar and taskbar).</summary>
+/// <summary>
+/// The taskbar's network block after the value (DESIGN 10, Menu bar and taskbar): network speed of this computer or of the
+/// agents. 性能 has a switch of its own (<see cref="AppSettings.BarIntelligence"/>) and can show beside it.
+/// </summary>
 public enum BarTraffic
 {
     Off,
@@ -32,11 +35,20 @@ public sealed record TrafficSettings
 
     public bool Bits => Unit == TrafficUnit.Bits;
 
+    /// <summary>The block shows network speed (and needs measuring on).</summary>
+    public static bool IsNetwork(BarTraffic bar) => bar is BarTraffic.Machine or BarTraffic.Agents;
+
     public TrafficSettings Validated() => this with
     {
         Unit = Enum.IsDefined(Unit) ? Unit : TrafficUnit.Bytes,
         Bar = Enum.IsDefined(Bar) ? Bar : BarTraffic.Off,
     };
+
+    /// <summary>
+    /// The stored choice of earlier builds that showed 智力 (now 性能) in place of the network block: it reads as off and turns
+    /// <see cref="AppSettings.BarIntelligence"/> on, once (DESIGN 10).
+    /// </summary>
+    public const string LegacyIntelligenceKey = "intelligence";
 
     public static string Key(BarTraffic bar) => bar switch
     {
@@ -45,6 +57,7 @@ public sealed record TrafficSettings
         _ => "off",
     };
 
+    /// <summary>An unknown stored value reads as off.</summary>
     public static BarTraffic ParseBar(string? key) => key switch
     {
         "machine" => BarTraffic.Machine,

@@ -10,10 +10,10 @@ struct TranscriptReader: Sendable {
     private var compressed: CompressedStreamReader?
     private var document: DocumentReader?
     private var database: AntigravityReader?
-    /// omp: the first read delivers the file's session header before the lines at its start offset (METRICS 4.7).
+    /// omp and Pi: the first read delivers the file's session header before the lines at its start offset (METRICS 4.7).
     private var headerPending: Bool
 
-    /// `readsHeaderFirst`: an omp file that starts being read past its beginning.
+    /// `readsHeaderFirst`: an omp or Pi file that starts being read past its beginning.
     init(
         path: String,
         start: FileTailer.Start = .beginning,
@@ -97,6 +97,13 @@ struct TranscriptReader: Sendable {
             }
         }
         return plain!.read(onReset: onReset, onLine: onLine)
+    }
+
+    /// Reads every complete line appended to a plain JSONL file since the last call, with each line's byte offset
+    /// (Factory Droid's weights, METRICS 4.16). Other formats have no byte offsets and are not read this way.
+    mutating func read(onReset: () -> Void = {}, onLineAt: (UnsafeRawBufferPointer, Int64) -> Void) -> FileTailer.ReadResult {
+        guard plain != nil, !headerPending else { return FileTailer.ReadResult(failed: true) }
+        return plain!.read(onReset: onReset, onLineAt: onLineAt)
     }
 }
 

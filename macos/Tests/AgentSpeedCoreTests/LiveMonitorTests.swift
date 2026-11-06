@@ -25,7 +25,11 @@ struct LiveMonitorTests {
             opencodeRoot: directory.file("missing-opencode"),
             geminiRoot: directory.file("missing-gemini"),
             ompRoot: directory.file("missing-omp"),
-            antigravityRoot: directory.file("missing-antigravity")
+            antigravityRoot: directory.file("missing-antigravity"),
+            piRoot: directory.file("missing-pi"),
+            openclawRoot: directory.file("missing-openclaw"),
+            hermesRoot: directory.file("missing-hermes"),
+            droidRoot: directory.file("missing-droid")
         ))
         monitor.start()
         defer { monitor.stop() }
@@ -50,7 +54,7 @@ struct LiveMonitorTests {
         #expect(snapshot.sources.count == SourceKind.allCases.count)
         #expect(snapshot.sources.first { $0.kind == .codex }?.available == true)
         #expect(snapshot.sources.first { $0.kind == .deepseek }?.available == true)
-        #expect(snapshot.warnings.contains(.malformedLines(2)))
+        #expect(snapshot.warnings.contains(.malformedLines(3)))
         #expect(snapshot.history.count == 300)
         #expect(completions.isEmpty, "seeded responses never produce live events")
 
@@ -175,6 +179,47 @@ struct LiveMonitorTests {
         gate.signal()
         #expect(await Self.waitUntil { !received.completions.isEmpty })
         #expect(received.completions.map(\.outputTokens) == [42])
+    }
+
+    /// Issue #26: FSEvents reports nothing for appends to a file its writer keeps open (Codex keeps a session's rollout
+    /// open while the session lives) until it is closed; the fallbacks must read it anyway.
+    @Test func appendsToAFileItsWriterKeepsOpenAreReadWithoutWatcherEvents() async throws {
+        let directory = try TempDirectory()
+        let relative = "codex/sessions/2026/10/25/rollout-resumed.jsonl"
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func turn(_ id: String, output: Int) -> Data {
+            let now = Date()
+            return Data((#"{"timestamp":"\#(formatter.string(from: now.addingTimeInterval(-3)))","type":"event_msg","payload":{"type":"user_message","message":"x"}}"#
+                + "\n" + #"{"timestamp":"\#(formatter.string(from: now))","type":"token_usage_record","payload":{"response_id":"\#(id)","usage":{"input_tokens":10,"output_tokens":\#(output)}}}"#
+                + "\n").utf8)
+        }
+        let daysAgo = Date().addingTimeInterval(-3 * 86_400)
+        try directory.write(relative, #"{"timestamp":"\#(formatter.string(from: daysAgo))","type":"session_meta","payload":{"id":"t-r","cwd":"/w/resumed"}}"# + "\n",
+                            modified: daysAgo)
+        let received = Received()
+        let mailbox = SnapshotMailbox { snapshot, _ in received.snapshots.append(snapshot) }
+        let core = MonitorCore(
+            configuration: MonitorConfiguration(enabledSources: [.codex], codexRoot: directory.file("codex/sessions")),
+            mailbox: mailbox,
+            rediscoveryInterval: .milliseconds(200)
+        )
+        core.start()
+        defer {
+            mailbox.close()
+            core.stop()
+        }
+        #expect(await Self.waitUntil { received.snapshots.last?.state == .running })
+
+        let writer = try FileHandle(forWritingTo: directory.file(relative))
+        defer { try? writer.close() }
+        try writer.seekToEnd()
+        try writer.write(contentsOf: turn("r-1", output: 80))
+        #expect(await Self.waitUntil(timeout: 20) { received.snapshots.last?.today.output == 80 })
+        #expect(received.snapshots.last?.agents.contains { $0.id.hasSuffix("rollout-resumed.jsonl") } == true)
+        // Hot again: the next turn comes through the 1-second fallback.
+        try writer.write(contentsOf: turn("r-2", output: 120))
+        #expect(await Self.waitUntil(timeout: 5) { received.snapshots.last?.today.output == 200 })
     }
 
     @Test func restartsOnlyWhenRootsOrSourcesChange() throws {

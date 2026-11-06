@@ -1,339 +1,377 @@
 #!/usr/bin/env python3
-"""pi session fixtures (METRICS 4.13), used by generate_fixtures.py.
+"""Pi (Pi Coding Agent) session fixtures (METRICS 4.13), used by generate_fixtures.py.
 
   python3 spec/tools/pi_fixtures.py OUT_DIR
 
-OUT_DIR/pi/agent plays the role of `~/.pi/agent`: the root is pi/agent/sessions. Files are laid out exactly as pi
-writes them, including one extension run sub-session under a session's own folder. The returned expectations have the
-shape of spec/fixtures/parser-expected.json (`order`, `files`, `mtimes`) plus `discover` (the session files discovery
-must find), `traces` (phase checkpoints after a given physical line of a file) and `tailReads` (a read that starts at
-a byte offset, which must still take the header from the file start). Expected values are written by hand,
-independently of reference.py.
-
-They are written to their own file (`pi-expected.json`) rather than into the shared `parser-expected.json`, because
-that file is read by both platforms' conformance tests and the macOS reader does not exist yet.
+OUT_DIR/pi plays the role of `~/.pi`: the default root is pi/agent/sessions, and pi/agent/settings.json names the
+custom session folder `~/pi/custom-sessions` (home = OUT_DIR), whose session files lie directly in it. Files are laid
+out as Pi writes them. The returned expectations have the shape of spec/fixtures/parser-expected.json (`order`,
+`files`, `mtimes`) plus `discover` (the session files discovery must find in both roots) and `traces` (phase
+checkpoints after a given physical line of a file). Expected values are written by hand from METRICS 4.7 and 4.13
+and EXECUTION-MODES (Pi), independently of reference.py.
 """
 import json
 import os
 import sys
-from datetime import datetime, timezone
+
+from omp_fixtures import iso, ms, uuid7
 
 DAY = "2026-10-20"
-HOME = "/projects"
+NEXT_DAY = "2026-10-21"
+HOME = "/Users/dev"
+SESSIONS = "pi/agent/sessions"
+CUSTOM = "pi/custom-sessions"
 
-A_ID = "019a0001-6f44-7000-8000-000000000001"
-A_NAME = "2026-10-20T10-10-00-000Z_%s.jsonl" % A_ID
-A_REL = "pi/agent/sessions/-projects-pulsar/%s" % A_NAME
-
-B_ID = "019a0002-6f44-7000-8000-000000000002"
-B_REL = "pi/agent/sessions/-projects-pulsar/2026-10-20T10-20-00-000Z_%s.jsonl" % B_ID
-
-C_ID = "019a0001-6f44-7000-8000-0000000000aa"
-C_REL = "pi/agent/sessions/-projects-pulsar/%s/%s/run-0/session.jsonl" % (A_NAME[:-len(".jsonl")], C_ID)
-
-D_ID = "019a0003-6f44-7000-8000-000000000003"
-D_REL = "pi/agent/sessions/-projects-nova/2026-10-20T09-00-00-000Z_%s.jsonl" % D_ID
-
-MALFORMED = b"{this is not json"
-BAD_UTF8 = b'{"type":"message","id":"\xff\xfe","message":{"role":"user"}}'
+OPUS = ("anthropic-messages", "anthropic", "claude-opus-5-5")
+GPT = ("openai-responses", "openai", "gpt-5.5")
+SONNET = ("anthropic-messages", "anthropic", "claude-sonnet-5-5")
 
 
-def ms(clock, day=DAY):
-    hour, minute, rest = clock.split(":")
-    second, milli = rest.split(".")
-    dt = datetime(int(day[0:4]), int(day[5:7]), int(day[8:10]), int(hour), int(minute), int(second), int(milli) * 1000,
-                  tzinfo=timezone.utc)
-    return int(dt.timestamp() * 1000)
-
-
-def iso(value):
-    dt = datetime.fromtimestamp(value / 1000, tz=timezone.utc)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (value % 1000)
-
-
-def usage(inp, out, cache_read=0, cache_write=0, cache_write_1h=None, reasoning=None):
-    u = {"input": inp, "output": out, "cacheRead": cache_read, "cacheWrite": cache_write,
-         "totalTokens": inp + out + cache_read + cache_write}
+def usage(inp, out, cache_read, cache_write, reasoning=None, cache_write_1h=None):
+    u = {"input": inp, "output": out, "cacheRead": cache_read, "cacheWrite": cache_write}
     if cache_write_1h is not None:
         u["cacheWrite1h"] = cache_write_1h
     if reasoning is not None:
         u["reasoning"] = reasoning
+    u["totalTokens"] = inp + out + cache_read + cache_write
+    u["cost"] = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}
     return u
 
 
 def text(value):
-    return [{"type": "text", "text": value}]
+    return {"type": "text", "text": value}
 
 
-def call(call_id):
-    return [{"type": "toolCall", "id": call_id, "name": "read", "arguments": {}}]
+def thinking(value):
+    return {"type": "thinking", "thinking": value}
+
+
+def tool_call(call_id, name, arguments):
+    return {"type": "toolCall", "id": call_id, "name": name, "arguments": arguments}
+
+
+def bucket(cwd):
+    return "--%s--" % cwd.lstrip("/\\").replace("/", "-").replace("\\", "-").replace(":", "-")
+
+
+def session_name(created, session_id):
+    return "%s_%s.jsonl" % (iso(created).replace(":", "-").replace(".", "-"), session_id)
 
 
 class Session:
-    """The physical lines of one session file."""
+    """The physical lines of one Pi session file. Entry ids are 8 hex characters: a 4-character prefix and a counter."""
 
-    def __init__(self, session_id, created, cwd):
-        self.lines = [{"type": "session", "version": 3, "id": session_id, "timestamp": iso(created), "cwd": cwd}]
+    def __init__(self, prefix):
+        self.prefix, self.lines, self.count, self.last_id = prefix, [], 0, None
 
-    def entry(self, entry_type, entry_id, when, **fields):
-        self.lines.append(dict({"type": entry_type, "id": entry_id, "parentId": None, "timestamp": iso(when)}, **fields))
+    def line(self):
         return len(self.lines)
 
-    def message(self, entry_id, when, message):
-        obj = {"type": "message", "parentId": None, "timestamp": iso(when), "message": message}
-        if entry_id is not None:
-            obj["id"] = entry_id
-        self.lines.append(obj)
-        return len(self.lines)
+    def raw(self, value):
+        self.lines.append(value)
+        return self.line()
 
-    def user(self, entry_id, when, value="go"):
-        return self.message(entry_id, when, {"role": "user", "content": value, "timestamp": when})
+    def header(self, created, session_id, cwd, **extra):
+        return self.raw(dict({"type": "session", "version": 3, "id": session_id, "timestamp": iso(created),
+                              "cwd": cwd}, **extra))
 
-    def assistant(self, entry_id, when, started, stop, usage_obj, duration=None, model="claude-opus-4-5",
-                  content=None):
-        message = {"role": "assistant", "content": content if content is not None else text("done"),
-                   "api": "anthropic-messages", "provider": "anthropic", "model": model,
-                   "timestamp": started, "usage": usage_obj}
-        if stop is not _MISSING:
-            message["stopReason"] = stop
+    def entry(self, entry_type, when, **fields):
+        self.count += 1
+        entry_id = "%s%04x" % (self.prefix, self.count)
+        row = {"type": entry_type, "id": entry_id, "parentId": self.last_id, "timestamp": iso(when)}
+        row.update(fields)
+        self.last_id = entry_id
+        self.lines.append(row)
+        return entry_id
+
+    def copy(self, rows):
+        for row in rows:
+            self.lines.append(row)
+            self.last_id = row["id"]
+
+    def thinking_level(self, when, level):
+        return self.entry("thinking_level_change", when, thinkingLevel=level)
+
+    def model_change(self, when, provider, model):
+        return self.entry("model_change", when, provider=provider, modelId=model)
+
+    def user(self, when, value):
+        return self.entry("message", when, message={"role": "user", "content": [text(value)], "timestamp": when})
+
+    def tool_result(self, when, call_id, name, value, use=None, is_error=False):
+        msg = {"role": "toolResult", "toolCallId": call_id, "toolName": name, "content": [text(value)],
+               "isError": is_error, "timestamp": when}
+        if use is not None:
+            msg["usage"] = use
+        return self.entry("message", when, message=msg)
+
+    def assistant(self, when, route, content, use, stop, started, duration=None, level=None, **extra):
+        api, provider, model = route
+        msg = {"role": "assistant", "content": content}
+        if api is not None:
+            msg["api"] = api
+        msg.update({"provider": provider, "model": model})
+        if level is not None:
+            msg["thinkingLevel"] = level
+        msg.update({"usage": use, "stopReason": stop, "timestamp": started})
         if duration is not None:
-            message["durationMs"] = duration
-        return self.message(entry_id, when, message)
+            msg["durationMs"] = duration
+        msg.update(extra)
+        return self.entry("message", when, message=msg)
 
-    def tool_result(self, entry_id, when, call_id, usage_obj=None):
-        message = {"role": "toolResult", "toolCallId": call_id, "toolName": "read", "content": text("ok"),
-                   "isError": False, "timestamp": when}
-        if usage_obj is not None:
-            message["usage"] = usage_obj
-        return self.message(entry_id, when, message)
+    def side_usage(self, when, kind, route, use):
+        _, provider, model = route
+        return self.entry("usage", when, kind=kind, provider=provider, model=model, usage=use)
 
-    def raw(self, raw_bytes):
-        self.lines.append(raw_bytes)
-        return len(self.lines)
-
-    def encoded(self):
-        out = []
-        for line in self.lines:
-            out.append(line if isinstance(line, bytes) else json.dumps(line, separators=(",", ":")).encode("utf-8"))
-        return b"\n".join(out) + b"\n"
+    def write(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            for row in self.lines:
+                f.write(row if isinstance(row, str) else json.dumps(row, separators=(",", ":"), ensure_ascii=False))
+                f.write("\n")
 
 
-class _Missing:
-    pass
+def resp(key, start, end, inp, cached, cache_write, out, reasoning, model, provider, cache_write_1h=0):
+    return {"key": key, "startMs": start, "endMs": end, "firstMs": None, "input": inp, "cachedInput": cached,
+            "cacheWriteInput": cache_write, "cacheWrite1hInput": cache_write_1h, "output": out,
+            "reasoning": reasoning, "model": model, "provider": provider, "fast": False, "final": True}
 
 
-_MISSING = _Missing()
+def key(entry_id, stamp):
+    return "pi:%s:%d" % (entry_id, stamp)
 
 
-def resp(entry_id, stamp, start, end, inp, cached, cache_write, out, reasoning, model, provider="anthropic"):
-    return {"key": "pi:%s:%d" % (entry_id, stamp), "startMs": start, "endMs": end, "input": inp, "cachedInput": cached,
-            "cacheWriteInput": cache_write, "cacheWrite1hInput": 0, "output": out, "reasoning": reasoning,
-            "model": model, "provider": provider, "fast": False, "final": True}
+def effort(mode, evidence):
+    return {"mode": mode, "evidence": evidence}
 
 
 def write_fixtures(out_dir):
-    def path_of(rel):
-        return os.path.join(out_dir, rel.replace("/", os.sep))
+    def p(rel):
+        full = os.path.join(out_dir, *rel.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        return full
 
-    for rel in (A_REL, B_REL, C_REL, D_REL):
-        os.makedirs(os.path.dirname(path_of(rel)), exist_ok=True)
+    files, traces, mtimes = {}, [], {}
 
-    mtimes = {}
-    ordered = []
-    traces = []
+    def trace(rel, line, phase, in_flight=None):
+        traces.append(dict(file=rel, afterLine=line, phase=phase, inFlightStartMs=in_flight))
 
-    def writer(rel, mtime):
-        mtimes[rel] = mtime
-        return path_of(rel)
+    with open(p("pi/agent/settings.json"), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps({"defaultProvider": "anthropic", "sessionDir": "~/pi/custom-sessions"}, indent=2) + "\n")
 
-    def write(rel, session, mtime):
-        with open(writer(rel, mtime), "wb") as fh:
-            fh.write(session.encoded())
-        ordered.append(rel)
+    # ---- Pi 1.x: durationMs, thinkingLevel, cacheWrite1h, side usage of every kind.
+    halo = HOME + "/projects/halo"
+    halo_created = ms("12:00:00.000")
+    halo_id = uuid7(halo_created, 31)
+    halo_name = session_name(halo_created, halo_id)
+    halo_rel = "%s/%s/%s" % (SESSIONS, bucket(halo), halo_name)
+    s = Session("a1f0")
+    s.header(halo_created, halo_id, halo)                                                           # 1
+    s.thinking_level(ms("12:00:00.010"), "medium")                                                   # 2
+    s.model_change(ms("12:00:00.011"), "anthropic", "claude-opus-5-5")                               # 3
+    s.user(ms("12:00:05.000"), "Split the queue from the dispatcher")                                # 4
+    a1 = s.assistant(ms("12:00:11.300"), OPUS, [thinking("Find the queue"),
+                                                tool_call("toolu_h1", "read", {"path": "src/queue.ts"}),
+                                                tool_call("toolu_h2", "grep", {"pattern": "dispatch("})],
+                     usage(3, 420, 0, 18000, reasoning=150, cache_write_1h=18000), "toolUse",
+                     ms("12:00:05.006"), duration=6200.618, level="high")                            # 5
+    s.tool_result(ms("12:00:11.900"), "toolu_h1", "read", "export class Queue {}")                   # 6
+    t2 = s.tool_result(ms("12:00:12.400"), "toolu_h2", "grep", "src/run.ts:41",
+                       use=usage(900, 40, 0, 0))                                                     # 7 tool usage
+    a2 = s.assistant(ms("12:00:16.520"), OPUS, [text("Queue moved to src/queue.ts.")],
+                     usage(5, 260, 18000, 600), "stop", ms("12:00:12.405"), duration=4100, level="high")  # 8
+    w1 = s.side_usage(ms("12:00:20.000"), "cache_warm", OPUS, usage(0, 1, 18600, 0))                 # 9
+    s.thinking_level(ms("12:00:30.000"), "xhigh")                                                    # 10
+    c1 = s.entry("compaction", ms("12:01:00.000"), summary="Queue split done.", firstKeptEntryId=a2,
+                 tokensBefore=19000, usage=usage(12000, 800, 0, 0))                                  # 11
+    s.entry("branch_summary", ms("12:01:05.000"), fromId=a1, summary="Explored grep first.",
+            usage=usage(0, 0, 0, 0))                                                                 # 12 zero usage
+    s.user(ms("12:02:00.000"), "Wait for the long-running review")                                   # 13
+    d1 = s.assistant(ms("12:02:00.520"), OPUS, [], usage(10, 0, 18600, 0), "deferred", ms("12:02:00.006"),
+                     duration=500, level="xhigh")                                                    # 14 deferred
+    s.user(ms("12:03:00.000"), "Run the tests")                                                      # 15
+    s.assistant(ms("12:03:01.200"), OPUS, [], usage(0, 0, 0, 0), "error", ms("12:03:00.006"), duration=1190,
+                errorMessage="overloaded_error")                                                     # 16 error, zero
+    s.user(ms("12:03:10.000"), "Run the tests, please")                                              # 17
+    halo_lines = list(s.lines)
+    s.write(p(halo_rel))
+    files[halo_rel] = dict(
+        source="pi", project="halo", model="claude-opus-5-5", isSubagent=False, parentFile=None,
+        phase="generating", inFlightStartMs=ms("12:03:10.000"), lastLineMs=ms("12:03:10.000"), malformedLines=0,
+        responses=[
+            resp(key(a1, ms("12:00:05.006")), ms("12:00:05.006"), ms("12:00:11.206"), 18003, 0, 18000, 420, 150,
+                 "claude-opus-5-5", "anthropic", cache_write_1h=18000),
+            resp(key(t2, ms("12:00:12.400")), None, ms("12:00:12.400"), 900, 0, 0, 40, 0, None, None),
+            resp(key(a2, ms("12:00:12.405")), ms("12:00:12.405"), ms("12:00:16.505"), 18605, 18000, 600, 260, 0,
+                 "claude-opus-5-5", "anthropic"),
+            resp(key(w1, ms("12:00:20.000")), None, ms("12:00:20.000"), 18600, 18600, 0, 1, 0,
+                 "claude-opus-5-5", "anthropic"),
+            resp(key(c1, ms("12:01:00.000")), None, ms("12:01:00.000"), 12000, 0, 0, 800, 0, None, None),
+            resp(key(d1, ms("12:02:00.006")), None, ms("12:02:00.506"), 18610, 18600, 0, 0, 0,
+                 "claude-opus-5-5", "anthropic"),
+        ],
+        effort=effort("xhigh", "recorded"), speed=None,
+        responseModes={
+            key(a1, ms("12:00:05.006")): {"effort": effort("high", "recorded"), "speed": None},
+            key(t2, ms("12:00:12.400")): {"effort": None, "speed": None},
+            key(a2, ms("12:00:12.405")): {"effort": effort("high", "recorded"), "speed": None},
+            key(w1, ms("12:00:20.000")): {"effort": None, "speed": None},
+            key(c1, ms("12:01:00.000")): {"effort": None, "speed": None},
+            key(d1, ms("12:02:00.006")): {"effort": effort("xhigh", "recorded"), "speed": None},
+        })
+    trace(halo_rel, 2, "idle")
+    trace(halo_rel, 4, "generating", ms("12:00:05.000"))
+    trace(halo_rel, 5, "tools")
+    trace(halo_rel, 6, "tools")
+    trace(halo_rel, 7, "generating", ms("12:00:12.400"))
+    trace(halo_rel, 8, "idle")
+    trace(halo_rel, 13, "generating", ms("12:02:00.000"))
+    trace(halo_rel, 14, "idle")
+    trace(halo_rel, 15, "generating", ms("12:03:00.000"))
+    trace(halo_rel, 16, "idle")
+    trace(halo_rel, 17, "generating", ms("12:03:10.000"))
+    mtimes[halo_rel] = ms("12:00:01.000", NEXT_DAY)
 
-    def put(rel, content, mtime):
-        os.makedirs(os.path.dirname(path_of(rel)) or ".", exist_ok=True)
-        with open(writer(rel, mtime), "wb") as fh:
-            fh.write(content)
+    # ---- A package's sub-agent: <stem>/<name>.jsonl next to the session file <stem>.jsonl.
+    sub_rel = halo_rel[:-len(".jsonl")] + "/reviewer.jsonl"
+    sub_created = ms("12:02:00.100")
+    s = Session("b2e1")
+    s.header(sub_created, uuid7(sub_created, 32), halo)                                             # 1
+    s.user(ms("12:02:00.200"), "Review src/queue.ts")                                                # 2
+    r1 = s.assistant(ms("12:02:09.300"), SONNET, [text("Looks good; one nit.")], usage(2400, 310, 0, 0),
+                     "stop", ms("12:02:00.206"), duration=9090.9)                                    # 3
+    s.write(p(sub_rel))
+    files[sub_rel] = dict(
+        source="pi", project="halo", model="claude-sonnet-5-5", isSubagent=True, parentFile=halo_rel,
+        phase="idle", inFlightStartMs=None, lastLineMs=ms("12:02:09.300"), malformedLines=0,
+        responses=[resp(key(r1, ms("12:02:00.206")), ms("12:02:00.206"), ms("12:02:09.296"), 2400, 0, 0, 310, 0,
+                        "claude-sonnet-5-5", "anthropic")],
+        effort=None, speed=None,
+        responseModes={key(r1, ms("12:02:00.206")): {"effort": None, "speed": None}})
+    mtimes[sub_rel] = ms("12:00:02.000", NEXT_DAY)
 
-    def trace(rel, after_line, phase, in_flight):
-        traces.append(dict(file=rel, afterLine=after_line, phase=phase, inFlightStartMs=in_flight))
+    # ---- pi-ai before 0.99: no durationMs and no thinkingLevel; a guard failure, an id-less entry, a bad line.
+    ember = HOME + "/projects/ember"
+    ember_created = ms("12:10:00.000")
+    ember_rel = "%s/%s/%s" % (SESSIONS, bucket(ember), session_name(ember_created, uuid7(ember_created, 33)))
+    s = Session("c3d2")
+    s.header(ember_created, uuid7(ember_created, 33), ember)                                         # 1
+    s.thinking_level(ms("12:10:00.010"), "low")                                                      # 2
+    s.user(ms("12:10:02.000"), "Rename Orbit to Trajectory")                                         # 3
+    e1 = s.assistant(ms("12:10:08.400"), GPT, [tool_call("call_e1", "edit", {"path": "src/orbit.ts"})],
+                     usage(5200, 900, 0, 0, reasoning=300), "toolUse", ms("12:10:02.005"))           # 4
+    s.tool_result(ms("12:10:08.430"), "call_e1", "edit", "ok")                                       # 5
+    e2 = s.assistant(ms("12:10:11.560"), GPT, [text("Renamed in 14 files.")], usage(300, 410, 5100, 0),
+                     "stop", ms("12:10:08.436"))                                                     # 6
+    s.assistant(ms("12:10:20.000"), (None, "openai", "gpt-5.5"), [text("no api")], usage(50, 5, 0, 0),
+                "stop", ms("12:10:19.000"))                                                          # 7 guard: skip
+    s.raw({"type": "message", "parentId": s.last_id, "timestamp": iso(ms("12:10:30.000")),
+           "message": {"role": "user", "content": "No id", "timestamp": ms("12:10:30.000")}})       # 8 no id
+    s.raw('{"type":"message","id":"c3d2ffff","timestamp":')                                         # 9 malformed
+    s.write(p(ember_rel))
+    files[ember_rel] = dict(
+        source="pi", project="ember", model="gpt-5.5", isSubagent=False, parentFile=None,
+        phase="idle", inFlightStartMs=None, lastLineMs=ms("12:10:20.000"), malformedLines=1,
+        responses=[
+            resp(key(e1, ms("12:10:02.005")), ms("12:10:02.005"), ms("12:10:08.400"), 5200, 0, 0, 900, 300,
+                 "gpt-5.5", "openai"),
+            resp(key(e2, ms("12:10:08.436")), ms("12:10:08.436"), ms("12:10:11.560"), 5400, 5100, 0, 410, 0,
+                 "gpt-5.5", "openai"),
+        ],
+        effort=effort("low", "selected"), speed=None,
+        responseModes={
+            key(e1, ms("12:10:02.005")): {"effort": effort("low", "selected"), "speed": None},
+            key(e2, ms("12:10:08.436")): {"effort": effort("low", "selected"), "speed": None},
+        })
+    trace(ember_rel, 3, "generating", ms("12:10:02.000"))
+    trace(ember_rel, 4, "tools")
+    trace(ember_rel, 5, "generating", ms("12:10:08.430"))
+    trace(ember_rel, 6, "idle")
+    trace(ember_rel, 7, "idle")
+    mtimes[ember_rel] = ms("12:00:03.000", NEXT_DAY)
 
-    # ---- Session A: one measured response of every shape, side usages and ignored entries.
-    a = Session(A_ID, ms("10:10:00.000"), HOME + "/pulsar")
-    a.entry("model_change", "a1ac0001", ms("10:10:00.100"), provider="anthropic", modelId="claude-opus-4-5")
-    a.entry("thinking_level_change", "a1ac0002", ms("10:10:00.200"), thinkingLevel="max")
-    line = a.user("a1aa0001", ms("10:10:10.000"))
-    trace(A_REL, line, "generating", ms("10:10:10.000"))
+    # ---- /fork of halo: a fresh header, the copied entries keep their ids and timestamps (copied history).
+    fork_created = ms("12:20:00.000")
+    fork_rel = "%s/%s/%s" % (SESSIONS, bucket(halo), session_name(fork_created, uuid7(fork_created, 34)))
+    s = Session("d4c3")
+    s.header(fork_created, uuid7(fork_created, 34), halo,
+             parentSession="%s/.pi/agent/sessions/%s/%s" % (HOME, bucket(halo), halo_name))              # 1
+    s.copy([row for row in halo_lines[1:8]])                                                         # 2-8 copies
+    s.user(ms("12:20:05.000"), "Now add a test for the queue")                                       # 9
+    f1 = s.assistant(ms("12:20:09.000"), OPUS, [text("Added test/queue.test.ts.")], usage(4, 330, 18600, 0),
+                     "stop", ms("12:20:05.006"), duration=3990, level="medium")                      # 10
+    s.write(p(fork_rel))
+    files[fork_rel] = dict(
+        source="pi", project="halo", model="claude-opus-5-5", isSubagent=False, parentFile=None,
+        phase="idle", inFlightStartMs=None, lastLineMs=ms("12:20:09.000"), malformedLines=0,
+        responses=[resp(key(f1, ms("12:20:05.006")), ms("12:20:05.006"), ms("12:20:08.996"), 18604, 18600, 0, 330,
+                        0, "claude-opus-5-5", "anthropic")],
+        effort=effort("medium", "recorded"), speed=None,
+        responseModes={key(f1, ms("12:20:05.006")): {"effort": effort("medium", "recorded"), "speed": None}})
+    trace(fork_rel, 8, "idle")
+    trace(fork_rel, 9, "generating", ms("12:20:05.000"))
+    mtimes[fork_rel] = ms("12:00:04.000", NEXT_DAY)
 
-    # The measured shape: message.timestamp is the request start, durationMs the stream's own duration.
-    line = a.assistant("a1ab0001", ms("10:10:20.000"), ms("10:10:10.500"), "toolUse",
-                       usage(1000, 200, 100, 50, reasoning=30), duration=9500, content=call("call-1"))
-    trace(A_REL, line, "tools", None)
+    # ---- The custom session folder of settings.json: session files directly in it, and a sub-agent folder.
+    flat = HOME + "/projects/flat"
+    flat_created = ms("12:30:00.000")
+    flat_name = session_name(flat_created, uuid7(flat_created, 35))
+    flat_rel = "%s/%s" % (CUSTOM, flat_name)
+    s = Session("e5b4")
+    s.header(flat_created, uuid7(flat_created, 35), flat)                                            # 1
+    s.user(ms("12:30:02.000"), "Summarize the README")                                               # 2
+    g1 = s.assistant(ms("12:30:04.100"), GPT, [text("It explains the build.")], usage(1200, 140, 0, 0),
+                     "stop", ms("12:30:02.006"), duration=2090.2, level="minimal")                   # 3
+    s.write(p(flat_rel))
+    files[flat_rel] = dict(
+        source="pi", project="flat", model="gpt-5.5", isSubagent=False, parentFile=None,
+        phase="idle", inFlightStartMs=None, lastLineMs=ms("12:30:04.100"), malformedLines=0,
+        responses=[resp(key(g1, ms("12:30:02.006")), ms("12:30:02.006"), ms("12:30:04.096"), 1200, 0, 0, 140, 0,
+                        "gpt-5.5", "openai")],
+        effort=effort("minimal", "recorded"), speed=None,
+        responseModes={key(g1, ms("12:30:02.006")): {"effort": effort("minimal", "recorded"), "speed": None}})
+    trace(flat_rel, 2, "generating", ms("12:30:02.000"))
+    mtimes[flat_rel] = ms("12:00:05.000", NEXT_DAY)
 
-    # The tool result answers the last pending call: the next request is in flight.
-    line = a.tool_result("a1ac0003", ms("10:10:21.000"), "call-1")
-    trace(A_REL, line, "generating", ms("10:10:21.000"))
-
-    line = a.assistant("a1ab0002", ms("10:10:30.000"), ms("10:10:21.500"), "stop", usage(1200, 300), duration=8500)
-    trace(A_REL, line, "idle", None)
-
-    # No durationMs: the entry timestamp ends the response.
-    a.assistant("a1ab0003", ms("10:10:40.000"), ms("10:10:35.000"), "stop", usage(1300, 150))
-    # Error and aborted keep their totals and count no interval.
-    a.assistant("a1ab0004", ms("10:10:50.000"), ms("10:10:45.000"), "error", usage(1400, 10), duration=5000)
-    a.assistant("a1ab0005", ms("10:11:00.000"), ms("10:10:55.000"), "aborted", usage(1450, 5), duration=5000)
-    # `length` completes normally, and a durationMs of 0 ends at the start.
-    a.assistant("a1ab0006", ms("10:11:10.000"), ms("10:11:05.000"), "length", usage(1500, 400), duration=0)
-    # A missing and a non-string stopReason count as aborted.
-    a.assistant("a1ab0007", ms("10:11:20.000"), ms("10:11:15.000"), _MISSING, usage(1600, 20), duration=5000)
-    a.assistant("a1ab0008", ms("10:11:30.000"), ms("10:11:25.000"), 7, usage(1650, 25), duration=5000)
-    # All four counters at 0: no response at all.
-    a.assistant("a1ab0009", ms("10:11:40.000"), ms("10:11:35.000"), "stop", usage(0, 0), duration=5000)
-
-    # Side usages: totals only. The `usage` entry names its own model; compaction and branch summaries do not.
-    a.entry("usage", "a1ad0001", ms("10:11:50.000"), kind="cache_warm", provider="anthropic",
-            model="claude-haiku-4-5", usage=usage(5000, 0))
-    a.entry("compaction", "a1ad0002", ms("10:12:00.000"), summary="…", firstKeptEntryId="a1aa0001", tokensBefore=50000,
-            usage=usage(2000, 300))
-    a.entry("branch_summary", "a1ad0003", ms("10:12:10.000"),
-            **{"fromId": "a1aa0001", "summary": "branch", "usage": usage(3000, 200)})
-    # A tool result with its own usage is nested model work a tool performed.
-    a.tool_result("a1ac0004", ms("10:12:20.000"), "call-2", usage_obj=usage(700, 50))
-
-    # Entries that never affect measurement.
-    a.entry("custom", "a1ae0001", ms("10:12:30.000"), customType="pi.virtual-model-state", data={"count": 1})
-    a.entry("custom_message", "a1ae0002", ms("10:12:40.000"), customType="notes", content="remember", display=True)
-    a.entry("label", "a1ae0003", ms("10:12:50.000"), targetId="a1aa0001", label="checkpoint")
-    a.entry("session_info", "a1ae0004", ms("10:13:00.000"), name="Nightly refactor")
-    a.entry("context_edit", "a1ae0005", ms("10:13:10.000"), targetId="a1aa0001", replacement=None)
-    # Two malformed lines: one is not JSON at all, the other is invalid UTF-8.
-    a.raw(MALFORMED)
-    a.raw(BAD_UTF8)
-    # An entry without an id: the empty string takes its place in the key.
-    a.assistant(None, ms("10:13:30.000"), ms("10:13:25.000"), "stop", usage(1700, 90), duration=5000)
-    line = a.user("a1aa0002", ms("10:14:00.000"))
-    trace(A_REL, line, "generating", ms("10:14:00.000"))
-    write(A_REL, a, ms("10:14:00.000"))
-
-    # ---- Session B: a /clone. Its header is fresh; copied entries keep their ids and message timestamps.
-    b = Session(B_ID, ms("10:20:00.000"), HOME + "/pulsar")
-    # Copied verbatim: far older than the header minus 2 s, so the copy cutoff skips it.
-    b.assistant("a1ab0001", ms("10:10:20.000"), ms("10:10:10.500"), "toolUse", usage(1000, 200, 100, 50, reasoning=30),
-                duration=9500, content=call("call-1"))
-    # Copied with a rewritten entry timestamp inside the cutoff window: the key is already owned by A (METRICS 3.4).
-    b.assistant("a1ab0002", ms("10:19:59.500"), ms("10:10:21.500"), "stop", usage(1200, 300), duration=8500)
-    b.assistant("b2ab0001", ms("10:20:10.000"), ms("10:20:05.000"), "stop", usage(2000, 120), duration=5000)
-    write(B_REL, b, ms("10:20:10.000"))
-
-    # ---- Session C: an extension run sub-session below A's folder; it attaches to A and counts on its own.
-    c = Session(C_ID, ms("10:30:00.000"), HOME + "/pulsar")
-    line = c.entry("session_info", "c3ae0001", ms("10:30:00.100"), name="subagent-scout-019a0001-1")
-    trace(C_REL, line, "idle", None)
-    line = c.user("c3aa0001", ms("10:30:05.000"))
-    trace(C_REL, line, "generating", ms("10:30:05.000"))
-    line = c.assistant("c3ab0001", ms("10:30:15.000"), ms("10:30:05.500"), "stop", usage(900, 250), duration=9500)
-    trace(C_REL, line, "idle", None)
-    write(C_REL, c, ms("10:30:15.000"))
-
-    # ---- Session D: a second project bucket, older than the rest.
-    d = Session(D_ID, ms("09:00:00.000"), HOME + "/nova")
-    d.user("d4aa0001", ms("09:00:05.000"))
-    d.assistant("d4ab0001", ms("09:00:15.000"), ms("09:00:05.500"), "stop", usage(800, 120), duration=9500)
-    write(D_REL, d, ms("09:00:15.000"))
+    helper_rel = flat_rel[:-len(".jsonl")] + "/helper.jsonl"
+    helper_created = ms("12:30:03.000")
+    s = Session("f6a5")
+    s.header(helper_created, uuid7(helper_created, 36), flat)                                        # 1
+    s.user(ms("12:30:03.100"), "List the headings")                                                  # 2
+    s.write(p(helper_rel))
+    files[helper_rel] = dict(
+        source="pi", project="flat", model=None, isSubagent=True, parentFile=flat_rel,
+        phase="generating", inFlightStartMs=ms("12:30:03.100"), lastLineMs=ms("12:30:03.100"), malformedLines=0,
+        responses=[], effort=None, speed=None, responseModes={})
+    mtimes[helper_rel] = ms("12:00:06.000", NEXT_DAY)
 
     # ---- Discovery decoys: none of these is a session file.
-    head = json.dumps(a.lines[0], separators=(",", ":")).encode("utf-8") + b"\n"
-    put("pi/agent/sessions/stray.jsonl", head, ms("10:40:00.000"))
-    put("pi/agent/sessions/-projects-pulsar/ollama.json", b"{}\n", ms("10:40:01.000"))
-    put("pi/agent/sessions/-projects-pulsar/notes/draft.jsonl", head, ms("10:40:02.000"))
-    put("pi/agent/sessions/.hidden/session.jsonl", head, ms("10:40:03.000"))
-    put("pi/agent/sessions/-projects-pulsar/%s.jsonl.bak" % A_NAME[:-len(".jsonl")], head, ms("10:40:04.000"))
+    head = json.dumps(halo_lines[0], separators=(",", ":")) + "\n"
+    decoys = {
+        "%s/%s/.%s.tmp.jsonl" % (SESSIONS, bucket(halo), halo_name[:-len(".jsonl")]): head,
+        "%s/.trash/%s" % (SESSIONS, halo_name): head,
+        "%s/%s/notes.md" % (SESSIONS, bucket(halo)): "# notes\n",
+        "%s/%s.bak" % (CUSTOM, flat_name): head,
+        "pi/agent/auth.jsonl.example": head,
+    }
+    for rel, content in decoys.items():
+        with open(p(rel), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
 
-    # ---- A read of session D that starts after its two first lines: the header must still be probed. The offset is
-    # the newline that ends line 2, so reading begins on line 3.
-    d_lines = [json.dumps(line, separators=(",", ":")).encode("utf-8") + b"\n" for line in d.lines]
-    tail_reads = [dict(file=D_REL, offset=len(d_lines[0]) + len(d_lines[1]) - 1, project="nova", phase="idle",
-                       inFlightStartMs=None, lastLineMs=ms("09:00:15.000"),
-                       responseKeys=["pi:d4ab0001:%d" % ms("09:00:05.500")])]
-
-    order = sorted(ordered, key=lambda rel: (mtimes[rel], rel))
-    result = {
-        "_comment": "pi: the folder `pi/agent` plays `~/.pi/agent`, so the only automatic root is pi/agent/sessions. "
-                    "Session A carries one measured response of every shape (durationMs, entry-timestamp fallback, "
-                    "error, aborted, a missing and a non-string stopReason, a zero-usage placeholder, a durationMs of "
-                    "0), three side usages that count in totals only plus a tool result with usage, entries that never "
-                    "affect measurement, one entry without an id and two malformed lines. Session B is a clone: the "
-                    "copied entry older than the header minus 2 s is skipped by the copy cutoff, the copied entry "
-                    "inside that window is deduplicated by key, and only B's own response counts. Session C is an "
-                    "extension run sub-session; it attaches to A (`parentFile`) and counts as its own agent. "
-                    "`tailReads` start reading at byte `offset` (after two lines), so the header must still be read "
-                    "first. This file is separate from parser-expected.json because only the Windows tests read it "
-                    "until the macOS reader exists (METRICS 4.13).",
+    order = sorted(mtimes, key=lambda rel: (mtimes[rel], rel))
+    for rel in order:
+        os.utime(p(rel), (mtimes[rel] / 1000, mtimes[rel] / 1000))
+    return {
+        "_comment": "Pi roots: %s and the custom session folder %s named by pi/agent/settings.json (sessionDir "
+                    "~/pi/custom-sessions with the fixture folder as home). The fork copies halo's entries 2-8 with "
+                    "their original timestamps under a fresh header (copied history, METRICS 4.7)."
+                    % (SESSIONS, CUSTOM),
         "order": order,
         "mtimes": mtimes,
-        "discover": sorted([A_REL, B_REL, C_REL, D_REL]),
-        "files": {
-            A_REL: dict(
-                source="pi", project="pulsar", model="claude-opus-4-5", isSubagent=False, parentFile=None,
-                phase="generating", inFlightStartMs=ms("10:14:00.000"), lastLineMs=ms("10:14:00.000"),
-                malformedLines=2,
-                responses=[
-                    resp("a1ab0001", ms("10:10:10.500"), ms("10:10:10.500"), ms("10:10:20.000"), 1150, 100, 50, 200, 30,
-                         "claude-opus-4-5"),
-                    resp("a1ab0002", ms("10:10:21.500"), ms("10:10:21.500"), ms("10:10:30.000"), 1200, 0, 0, 300, 0,
-                         "claude-opus-4-5"),
-                    resp("a1ab0003", ms("10:10:35.000"), ms("10:10:35.000"), ms("10:10:40.000"), 1300, 0, 0, 150, 0,
-                         "claude-opus-4-5"),
-                    resp("a1ab0004", ms("10:10:45.000"), None, ms("10:10:50.000"), 1400, 0, 0, 10, 0, "claude-opus-4-5"),
-                    resp("a1ab0005", ms("10:10:55.000"), None, ms("10:11:00.000"), 1450, 0, 0, 5, 0, "claude-opus-4-5"),
-                    resp("a1ab0006", ms("10:11:05.000"), ms("10:11:05.000"), ms("10:11:05.000"), 1500, 0, 0, 400, 0,
-                         "claude-opus-4-5"),
-                    resp("a1ab0007", ms("10:11:15.000"), None, ms("10:11:20.000"), 1600, 0, 0, 20, 0, "claude-opus-4-5"),
-                    resp("a1ab0008", ms("10:11:25.000"), None, ms("10:11:30.000"), 1650, 0, 0, 25, 0, "claude-opus-4-5"),
-                    resp("a1ad0001", ms("10:11:50.000"), None, ms("10:11:50.000"), 5000, 0, 0, 0, 0,
-                         "claude-haiku-4-5"),
-                    resp("a1ad0002", ms("10:12:00.000"), None, ms("10:12:00.000"), 2000, 0, 0, 300, 0,
-                         "claude-opus-4-5", provider=None),
-                    resp("a1ad0003", ms("10:12:10.000"), None, ms("10:12:10.000"), 3000, 0, 0, 200, 0,
-                         "claude-opus-4-5", provider=None),
-                    resp("a1ac0004", ms("10:12:20.000"), None, ms("10:12:20.000"), 700, 0, 0, 50, 0, "claude-opus-4-5",
-                         provider=None),
-                    resp("", ms("10:13:25.000"), ms("10:13:25.000"), ms("10:13:30.000"), 1700, 0, 0, 90, 0,
-                         "claude-opus-4-5"),
-                ]),
-            B_REL: dict(
-                source="pi", project="pulsar", model="claude-opus-4-5", isSubagent=False, parentFile=None,
-                phase="idle", inFlightStartMs=None, lastLineMs=ms("10:20:10.000"), malformedLines=0,
-                responses=[
-                    resp("b2ab0001", ms("10:20:05.000"), ms("10:20:05.000"), ms("10:20:10.000"), 2000, 0, 0, 120, 0,
-                         "claude-opus-4-5"),
-                ]),
-            C_REL: dict(
-                source="pi", project="pulsar", model="claude-opus-4-5", isSubagent=True, parentFile=A_REL,
-                phase="idle", inFlightStartMs=None, lastLineMs=ms("10:30:15.000"), malformedLines=0,
-                responses=[
-                    resp("c3ab0001", ms("10:30:05.500"), ms("10:30:05.500"), ms("10:30:15.000"), 900, 0, 0, 250, 0,
-                         "claude-opus-4-5"),
-                ]),
-            D_REL: dict(
-                source="pi", project="nova", model="claude-opus-4-5", isSubagent=False, parentFile=None,
-                phase="idle", inFlightStartMs=None, lastLineMs=ms("09:00:15.000"), malformedLines=0,
-                responses=[
-                    resp("d4ab0001", ms("09:00:05.500"), ms("09:00:05.500"), ms("09:00:15.000"), 800, 0, 0, 120, 0,
-                         "claude-opus-4-5"),
-                ]),
-        },
+        "discover": sorted(files),
+        "files": {rel: files[rel] for rel in order},
         "traces": traces,
-        "tailReads": tail_reads,
     }
-
-    for rel, when in mtimes.items():
-        os.utime(path_of(rel), (when / 1000, when / 1000))
-    with open(os.path.join(out_dir, "pi-expected.json"), "w", encoding="utf-8") as fh:
-        json.dump(result, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    return result
 
 
 def main():

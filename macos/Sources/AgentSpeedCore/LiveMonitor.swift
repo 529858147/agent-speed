@@ -11,6 +11,10 @@ public final class LiveMonitor {
     private let store: SpeedStore
     private var core: MonitorCore?
     private var mailbox: SnapshotMailbox?
+    /// The stored performance history (METRICS 6.11), kept across restarts: the score card's baselines.
+    public private(set) var perfHistory: [PerfDayRecord] = []
+    /// Live reporting's watch epoch (METRICS 11.10), kept across restarts.
+    public private(set) var reportWatch: Int?
 
     public init(store: SpeedStore, configuration: MonitorConfiguration = MonitorConfiguration(), pricing: PriceBook? = nil) {
         self.store = store
@@ -30,6 +34,22 @@ public final class LiveMonitor {
         self.mailbox = mailbox
         self.core = core
         core.start()
+        if !perfHistory.isEmpty { core.setPerfHistory(perfHistory) }
+        if reportWatch != nil { core.setReportWatch(reportWatch) }
+    }
+
+    /// Live reporting's watch (METRICS 11.10 *Watch*): completions read from now on count in `epoch`; nil turns it
+    /// off.
+    public func setReportWatch(_ epoch: Int?) {
+        guard epoch != reportWatch else { return }
+        reportWatch = epoch
+        core?.setReportWatch(epoch)
+    }
+
+    /// The history store's performance records, as it last saved them (METRICS 6.11 *Baseline*).
+    public func setPerfHistory(_ records: [PerfDayRecord]) {
+        perfHistory = records
+        core?.setPerfHistory(records)
     }
 
     public func stop() {
@@ -66,6 +86,30 @@ public final class LiveMonitor {
     public nonisolated static var defaultZcodeRoot: URL { TranscriptLocations.defaultZcodeRoot }
     public nonisolated static var defaultKimiRoot: URL { TranscriptLocations.defaultKimiRoot }
     public nonisolated static var defaultGrokBuildRoot: URL { TranscriptLocations.defaultGrokBuildRoot }
+
+    /// Pi's automatic roots: `<agent dir>/sessions`, then Pi's own custom session folder when one is set (a configured
+    /// root replaces all of them).
+    public nonisolated static var defaultPiRoots: [URL] { TranscriptLocations.defaultPiRoots }
+
+    /// OpenClaw's automatic roots: `$OPENCLAW_STATE_DIR`, else `~/.openclaw` and every `~/.openclaw-<profile>` folder
+    /// (a configured folder or database replaces all of them).
+    public nonisolated static var defaultOpenclawRoots: [URL] { TranscriptLocations.defaultOpenclawRoots }
+
+    /// The Hermes Agent home: `$HERMES_HOME` (the home of the profile it names), else `~/.hermes` (a configured home or
+    /// log folder replaces it).
+    public nonisolated static var defaultHermesHome: URL { TranscriptLocations.defaultHermesHome }
+
+    /// Factory Droid's sessions folder, `~/.factory/sessions` (a configured folder replaces it).
+    public nonisolated static var defaultDroidRoot: URL { TranscriptLocations.defaultDroidRoot }
+
+    /// The sessions folder a configured Factory Droid folder names: its `sessions` folder when it has one (a `.factory`
+    /// folder), else the folder itself (METRICS 4.16).
+    public nonisolated static func droidSessionsFolder(_ url: URL) -> URL { DroidPaths.sessionsFolder(url) }
+
+    /// The agent databases a configured OpenClaw folder or file names (empty when it names none).
+    public nonisolated static func openclawDatabases(in url: URL) -> [String] {
+        OpenClawHome.databases(in: TranscriptDiscovery.normalizedRoot(url.path))
+    }
 
     public nonisolated static var defaultDshRoot: URL {
         TranscriptLocations.defaultDshRoot

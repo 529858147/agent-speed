@@ -48,6 +48,7 @@ internal abstract class WholeFileTailer : TranscriptTailer
         _read = (length, writeUtc);
         Offset = 0;
         Lines.Clear();
+        Lines.Position = 0;
         var bytes = ReadWhole(handle, length, sink, cancellationToken);
         Offset = length;
         TotalBytesRead += bytes;

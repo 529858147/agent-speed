@@ -1,3 +1,4 @@
+using AgentSpeed.Core;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Orb.Names;
 using AgentSpeed.Presentation.Settings;
@@ -28,8 +29,11 @@ internal static class MenuParts
         new(label) { Submenu = new MenuLevel([.. entries]), IsEnabled = enabled };
 
     /// <summary>The dots of an orb's sources in source order; null for an all-sources orb.</summary>
-    public static MenuIcon? DotsOf(OrbDefinition orb, SourceAvailability sources) =>
-        orb.Sources.Set is { } set ? new MenuIcon.Dots([.. set.Select(k => new SourceDot(k, sources.Available.Contains(k)))]) : null;
+    public static MenuIcon? DotsOf(OrbDefinition orb, SourceAvailability sources) => DotsOf(orb.Sources, sources);
+
+    /// <summary>The dots of an orb's or a board's sources in source order; null for all sources.</summary>
+    public static MenuIcon? DotsOf(OrbSources tracked, SourceAvailability sources) =>
+        tracked.Set is { } set ? new MenuIcon.Dots([.. set.Select(k => new SourceDot(k, sources.Available.Contains(k)))]) : null;
 
     /// <summary><c>menu.size</c> ▸ small / medium / large for one orb.</summary>
     public static MenuRow SizeMenu(OrbDefinition orb, Localizer localizer, bool enabled = true)
@@ -53,6 +57,40 @@ internal static class MenuParts
     {
         var on = NamePlateRules.IsOn(orb, settings);
         return Toggle(localizer["orbs.showName"], on, new MenuAction.SetOrbShowName(orb.Id, !on), orb.Size >= NamePlateRules.MinSize);
+    }
+
+    /// <summary>
+    /// <c>orbs.sources</c> ▸ <c>orbs.sources.all</c>, a separator, then every source in source order with its dot and a
+    /// check when tracked (an orb's or a board's). Unavailable sources say why and stay selectable; the last tracked
+    /// source cannot be unchecked.
+    /// </summary>
+    public static MenuRow SourcesMenu(OrbSources tracked, MenuAction all, Func<SourceKind, MenuAction> toggle, SourceAvailability sources,
+        Localizer localizer)
+    {
+        var rows = new List<MenuEntry>
+        {
+            Toggle(localizer["orbs.sources.all"], tracked.TracksAll, all),
+            MenuSeparator.Instance,
+        };
+        foreach (var kind in Enum.GetValues<SourceKind>())
+        {
+            var on = !tracked.TracksAll && tracked.Known.Contains(kind);
+            var locked = on && tracked.Unchecking(kind) is null;
+            var state = sources.StateOf(kind);
+            rows.Add(Toggle(OrbNaming.SourceName(kind, localizer), on, toggle(kind), !locked) with
+            {
+                Icon = new MenuIcon.Dots([new SourceDot(kind, state == SourceState.Available)]),
+                Detail = state switch
+                {
+                    SourceState.Disabled => localizer["source.disabled"],
+                    SourceState.NotFound => localizer["source.notFound"],
+                    _ => null,
+                },
+                ToolTip = locked ? localizer["orbs.sources.lastOne"] : null,
+            });
+        }
+
+        return Submenu(localizer["orbs.sources"], rows);
     }
 
     /// <summary><c>menu.effects</c> ▸ Off / Soft / Standard / Max (global).</summary>

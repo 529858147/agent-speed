@@ -9,7 +9,8 @@ final class TrackedFile {
     let fileID: FileID
     var reader: TranscriptReader
     var parser: TranscriptParser
-    /// For an Antigravity database, the `.db` with its `-wal` folded in (`FileStat.databaseStat`).
+    /// For an Antigravity database, the `.db` with its `-wal` folded in (`FileStat.databaseStat`); for a Factory Droid
+    /// session, the transcript with its sidecar's modification time (`DroidPaths.stat`).
     var lastStat: FileStat
     /// A whole-file read of this file runs off the session queue (METRICS 5.3).
     var wholeReadInFlight = false
@@ -19,6 +20,8 @@ final class TrackedFile {
     var lastReadNs: UInt64 = 0
     /// The database changed while a read was throttled; read it once the interval has passed.
     var isDirty = false
+    /// Some read of the file completed (seeded or live).
+    var wasRead = false
 
     init(
         path: String,
@@ -34,7 +37,7 @@ final class TrackedFile {
         self.root = root
         self.fileID = fileID
         lastStat = stat
-        reader = TranscriptReader(path: path, start: start, maxLineBytes: maxLineBytes, readsHeaderFirst: family == .omp)
+        reader = TranscriptReader(path: path, start: start, maxLineBytes: maxLineBytes, readsHeaderFirst: family == .omp || family == .pi)
         parser = TranscriptParser(family: family, agentId: path, fileID: fileID, root: root)
     }
 
@@ -43,7 +46,9 @@ final class TrackedFile {
         parser = TranscriptParser(family: family, agentId: path, fileID: fileID, root: root)
     }
 
+    /// A Factory Droid session also changes when its sidecar does, whatever its modification time (METRICS 4.16).
     func hasChanged(comparedTo stat: FileStat) -> Bool {
         stat.size != lastStat.size || stat.modifiedNs != lastStat.modifiedNs || stat.identity != lastStat.identity
+            || parser.sidecarHasChanged
     }
 }

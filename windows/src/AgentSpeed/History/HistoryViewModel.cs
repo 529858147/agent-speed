@@ -3,6 +3,8 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.Unpriced;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
@@ -66,7 +68,14 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
     private string _breakdownTitle = string.Empty;
     private string _chartName = string.Empty;
     private bool _showsSpeedKey = true;
-    private IReadOnlyList<UnpricedModelView> _unpricedModels = [];
+    private readonly Func<PriceTable> _currentTable;
+    private readonly UnpricedApp _app;
+    private UnpricedView _unpriced = UnpricedView.Empty;
+    private (PriceTable Table, SourceSet Excluded) _unpricedBasis = (PriceBook.Bundled, default);
+    private IReadOnlyList<UnpricedGroupItem> _unpricedGroups = [];
+    private string _unpricedCount = string.Empty;
+    private string _unpricedPricedNow = string.Empty;
+    private bool _hasUnpriced;
     private string _unpricedText = string.Empty;
     private string _rateNote = string.Empty;
     private (string Currency, decimal Rate, long RateDate, SourceSet Marked, string Language) _costKey;
@@ -80,10 +89,15 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
     /// <param name="traffic">Observed traffic by day (METRICS 10.9); null: the window has no traffic.</param>
     /// <param name="includeTools">The include-tools setting (DESIGN 10), read at every recomputation.</param>
     /// <param name="enabledSources">The sources turned on in Settings → Data Sources; others show no traffic (DESIGN 10).</param>
+    /// <param name="currentTable">The current price table, which gives unpriced requests their reasons (METRICS 9.10).</param>
+    /// <param name="appVersion">This build's version, for the copied diagnostics.</param>
     public HistoryViewModel(HistoryHub hub, Localizer loc, CostDisplay cost, Dispatcher dispatcher, Action<bool>? includeChanged = null,
-        Core.Traffic.TrafficHub? traffic = null, Func<bool>? includeTools = null, Func<SourceSet>? enabledSources = null)
+        Core.Traffic.TrafficHub? traffic = null, Func<bool>? includeTools = null, Func<SourceSet>? enabledSources = null,
+        Func<PriceTable>? currentTable = null, string? appVersion = null)
     {
         _hub = hub;
+        _currentTable = currentTable ?? (() => PriceBook.Bundled);
+        _app = UnpricedApp.Windows(appVersion ?? "0.0.0");
         _loc = loc;
         _cost = cost;
         _includeChanged = includeChanged;
@@ -227,20 +241,29 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Models of the range without a known price, most unpriced requests first.</summary>
-    public IReadOnlyList<UnpricedModelView> UnpricedModels
+    /// <summary>The unknown-prices popover's groups (DESIGN 9): sources with requests that still have a reason.</summary>
+    public IReadOnlyList<UnpricedGroupItem> UnpricedGroups { get => _unpricedGroups; private set => Set(ref _unpricedGroups, value); }
+
+    /// <summary>The popover header's count: Σ unpriced requests of the view.</summary>
+    public string UnpricedCount { get => _unpricedCount; private set => Set(ref _unpricedCount, value); }
+
+    /// <summary><c>history.unpricedModels.pricedNow</c> when the current table prices some of them, else empty.</summary>
+    public string UnpricedPricedNow
     {
-        get => _unpricedModels;
+        get => _unpricedPricedNow;
         private set
         {
-            if (Set(ref _unpricedModels, value))
+            if (Set(ref _unpricedPricedNow, value))
             {
-                OnPropertyChanged(nameof(HasUnpriced));
+                OnPropertyChanged(nameof(HasUnpricedPricedNow));
             }
         }
     }
 
-    public bool HasUnpriced => _unpricedModels.Count > 0;
+    public bool HasUnpricedPricedNow => _unpricedPricedNow.Length > 0;
+
+    /// <summary>The range has requests without a known price (METRICS 9.10 Σ <c>unpriced</c> of the view).</summary>
+    public bool HasUnpriced { get => _hasUnpriced; private set => Set(ref _hasUnpriced, value); }
 
     /// <summary><c>1,234 筆請求的模型價格未知，未計入費用</c>.</summary>
     public string UnpricedText { get => _unpricedText; private set => Set(ref _unpricedText, value); }
@@ -382,6 +405,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
     public void Relocalize(Localizer loc)
     {
         _loc = loc;
+        RelocalizePerformance();
         Recompute(HistoryUpdate.Text);
     }
 
@@ -447,6 +471,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         _clock.Stop();
         _messageTimer.Stop();
         _liveDay.Stop();
+        DisposePerformance();
     }
 
     private void OnHubChanged(object? sender, EventArgs e)
@@ -527,6 +552,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         ShowsSpeedKey = !Range.IsSingleDay && _metric == HistoryChartMetric.Output;
         ChartName = _loc[HistoryChartMetrics.TitleKey(_metric)];
         UpdateBreakdown(DayBreakdown.For(usage, Range, _source, _metric, excluded, TrafficAt(Range.Start)), rebuild: kind == HistoryUpdate.Filter);
+        UpdateModes(rebuild: false);
 
         var sparkBrush = _source is { } one ? HeatPalette.SourceColor(one).ToBrush() : null;
         var sparkDays = Range.IsSingleDay ? HistoryAggregator.Daily(usage, _source, HistoryRanges.SparkRange(Range), excluded) : null;
@@ -541,7 +567,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
                 accessible);
         }
 
-        UpdateUnpriced(HistoryAggregator.UnpricedModels(usage, _source, Range, excluded));
+        UpdateUnpriced(usage, excluded);
         RateNote = _cost.HistoryNote ?? string.Empty;
 
         Legend = Bars.Order.Count == 0 && _source is { } empty
@@ -549,6 +575,7 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
             : Bars.Order.Select(s => new LegendItem(_loc[DisplayText.SourceKey(s)], HeatPalette.SourceColor(s).ToBrush())).ToArray();
         UpdateSources(usage);
         UpdateState();
+        UpdatePerformance();
         UpdateLiveDayTimer();
         if (!_clock.IsEnabled)
         {
@@ -601,26 +628,33 @@ internal sealed partial class HistoryViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>The footer's unknown-price notice and its list (models without a name gathered as other models).</summary>
-    private void UpdateUnpriced(IReadOnlyList<UnpricedModel> models)
+    /// <summary>
+    /// The copied diagnostics (METRICS 9.10 <i>Text</i>) of the popover's view: the same range, source, subscription
+    /// choice and table. Model ids and counts only; path-like values are redacted.
+    /// </summary>
+    public string UnpricedDiagnostics() =>
+        UnpricedPopover.CopyText(_unpriced, _app, _unpricedBasis.Table, _rangeKind, Range, _source, _unpricedBasis.Excluded);
+
+    /// <summary>
+    /// The footer's unknown-price notice and its popover (DESIGN 9): every stored day of the range, today included, read
+    /// with the reasons of the current table, so requests a newer table prices move to <c>pricedNow</c>.
+    /// </summary>
+    private void UpdateUnpriced(IReadOnlyList<DailyUsage> usage, SourceSet excluded)
     {
-        var requests = models.Sum(m => m.Requests);
-        UnpricedText = requests > 0 ? _loc.Format("history.unpricedNotice", requests) : string.Empty;
-        var label = _loc["history.table.requests"];
-        var views = models
-            .Select(m =>
-            {
-                var name = string.IsNullOrEmpty(m.Model) ? _loc["win.history.breakdown.otherModels"] : m.Model;
-                var count = HistoryText.FullNumber(m.Requests, _loc);
-                var source = _loc[DisplayText.SourceKey(m.Source)];
-                var accessible = HistoryText.JoinParts([name, source, HistoryText.Labelled(label, count, _loc)], _loc);
-                return new UnpricedModelView(name, count, m.Source, source, accessible);
-            })
-            .ToArray();
-        if (!views.SequenceEqual(_unpricedModels))
+        var table = _currentTable();
+        _unpriced = UnpricedPopover.ViewOf(usage, Range, _source, excluded, table);
+        _unpricedBasis = (table, excluded);
+        var popover = UnpricedPopover.Build(_unpriced, _loc);
+        UnpricedText = _unpriced.Unpriced > 0 ? _loc.Format("history.unpricedNotice", _unpriced.Unpriced) : string.Empty;
+        UnpricedCount = popover.Count;
+        UnpricedPricedNow = popover.PricedNow;
+        var groups = popover.Groups.Select((g, i) => new UnpricedGroupItem(g, i == 0)).ToArray();
+        if (!groups.SequenceEqual(_unpricedGroups, UnpricedGroupComparer.Instance))
         {
-            UnpricedModels = views;
+            UnpricedGroups = groups;
         }
+
+        HasUnpriced = _unpriced.Unpriced > 0;
     }
 
     /// <summary>

@@ -24,8 +24,12 @@ struct StatusItemLayout: Equatable {
     let height: CGFloat
     /// The money block's width (gap included); 0 without it.
     var secondaryWidth: CGFloat = 0
-    /// The traffic block's width (gap included); 0 without it.
+    /// The network block's width (gap included); 0 without it.
     var trafficWidth: CGFloat = 0
+    /// The intelligence block's width (gap included), after the network block; 0 without it.
+    var intelligenceWidth: CGFloat = 0
+    /// Both readout blocks (DESIGN 10): fixed widths, so the item never changes width with their values.
+    var readoutWidth: CGFloat { trafficWidth + intelligenceWidth }
 
     init(mode: BarDisplayMode, showsUnit: Bool, unit: String, valueWidth: CGFloat, height: CGFloat) {
         showsGlyph = mode.showsGlyph
@@ -66,14 +70,17 @@ struct StatusItemLayout: Equatable {
         if showsGlyph && showsValue { width += Self.glyphGap }
         if showsValue { width += valueWidth }
         if unit != nil { width += Self.unitGap + unitWidth }
-        return width + secondaryWidth + trafficWidth
+        return width + secondaryWidth + readoutWidth
     }
 
     /// Left edge of the money block (its gap starts here).
-    var secondaryX: CGFloat { length - Self.padding - trafficWidth - secondaryWidth }
+    var secondaryX: CGFloat { length - Self.padding - readoutWidth - secondaryWidth }
 
-    /// Left edge of the traffic block (its gap starts here).
-    var trafficX: CGFloat { length - Self.padding - trafficWidth }
+    /// Left edge of the readout blocks (the network block's gap starts here).
+    var readoutX: CGFloat { length - Self.padding - readoutWidth }
+
+    /// Left edge of the intelligence block (its gap starts here), after the network block.
+    var intelligenceX: CGFloat { length - Self.padding - intelligenceWidth }
 
     /// Ring center, optically centered on the digits (their cap height) next to it, or on the bar alone.
     var glyphCenter: CGPoint {

@@ -4,14 +4,20 @@ using System.Windows;
 using System.Windows.Media;
 using AgentSpeed.Controls;
 using AgentSpeed.Core;
+using AgentSpeed.Core.Intelligence;
+using AgentSpeed.Core.Perf;
+using AgentSpeed.Modes;
 using AgentSpeed.Presentation.Colors;
 using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Heat;
 using AgentSpeed.Presentation.Layout;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Modes;
 using AgentSpeed.Presentation.Settings;
+using AgentSpeed.Presentation.Perf;
 using AgentSpeed.Presentation.Titles;
+using AgentSpeed.Perf;
 using AgentSpeed.Theme;
 
 namespace AgentSpeed.Dashboard;
@@ -76,10 +82,11 @@ internal sealed class SourceRow : ObservableObject
     public bool IsListed { get => _isListed; set => Set(ref _isListed, value); }
 }
 
-internal sealed class AgentRow : ObservableObject
+internal sealed class AgentRow : ObservableObject, IPerfCardRow
 {
     private string _project = string.Empty;
     private string _detail = string.Empty;
+    private string _detailSuffix = string.Empty;
     private AgentPhase _phase = AgentPhase.Idle;
     private Color _color = Colors.Gray;
     private string _liveText = string.Empty;
@@ -93,6 +100,9 @@ internal sealed class AgentRow : ObservableObject
 
     public string Detail { get => _detail; set => Set(ref _detail, value); }
 
+    /// <summary>The agent's traffic today (<c> · ↓ 2.10 MB</c>, DESIGN 10): it stays whole while the detail truncates.</summary>
+    public string DetailSuffix { get => _detailSuffix; set => Set(ref _detailSuffix, value); }
+
     public AgentPhase Phase { get => _phase; set => Set(ref _phase, value); }
 
     public Color Color { get => _color; set => Set(ref _color, value); }
@@ -105,6 +115,29 @@ internal sealed class AgentRow : ObservableObject
     /// <summary>The speed with its unit, or the phase name when no number is shown.</summary>
     public string LiveAccessibleName { get => _liveAccessibleName; set => Set(ref _liveAccessibleName, value); }
 
+    /// <summary>The agent's 性能 in compact form, or <c>–</c> (DESIGN 4, 性能 column; DESIGN 12).</summary>
+    public string IntelligenceText { get => _intelligenceText; set => Set(ref _intelligenceText, value); }
+
+    public PerfForm IntelligenceForm { get => _intelligenceForm; set => Set(ref _intelligenceForm, value); }
+
+    /// <summary>The shown score, which plans the cell's motion; null for none.</summary>
+    public int? IntelligenceShown { get => _intelligenceShown; set => Set(ref _intelligenceShown, value); }
+
+    /// <summary>A score from 3 to 9 timed requests: the cell draws the provisional mark.</summary>
+    public bool IntelligenceProvisional { get => _intelligenceProvisional; set => Set(ref _intelligenceProvisional, value); }
+
+    /// <summary><c>a11y.agent.intel</c> with the score words; empty without a score.</summary>
+    public string IntelligenceAccessibleName { get => _intelligenceAccessibleName; set => Set(ref _intelligenceAccessibleName, value); }
+
+    /// <summary>The agent the row shows now (rows are reused as agents re-sort).</summary>
+    public object CardKey { get => _cardKey; set => Set(ref _cardKey, value); }
+
+    /// <summary>The row's score card (DESIGN 12): its tooltip, with the row's former tooltip lines as its facts.</summary>
+    public PerfCard? Card { get => _card; set => Set(ref _card, value); }
+
+    /// <summary>The card's text, the row's help text for screen readers (DESIGN 12, <i>Accessibility</i>).</summary>
+    public string CardDescription { get => _cardDescription; set => Set(ref _cardDescription, value); }
+
     /// <summary>Left margin for the row's depth in the agent tree.</summary>
     public Thickness Indent { get => _indent; set => Set(ref _indent, value); }
 
@@ -112,10 +145,22 @@ internal sealed class AgentRow : ObservableObject
 
     public string AccessibleName { get => _accessibleName; set => Set(ref _accessibleName, value); }
 
-    /// <summary><c>traffic.agent.tooltip</c> while the agent has attributed traffic today (DESIGN 10); null otherwise.</summary>
-    public string? TrafficTooltip { get => _trafficTooltip; set => Set(ref _trafficTooltip, value); }
+    /// <summary>The agent's effort and speed (DESIGN 4, Agents).</summary>
+    public EffortCapsule Capsule { get => _capsule; set => Set(ref _capsule, value); }
 
-    private string? _trafficTooltip;
+    /// <summary>The agent goes in circles (METRICS 6.10): the row shows the looping mark.</summary>
+    public bool IsLooping { get => _isLooping; set => Set(ref _isLooping, value); }
+
+    private EffortCapsule _capsule = new(null, null);
+    private bool _isLooping;
+    private string _intelligenceText = AgentIntelligenceCell.Dash;
+    private int? _intelligenceShown;
+    private bool _intelligenceProvisional;
+    private object _cardKey = string.Empty;
+    private PerfCard? _card;
+    private string _cardDescription = string.Empty;
+    private PerfForm _intelligenceForm = PerfForm.None;
+    private string _intelligenceAccessibleName = string.Empty;
 }
 
 /// <summary>One source of today's cost in the ⓘ popup: colour dot, name, amount and a thin share bar.</summary>
@@ -126,6 +171,12 @@ internal sealed partial class DashboardViewModel : ObservableObject
 {
     /// <summary>Fixed agent row height, so the scrolling viewport is exactly a whole number of rows.</summary>
     public const double AgentRowHeight = 40;
+
+    /// <summary>An agent row's width (the panel's 368 DIP less its padding) and its fixed parts (DashboardWindow.xaml).</summary>
+    private const double AgentRowWidth = 328;
+    private const double PhaseBadgeWidth = 30;
+    private const double LiveValueWidth = 56;
+    private const double NameGap = 8;
 
     private string _valueText = "0";
     private string _unitText = "tok/s";
@@ -266,6 +317,32 @@ internal sealed partial class DashboardViewModel : ObservableObject
 
     public bool ReduceMotion { get => _reduceMotion; set => Set(ref _reduceMotion, value); }
 
+    /// <summary>Transparency effects are on: the score card uses the flyout fill (off: a solid one).</summary>
+    public bool TransparencyEnabled { get; set; } = true;
+
+    /// <summary>The agent rows changed (every refresh): an open score card takes its row's new content.</summary>
+    public event EventHandler? AgentsUpdated;
+
+    /// <summary>The intelligence column's fixed width for the language (DESIGN 4, Intelligence column).</summary>
+    public double IntelligenceWidth { get => _intelligenceWidth; private set => Set(ref _intelligenceWidth, value); }
+
+    /// <summary>
+    /// The name block's room in a row at <paramref name="indent"/> without a capsule column: the badge, the intelligence
+    /// cell and its gap, and the live value come off.
+    /// </summary>
+    public static double NameRoom(double indent, double intelligenceWidth) =>
+        AgentRowWidth - indent - PhaseBadgeWidth - AgentIntelligenceColumn.Footprint(intelligenceWidth) - LiveValueWidth - NameGap;
+
+    /// <summary>The agents' shared capsule column (DESIGN 4, Agents).</summary>
+    public EffortCapsuleColumn CapsuleColumn { get => _capsuleColumn; private set => Set(ref _capsuleColumn, value); }
+
+    public CapsuleAppearance CapsuleAppearance { get => _capsuleAppearance; set => Set(ref _capsuleAppearance, value); }
+
+    public string LanguageCode { get => _languageCode; private set => Set(ref _languageCode, value); }
+
+    /// <summary>What a configured capsule says after its word (DESIGN 4, Configured capsule).</summary>
+    public string ConfiguredMark { get => _configuredMark; private set => Set(ref _configuredMark, value); }
+
     public string HeroAccessibleName { get => _heroAccessibleName; private set => Set(ref _heroAccessibleName, value); }
 
     /// <summary>The General title theme the hero's title reads in (DESIGN 1, Where the theme applies).</summary>
@@ -277,6 +354,11 @@ internal sealed partial class DashboardViewModel : ObservableObject
     /// <summary>Title changes slide (motion allowed); otherwise they keep the stagger as a fade.</summary>
     public bool TitleSlides { get => _titleSlides; set => Set(ref _titleSlides, value); }
 
+    private EffortCapsuleColumn _capsuleColumn;
+    private double _intelligenceWidth = 24;
+    private CapsuleAppearance _capsuleAppearance;
+    private string _configuredMark = string.Empty;
+    private string _languageCode = LanguageCodes.ZhHant;
     private int _titleLevel;
     private bool _titleSlides = true;
     private bool _heroIsMoney;
@@ -530,22 +612,42 @@ internal sealed partial class DashboardViewModel : ObservableObject
             row.Project = string.IsNullOrWhiteSpace(agent.Project) ? source : agent.Project;
             var detail = string.IsNullOrWhiteSpace(agent.Model) ? source : $"{source} · {agent.Model}";
             detail = agent.IsSubagent ? $"{loc["agents.subagent"]} · {detail}" : detail;
-            detail += " · " + ExecutionModeText.Summary(agent.Modes, loc);
+            var looping = WorkText.Looping(agent.Work, loc);
+            row.IsLooping = looping is not null;
+
+            // The row's former tooltip lines are its score card's facts: effort and speed, a top rung's detail, traffic.
+            var facts = new List<string>();
+            var capsule = EffortCapsule.Of(agent);
+            row.Capsule = capsule;
+            if (capsule.IsKnown)
+            {
+                facts.AddRange(capsule.TooltipLines(loc));
+            }
+
             if (AgentTraffic(agent.Id) is { } traffic)
             {
-                // DESIGN 10: the agent's attributed download today ends its secondary line; the tooltip has both directions.
+                // DESIGN 10: the agent's attributed download today ends its secondary line; the card's facts have both directions.
                 var text = new TrafficText(loc, _trafficBits);
-                row.Detail = $"{detail} · ↓ {Core.Traffic.TrafficFormat.Total(traffic.Rx)}";
-                row.TrafficTooltip = loc.Format("traffic.agent.tooltip", text.Pair(traffic));
+                row.Detail = detail;
+                row.DetailSuffix = $" · ↓ {Core.Traffic.TrafficFormat.Total(traffic.Rx)}";
+                facts.Add(loc.Format("traffic.agent.tooltip", text.Pair(traffic)));
             }
             else
             {
                 row.Detail = detail;
-                row.TrafficTooltip = null;
+                row.DetailSuffix = string.Empty;
             }
 
-            var modeDetail = ExecutionModeText.Detail(agent.Modes, loc);
-            row.TrafficTooltip = row.TrafficTooltip is { } trafficTip ? modeDetail + Environment.NewLine + trafficTip : modeDetail;
+            var intelligence = AgentIntelligenceCell.Of(agent, loc);
+            row.IntelligenceText = intelligence.Text;
+            row.IntelligenceForm = intelligence.Form;
+            row.IntelligenceShown = intelligence.Shown;
+            row.IntelligenceProvisional = intelligence.Provisional;
+            row.IntelligenceAccessibleName = intelligence.Spoken;
+            row.CardKey = agent.Id;
+            var card = PerfCard.Build(PerfCardSubject.Of(agent, facts), loc);
+            row.Card = card;
+            row.CardDescription = card.Description;
 
             row.Phase = agent.Phase;
             row.Color = HeatPalette.SourceColor(agent.Source).ToColor();
@@ -565,10 +667,21 @@ internal sealed partial class DashboardViewModel : ObservableObject
 
             row.Indent = new Thickness(rows[i].Indent * TreeConnectors.LevelWidth, 0, 0, 0);
             row.Guides = rows[i].Guides;
-            row.AccessibleName = row.LiveKind == LiveValueKind.Number
-                ? string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}, {phase}, {row.LiveAccessibleName}")
-                : string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}, {phase}");
+            var accessible = row.LiveKind == LiveValueKind.Number
+                ? string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}{row.DetailSuffix}, {phase}, {row.LiveAccessibleName}")
+                : string.Create(CultureInfo.InvariantCulture, $"{row.Project}, {row.Detail}{row.DetailSuffix}, {phase}");
+            accessible = intelligence.Spoken.Length > 0 ? $"{accessible}, {intelligence.Spoken}" : accessible;
+            accessible = capsule.IsKnown ? $"{accessible}, {capsule.AccessibilityText(loc)}" : accessible;
+            row.AccessibleName = looping is null ? accessible : $"{accessible}, {looping}";
         }
+
+        IntelligenceWidth = IntelligenceColumnMeasure.Width(loc.LanguageCode, loc["intel.glyph"]);
+        var deepest = rows.Count == 0 ? 0 : rows.Max(r => r.Indent);
+        var nameRoom = NameRoom(deepest * TreeConnectors.LevelWidth, IntelligenceWidth);
+        ConfiguredMark = loc["mode.configured.mark"];
+        CapsuleColumn = EffortCapsuleColumn.For(Agents.Select(r => r.Capsule), nameRoom, CapsuleWordMeasure.For(loc.LanguageCode),
+            CapsuleWordMeasure.Mark(ConfiguredMark, loc.LanguageCode));
+        LanguageCode = loc.LanguageCode;
 
         HasAgents = rows.Count > 0;
         CanToggleAgents = list.CanExpand;
@@ -578,5 +691,6 @@ internal sealed partial class DashboardViewModel : ObservableObject
         AgentsViewportHeight = list.ViewportHeightFor(showAll, AgentRowHeight);
         CollapsedAgentsHeight = list.ViewportHeightFor(expanded: false, AgentRowHeight);
         AgentsScroll = showAll && list.ExpandedScrolls;
+        AgentsUpdated?.Invoke(this, EventArgs.Empty);
     }
 }

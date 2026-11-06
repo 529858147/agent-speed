@@ -13,7 +13,7 @@ final class NeedleStyle: OrbStyleRenderer {
         title: .fixed(0.338), titleSize: 0.062, titleMaxWidth: 0.46, infoScale: 0.85, infoMaxWidth: 0.42,
         dots: 0.405, pillCenter: -0.175
     )
-    /// While the traffic readout is on and fits, the unit leaves the hub for the dial face (DESIGN 10): the hub draws
+    /// While the two-line readout is on and fits, the unit leaves the hub for the dial face (DESIGN 10): the hub draws
     /// no unit, and the layout names the dial position so the unit's click target follows it.
     private static let dialUnitBaseline: CGFloat = -0.254
     private static let dialUnitSize: CGFloat = 0.046
@@ -30,8 +30,8 @@ final class NeedleStyle: OrbStyleRenderer {
     }()
 
     var readoutLayout: OrbReadoutLayout { unitOnDial ? Self.dialUnitLayout : Self.hubLayout }
-    let trafficPlacement = OrbTrafficPlacement.needle
-    /// The unit is printed on the dial face (traffic readout on and fitting at this size).
+    let linePlacement = OrbLinePlacement.needle
+    /// The unit is printed on the dial face (two-line readout on and fitting at this size).
     private(set) var unitOnDial = false
 
     private static let redDark = RGBColor(hex: 0xF43F5E)
@@ -59,8 +59,9 @@ final class NeedleStyle: OrbStyleRenderer {
     // MARK: Simulation
 
     func step(_ frame: OrbFrame) {
-        unitOnDial = frame.content.trafficEnabled && frame.content.showsReadout && !frame.content.valueOnly
-            && !frame.content.isThumbnail && OrbTrafficMetrics.fits(trafficPlacement, diameter: frame.s, bits: frame.content.traffic?.bits ?? false)
+        let content = frame.content
+        unitOnDial = content.showsReadout && !content.valueOnly && !content.isThumbnail
+            && content.lines.map { OrbLineMetrics.fits(linePlacement, diameter: frame.s, format: $0.format, language: content.language) } == true
         let dt = frame.dt
         let level = frame.effects.level
         let active = !frame.isIdle && !frame.unavailable
@@ -447,13 +448,13 @@ final class NeedleStyle: OrbStyleRenderer {
     }
 
     /// The readout sits in the hub below the value, away from the new-peak pill, so it stays during a celebration.
-    func buildTraffic(into scene: inout OrbScene, _ frame: OrbFrame, traffic: OrbTrafficReadout) {
-        traffic.add(into: &scene, frame, placement: trafficPlacement,
+    func buildLines(into scene: inout OrbScene, _ frame: OrbFrame, lines: OrbLineReadout) {
+        lines.add(into: &scene, frame, placement: linePlacement,
                     palette: .standard(dark: frame.dark, increaseContrast: frame.content.increaseContrast), yieldsToPill: false)
     }
 
     /// The unit as the legend of a real tachometer (DESIGN 10): on the dial face above the hub, under the graduations
-    /// and the needle, in the secondary token at 75 %; it stays while the traffic readout is quiet.
+    /// and the needle, in the secondary token at 75 %; it stays while the two-line readout is quiet.
     private func addDialUnit(_ scene: inout OrbScene, _ frame: OrbFrame) {
         let s = frame.s
         let tracking = 0.4 * frame.unit

@@ -39,19 +39,24 @@ internal static class TaskbarLocator
         return new TaskbarGeometry(taskbar, trayWindow, bar, tray, dpi, bar.Height > bar.Width);
     }
 
-    /// <summary>Widget rectangle in screen coordinates.</summary>
-    public static RECT? WidgetRect(TaskbarGeometry geometry, int length)
+    /// <summary>Widget rectangle in screen coordinates, <paramref name="offset"/> physical pixels from the default spot.</summary>
+    public static RECT? WidgetRect(TaskbarGeometry geometry, int length, double offset)
     {
-        var bar = ToRect(geometry.TaskbarRect);
-        var tray = geometry.TrayRect.IsEmpty ? EstimatedTray(geometry) : ToRect(geometry.TrayRect);
-        var gap = Math.Round(4 * geometry.Scale);
-        var rect = PlacementMath.TaskbarWidget(bar, tray, length, gap, geometry.Vertical);
+        var (bar, tray, gap) = Layout(geometry);
+        var rect = PlacementMath.TaskbarWidget(bar, tray, length, gap, geometry.Vertical, offset);
         if (rect is not { } r)
         {
             return null;
         }
 
         return new RECT((int)r.X, (int)r.Y, (int)r.Right, (int)r.Bottom);
+    }
+
+    /// <summary>The offset (physical pixels) the widget takes on this taskbar for a requested one; null without room.</summary>
+    public static double? WidgetOffset(TaskbarGeometry geometry, int length, double offset)
+    {
+        var (bar, tray, gap) = Layout(geometry);
+        return PlacementMath.TaskbarWidgetOffset(bar, tray, length, gap, geometry.Vertical, offset);
     }
 
     /// <summary>True when the taskbar is slid off-screen (auto-hide) on its monitor.</summary>
@@ -114,6 +119,11 @@ internal static class TaskbarLocator
     }
 
     private static RectD ToRect(RECT r) => new(r.Left, r.Top, r.Width, r.Height);
+
+    private static (RectD Bar, RectD Tray, double Gap) Layout(TaskbarGeometry geometry) => (
+        ToRect(geometry.TaskbarRect),
+        geometry.TrayRect.IsEmpty ? EstimatedTray(geometry) : ToRect(geometry.TrayRect),
+        Math.Round(TaskbarPosition.Gap * geometry.Scale));
 
     /// <summary>Without a notification area window, leave room for a typical clock and tray icons.</summary>
     private static RectD EstimatedTray(TaskbarGeometry geometry)

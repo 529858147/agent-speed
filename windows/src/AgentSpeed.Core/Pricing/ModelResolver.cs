@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
+using AgentSpeed.Core.Unpriced;
 
 namespace AgentSpeed.Core.Pricing;
 
@@ -29,6 +30,9 @@ public readonly record struct ModelResolution(ResolutionKind Kind, int Index = -
 public sealed class ModelResolver
 {
     private const int CacheLimit = 4096;
+
+    /// <summary>Factory Droid's ids of the user's own models: <c>custom:&lt;name&gt;-&lt;n&gt;</c> (METRICS 4.16).</summary>
+    private const string CustomPrefix = "custom:";
 
     private readonly PriceNormalization _normalize;
     private readonly Dictionary<string, int> _byKey = new(StringComparer.Ordinal);
@@ -91,16 +95,45 @@ public sealed class ModelResolver
         provider is not null && Contains(_normalize.FreeProviders, Lower(Strip(provider)))
         && !(model is not null && EndsWithAny(Lower(Strip(model)), _normalize.CloudSuffixes));
 
-    private ModelResolution Compute(string? model, string? provider)
+    /// <summary>
+    /// Why a response with these facts has no price under this table (METRICS 9.10), or null when it is priced or free:
+    /// <c>Index.diagnose</c> of <c>spec/tools/prices.py</c>.
+    /// </summary>
+    public UnpricedDiagnosis? Diagnose(string? model, string? provider, bool fast)
+    {
+        var outcome = Walk(model, provider);
+        var resolution = outcome.Resolution;
+        return resolution.Kind switch
+        {
+            ResolutionKind.Free => null,
+            ResolutionKind.Priced => (resolution.Fast || fast) && !_hasFast[resolution.Index]
+                ? new UnpricedDiagnosis(UnpricedReason.NoFastPrice, outcome.Key)
+                : null,
+            _ => outcome.Miss switch
+            {
+                Miss.NoModel => new UnpricedDiagnosis(UnpricedReason.NoModel),
+                Miss.NotInTable => new UnpricedDiagnosis(UnpricedReason.NotInTable, ExactKey(model!) is { Length: > 0 } key ? key : null),
+                Miss.NoFastPrice => new UnpricedDiagnosis(UnpricedReason.NoFastPrice, outcome.Key),
+                _ => new UnpricedDiagnosis(UnpricedReason.Unpriceable, outcome.Key, outcome.Rule),
+            },
+        };
+    }
+
+    /// <summary>The <c>exact</c> step key of METRICS 9.2: brackets removed, whitespace collapsed, trimmed, lowercased.</summary>
+    internal static string ExactKey(string model) => Lower(Strip(CollapseWhitespace(RemoveBrackets(model))));
+
+    private ModelResolution Compute(string? model, string? provider) => Walk(model, provider).Resolution;
+
+    private Outcome Walk(string? model, string? provider)
     {
         if (IsLocalProvider(model, provider))
         {
-            return ModelResolution.Free();
+            return new Outcome(ModelResolution.Free());
         }
 
         if (model is null || Strip(model).Length == 0)
         {
-            return ModelResolution.UnknownBecause("no model");
+            return new Outcome(ModelResolution.UnknownBecause("no model"), Miss: Miss.NoModel);
         }
 
         var seen = new HashSet<(string, bool)>();
@@ -108,7 +141,7 @@ public sealed class ModelResolver
         {
             if (key is null)
             {
-                return ModelResolution.Free();
+                return new Outcome(ModelResolution.Free());
             }
 
             if (key.Length == 0 || !seen.Add((key, fast)))
@@ -122,36 +155,36 @@ public sealed class ModelResolver
             }
         }
 
-        return ModelResolution.UnknownBecause("not in table");
+        return new Outcome(ModelResolution.UnknownBecause("not in table"), Miss: Miss.NotInTable);
     }
 
-    private ModelResolution? Lookup(string key, bool fast)
+    private Outcome? Lookup(string key, bool fast)
     {
         if (_byKey.TryGetValue(key, out var index))
         {
             if (_free[index])
             {
-                return ModelResolution.Free(index);
+                return new Outcome(ModelResolution.Free(index), key);
             }
 
             if (fast && !_hasFast[index])
             {
-                return ModelResolution.UnknownBecause("no fast-mode price");
+                return new Outcome(ModelResolution.UnknownBecause("no fast-mode price"), key, Miss.NoFastPrice);
             }
 
-            return new ModelResolution(ResolutionKind.Priced, index, fast);
+            return new Outcome(new ModelResolution(ResolutionKind.Priced, index, fast), key);
         }
 
         if (_unknownExact.TryGetValue(key, out var reason))
         {
-            return ModelResolution.UnknownBecause(reason);
+            return new Outcome(ModelResolution.UnknownBecause(reason), key, Miss.Rule, reason);
         }
 
         foreach (var (prefix, prefixReason) in _unknownPrefixes)
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
-                return ModelResolution.UnknownBecause(prefixReason);
+                return new Outcome(ModelResolution.UnknownBecause(prefixReason), key, Miss.Rule, prefixReason);
             }
         }
 
@@ -162,8 +195,14 @@ public sealed class ModelResolver
     internal IEnumerable<(string Step, string? Key, bool Fast)> Candidates(string model)
     {
         var n = _normalize;
-        var k = Lower(Strip(CollapseWhitespace(RemoveBrackets(model))));
+        var k = ExactKey(model);
         yield return ("exact", k, false);
+        if (k.StartsWith(CustomPrefix, StringComparison.Ordinal))
+        {
+            k = CustomKey(k);
+            yield return ("custom", k, false);
+        }
+
         var slash = k.LastIndexOf('/');
         if (slash >= 0)
         {
@@ -399,6 +438,41 @@ public sealed class ModelResolver
         return builder.ToString();
     }
 
+    /// <summary>
+    /// The <c>custom</c> step key: the prefix removed, then a trailing <c>-[0-9]+</c> (droid's index), then spaces and
+    /// <c>-</c> at both ends (<c>str.strip(" -")</c>).
+    /// </summary>
+    private static string CustomKey(string key)
+    {
+        var end = key.Length;
+        while (end > CustomPrefix.Length && char.IsAsciiDigit(key[end - 1]))
+        {
+            end--;
+        }
+
+        if (end < key.Length && end > CustomPrefix.Length && key[end - 1] == '-')
+        {
+            end--;
+        }
+        else
+        {
+            end = key.Length;
+        }
+
+        var start = CustomPrefix.Length;
+        while (start < end && key[start] is ' ' or '-')
+        {
+            start++;
+        }
+
+        while (end > start && key[end - 1] is ' ' or '-')
+        {
+            end--;
+        }
+
+        return key[start..end];
+    }
+
     /// <summary>Removes a trailing <c>-v\d+(:\d+)?</c>.</summary>
     private static string RemoveBedrockVersion(string key)
     {
@@ -500,4 +574,17 @@ public sealed class ModelResolver
 
         return i;
     }
+
+    private enum Miss : byte
+    {
+        None,
+        NoModel,
+        NotInTable,
+        NoFastPrice,
+        Rule,
+    }
+
+    /// <param name="Key">The candidate key that hit (an entry or an <c>unknown</c> rule).</param>
+    /// <param name="Rule">The hit <c>unknown</c> rule's reason.</param>
+    private readonly record struct Outcome(ModelResolution Resolution, string? Key = null, Miss Miss = Miss.None, string? Rule = null);
 }

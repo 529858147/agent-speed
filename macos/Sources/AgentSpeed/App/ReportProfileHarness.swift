@@ -164,7 +164,7 @@ private actor ProfileClockTransport: ReportTransport {
     var gets = 0
     let expires: String
     init(expires: String) { self.expires = expires }
-    func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse {
+    func get(_ url: URL, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse {
         ReportHTTPResponse(status: 404)
     }
     func send(_ request: ReportRequest, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError) -> ReportHTTPResponse {

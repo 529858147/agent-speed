@@ -151,6 +151,9 @@ public sealed class ReportDiscovery
 
     public ReportExtensions Extensions { get; private init; } = new();
 
+    /// <summary>The WebSocket transport's settings (METRICS 11.9, Availability); null when the transport is unavailable.</summary>
+    public ReportStreamSettings? WebSocket { get; private init; }
+
     /// <summary>False when the service shares no protocol version with this client ("needs a newer Agent Speed").</summary>
     public bool SupportsThisClient => Versions.Contains(SupportedVersion);
 
@@ -200,7 +203,7 @@ public sealed class ReportDiscovery
 
     /// <summary>
     /// What the preview assumes before a service's document is known (DESIGN 11, Preview window): the API at the service
-    /// URL, every section and the protocol's defaults. Never stored or confirmed.
+    /// URL, every section, the protocol's defaults and the performance score extension (METRICS 11.10). Never stored or confirmed.
     /// </summary>
     public static ReportDiscovery? Assumed(ReportServiceUrl service, string name)
     {
@@ -209,7 +212,8 @@ public sealed class ReportDiscovery
             ("protocol", ReportJson.Of(ProtocolName)),
             ("versions", ReportJson.Array([ReportJson.Of(SupportedVersion)])),
             ("service", ReportJson.Object(("name", ReportJson.Of(name)), ("terms", ReportJson.Of(link)), ("privacy", ReportJson.Of(link)))),
-            ("api", ReportJson.Of(service.Text)));
+            ("api", ReportJson.Of(service.Text)),
+            ("extensions", ReportJson.Object((ReportExtensions.PerfScoreName, ReportJson.Of(1)))));
         return Parse(json.ToCompactBytes(), service, out _);
     }
 
@@ -250,7 +254,8 @@ public sealed class ReportDiscovery
             apiKey.Add(("url", ReportJson.Of(ApiKeyUrl)));
         }
 
-        return ReportJson.Object(
+        var members = new List<(string, ReportJson)>
+        {
             ("protocol", ReportJson.Of(ProtocolName)),
             ("versions", ReportJson.Array(Versions.Select(v => ReportJson.Of(v)))),
             ("service", ReportJson.Object(service)),
@@ -268,7 +273,14 @@ public sealed class ReportDiscovery
                 ("maxBodyBytes", ReportJson.Of(Limits.MaxBodyBytes)),
                 ("maxModels", ReportJson.Of(Limits.MaxModels)))),
             ("sections", ReportJson.Array(ReportSections.All.Where(Sections.Contains).Select(s => ReportJson.Of(ReportSections.Name(s))))),
-            ("extensions", Extensions.Json));
+            ("extensions", Extensions.Json),
+        };
+        if (WebSocket is { } websocket)
+        {
+            members.Add(("websocket", websocket.Json));
+        }
+
+        return ReportJson.Object(members);
     }
 
     private static ReportDiscovery Read(Fields root, bool loopback)
@@ -361,6 +373,10 @@ public sealed class ReportDiscovery
             sections = [.. ReportSections.All];
         }
 
+        var modes = root.ExtensionVersion("executionModes", ReportExtensions.NewestModesVersion);
+        var extensions = new ReportExtensions(root.Extension("modelHarnessRequests"), modes > 0, root.Extension("profileAvatar"),
+            root.Extension("sharedIdentity"), root.Extension(ReportWebSocketProtocol.Extension), root.Extension(ReportExtensions.TaskScoreName),
+            root.Extension(ReportExtensions.PerfScoreName), ExecutionModesVersion: Math.Max(modes, 1));
         return new ReportDiscovery
         {
             Versions = versions,
@@ -378,7 +394,8 @@ public sealed class ReportDiscovery
             UsernameRules = rules,
             Limits = limits,
             Sections = sections,
-            Extensions = new(root.Extension("modelHarnessRequests"), root.Extension("executionModes"), root.Extension("profileAvatar"), root.Extension("sharedIdentity")),
+            Extensions = extensions,
+            WebSocket = extensions.ReportWebSocket && root.Raw("websocket") is { } websocket ? ReportStreamSettings.Parse(websocket) : null,
         };
     }
 
@@ -392,9 +409,14 @@ public sealed class ReportDiscovery
     /// <summary>One object of the document. A present field of the wrong type is an error, a fraction where an integer is expected included.</summary>
     private sealed class Fields(JsonElement element, string path)
     {
-        public bool Extension(string name) => element.TryGetProperty("extensions", out var extensions)
+        public bool Extension(string name) => ExtensionVersion(name, 1) == 1;
+
+        /// <summary>The advertised version of an extension when it is an exact integer from 1 to <paramref name="newest"/>, else 0.</summary>
+        public int ExtensionVersion(string name, int newest) => element.TryGetProperty("extensions", out var extensions)
             && extensions.ValueKind == JsonValueKind.Object && extensions.TryGetProperty(name, out var value)
-            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var version) && version == 1;
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var version) && version >= 1 && version <= newest
+            ? version
+            : 0;
 
         private string Field(string key) => path.Length == 0 ? key : $"{path}.{key}";
 
@@ -402,6 +424,9 @@ public sealed class ReportDiscovery
             where T : class => value ?? throw new DiscoveryInvalid(Field(key));
 
         private JsonElement? Member(string key) => element.TryGetProperty(key, out var value) ? value : null;
+
+        /// <summary>A member of any kind, for objects whose own rules decide (the <c>websocket</c> object never invalidates the document).</summary>
+        public JsonElement? Raw(string key) => Member(key);
 
         public Fields? Object(string key) => Member(key) switch
         {

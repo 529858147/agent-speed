@@ -10,11 +10,11 @@ namespace AgentSpeed.App;
 /// <summary>
 /// <c>--report-e2e URL</c>: drives the real live reporting controller — the dashboard invitation (declined, then accepted),
 /// consent, the DPAPI-protected device key, registration, reports while busy and idle, rename, key rotation, rate limiting,
-/// pause, the API key, the network switch, turning off and Forget — against a local reference server
-/// (<c>spec/tools/report_server.py</c>). The live monitor is not started; a synthetic engine feed publishes a snapshot every
-/// 0.5 s. It refuses to run without an isolated settings file and key folder (<c>AGENT_SPEED_SETTINGS_FILE</c>,
-/// <c>AGENT_SPEED_REPORT_DIR</c>) and the preset pointed at the same server (<c>AGENT_SPEED_REPORT_PRESET_URL</c>). Writes one
-/// line per check to <c>report-e2e.log</c> next to the settings file and quits.
+/// pause, the API key, the network switch, the transport (WebSocket by default, HTTP while the server lacks it), turning off
+/// and Forget — against a local reference server (<c>spec/tools/report_server.py</c>). The live monitor is not started; a
+/// synthetic engine feed publishes a snapshot every 0.5 s. It refuses to run without an isolated settings file and key folder
+/// (<c>AGENT_SPEED_SETTINGS_FILE</c>, <c>AGENT_SPEED_REPORT_DIR</c>) and the preset pointed at the same server
+/// (<c>AGENT_SPEED_REPORT_PRESET_URL</c>). Writes one line per check to <c>report-e2e.log</c> next to the settings file and quits.
 /// </summary>
 internal static class ReportHarness
 {
@@ -91,6 +91,20 @@ internal static class ReportHarness
             Check("the API key is shown masked only", report.MaskedApiKey == "••••" + apiKey[^4..]);
         }
 
+        Check("transport: WebSocket is chosen by default", report.Transport == ReportTransportKind.WebSocket);
+        if (report.Discovery?.WebSocket is null)
+        {
+            Check("transport: without the capability reports go over HTTP", report.EffectiveTransport == ReportTransportKind.Http);
+        }
+        else
+        {
+            // The steps below exercise HTTP; WebSocket() switches to it and back.
+            report.SetTransport(ReportTransportKind.Http);
+            Check("transport: the HTTP choice is stored for this service",
+                report.Preferences.TransportOf(report.SelectedService) == ReportTransportKind.Http
+                && report.EffectiveTransport == ReportTransportKind.Http);
+        }
+
         if (Environment.GetEnvironmentVariable("AGENT_SPEED_REPORT_BENCH") is not null)
         {
             await Bench(report);
@@ -154,6 +168,7 @@ internal static class ReportHarness
             && report.Status.Kind == ReportStatusKind.NetworkOff);
         app.UpdateSettings(s => s with { NetworkEnabled = true });
         await Until("network back on: reporting resumes", 15, () => report.LastDeliveryAt != offDelivery);
+        await WebSocket(report);
 
         _busy = false;
         await Until("idle after 15 quiet seconds", 20, () => report.Mode == ReportMode.Idle);
@@ -171,6 +186,36 @@ internal static class ReportHarness
         report.ForgetDevice();
         await Until("forgotten on the service", 10, () => report.ForgetState == ReportForgetKind.Done);
         Check("keys deleted locally", KeyFiles(report).Length == 0 && report.Identity is null);
+    }
+
+    /// <summary>
+    /// The WebSocket transport, when the server offers it (<c>report_server.py --websocket</c>): choosing it again drops the
+    /// HTTP choice, acknowledged reports turn the status green, the stats line counts them, and switching back to HTTP starts
+    /// over. Without the capability, WebSocket stays chosen while HTTP carried every report above.
+    /// </summary>
+    private static async Task WebSocket(ReportController report)
+    {
+        if (report.Discovery?.WebSocket is null)
+        {
+            Check("websocket: chosen but unavailable, no session runs",
+                report.Transport == ReportTransportKind.WebSocket && !report.UsesWebSocket && report.StreamSession is null);
+            Write("SKIP websocket (the server runs without --websocket)");
+            return;
+        }
+
+        Check("websocket: HTTP while the user keeps it", report.Transport == ReportTransportKind.Http && report.StreamSession is null);
+        report.SetTransport(ReportTransportKind.WebSocket);
+        Check("websocket: choosing it again forgets the HTTP choice",
+            report.Preferences.HttpServices.IsEmpty && report.UsesWebSocket);
+        await Until("websocket: an acknowledged report turns the status green", 15,
+            () => report.Status.Kind == ReportStatusKind.Streaming && report.StreamSession?.Counters.Accepted > 0);
+        var accepted = report.StreamSession?.Counters.Accepted ?? 0;
+        await Until("websocket: reports follow the changing data", 5, () => report.StreamSession?.Counters.Accepted > accepted + 3);
+        Check("websocket: latency samples exist", report.StreamSession?.Latency.P50 is not null);
+
+        report.SetTransport(ReportTransportKind.Http);
+        Check("websocket: switching back ends the session", report.StreamSession is null && report.Transport == ReportTransportKind.Http);
+        await Until("websocket: HTTP reports again", 15, () => report.Status.Kind == ReportStatusKind.Reporting);
     }
 
     /// <summary>
@@ -301,6 +346,7 @@ internal static class ReportHarness
             Sources = sources,
             LiveCost = _busy ? new LiveCost(3600, 240) : LiveCost.Zero,
             Report = facts,
+            ObservedAtMs = _busy ? Environment.TickCount64 - 40 : null,
         });
     }
 

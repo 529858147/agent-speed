@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排行看板 · 新指標版面</title>
+<link rel="stylesheet" href="board-metrics.css">
+</head>
+<body data-theme="dark">
+<header class="pg-top">
+  <h1>排行看板 · 新指標版面<small>智力 · 思考 · 每秒費用；選定 B（副錶），每列第二行只放模型，規格見 DESIGN 2c Live metrics</small></h1>
+  <span class="spacer"></span>
+  <span class="seg" id="styles" role="group" aria-label="風格">
+    <button data-v="glass">流光玻璃</button><button data-v="timing">計時塔</button><button data-v="neon">霓虹座艙</button></span>
+  <span class="seg" id="views" role="group" aria-label="檢視">
+    <button data-v="single">單一</button><button data-v="grid">並排 A · B · C</button><button data-v="all">總覽</button></span>
+</header>
+
+<main id="world" class="world"></main>
+
+<div class="pg-bar" id="bar">
+  <span class="seg" id="options" role="group" aria-label="版面"><button data-v="A">A</button><button data-v="B">B</button><button data-v="C">C</button></span>
+  <span class="seg" id="sizes" role="group" aria-label="尺寸"><button data-v="S">S</button><button data-v="M">M</button><button data-v="L">L</button></span>
+  <span class="seg" id="themes" role="group" aria-label="外觀"><button data-v="dark">深色</button><button data-v="light">淺色</button></span>
+  <span class="seg" id="scenarios" role="group" aria-label="情境"><button data-v="swarm">100 子 agent</button><button data-v="team">團隊</button>
+    <button data-v="duel">對決</button><button data-v="calm">安靜</button></span>
+  <span class="lab">顯示</span>
+  <span class="chips" id="metrics" role="group" aria-label="顯示的指標"><button data-v="intel">智力</button><button data-v="think">思考</button><button data-v="cost">費用</button></span>
+  <label title="來源不分開記錄推理 token（例如 DeepSeek Harness）：思考讀到 0，3 秒後收起"><input type="checkbox" id="noreason"> 思考為 0</label>
+  <span class="seg" id="currencies" role="group" aria-label="幣別"><button data-v="USD">US$</button><button data-v="TWD">NT$</button>
+    <button data-v="CNY">CN¥</button><button data-v="JPY">JP¥</button></span>
+  <label><input type="checkbox" id="rm"> 減少動態</label>
+  <button id="pause">暫停</button><button id="step">單步</button>
+</div>
+<div class="tipbox" id="tip" role="tooltip"></div>
+
+<script src="sim.js"></script>
+<script src="fx.js"></script>
+<script src="metrics-format.js"></script>
+<script src="board-metrics.js"></script>
+<script>
+(() => {
+  "use strict";
+  const STYLE_NAMES = { glass: "流光玻璃", timing: "計時塔", neon: "霓虹座艙" };
+  // One idea per letter in every style, told in that style's own language.
+  const OPTIONS = {
+    A: {
+      name: { glass: "三欄儀表", timing: "數據條", neon: "LED 視窗" },
+      why: "tok/s 仍是主角，主數字下方加一排三格等寬讀數：智力、思考、費用平起平坐，各自置中、共用基線，一眼掃完。",
+      pros: "最直白好讀；不動主數字與歷史曲線，三個總值永遠在同一個位置。",
+      cons: "多佔一條高度：M 在玻璃、霓虹少一個群組（計時塔的資料條較矮，不少）；三格等重，沒有主次。",
+      small: "三格改成單行（標籤在數字左邊）；排行剩 3 個群組加「還有 N 個」。",
+    },
+    B: {
+      chosen: true,
+      name: { glass: "光環副錶", timing: "資料盒", neon: "LED 副錶" },
+      why: "主數字右邊變成副錶：智力大、思考與費用小，各自置中，和懸浮球選定的主副讀數同一套語言。",
+      pros: "層次最清楚、和懸浮球一致；每個群組的第二行放模型，M 留 4 個群組加「還有 N 個」。",
+      cons: "歷史曲線改成整寬細條（玻璃、計時塔），起伏較扁；S 時右欄最窄，費用一行最緊。",
+      small: "副錶縮到 92 pt（計時塔的資料盒 110）、字 7.5–9.5 pt；每列回到單行；排行剩 3 個群組加「還有 N 個」。",
+    },
+    C: {
+      name: { glass: "明細表", timing: "明細表", neon: "明細表" },
+      why: "看板變成明細表：每個群組多一行「模型 · 每秒費用」，三個總值移到頁尾、和今日費用上下對齊，主數字區完全不變。",
+      pros: "唯一看得出誰在燒錢；總值與今日值成一張兩列小表，像真正的報表。",
+      cons: "群組列高 8 pt，M 少一個群組；資訊最密、最不安靜；頁尾變兩行。",
+      small: "每列第二行收起（回到單行），總值仍在頁尾；排行剩 3 個群組加「還有 N 個」。",
+    },
+  };
+  const ROW_NOTE = "每一列（群組與子 agent）都有自己的智力：在推理強度膠囊與 tok/s 之間的獨立數字欄，三位數右對齊；閒置時改顯示等級，字色更淡。群組列算的是整個群組（主 agent 加所有子 agent 的加權和），整組閒置時顯示主 agent 的等級。欄名「智力 / tok/s」寫在排行頂端的細線上。";
+  const TOGGLE_NOTE = "<b>指標開關</b>（全部預設開啟）：看板右鍵「看板顯示 ▸ 智力 / 思考 / 費用」，設定 → 懸浮窗的看板編輯器也有。三個開關各自獨立；關掉的讀數直接收起、其餘重新置中；智力同時管排行的智力欄；全部關掉時看板回到原本的樣子，只有 M、L 的群組仍保留第二行的模型。每列費用已取消：看板不顯示每個 agent 的即時費用。思考讀到 0 時停 3 秒後收起（底下勾「思考為 0」試）。網址加 <code>subs=all</code> 看全部來源標記為訂閱的樣子。";
+
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const st = {
+    style: params.get("style") || "neon", view: params.get("view") || "single", option: params.get("option") || "B",
+    size: params.get("size") || "M", theme: params.get("theme") || "dark", scenario: params.get("scenario") || "team",
+    currency: params.get("currency") || "USD",
+    metrics: { intel: true, think: true, cost: true },
+    subscriptionOnly: params.get("subs") === "all", noReasoning: params.get("noreasoning") === "1",
+    rm: matchMedia("(prefers-reduced-motion: reduce)").matches, effects: true,
+  };
+  if (params.has("metrics")) { const m = params.get("metrics").split(","); for (const k in st.metrics) st.metrics[k] = m.includes(k); }
+  const settled = params.has("steps");
+  if (settled) { st.rm = !params.has("fx"); st.effects = params.has("fx"); document.body.classList.add("settled"); }
+  if (params.has("shot")) document.body.classList.add("shot");
+
+  const tipEl = $("tip");
+  const tip = {
+    show(html, anchor) { if (!html) return; tipEl.innerHTML = html; const r = anchor.getBoundingClientRect();
+      tipEl.style.left = Math.min(innerWidth - 230, r.right + 12) + "px"; tipEl.style.top = Math.max(8, r.top - 6) + "px"; tipEl.classList.add("on"); },
+    hide() { tipEl.classList.remove("on"); },
+  };
+
+  const sim = AgentSim.create({ scenario: st.scenario });
+  let snap = null, boards = [];
+  const world = $("world");
+
+  function wall() {
+    const w = document.createElement("div"); w.className = "wall"; w.setAttribute("aria-hidden", "true");
+    w.innerHTML = '<i style="width:520px;height:520px;left:6%;top:4%;background:#5b3cc4"></i><i style="width:460px;height:460px;right:8%;top:14%;background:#0e7c86"></i>' +
+                  '<i style="width:600px;height:420px;left:30%;bottom:-18%;background:#b8336a"></i>';
+    return w;
+  }
+  function board(host, style, option) {
+    const b = MetricBoards.create(host, { style, option, size: st.size, metrics: st.metrics, currency: st.currency,
+                                          subscriptionOnly: st.subscriptionOnly, noReasoning: st.noReasoning,
+                                          reduceMotion: st.rm, effects: st.effects && !st.rm, tip });
+    boards.push(b);
+    return b;
+  }
+  function caption(style, k) {
+    const o = OPTIONS[k], name = typeof o.name === "string" ? o.name : o.name[style];
+    return `<div class="cap-head"><span class="letter">${k}</span><span class="nm">${name}</span>${o.chosen ? '<span class="chosen">已選定</span>' : ""}</div>`;
+  }
+  function details(k) {
+    const o = OPTIONS[k];
+    return `<p class="why">${o.why}</p><dl class="pc"><dt>優點</dt><dd>${o.pros}</dd><dt>代價</dt><dd>${o.cons}</dd><dt>S 尺寸</dt><dd>${o.small}</dd></dl>`;
+  }
+
+  function build() {
+    boards.forEach(b => b.destroy()); boards = [];
+    world.replaceChildren();
+    document.body.dataset.theme = st.theme;
+    const figw = { S: 280, M: 340, L: 420 }[st.size];
+    world.style.setProperty("--figw", figw + "px");
+    if (st.view === "all") {
+      world.removeAttribute("data-sk");
+      const all = document.createElement("div"); all.className = "all";
+      for (const style of ["glass", "timing", "neon"]) {
+        const band = document.createElement("section"); band.className = "band-row"; band.dataset.sk = style;
+        band.appendChild(wall());
+        band.insertAdjacentHTML("beforeend", `<h2 class="row-title">${STYLE_NAMES[style]}</h2>`);
+        const trio = document.createElement("div"); trio.className = "trio";
+        for (const k of ["A", "B", "C"]) {
+          const fig = document.createElement("figure"); fig.className = "fig"; fig.style.width = figw + "px";
+          fig.innerHTML = caption(style, k) + '<div class="host"></div>';
+          trio.appendChild(fig);
+          board(fig.querySelector(".host"), style, k);
+        }
+        band.appendChild(trio); all.appendChild(band);
+      }
+      world.appendChild(all);
+    } else if (st.view === "grid") {
+      world.dataset.sk = st.style; world.appendChild(wall());
+      const trio = document.createElement("div"); trio.className = "trio";
+      for (const k of ["A", "B", "C"]) {
+        const fig = document.createElement("figure"); fig.className = "fig";
+        fig.innerHTML = caption(st.style, k) + '<div class="host"></div>' + details(k);
+        trio.appendChild(fig);
+        board(fig.querySelector(".host"), st.style, k);
+      }
+      world.appendChild(trio);
+    } else {
+      world.dataset.sk = st.style; world.appendChild(wall());
+      const solo = document.createElement("div"); solo.className = "solo";
+      const slot = document.createElement("div"); slot.className = "host";
+      solo.appendChild(slot);
+      board(slot, st.style, st.option);
+      const note = document.createElement("aside"); note.className = "note";
+      note.innerHTML = `<div class="opts">${["A", "B", "C"].map(k => `<button class="opt" data-v="${k}" aria-pressed="${k === st.option}"><b>${k}${OPTIONS[k].chosen ? " · 已選定" : ""}</b>` +
+        `<span>${typeof OPTIONS[k].name === "string" ? OPTIONS[k].name : OPTIONS[k].name[st.style]}</span></button>`).join("")}</div>` +
+        details(st.option) + `<hr><p class="foot-note">${ROW_NOTE}</p><p class="foot-note">${TOGGLE_NOTE}</p>`;
+      note.querySelector(".opts").addEventListener("click", (e) => { const b = e.target.closest(".opt"); if (b) { st.option = b.dataset.v; sync(); build(); } });
+      solo.appendChild(note);
+      world.appendChild(solo);
+    }
+    // A settled frame replays the last 3 s first, so a 思考 that reads 0 has already been hidden (DESIGN 2c).
+    if (snap) boards.forEach(b => { if (settled) b.render(Object.assign({}, snap, { t: snap.t - 3, events: [] }), true); b.render(snap, true); });
+  }
+
+  function sync() {
+    const set = (id, v) => $(id).querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+    set("styles", st.style); set("views", st.view); set("options", st.option); set("sizes", st.size); set("themes", st.theme);
+    set("scenarios", st.scenario); set("currencies", st.currency);
+    $("metrics").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(st.metrics[b.dataset.v])));
+    $("options").querySelectorAll("button").forEach(b => { b.disabled = st.view !== "single"; });
+    $("styles").querySelectorAll("button").forEach(b => { b.disabled = st.view === "all"; });
+    $("rm").checked = st.rm;
+    $("noreason").checked = st.noReasoning;
+    document.body.classList.toggle("rm", st.rm);
+  }
+
+  function seg(id, fn) {
+    $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b || b.disabled) return; fn(b.dataset.v); sync(); });
+  }
+  seg("styles", (v) => { st.style = v; build(); });
+  seg("views", (v) => { st.view = v; build(); });
+  seg("options", (v) => { st.option = v; build(); });
+  seg("sizes", (v) => { st.size = v; build(); });
+  seg("themes", (v) => { st.theme = v; document.body.dataset.theme = v; });
+  seg("scenarios", (v) => { st.scenario = v; sim.setScenario(v); });
+  seg("currencies", (v) => { st.currency = v; build(); });
+  seg("metrics", (v) => { st.metrics[v] = !st.metrics[v]; sync(); build(); });
+  $("rm").addEventListener("change", (e) => { st.rm = e.target.checked; sync(); boards.forEach(b => b.setReduceMotion(st.rm)); });
+  $("noreason").addEventListener("change", (e) => { st.noReasoning = e.target.checked; boards.forEach(b => b.setNoReasoning(st.noReasoning)); });
+  $("pause").addEventListener("click", () => { if (sim.running) { sim.stop(); $("pause").textContent = "繼續"; } else { sim.start(); $("pause").textContent = "暫停"; } });
+  $("step").addEventListener("click", () => sim.step());
+
+  sync();
+  if (settled) {
+    sim.setScenario(st.scenario);
+    const off = sim.subscribe((s) => { snap = s; });
+    for (let i = 0; i < Number(params.get("steps")); i++) sim.step();
+    off();
+    build();
+    return;
+  }
+  sim.subscribe((s) => { snap = s; if (!boards.length) build(); else boards.forEach(b => b.render(s, false)); });
+  sim.setScenario(st.scenario);
+  sim.start();
+})();
+</script>
+</body>
+</html>

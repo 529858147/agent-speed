@@ -16,6 +16,8 @@ final class MonitorCore: @unchecked Sendable {
     private let configuration: MonitorConfiguration
     private let pricing: PriceBook?
     private let mailbox: SnapshotMailbox
+    /// `rediscoveryInterval`, except in tests.
+    private let rediscoveryEvery: DispatchTimeInterval
     private let queue = DispatchQueue(label: "app.agentspeed.monitor", qos: .utility)
     /// Whole-file reads (METRICS 5.3), one at a time, off the live loop.
     private let wholeFileQueue = DispatchQueue(label: "app.agentspeed.monitor.whole-file", qos: .utility)
@@ -26,6 +28,10 @@ final class MonitorCore: @unchecked Sendable {
     private let subsets: OSAllocatedUnfairLock<Set<SourceSet>>
 
     private var session: TranscriptSession?
+    /// The stored performance history (METRICS 6.11), applied to every session this core creates.
+    private var perfHistory: [PerfDayRecord] = []
+    /// Live reporting's watch epoch (METRICS 11.10), applied to every session this core creates.
+    private var reportWatch: Int?
     private var watcher: DirectoryWatcher?
     private var watchedPaths: [String] = []
     private var timers: [DispatchSourceTimer] = []
@@ -33,17 +39,21 @@ final class MonitorCore: @unchecked Sendable {
     private var dirtyPaths: Set<String> = []
     private var needsRescan = false
     private var flushScheduled = false
+    /// When the earliest read that changed the engine since the last snapshot began (METRICS 11.9, Observations).
+    private var observedAtMs: Int64?
 
     init(
         configuration: MonitorConfiguration,
         mailbox: SnapshotMailbox,
         subsets: Set<SourceSet> = [],
         pricing: PriceBook? = nil,
+        rediscoveryInterval: DispatchTimeInterval = MonitorCore.rediscoveryInterval,
         wholeFileReadHook: (@Sendable (String) -> Void)? = nil
     ) {
         self.configuration = configuration
         self.pricing = pricing
         self.mailbox = mailbox
+        rediscoveryEvery = rediscoveryInterval
         self.subsets = OSAllocatedUnfairLock(initialState: subsets)
         self.wholeFileReadHook = wholeFileReadHook
     }
@@ -66,7 +76,26 @@ final class MonitorCore: @unchecked Sendable {
 
     private var isCancelled: Bool { cancelled.withLock { $0 } }
 
-    /// Replaces the requested source sets from any thread; a running monitor publishes them promptly.
+    /// The stored performance history (METRICS 6.11): the score card's baselines follow it.
+    func setPerfHistory(_ records: [PerfDayRecord]) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            perfHistory = records
+            guard let session else { return }
+            session.setPerfHistory(records)
+            if isLive { publish() }
+        }
+    }
+
+    /// Live reporting's watch (METRICS 11.10 *Watch*): the epoch completions count in, nil while it is off.
+    func setReportWatch(_ epoch: Int?) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            reportWatch = epoch
+            session?.setReportWatch(epoch)
+        }
+    }
+
     func setSubsets(_ sets: Set<SourceSet>) {
         let changed = subsets.withLock { current in
             guard current != sets else { return false }
@@ -83,10 +112,12 @@ final class MonitorCore: @unchecked Sendable {
         guard !isCancelled else { return }
         let session = TranscriptSession(configuration: configuration, pricing: pricing)
         session.wholeFileReads = { [weak self] job in self?.scheduleWholeFileRead(job) }
+        session.setPerfHistory(perfHistory)
+        session.setReportWatch(reportWatch)
         self.session = session
         guard session.hasAvailableRoot else {
             publishPlaceholder(.noSources, session: session)
-            timers = [makeTimer(every: Self.rediscoveryInterval) { [weak self] in self?.retryBootstrap() }]
+            timers = [makeTimer(every: rediscoveryEvery) { [weak self] in self?.retryBootstrap() }]
             return
         }
         seedAndGoLive(session)
@@ -94,6 +125,7 @@ final class MonitorCore: @unchecked Sendable {
 
     private func retryBootstrap() {
         guard let session, !isLive else { return }
+        if session.piRootsChanged || session.openclawRootsChanged { return restart() }
         session.refreshAvailability()
         guard session.hasAvailableRoot else { return }
         cancelTimers()
@@ -132,9 +164,16 @@ final class MonitorCore: @unchecked Sendable {
         timers = [
             makeTimer(every: Self.publishInterval, leeway: .milliseconds(50)) { [weak self] in self?.publish() },
             makeTimer(every: Self.pollInterval, leeway: .milliseconds(100)) { [weak self] in self?.poll() },
-            makeTimer(every: Self.rediscoveryInterval, leeway: .seconds(1)) { [weak self] in self?.rediscover() },
+            makeTimer(every: rediscoveryEvery, leeway: .seconds(1)) { [weak self] in self?.rediscover() },
         ]
         publish()
+    }
+
+    private func restart() {
+        teardown()
+        dirtyPaths.removeAll()
+        needsRescan = false
+        bootstrap()
     }
 
     private func teardown() {
@@ -165,6 +204,7 @@ final class MonitorCore: @unchecked Sendable {
     private func flush() {
         flushScheduled = false
         guard let session, isLive else { return }
+        let began = Clock.monotonicMs()
         var changed = false
         if needsRescan {
             needsRescan = false
@@ -174,7 +214,10 @@ final class MonitorCore: @unchecked Sendable {
         let paths = dirtyPaths
         dirtyPaths.removeAll()
         changed = session.handleChanges(atCanonicalPaths: paths) || changed
-        if changed { publish() }
+        if changed {
+            observe(began)
+            publish()
+        }
     }
 
     private func scheduleWholeFileRead(_ job: WholeFileRead) {
@@ -182,31 +225,51 @@ final class MonitorCore: @unchecked Sendable {
         wholeFileQueue.async { [weak self] in
             guard let self, !isCancelled else { return }
             hook?(job.path)
+            let began = Clock.monotonicMs()
             let result = job.perform()
-            queue.async { [weak self] in self?.finishWholeFileRead(result) }
+            queue.async { [weak self] in self?.finishWholeFileRead(result, began: began) }
         }
     }
 
-    private func finishWholeFileRead(_ result: WholeFileResult) {
+    private func finishWholeFileRead(_ result: WholeFileResult, began: Int64) {
         guard let session, isLive else { return }
-        if session.completeWholeFileRead(result) { publish() }
+        if session.completeWholeFileRead(result) {
+            observe(began)
+            publish()
+        }
     }
 
     private func poll() {
         guard let session, isLive else { return }
-        if session.pollRecentFiles(nowMs: Clock.milliseconds(Date())) { publish() }
+        let began = Clock.monotonicMs()
+        if session.pollRecentFiles(nowMs: Clock.milliseconds(Date())) {
+            observe(began)
+            publish()
+        }
     }
 
     private func rediscover() {
         guard let session, isLive else { return }
+        // A new or removed Pi folder, OpenClaw state folder or agent-scoped Codex home is read like at startup: older
+        // files from their end, with one dedupe set.
+        if session.piRootsChanged || session.openclawRootsChanged { return restart() }
+        let began = Clock.monotonicMs()
         let changed = session.rediscover(todayStartMs: Self.todayStartMs(for: Date()))
         updateWatcher()
-        if changed { publish() }
+        if changed {
+            observe(began)
+            publish()
+        }
+    }
+
+    private func observe(_ began: Int64) {
+        observedAtMs = min(observedAtMs ?? began, began)
     }
 
     private func publish() {
         guard let session, isLive else { return }
-        session.readDirtyDatabases()
+        let began = Clock.monotonicMs()
+        if session.readDirtyDatabases() { observe(began) }
         let now = Date()
         let todayStartMs = Self.todayStartMs(for: now)
         let requested = subsets.withLock { $0 }
@@ -214,7 +277,10 @@ final class MonitorCore: @unchecked Sendable {
             nowMs: Clock.milliseconds(now), todayStartMs: todayStartMs, emitsEvents: true, subsets: requested
         )
         let context = SnapshotContext(session: session, todayStartMs: todayStartMs)
-        mailbox.post(SnapshotBuilder.running(output, context: context), events: events)
+        var snapshot = SnapshotBuilder.running(output, context: context)
+        snapshot.observedAtMs = observedAtMs
+        observedAtMs = nil
+        mailbox.post(snapshot, events: events)
     }
 
     private func publishPlaceholder(_ state: MonitorState, session: TranscriptSession) {

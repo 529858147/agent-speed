@@ -139,7 +139,7 @@ ShapeOut VsShape(ShapeIn input)
         float4 box = orb_arc_bounds(input.b.x, input.b.y * 0.5, input.extra.z, input.extra.w);
         local = lerp(box.xy - pad, box.zw + pad, corner * 0.5 + 0.5);
     }
-    else if (shape > 8.5)
+    else if (shape > 8.5 && shape < 9.5)
     {
         // Stroke segment: a quad along the segment, as wide as its widest layer.
         float pad = input.b.y + 2.0 / viewport.z;
@@ -297,7 +297,7 @@ float4 PsShape(ShapeOut input) : SV_Target
         float tail = orb_uneven_capsule(float2(q.y, -q.x), input.extra.z, input.b.z, input.b.y);
         d = min(tip, tail);
     }
-    else
+    else if (shape < 9.5)
     {
         // Stroke segment of a polyline (bolts, arcs): half length b.x along a.z, three concentric round-capped layers with half
         // widths b.y (glow), b.z (body) and b.w (core) and alphas extra.xyz; glow and body in color, the core in color2;
@@ -348,6 +348,13 @@ float4 PsShape(ShapeOut input) : SV_Target
 
         return orb_output(rgb * keep, stroke_alpha * keep);
     }
+    else
+    {
+        // Rounded-rect outline (the board's ring): half size b.xy, corner radius b.z, line width extra.z.
+        float r = input.b.z;
+        float2 k = abs(p) - input.b.xy + r;
+        d = abs(length(max(k, 0.0)) + min(max(k.x, k.y), 0.0) - r) - input.extra.z * 0.5;
+    }
 
     if (fill > 0.5 && fill < 1.5)
     {
@@ -368,6 +375,16 @@ float4 PsShape(ShapeOut input) : SV_Target
         float stop = input.extra2.y;
         color = t < stop ? lerp(input.color, input.color2, t / stop)
             : float4(input.color2.rgb, input.color2.a * saturate(1.0 - (t - stop) / max(1.0 - stop, 0.0001)));
+    }
+    else if (fill > 4.5 && fill < 5.5)
+    {
+        // One stretch of a slanted gradient: color at q1 → color2 at q2 along q0 (radians), nothing outside it. The stretch's
+        // ends are hard so neighboring stretches tile; stops meet in one color, so no edge shows.
+        float s = dot(p, float2(cos(input.extra2.y), sin(input.extra2.y)));
+        float from = input.extra2.z;
+        float to = input.extra2.w;
+        color = lerp(input.color, input.color2, saturate((s - from) / max(to - from, 0.0001)));
+        color.a *= (s >= from && s < to) ? 1.0 : 0.0;
     }
 
     float coverage = saturate(0.5 - d / aa);

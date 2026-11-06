@@ -67,12 +67,13 @@ enum OpencodeDataExtractor {
         do {
             var data = OpencodeMessageData()
             var tier: String?
+            var variant: String?
             try scanner.beginObject()
             while let key = try scanner.nextMember() {
                 if scanner.key(key, is: "time") {
                     try scanTime(&scanner, into: &data)
                 } else if scanner.key(key, is: "model") {
-                    (data.model, data.provider) = try scanModel(&scanner)
+                    (data.model, data.provider, variant) = try scanModel(&scanner)
                 } else if scanner.key(key, is: "finish") {
                     data.finishedWithToolCalls = try scanner.readStringMatch(["tool-calls"]) == 0
                 } else if scanner.key(key, is: "native") {
@@ -88,8 +89,11 @@ enum OpencodeDataExtractor {
                 }
             }
             try scanner.finish()
+            if let effort = ExecutionModeAdapters.effort(variant, evidence: .recorded, scope: .request) {
+                data.modes.insert(effort)
+            }
             if ["openai", "azure"].contains(data.provider ?? "") {
-                data.modes = ExecutionModeAdapters.openAI(tier, evidence: .served, scope: .response)
+                data.modes = data.modes.merging(ExecutionModeAdapters.openAI(tier, evidence: .served, scope: .response))
             }
             return data
         } catch {
@@ -115,20 +119,24 @@ enum OpencodeDataExtractor {
         }
     }
 
-    private static func scanModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?) {
-        guard try scanner.beginObjectIfPresent() else { return (nil, nil) }
+    /// `id`, `providerID` and `variant` (the reasoning effort, EXECUTION-MODES).
+    private static func scanModel(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?, String?) {
+        guard try scanner.beginObjectIfPresent() else { return (nil, nil, nil) }
         var model: String?
         var provider: String?
+        var variant: String?
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "id") {
                 model = try scanner.readString()
             } else if scanner.key(key, is: "providerID") {
                 provider = try scanner.readNonEmptyString()
+            } else if scanner.key(key, is: "variant") {
+                variant = try scanner.readString()
             } else {
                 try scanner.skipValue()
             }
         }
-        return (model, provider)
+        return (model, provider, variant)
     }
 
     /// OpenCode reports reasoning separately from output (METRICS 4.5).

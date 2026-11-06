@@ -29,7 +29,11 @@ public sealed record SubsetReading(
     TokenTotals Today,
     double? MeasuredPeakOutput,
     IReadOnlyList<SourceKind> Unavailable,
-    SubsetState State);
+    SubsetState State)
+{
+    /// <summary>The live intelligence sums of the available members (METRICS 6.9).</summary>
+    public Intelligence.IntelligenceSums Intelligence { get; init; }
+}
 
 /// <summary>Per-orb views of a snapshot (METRICS 6.8, DESIGN 2b).</summary>
 public static class OrbSubset
@@ -52,7 +56,7 @@ public static class OrbSubset
                 snapshot.Today,
                 snapshot.PeakToday.Output,
                 [],
-                SubsetState.Available);
+                SubsetState.Available) { Intelligence = IntelligenceOf(snapshot.Sources, SourceSet.Everything) };
         }
 
         var included = set.Intersect(SourceSet.Everything);
@@ -93,7 +97,7 @@ public static class OrbSubset
             today,
             snapshot.SubsetPeaks.TryGetValue(set, out var peak) ? peak : null,
             [.. unavailable],
-            state);
+            state) { Intelligence = IntelligenceOf(snapshot.Sources, included) };
     }
 
     /// <summary>
@@ -169,6 +173,21 @@ public static class OrbSubset
         SpeedEvent.NewPeak => sources is null,
         _ => false,
     };
+
+    /// <summary>The sums are additive over sources (METRICS 6.9); a disabled source carries none.</summary>
+    private static Intelligence.IntelligenceSums IntelligenceOf(IReadOnlyList<SourceStatus> statuses, SourceSet members)
+    {
+        var sums = Intelligence.IntelligenceSums.Zero;
+        foreach (var status in statuses)
+        {
+            if (members.Contains(status.Kind))
+            {
+                sums += status.Intelligence;
+            }
+        }
+
+        return sums;
+    }
 
     /// <summary>Disabled, or not detected: no readable root and no data today.</summary>
     public static bool IsUnavailable(SourceStatus status)

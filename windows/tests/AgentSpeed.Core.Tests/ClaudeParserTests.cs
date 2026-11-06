@@ -51,6 +51,27 @@ public sealed class ClaudeParserTests
     }
 
     [Fact]
+    public void ToolResultThatEndsTheRunSetsIdle()
+    {
+        var parser = new ClaudeParser(AgentA, new Deduper());
+        var sink = new RecordingSink();
+        const string result = """[{"type":"tool_result","tool_use_id":"t","content":"Structured output provided successfully"}]""";
+
+        Feed.Lines(
+            parser,
+            sink,
+            UserText(T0, "count"),
+            Assistant(T0 + 2000, "msg_1", 10, "\"tool_use\""),
+            User(T0 + 2010, result, extra: ",\"toolEndsTurn\":true"));
+        Assert.Equal(AgentPhase.Idle, parser.Phase);
+        Assert.Null(parser.InFlightStartMs);
+
+        Feed.Lines(parser, sink, User(T0 + 3000, result, extra: ",\"toolEndsTurn\":false"));
+        Assert.Equal(AgentPhase.Generating, parser.Phase);
+        Assert.Equal(T0 + 3000, parser.InFlightStartMs);
+    }
+
+    [Fact]
     public void UserLineAfterApiRequestKeepsThePreciseStart()
     {
         var parser = new ClaudeParser(AgentA, new Deduper());

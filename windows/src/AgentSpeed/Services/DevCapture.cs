@@ -17,8 +17,9 @@ namespace AgentSpeed.Services;
 /// <c>orbs name [#backdrop | @C:\path\to\image.png]</c> (an image covers the captured area, cropped to fill),
 /// <c>menu-tray name</c>, <c>menu-orb name</c>, <c>badge-sheet name [dark|light]</c> (the hero title badge of every theme
 /// but Vehicles at idle and levels 1–13), <c>badge-strip name [dark|light]</c> (its transitions at fixed τ),
-/// <c>dashboard name [#backdrop]</c> (the open dashboard's content) and <c>taskbar name [#backdrop]</c> (the widget as it
-/// draws now, rendered again in-process).
+/// <c>dashboard name [#backdrop]</c> (the open dashboard's content) and <c>taskbar name [#backdrop] [dark|light] [2x]</c>
+/// (the widget as it draws now, rendered again in-process, optionally on a dark or light taskbar and at a given scale),
+/// <c>perfcard name [#backdrop] [2x]</c> and <c>perfhistory name [#backdrop] [2x]</c> (the performance score's sample sheets).
 /// </summary>
 internal sealed partial class DevCapture
 {
@@ -36,8 +37,11 @@ internal sealed partial class DevCapture
     /// <summary>The title themes and language for <c>badge-sheet</c> and <c>badge-strip</c>.</summary>
     public Func<BadgeCaptureSource>? Badges { get; init; }
 
-    /// <summary>The taskbar widget rendered now (<c>taskbar</c>), or null.</summary>
-    public Func<BitmapSource?>? Taskbar { get; init; }
+    /// <summary>
+    /// The taskbar widget rendered now (<c>taskbar</c>), or null: on a dark (true) or light (false) taskbar, else the
+    /// system's, at a scale (pixels per DIP), else the primary monitor's.
+    /// </summary>
+    public Func<bool?, double?, BitmapSource?>? Taskbar { get; init; }
 
     public DevCapture(Dispatcher dispatcher, string folder, Func<IReadOnlyList<(FrameworkElement Visual, Rect ScreenRect, double Opacity)>> orbs,
         Func<string, ContextMenu?> menu, Func<string, FrameworkElement?> element)
@@ -101,8 +105,18 @@ internal sealed partial class DevCapture
                 case "dashboard" or "history" or "report-consent" or "report-preview" or "report-invite":
                     CaptureElement(parts[1], parts.Length > 2 ? parts[2] : "#202020", parts[0]);
                     break;
-                case "taskbar" when Taskbar?.Invoke() is { } bar:
-                    Save(OnBackdrop(bar, parts.Length > 2 ? parts[2] : "#202020"), parts[1]);
+                case "taskbar":
+                    var options = parts.Length > 2 ? parts[2].Split(' ', StringSplitOptions.RemoveEmptyEntries) : [];
+                    var theme = options.FirstOrDefault(o => o is "dark" or "light");
+                    var scale = options.FirstOrDefault(o => o is "1x" or "2x" or "3x") is { } factor ? factor[0] - '0' : (double?)null;
+                    if (Taskbar?.Invoke(theme is null ? null : theme == "dark", scale) is { } bar)
+                    {
+                        Save(OnBackdrop(bar, options.FirstOrDefault(o => o.StartsWith('#')) ?? "#202020"), parts[1]);
+                    }
+
+                    break;
+                case "perfcard" or "perfhistory":
+                    CapturePerf(parts[0], parts[1], parts.Length > 2 ? parts[2] : string.Empty);
                     break;
                 case "badge-sheet" or "badge-strip" when Badges?.Invoke() is { } source:
                     var dark = !(parts.Length > 2 && string.Equals(parts[2], "light", StringComparison.OrdinalIgnoreCase));

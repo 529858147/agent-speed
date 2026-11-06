@@ -76,7 +76,11 @@ public sealed class CodexFastPricingTests
         Assert.Null(PriceBook.Bundled.Cost(response));
         var engine = new SpeedEngine(DayStart, new PriceBook(), TimeZoneInfo.Utc);
         engine.Upsert(response, isCompletion: true, seeded: true);
-        Assert.Equal(new CostTally(UnpricedRequests: 1), engine.Compute(T0 + 2000, DayStart, observeLive: true).TodayCost);
+        var frame = engine.Compute(T0 + 2000, DayStart, observeLive: true);
+        Assert.Equal(new CostTally(UnpricedRequests: 1), frame.TodayCost);
+        Assert.True(Assert.Single(frame.SourceUnpricedFacts[(int)SourceKind.Codex]).Fact.Fast);
+        var days = DayAggregate.Contributions([response], SourceKind.Codex, new DayLabeler(TimeZoneInfo.Utc), new PriceBook());
+        Assert.True(Assert.Single(Assert.Single(days).Value.Unpriced).Key.Fast);
     }
 
     [Fact]
@@ -89,6 +93,21 @@ public sealed class CodexFastPricingTests
         };
 
         Assert.Equal(1240, PriceBook.Bundled.Cost(response));
+    }
+
+    [Fact]
+    public void UnverifiedLaterSelectionKeepsTheDisplayedModeButDoesNotReuseFastPricing()
+    {
+        var parser = new CodexParser("/fixture/a.jsonl", new Deduper());
+        var sink = new RecordingSink();
+        Feed.Lines(parser, sink, SessionMeta(T0), TurnContext(T0 + 100, "gpt-6.1-terra"),
+            Settings(T0 + 200, "priority"), UsageRecord(T0 + 1000, "first", Usage(1000, 800, 200, 0)),
+            Envelope(T0 + 1100, "event_msg", """{"type":"thread_settings_applied","thread_id":"thread-1","thread_settings":{"service_tier":"priority","reasoning_effort":"high"}}"""),
+            UsageRecord(T0 + 2000, "second", Usage(1000, 800, 200, 0)));
+
+        Assert.Equal(["fast", "fast"], sink.Latest.Select(r => r.Modes.Attribute(ExecutionModeKind.ServiceTier).Mode));
+        Assert.Equal([2480, 1240], sink.Latest.Select(PriceBook.Bundled.Cost));
+        Assert.Equal("high", sink.Latest[1].Modes.Attribute(ExecutionModeKind.Effort).Mode);
     }
 
     [Fact]

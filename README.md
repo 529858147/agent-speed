@@ -19,7 +19,7 @@
 
 ## Install
 
-**macOS 14 or later** (Apple Silicon and Intel) — paste into Terminal:
+**macOS 14 or later** (Apple Silicon and Intel) **and Linux** (x86_64 and arm64) — paste into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zoefix/agent-speed/main/install.sh | sh
@@ -32,6 +32,8 @@ irm https://raw.githubusercontent.com/zoefix/agent-speed/main/install.ps1 | iex
 ```
 
 That's it. The installer downloads the latest release from GitHub, verifies its SHA-256 checksum, installs it and starts it. Run the same command again to update.
+
+On Linux the script installs the AppImage into `~/.local/share/agent-speed`, where it updates itself from inside the app, and adds Agent Speed to the application menu. It needs glibc 2.35 or later on x86_64 (Ubuntu 22.04, Debian 12 and newer) and 2.39 on arm64 (Ubuntu 24.04, Debian 13 and newer). The tray icon needs a StatusNotifierItem host: KDE Plasma has one; on GNOME, enable the AppIndicator extension (built into Ubuntu). Prefer a package? The [latest release](https://github.com/zoefix/agent-speed/releases/latest) also has a `.deb` (`sudo apt install ./agent-speed_*_amd64.deb`), checked with `SHA256SUMS-Linux-<arch>.txt`.
 
 <details>
 <summary>Uninstall</summary>
@@ -54,6 +56,7 @@ Add `--purge` / `-Purge` to remove settings as well. On Windows you can also uni
 - **Five orb styles, as many orbs as you like** — *LED Gauge*, *Needle Tachometer*, *Liquid Energy*, *Reactor* and *Minimal Ring*. Give each orb its own mix of sources (all of them, one tool, or Claude Code + Codex) and a glass name plate that stays legible on any wallpaper.
 - **Menu bar / taskbar** — a compact gauge and number that never jitters, right where you look: tok/s, money, or tok/s with the live money rate over today's total, plus optional network speed. On Windows it lives inside the taskbar, next to the clock.
 - **Dashboard** — a glowing line drawing of your current speed title's vehicle moves inside its orb — a walker, a bicycle pushing off, all the way to a rocket at the redline — plus a live chart, per-source speed, every active agent (including sub-agents) with its phase, and today's totals. Click a source to open its history.
+- **Performance score** — a benchmark-style number for every agent's live setup, where 1000 is the reference and there is no upper limit: higher is faster. It combines output throughput, time to first content, thinking speed, tool pace, tool time, tool success and cache hits, and compares it with the same model's usual on your computer (the 14 days before today). It shows on the orbs, the leaderboard boards, the menu bar / taskbar and the dashboard (hover for the breakdown), and the usage history charts each model's daily trend.
 - **Cost** — what your agents' work would cost at each model's API list prices: live money per second next to tok/s, today's cost in the dashboard and each day's cost in the history. US dollars by default, or any of 38 currencies with daily exchange rates; sources on a flat-rate subscription can be left out. The price table updates daily from this repository.
 - **Network traffic** — upload and download speed per agent or for the whole computer, as two small lines on the orbs, in the menu bar / taskbar and in the dashboard, with each day's traffic in the history. On Windows, per-agent traffic needs a small optional helper service, installed once with administrator approval.
 - **Title themes** — nine ladders of speed titles: *Vehicles*, *Animals*, *Beaufort Scale*, *Cosmos*, *Cultivation*, *Martial Arts*, *Arcane Ranks*, *Game Ranks* and *Engineer Career* — or up to eight sets of your own. Outside *Vehicles*, the dashboard orb shows a glowing title badge.
@@ -61,7 +64,7 @@ Add `--purge` / `-Purge` to remove settings as well. On Windows you can also uni
 - **Live reporting (opt-in)** — off by default; if you like, share your live numbers with an API you pick, such as the [Codex Radar](https://codexradar.com/) speed ladder, under a username you choose. Never conversation content, files or project names — see [Privacy](#privacy).
 - **Execution modes** — show confirmed Standard / Fast / Ultrafast modes and native accelerator, model-variant or routing choices across supported agents, with defaults and unknown values kept distinct. History has a separate mode CSV; measurement formulas stay the same.
 - **Profile and devices (optional API extension)** — preview, change or remove an avatar, and link devices through an approved one-time code. Your receiver must support the [new API schema](spec/report-schema.json); each device keeps its own key and unlinking preserves accounted history.
-- **Native everywhere** — SwiftUI + AppKit on macOS, WPF with Fluent/Mica on Windows. Light, dark or automatic theme. English, 繁體中文, 简体中文, 日本語.
+- **Native everywhere** — SwiftUI + AppKit on macOS, WPF with Fluent/Mica on Windows, Qt 6 on Linux. Light, dark or automatic theme. English, 繁體中文, 简体中文, 日本語.
 - **Humane** — effects intensity from *Off* to *Max*, respects Reduce Motion and high contrast, click-through mode, magnetic edges, remembers its place on every display, launches at login.
 - **Always current** — checks GitHub Releases in the background and updates with one click, verified by SHA-256.
 
@@ -100,19 +103,23 @@ Grok Build supplies native per-turn model batches: token counts, API duration an
 
 **Speed = output tokens ÷ the real time the model spent on them** — from the moment the request was sent until the response finished, including time to first token. Parallel agents add up. While a response is still streaming, it is estimated from that agent's recent measured speed and corrected with the measured value the instant it completes. Optionally you can switch to *total throughput* (input + output).
 
-The full, testable specification lives in [`spec/METRICS.md`](spec/METRICS.md). Both apps are verified against the same fixtures and an independent [reference implementation](spec/tools/reference.py).
+The full, testable specification lives in [`spec/METRICS.md`](spec/METRICS.md). All three apps are verified against the same fixtures and an independent [reference implementation](spec/tools/reference.py).
 
 Ordinary Claude Desktop chat conversations are not stored on your computer, so they cannot be measured; WorkBuddy conversations that run in the cloud are not counted either.
 
 ## Privacy
 
-Read-only. Local-only. No telemetry, no accounts. Agent Speed makes only three kinds of automatic network requests, and each one sends nothing about you: the update check against GitHub Releases, a daily download of the public model price table from this repository (GitHub, with jsDelivr as a mirror), and — only when you show costs in a currency other than US dollars — a daily download of public exchange rates (open.er-api.com, with the fawazahmed0 currency API and Frankfurter as fallbacks). Every user requests the same files, so no server learns your currency, models or usage. One switch in Settings turns all network access off; costs then use the price table and rates shipped with the app. Agent Speed never stores or displays conversation content — only token counts, model names and project folder names. The usage history keeps only daily totals (including each day's API-equivalent cost), in a small database on your computer (`~/Library/Application Support/AgentSpeed`, `%LOCALAPPDATA%\AgentSpeed`), and can be cleared in Settings. Updates are verified against the release's SHA-256 checksums before they are installed; the checksums are published with the release, so they catch corrupted or tampered downloads, not a compromised repository. The price table is plain data checked against strict rules; it is not signed.
+Read-only. Local-only. No telemetry, no accounts. Agent Speed makes only three kinds of automatic network requests, and each one sends nothing about you: the update check against GitHub Releases, a daily download of the public model price table from this repository (GitHub, with jsDelivr as a mirror), and — only when you show costs in a currency other than US dollars — a daily download of public exchange rates (open.er-api.com, with the fawazahmed0 currency API and Frankfurter as fallbacks). Every user requests the same files, so no server learns your currency, models or usage. One switch in Settings turns all network access off; costs then use the price table and rates shipped with the app. Agent Speed never stores or displays conversation content — only token counts, model names and project folder names. The usage history keeps only daily totals (including each day's API-equivalent cost) and each model's daily performance figures, in a small database on your computer (`~/Library/Application Support/AgentSpeed`, `%LOCALAPPDATA%\AgentSpeed`), and can be cleared in Settings. Updates are verified against the release's SHA-256 checksums before they are installed; the checksums are published with the release, so they catch corrupted or tampered downloads, not a compromised repository. The price table is plain data checked against strict rules; it is not signed.
 
 Network traffic: Agent Speed counts how many bytes programs send and receive, on this computer only. It never reads content, addresses or destinations; only live reporting (below), if you turn it on, sends your agents' byte counts to the service you chose. On Windows, per-agent traffic needs an optional helper service that runs as the restricted Local Service account and only counts bytes per process; it is installed and removed with one administrator prompt each ([details](spec/WINDOWS-SERVICE.md)).
 
-Live reporting (optional, off by default; the dashboard offers it once): if you turn it on for an API — for example a public leaderboard service such as the built-in Codex Radar speed ladder (`deng.codexradar.com`) — Agent Speed sends that service your live speed, the tokens used in the last few seconds and, if you leave them on, the API-equivalent cost in US dollars, your agents' network traffic, models in use and a per-tool breakdown, together with the username you choose (it starts as your computer's name; one click picks a random one). It reports every few seconds while your agents work and stops when they rest. It never sends conversation content, prompts, file, folder or project names, or your usage history, and failed reports are never resent. Each report is signed with a key that stays on your computer; the service can tell that reports come from the same device, not whether the numbers are true. You can pause, turn it off, or ask the service to forget your device in Settings.
+Reasoning effort and speed: most agents write these into the logs above. For the rest, Agent Speed reads a few extra fields, read-only, and never conversation text. Three databases: OpenClaw's `trajectory_runtime_events` (only `trace.metadata` rows, selected in the query, and from them only the think level and fast mode; compressed rows are unpacked in memory and discarded), WorkBuddy's `workbuddy.db` (only `sessions.id` and `sessions.thought_level`) and Hermes Agent's `state.db` (only the session's `model_config.reasoning_config`). These files are opened without creating any `-wal` or `-shm` file, and Hermes's only briefly. Config files, one setting each: Codex `config.toml` (`service_tier`), Gemini CLI `~/.gemini/settings.json` (`thinkingLevel` or `thinkingBudget` of an override for the agent's model), Antigravity `~/.gemini/config/config.json` (`vertexServiceTier`), WorkBuddy `settings.json` (`reasoningEffort`) and Hermes Agent `config.yaml` (`agent.reasoning_effort`, `agent.service_tier`). A value found only in a config file is shown with a 設定值 (config) mark, because the agent may not be using it, and is never counted in your history or statistics or sent in reports. A value that isn't recorded anywhere stays unknown; it is never guessed.
 
-Optional API extensions also share per-model Harness counts and execution-mode metadata when model sharing is enabled. Avatar uploads and one-time device pairing happen only through explicit profile actions, with a receiver that supports the [extension schema](spec/report-schema.json); images never go into periodic reports. Paired devices retain independent private keys, and the network master switch also disables profile requests.
+Performance score: Agent Speed computes each agent's performance score from the timing and token counts of its responses and from when its tool calls start and finish and whether they fail — never from what the prompts, commands or files say. The usage history keeps only per-model daily totals of these figures. Only live reporting sends anything of it, and only if you turn it on, leave model sharing on and the service supports it: the current score and per-model performance statistics (sums of output and duration, the first-content latency distribution, thinking, cache, tool-call counts, time and failures, and active time), for ranking and statistical analysis. It never sends anything about a single request or tool call, and no prompts, commands, paths or timestamps.
+
+Live reporting (optional, off by default; the dashboard offers it once): if you turn it on for an API — for example a public leaderboard service such as the built-in Codex Radar speed ladder (`deng.codexradar.com`) — Agent Speed sends that service your live speed, the tokens used in the last few seconds and, if you leave them on, the API-equivalent cost in US dollars, your agents' network traffic, models in use (with, where the service supports it, each model's performance score, performance statistics and thinking speed) and a per-tool breakdown, together with the username you choose (it starts as your computer's name; one click picks a random one). It reports every few seconds while your agents work and stops when they rest. It never sends conversation content, prompts, commands or their output, file, folder or project names, or your usage history, and failed reports are never resent. Each report is signed with a key that stays on your computer; the service can tell that reports come from the same device, not whether the numbers are true. You can pause, turn it off, or ask the service to forget your device in Settings.
+
+Optional API extensions also share per-model Harness counts, execution-mode metadata (service tiers such as Fast and Ultrafast, and the reasoning effort) and the performance figures above when model sharing is enabled and the service supports them. Avatar uploads and one-time device pairing happen only through explicit profile actions, with a receiver that supports the [extension schema](spec/report-schema.json); images never go into periodic reports. Paired devices retain independent private keys, and the network master switch also disables profile requests.
 
 Every host Agent Speed may contact, and when, is listed in [`spec/NETWORK.md`](spec/NETWORK.md).
 
@@ -138,12 +145,23 @@ dotnet test windows/tests/AgentSpeed.Presentation.Tests
 ```
 </details>
 
+<details>
+<summary>Linux (CMake, g++ 12+; the app needs Qt 6.8 with Qt WebSockets)</summary>
+
+```sh
+cmake -S linux -B build -G Ninja -DAGENTSPEED_BUILD_TESTS=ON -DAGENTSPEED_BUILD_APP=ON
+cmake --build build && ctest --test-dir build
+linux/packaging/package.sh build dist 1.6.1   # → AppImage and .deb
+```
+</details>
+
 ## Project layout
 
 ```
 spec/       measurement + design specification, shared fixtures, reference implementation
 macos/      Swift package: AgentSpeedCore (engine) and AgentSpeed (SwiftUI app)
 windows/    .NET solution: AgentSpeed.Core (engine), AgentSpeed.Presentation, AgentSpeed (WPF app)
+linux/      C++ core and Qt 6 (QML) app, AppImage and .deb packaging
 assets/     icon artwork
 install.sh  install.ps1
 ```

@@ -3,8 +3,11 @@ import AppKit
 
 /// A data folder the user can relocate. Claude Code and Claude Desktop share the Claude root; OpenCode's folder is the
 /// one that contains `opencode.db`; Gemini CLI reads one `tmp` folder, or by default two (an override replaces both);
-/// omp reads its default `sessions` root and one per named profile, Antigravity three stores (an override replaces all);
-/// each WorkBuddy edition reads the `projects` folder of its data folder, which the row names.
+/// omp reads its default `sessions` root and one per named profile, Antigravity three stores, Pi its sessions root and
+/// its own custom session folder, OpenClaw every state folder (an override replaces all; OpenClaw's may also name an
+/// agent folder or one database), Hermes Agent the log folders of its home (an override names a home or one `logs`
+/// folder); each WorkBuddy edition reads the `projects` folder of its data folder, which the row names, and Factory
+/// Droid the `sessions` folder of a chosen `.factory` folder, or the chosen folder itself.
 enum TranscriptFolder: CaseIterable {
     case codex
     case claude
@@ -18,6 +21,10 @@ enum TranscriptFolder: CaseIterable {
     case zcode
     case kimi
     case grokBuild
+    case pi
+    case openclaw
+    case hermes
+    case droid
 
     /// Every default location, in reading order.
     var defaultURLs: [URL] {
@@ -34,6 +41,10 @@ enum TranscriptFolder: CaseIterable {
         case .kimi: [LiveMonitor.defaultKimiRoot]
         case .grokBuild: [LiveMonitor.defaultGrokBuildRoot]
         case .workbuddyAi: [LiveMonitor.defaultWorkBuddyAiDataFolder]
+        case .pi: LiveMonitor.defaultPiRoots
+        case .openclaw: LiveMonitor.defaultOpenclawRoots
+        case .hermes: [LiveMonitor.defaultHermesHome]
+        case .droid: [LiveMonitor.defaultDroidRoot]
         }
     }
 
@@ -53,6 +64,10 @@ enum TranscriptFolder: CaseIterable {
         case .kimi: "mac.settings.sources.chooseKimi"
         case .grokBuild: "mac.settings.sources.chooseGrokBuild"
         case .workbuddyAi: "mac.settings.sources.chooseWorkbuddyAi"
+        case .pi: "mac.settings.sources.choosePi"
+        case .openclaw: "mac.settings.sources.chooseOpenClaw"
+        case .hermes: "mac.settings.sources.chooseHermes"
+        case .droid: "mac.settings.sources.chooseDroid"
         }
     }
 
@@ -71,6 +86,10 @@ enum TranscriptFolder: CaseIterable {
         case .kimi: "settings.sources.kimiHint"
         case .grokBuild: "settings.sources.grokBuildHint"
         case .workbuddyAi: "settings.sources.workbuddyAiHint"
+        case .pi: "settings.sources.piHint"
+        case .openclaw: "settings.sources.openclawHint"
+        case .hermes: "settings.sources.hermesHint"
+        case .droid: "settings.sources.droidHint"
         }
     }
 
@@ -89,6 +108,10 @@ enum TranscriptFolder: CaseIterable {
         case .kimi: settings.kimiRoot
         case .grokBuild: settings.grokBuildRoot
         case .workbuddyAi: settings.workbuddyAiRoot
+        case .pi: settings.piRoot
+        case .openclaw: settings.openclawRoot
+        case .hermes: settings.hermesRoot
+        case .droid: settings.droidRoot
         }
     }
 
@@ -103,30 +126,44 @@ enum TranscriptFolder: CaseIterable {
         customURL(in: settings).map { [$0] } ?? defaultURLs
     }
 
-    /// The folders the settings row names (DESIGN section 5): the custom one, else the defaults. omp names only its
-    /// default root although profiles are read too; Antigravity names the stores found, or all three when none is.
+    /// The folders the settings row names (DESIGN section 5): the custom one, else the defaults. omp and Pi name only
+    /// their default root although profiles and Pi's custom session folder are read too; Antigravity names the stores
+    /// found, or all three when none is; OpenClaw the state folders found, or `~/.openclaw` when none is.
     @MainActor
     func shownURLs(in settings: AppSettings) -> [URL] {
         if let custom = customURL(in: settings) { return [custom] }
         switch self {
         case .omp:
             return [LiveMonitor.defaultOmpRoot]
+        case .pi:
+            return [defaultURL]
         case .antigravity:
             let found = defaultURLs.filter(isReadable)
             return found.isEmpty ? defaultURLs : found
-        case .codex, .claude, .dsh, .opencode, .gemini, .workbuddy, .workbuddyAi, .zcode, .kimi, .grokBuild:
+        case .openclaw:
+            let found = defaultURLs.filter(isReadable)
+            return found.isEmpty ? [defaultURL] : found
+        case .codex, .claude, .dsh, .opencode, .gemini, .workbuddy, .workbuddyAi, .zcode, .kimi, .grokBuild, .hermes, .droid:
             return defaultURLs
         }
     }
 
-    /// An existing folder the app reads; an Antigravity `*-backup` store never is.
+    /// An existing folder the app reads; an Antigravity `*-backup` store never is; OpenClaw's may be a database file.
     func isReadable(_ url: URL) -> Bool {
-        Self.exists(url) && (self != .antigravity || LiveMonitor.isReadableAntigravityStore(url))
+        locationExists(url) && (self != .antigravity || LiveMonitor.isReadableAntigravityStore(url))
     }
 
+    /// The folder exists; for OpenClaw an agent database file counts too.
+    func locationExists(_ url: URL) -> Bool {
+        Self.exists(url) || (acceptsDatabaseFile && FolderChooser.isOpenClawDatabase(url))
+    }
+
+    /// The picker also accepts `openclaw-agent.sqlite` (DESIGN 5).
+    var acceptsDatabaseFile: Bool { self == .openclaw }
+
     /// Stores a custom folder; nil clears the override. Choosing the (first) default location clears it too, except
-    /// for omp and Antigravity, where one chosen folder is narrower than the automatic set. A WorkBuddy data folder and
-    /// its `projects` folder are the same location.
+    /// for omp, Antigravity and Pi, where one chosen folder is narrower than the automatic set. A WorkBuddy data folder and
+    /// its `projects` folder are the same location, as are a `.factory` folder and its `sessions` folder.
     @MainActor
     func setURL(_ url: URL?, in settings: AppSettings) {
         let value = url.flatMap { replacesAutomaticSet || !isDefaultLocation($0) ? $0 : nil }
@@ -143,16 +180,22 @@ enum TranscriptFolder: CaseIterable {
         case .kimi: settings.kimiRoot = value
         case .grokBuild: settings.grokBuildRoot = value
         case .workbuddyAi: settings.workbuddyAiRoot = value
+        case .pi: settings.piRoot = value
+        case .openclaw: settings.openclawRoot = value
+        case .hermes: settings.hermesRoot = value
+        case .droid: settings.droidRoot = value
         }
     }
 
-    private var replacesAutomaticSet: Bool { self == .omp || self == .antigravity }
+    private var replacesAutomaticSet: Bool { self == .omp || self == .antigravity || self == .pi || self == .openclaw }
 
     private func isDefaultLocation(_ url: URL) -> Bool {
         switch self {
         case .workbuddy, .workbuddyAi:
             Self.isSameFolder(LiveMonitor.workbuddyProjectsFolder(url), LiveMonitor.workbuddyProjectsFolder(defaultURL))
-        case .codex, .claude, .dsh, .opencode, .gemini, .omp, .antigravity, .zcode, .kimi, .grokBuild:
+        case .droid:
+            Self.isSameFolder(LiveMonitor.droidSessionsFolder(url), defaultURL)
+        case .codex, .claude, .dsh, .opencode, .gemini, .omp, .antigravity, .zcode, .kimi, .grokBuild, .pi, .openclaw, .hermes:
             Self.isSameFolder(url, defaultURL)
         }
     }
@@ -172,19 +215,24 @@ enum TranscriptFolder: CaseIterable {
     }
 }
 
-/// Lets the user pick a transcript folder in a sheet and validates the choice. Never writes anything.
+/// Lets the user pick a transcript folder (or, where a source accepts one, its database file) in a sheet and validates
+/// the choice. Never writes anything.
 @MainActor
 enum FolderChooser {
+    /// OpenClaw's agent database (METRICS 4.14), the one file a picker may accept.
+    nonisolated static let openclawDatabaseName = "openclaw-agent.sqlite"
+
     static func choose(
         message: String,
         prompt: String,
         startingAt current: URL,
         window: NSWindow?,
+        acceptsDatabaseFile: Bool = false,
         completion: @escaping @MainActor (URL) -> Void
     ) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = acceptsDatabaseFile
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.treatsFilePackagesAsDirectories = false
@@ -193,14 +241,21 @@ enum FolderChooser {
         panel.message = message
         panel.prompt = prompt
         panel.directoryURL = nearestExistingFolder(current)
+        // The panel holds its delegate weakly; the handlers below keep the filter alive while it is open.
+        let filter = acceptsDatabaseFile ? DatabaseFileFilter() : nil
+        panel.delegate = filter
 
         if let window {
             panel.beginSheetModal(for: window) { response in
-                MainActor.assumeIsolated { finish(panel, response, completion) }
+                MainActor.assumeIsolated {
+                    withExtendedLifetime(filter) { finish(panel, response, acceptsDatabaseFile, completion) }
+                }
             }
         } else {
             panel.begin { response in
-                MainActor.assumeIsolated { finish(panel, response, completion) }
+                MainActor.assumeIsolated {
+                    withExtendedLifetime(filter) { finish(panel, response, acceptsDatabaseFile, completion) }
+                }
             }
         }
     }
@@ -208,14 +263,23 @@ enum FolderChooser {
     private static func finish(
         _ panel: NSOpenPanel,
         _ response: NSApplication.ModalResponse,
+        _ acceptsDatabaseFile: Bool,
         _ completion: @MainActor (URL) -> Void
     ) {
         guard response == .OK, let url = panel.url else { return }
-        guard let folder = validatedFolder(url) else {
+        let database = acceptsDatabaseFile && isOpenClawDatabase(url) ? URL(fileURLWithPath: url.standardizedFileURL.path) : nil
+        guard let chosen = database ?? validatedFolder(url) else {
             NSSound.beep()
             return
         }
-        completion(folder)
+        completion(chosen)
+    }
+
+    /// A local regular file named `openclaw-agent.sqlite` (METRICS 4.14).
+    nonisolated static func isOpenClawDatabase(_ url: URL) -> Bool {
+        guard url.isFileURL, url.lastPathComponent == openclawDatabaseName else { return false }
+        let values = try? url.standardizedFileURL.resourceValues(forKeys: [.isRegularFileKey])
+        return values?.isRegularFile == true
     }
 
     /// A local, existing directory (not a package), as a standardized file URL.
@@ -225,6 +289,14 @@ enum FolderChooser {
         let values = try? standardized.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
         guard values?.isDirectory == true, values?.isPackage != true else { return nil }
         return URL(fileURLWithPath: standardized.path, isDirectory: true)
+    }
+
+    /// Enables folders and `openclaw-agent.sqlite` only, so no other file can be picked.
+    private final class DatabaseFileFilter: NSObject, NSOpenSavePanelDelegate {
+        func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true || url.lastPathComponent == FolderChooser.openclawDatabaseName
+        }
     }
 
     private static func nearestExistingFolder(_ url: URL) -> URL {

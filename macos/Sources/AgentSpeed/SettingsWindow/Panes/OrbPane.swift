@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Settings → 懸浮窗 (DESIGN 5, Floating orb pane): the master switch and name labels, the orb list with live
 /// thumbnails, and the editor of the selected orb — sources, style cards, unit and traffic, size, opacity and name,
-/// window behaviour and Advanced. Every change applies live and persists immediately. Thumbnails and style cards draw
-/// only while the pane is visible.
+/// window behaviour and Advanced; then the leaderboard boards (DESIGN 2c). Every change applies live and persists
+/// immediately. Thumbnails and style cards draw only while the pane is visible.
 struct OrbPane: View {
     let model: AppModel
 
@@ -61,6 +61,8 @@ struct OrbPane: View {
                 OrbSwitchesSection(model: model, orb: orb)
                 OrbAdvancedSection(model: model, orb: orb, expanded: $advancedExpanded)
             }
+
+            BoardsSettings(model: model)
         }
         .settingsForm()
         .background(OrbPaneActivityReader(activity: $activity))

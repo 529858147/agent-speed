@@ -122,6 +122,19 @@ internal static unsafe partial class User32
     internal static partial bool GetCursorPos(out POINT lpPoint);
 
     [LibraryImport(Dll)]
+    internal static partial nint SetCapture(nint hWnd);
+
+    [LibraryImport(Dll, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ReleaseCapture();
+
+    [LibraryImport(Dll)]
+    internal static partial nint GetCapture();
+
+    [LibraryImport(Dll)]
+    internal static partial nint SetCursor(nint hCursor);
+
+    [LibraryImport(Dll)]
     internal static partial uint GetDpiForWindow(nint hWnd);
 
     [LibraryImport(Dll)]

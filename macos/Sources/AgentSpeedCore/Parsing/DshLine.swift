@@ -25,8 +25,16 @@ struct DshAssistantMessage: Equatable, Sendable {
     var hasToolCall = false
 }
 
+/// `request/header` `data.header.config` (METRICS 4.3, EXECUTION-MODES DSH).
+struct DshRequestConfig: Equatable, Sendable {
+    var model: String?
+    var provider: String?
+    /// `reasoningEffort` as a recorded request effort; nil when absent or no effort token.
+    var effort: ExecutionModeFact?
+}
+
 enum DshEventKind: Equatable, Sendable {
-    case requestHeader(model: String?, provider: String?)
+    case requestHeader(DshRequestConfig)
     case stepStart
     case assistantMessage(DshAssistantMessage)
     case turnEnd
@@ -60,8 +68,7 @@ enum DshLineExtractor {
         var header: DshHeader?
         var records: [DshRecord] = []
         var own = DshHeader()
-        var requestModel: String?
-        var requestProvider: String?
+        var request = DshRequestConfig()
         var message = DshAssistantMessage()
     }
 
@@ -131,7 +138,7 @@ enum DshLineExtractor {
         guard let time = members.time else { return }
         let kind: DshEventKind
         switch members.type {
-        case 3: kind = .requestHeader(model: members.requestModel, provider: members.requestProvider)
+        case 3: kind = .requestHeader(members.request)
         case 4: kind = .stepStart
         case 5:
             var message = members.message
@@ -189,13 +196,12 @@ enum DshLineExtractor {
     }
 
     private static func scanData(_ scanner: inout JSONScanner, into members: inout Members) throws(JSONScanError) {
-        members.requestModel = nil
-        members.requestProvider = nil
+        members.request = DshRequestConfig()
         members.message = DshAssistantMessage()
         guard try scanner.beginObjectIfPresent() else { return }
         while let key = try scanner.nextMember() {
             if scanner.key(key, is: "header") {
-                (members.requestModel, members.requestProvider) = try scanRequestConfig(&scanner)
+                members.request = try scanRequestConfig(&scanner)
             } else if scanner.key(key, is: "message") {
                 let usage = members.message.usage
                 members.message = try scanMessage(&scanner)
@@ -208,30 +214,30 @@ enum DshLineExtractor {
         }
     }
 
-    /// `data.header.config.model` and `.provider`.
-    private static func scanRequestConfig(_ scanner: inout JSONScanner) throws(JSONScanError) -> (String?, String?) {
-        guard try scanner.beginObjectIfPresent() else { return (nil, nil) }
-        var model: String?
-        var provider: String?
+    /// `data.header.config`: `model`, `provider` and `reasoningEffort`.
+    private static func scanRequestConfig(_ scanner: inout JSONScanner) throws(JSONScanError) -> DshRequestConfig {
+        var config = DshRequestConfig()
+        guard try scanner.beginObjectIfPresent() else { return config }
         while let key = try scanner.nextMember() {
             guard scanner.key(key, is: "config") else {
                 try scanner.skipValue()
                 continue
             }
-            model = nil
-            provider = nil
+            config = DshRequestConfig()
             guard try scanner.beginObjectIfPresent() else { continue }
             while let inner = try scanner.nextMember() {
                 if scanner.key(inner, is: "model") {
-                    model = try scanner.readNonEmptyString()
+                    config.model = try scanner.readNonEmptyString()
                 } else if scanner.key(inner, is: "provider") {
-                    provider = try scanner.readNonEmptyString()
+                    config.provider = try scanner.readNonEmptyString()
+                } else if scanner.key(inner, is: "reasoningEffort") {
+                    config.effort = ExecutionModeAdapters.effort(try scanner.readString(), evidence: .recorded, scope: .request)
                 } else {
                     try scanner.skipValue()
                 }
             }
         }
-        return (model, provider)
+        return config
     }
 
     /// `data.message`: its id, `source.model` and whether any content block is a `tool-call`.

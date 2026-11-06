@@ -19,6 +19,9 @@ public final class DemoDriver {
     private var today = TokenTotals.zero
     private var lastResponse: ResponseSummary?
     private static let estimatedShare = 0.15
+    /// A third of the output is reasoning and most agents have a performance score, so an orb set to the 性能 readout
+    /// shows both while previewing (METRICS 6.9).
+    private static let thinkingShare = 0.35
 
     private struct FakeAgent {
         let id: String
@@ -27,14 +30,21 @@ public final class DemoDriver {
         let model: String
         let isSubagent: Bool
         let weight: Double
+        /// Its performance score; nil for an agent without one.
+        let score: Double?
     }
 
     private let agents: [FakeAgent] = [
-        FakeAgent(id: "demo-rocket", source: .codex, project: "rocket", model: "gpt-6.1-sol", isSubagent: false, weight: 0.28),
-        FakeAgent(id: "demo-nova", source: .claudeCode, project: "nova", model: "claude-opus-5-5", isSubagent: false, weight: 0.26),
-        FakeAgent(id: "demo-quasar", source: .deepseek, project: "quasar", model: "deepseek-v4-pro", isSubagent: false, weight: 0.18),
-        FakeAgent(id: "demo-nova-sub", source: .claudeCode, project: "nova", model: "claude-sonnet-5-5", isSubagent: true, weight: 0.14),
-        FakeAgent(id: "demo-orbit", source: .claudeDesktop, project: "orbit", model: "claude-fable-5-1", isSubagent: false, weight: 0.14),
+        FakeAgent(id: "demo-rocket", source: .codex, project: "rocket", model: "gpt-6.1-sol", isSubagent: false, weight: 0.28,
+                  score: 812.4),
+        FakeAgent(id: "demo-nova", source: .claudeCode, project: "nova", model: "claude-opus-5-5", isSubagent: false, weight: 0.26,
+                  score: 1286.3),
+        FakeAgent(id: "demo-quasar", source: .deepseek, project: "quasar", model: "deepseek-v4-pro", isSubagent: false, weight: 0.18,
+                  score: nil),
+        FakeAgent(id: "demo-nova-sub", source: .claudeCode, project: "nova", model: "claude-sonnet-5-5", isSubagent: true, weight: 0.14,
+                  score: 940.2),
+        FakeAgent(id: "demo-orbit", source: .claudeDesktop, project: "orbit", model: "claude-fable-5-1", isSubagent: false, weight: 0.14,
+                  score: 1604.6),
     ]
 
     public init(store: SpeedStore) {
@@ -156,22 +166,31 @@ public final class DemoDriver {
         let agentStatuses: [AgentStatus] = agents.enumerated().map { index, agent in
             let active = index < generating
             let share = active ? speed * agent.weight / activeWeight(generating) : 0
+            let phase: AgentPhase = active ? .generating : (speed > 0.5 ? .tools : .idle)
+            var intelligence = Self.intelligence(output: share, from: agent.source)
+            if let score = agent.score {
+                intelligence.score = PerfSetValue(form: phase == .idle ? .resting : .live, score: score, agentId: agent.id,
+                                                  lastLineMs: Clock.milliseconds(now))
+            }
             return AgentStatus(
                 id: agent.id,
                 source: agent.source,
                 project: agent.project,
                 model: agent.model,
-                phase: active ? .generating : (speed > 0.5 ? .tools : .idle),
+                phase: phase,
                 isSubagent: agent.isSubagent,
                 live: Rate(output: share, total: share * 24),
                 recentSpeed: active ? share : nil,
                 lastActivity: now,
-                parentId: agent.isSubagent ? "demo-nova" : nil
+                parentId: agent.isSubagent ? "demo-nova" : nil,
+                intelligence: intelligence
             )
         }
         let sourceCount = SourceKind.allCases.count
         let sources: [SourceStatus] = SourceKind.allCases.map { kind in
             let live = agentStatuses.filter { $0.source == kind }.reduce(0) { $0 + $1.live.output }
+            let intelligence = agentStatuses.filter { $0.source == kind }
+                .reduce(into: IntelligenceSums()) { $0.add($1.intelligence) }
             return SourceStatus(
                 kind: kind,
                 enabled: true,
@@ -186,7 +205,8 @@ public final class DemoDriver {
                     output: today.output / sourceCount
                 ),
                 activeAgents: agentStatuses.filter { $0.source == kind && $0.phase == .generating }.count,
-                liveEstimated: Rate(output: live * Self.estimatedShare, total: live * Self.estimatedShare * 24)
+                liveEstimated: Rate(output: live * Self.estimatedShare, total: live * Self.estimatedShare * 24),
+                intelligence: intelligence
             )
         }
         return SpeedSnapshot(
@@ -205,8 +225,15 @@ public final class DemoDriver {
             history: history,
             lastResponse: lastResponse,
             warnings: [],
-            dayStart: Calendar.current.startOfDay(for: now)
+            dayStart: Calendar.current.startOfDay(for: now),
+            intelligence: sources.reduce(into: IntelligenceSums()) { $0.add($1.intelligence) }
         )
+    }
+
+    private static func intelligence(output: Double, from source: SourceKind) -> IntelligenceSums {
+        var sums = IntelligenceSums()
+        sums.add(output: output, reasoning: output * thinkingShare, from: source)
+        return sums
     }
 
     private func activeWeight(_ count: Int) -> Double {

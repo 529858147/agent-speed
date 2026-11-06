@@ -36,6 +36,21 @@ internal static class Program
             return Orb.Gpu.OrbBenchHarness.Run(bench);
         }
 
+        if (Environment.GetEnvironmentVariable("AGENT_SPEED_BOARD_FRAMES") is { Length: > 0 } boardFrames)
+        {
+            return Boards.Harness.BoardFrameHarness.Run(boardFrames);
+        }
+
+        if (Environment.GetEnvironmentVariable("AGENT_SPEED_BOARD_BENCH") is { Length: > 0 } boardBench)
+        {
+            return Boards.Harness.BoardBenchHarness.Run(boardBench);
+        }
+
+        if (Environment.GetEnvironmentVariable("AGENT_SPEED_BOARD_WINDOW") is { Length: > 0 } boardWindow)
+        {
+            return Boards.Harness.BoardWindowHarness.Run(boardWindow);
+        }
+
         using var instance = Acquire(launch);
         if (instance is null)
         {

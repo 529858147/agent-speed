@@ -32,6 +32,11 @@ public sealed class LiveMonitor : IDisposable
     private MonitorConfiguration _configuration;
     private SourceSet[] _subsets = [];
     private int _subsetsChanged;
+    private IReadOnlyList<Perf.PerfRecord>? _perfRecords;
+    private int _perfRecordsChanged;
+
+    /// <summary>The local date the current baselines end before; owned by the monitor thread.</summary>
+    private string? _baselineDay;
     private Thread? _thread;
     private CancellationTokenSource? _stop;
     private CancellationTokenSource? _session;
@@ -124,6 +129,39 @@ public sealed class LiveMonitor : IDisposable
     /// <summary>The default omp root followed by one root per named profile.</summary>
     internal static IReadOnlyList<string> DefaultOmpRoots => OmpPaths.AutomaticRoots();
 
+    /// <summary>
+    /// Pi's default sessions folder (<c>%PI_CODING_AGENT_DIR%\sessions</c>, else <c>~/.pi/agent/sessions</c>); unless a
+    /// folder is chosen, the custom session folder of Pi's own settings is read as well (METRICS 2, 4.13).
+    /// </summary>
+    public static string DefaultPiRoot => Pi.PiPaths.DefaultRoot();
+
+    /// <summary>Pi's default root followed by its custom session folders.</summary>
+    internal static IReadOnlyList<string> DefaultPiRoots => Pi.PiPaths.AutomaticRoots();
+
+    /// <summary>
+    /// OpenClaw's default state folder (<c>%OPENCLAW_STATE_DIR%</c>, else <c>~/.openclaw</c> under <c>%OPENCLAW_HOME%</c> or the
+    /// home folder); unless a folder or database is chosen, every named-profile folder is read as well (METRICS 2, 4.14).
+    /// </summary>
+    public static string DefaultOpenClawRoot => OpenClaw.OpenClawPaths.DefaultStateFolder();
+
+    /// <summary>
+    /// Hermes Agent's home (<c>%HERMES_HOME%</c>, resolved to the root of a profile home; else <c>%LOCALAPPDATA%\hermes</c>,
+    /// macOS <c>~/.hermes</c>); its <c>logs</c> folder and every profile's are read (METRICS 2, 4.15).
+    /// </summary>
+    public static string DefaultHermesRoot => Hermes.HermesPaths.AutomaticHome();
+
+    /// <summary>
+    /// Factory Droid's sessions folder, <c>%USERPROFILE%\.factory\sessions</c> (macOS <c>~/.factory/sessions</c>); no environment
+    /// variable moves it (METRICS 2, 4.16).
+    /// </summary>
+    public static string DefaultDroidRoot => Droid.DroidPaths.DefaultRoot(UserHome);
+
+    /// <summary>The Factory Droid sessions folder a setting stands for: its <c>sessions</c> folder or the folder itself; null: the default.</summary>
+    public static string DroidRoot(string? setting) => SourceLocations.DroidRootOf(setting);
+
+    /// <summary>Every automatic OpenClaw state folder: the override alone, else <c>.openclaw</c> and its profiles.</summary>
+    public static IReadOnlyList<string> DefaultOpenClawRoots => OpenClaw.OpenClawPaths.AutomaticStateFolders();
+
     /// <summary>The three Antigravity stores below <c>~/.gemini</c>: CLI, desktop app, IDE (METRICS 2, 4.8).</summary>
     public static IReadOnlyList<string> DefaultAntigravityStores => AntigravityPaths.DefaultStores(Path.Combine(UserHome, ".gemini"));
 
@@ -160,12 +198,6 @@ public sealed class LiveMonitor : IDisposable
 
     public static string DefaultGrokBuildRoot => Path.Combine(
         Environment.GetEnvironmentVariable("GROK_HOME") is { Length: > 0 } home ? home : Path.Combine(UserHome, ".grok"), "sessions");
-
-    /// <summary>
-    /// The default pi <c>sessions</c> folder (<c>%PI_CODING_AGENT_SESSION_DIR%</c>, else the <c>sessions</c> folder of
-    /// <c>%PI_CODING_AGENT_DIR%</c>, else <c>~/.pi/agent/sessions</c>); METRICS 2, 4.13.
-    /// </summary>
-    public static string DefaultPiRoot => Pi.PiPaths.DefaultRoot();
 
     private static string GeminiHome
     {
@@ -259,6 +291,18 @@ public sealed class LiveMonitor : IDisposable
         SignalWake();
     }
 
+    /// <summary>
+    /// The stored performance records the score card's baselines come from (METRICS 6.11 <i>Baseline</i>): callable from
+    /// any thread (the history service calls it after each analysis); kept across configuration changes.
+    /// </summary>
+    public void SetPerfRecords(IReadOnlyList<Perf.PerfRecord> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        Volatile.Write(ref _perfRecords, records);
+        Interlocked.Exchange(ref _perfRecordsChanged, 1);
+        SignalWake();
+    }
+
     /// <summary>Applies new settings; the monitor re-reads its sources in the background when anything changed.</summary>
     public void Update(MonitorConfiguration configuration)
     {
@@ -343,6 +387,9 @@ public sealed class LiveMonitor : IDisposable
         core.ReadWholeFilesInBackground = true;
         core.BackgroundReadCompleted = SignalWake;
         core.BeforeBackgroundRead = BeforeBackgroundRead;
+        _baselineDay = null;
+        ApplyPerfRecords(core, NowMs(), zone, force: true);
+
         var watchers = new Dictionary<SourceRoot, RootWatcher>();
         try
         {
@@ -409,10 +456,12 @@ public sealed class LiveMonitor : IDisposable
 
             elapsed = Stopwatch.GetElapsedTime(start);
             var now = NowMs();
+            core.PerfWatch = _hub.PerfWatch;
             if (elapsed >= nextZoneRefresh)
             {
                 TimeZoneInfo.ClearCachedData();
                 zone = TimeZoneInfo.Local;
+                core.HermesZone = zone;
                 nextZoneRefresh = elapsed + TimeZoneRefreshInterval;
             }
 
@@ -423,6 +472,11 @@ public sealed class LiveMonitor : IDisposable
                 if (TakeRescanRequest() || elapsed >= nextDiscovery)
                 {
                     changed |= core.Rediscover(now, today, token);
+                    if (core.RestartRequested)
+                    {
+                        return;
+                    }
+
                     EnsureWatchers(core, watchers);
                     nextDiscovery = elapsed + DiscoveryInterval;
                 }
@@ -449,7 +503,7 @@ public sealed class LiveMonitor : IDisposable
             }
 
             elapsed = Stopwatch.GetElapsedTime(start);
-            dirty |= changed | (Interlocked.Exchange(ref _subsetsChanged, 0) != 0);
+            dirty |= changed | (Interlocked.Exchange(ref _subsetsChanged, 0) != 0) | ApplyPerfRecords(core, now, zone, force: false);
             if (elapsed >= nextPublish || (dirty && elapsed - lastPublish >= ChangePublishMinInterval))
             {
                 Publish(core, StateOf(core), zone, observeLive: true);
@@ -458,6 +512,22 @@ public sealed class LiveMonitor : IDisposable
                 dirty = false;
             }
         }
+    }
+
+    /// <summary>The baselines over the stored records, rebuilt when they change and when the local day does (METRICS 6.11).</summary>
+    private bool ApplyPerfRecords(MonitorCore core, long nowMs, TimeZoneInfo zone, bool force)
+    {
+        var today = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(nowMs), zone)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var changed = Interlocked.Exchange(ref _perfRecordsChanged, 0) != 0;
+        if (!force && !changed && today == _baselineDay)
+        {
+            return false;
+        }
+
+        _baselineDay = today;
+        core.PerfBaselines = Volatile.Read(ref _perfRecords) is { } records ? new Perf.PerfHistory(records, today) : null;
+        return true;
     }
 
     private void Publish(MonitorCore core, MonitorState state, TimeZoneInfo zone, bool observeLive)

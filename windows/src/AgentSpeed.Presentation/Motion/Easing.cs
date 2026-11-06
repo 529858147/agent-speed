@@ -16,6 +16,54 @@ public static class Easing
         return 1 - (1 - t) * (1 - t);
     }
 
+    /// <summary>CSS <c>cubic-bezier(x1, y1, x2, y2)</c> at progress <paramref name="t"/> (Newton steps, then bisection).</summary>
+    public static double CubicBezier(double x1, double y1, double x2, double y2, double t)
+    {
+        t = Clamp01(t);
+        static double Curve(double a, double b, double u) => ((1 - 3 * b + 3 * a) * u + (3 * b - 6 * a)) * u * u + 3 * a * u;
+        var u = t;
+        for (var i = 0; i < 6; i++)
+        {
+            var error = Curve(x1, x2, u) - t;
+            var slope = 3 * (1 - 3 * x2 + 3 * x1) * u * u + 2 * (3 * x2 - 6 * x1) * u + 3 * x1;
+            if (Math.Abs(error) < 1e-6)
+            {
+                return Curve(y1, y2, u);
+            }
+
+            if (Math.Abs(slope) < 1e-6)
+            {
+                break;
+            }
+
+            u = Math.Clamp(u - error / slope, 0, 1);
+        }
+
+        double lo = 0, hi = 1;
+        u = t;
+        for (var i = 0; i < 30; i++)
+        {
+            var x = Curve(x1, x2, u);
+            if (Math.Abs(x - t) < 1e-6)
+            {
+                break;
+            }
+
+            if (x < t)
+            {
+                lo = u;
+            }
+            else
+            {
+                hi = u;
+            }
+
+            u = (lo + hi) / 2;
+        }
+
+        return Curve(y1, y2, u);
+    }
+
     public static double InOutSine(double t) => -(Math.Cos(Math.PI * Clamp01(t)) - 1) / 2;
 
     public static double OutBack(double t, double overshoot = 1.70158)

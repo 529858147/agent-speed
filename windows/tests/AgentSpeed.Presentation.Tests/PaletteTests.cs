@@ -236,6 +236,13 @@ public class PaletteTests
     [InlineData(SourceKind.Antigravity, "#EC4899")]
     [InlineData(SourceKind.WorkBuddy, "#11A68B")]
     [InlineData(SourceKind.WorkBuddyAi, "#007AB4")]
+    [InlineData(SourceKind.ZCode, "#466BFF")]
+    [InlineData(SourceKind.Kimi, "#E16F8A")]
+    [InlineData(SourceKind.GrokBuild, "#8290A6")]
+    [InlineData(SourceKind.Pi, "#A855F7")]
+    [InlineData(SourceKind.OpenClaw, "#DE2E1F")]
+    [InlineData(SourceKind.Hermes, "#B8860B")]
+    [InlineData(SourceKind.Droid, "#9E5F46")]
     public void SourceColorsMatchDesign(SourceKind source, string hex)
     {
         Assert.Equal(hex, HeatPalette.SourceColor(source).ToHex());

@@ -32,6 +32,8 @@ struct TimedResponse: Sendable {
     var durationMs: Int64 { record.endMs - startMs }
     var output: Double { Double(record.usage.output) }
     var total: Double { Double(record.usage.total) }
+    /// Reasoning tokens, never more than the output (METRICS 6.9).
+    var reasoning: Double { Double(min(record.usage.reasoning, record.usage.output)) }
 
     init?(_ record: ResponseRecord) {
         guard let start = ResponseTiming.effectiveStart(startMs: record.startMs, endMs: record.endMs) else { return nil }

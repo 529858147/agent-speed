@@ -3,6 +3,7 @@ using AgentSpeed.Core.Engine;
 using AgentSpeed.Core.Monitoring;
 using AgentSpeed.Core.Parsing;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.Unpriced;
 
 namespace AgentSpeed.Core.History;
 
@@ -82,6 +83,28 @@ internal sealed class DayAggregate
     /// <summary>Some response has no known price (METRICS 9.7 re-analysis).</summary>
     public bool HasUnpriced => Cost is { UnpricedRequests: > 0 };
 
+    /// <summary>The unpriced facts (METRICS 9.10): of the responses when analysed, after <i>Reading</i> when loaded.</summary>
+    public Dictionary<UnpricedFact, long> Unpriced { get; } = [];
+
+    /// <summary>Requests of contributions stored before costs existed (METRICS 9.10 <c>noCostData</c>).</summary>
+    public long NoCostData { get; set; }
+
+    /// <summary>Unpriced requests whose facts were derived from the per-model counts (METRICS 9.10 <c>derived</c>).</summary>
+    public long Derived { get; set; }
+
+    /// <summary>Takes a stored contribution's facts as read (METRICS 9.10 <i>Reading</i>).</summary>
+    public void SetUnpriced(UnpricedReading reading)
+    {
+        Unpriced.Clear();
+        foreach (var (fact, requests) in reading.Facts)
+        {
+            UnpricedFacts.Add(Unpriced, fact, requests);
+        }
+
+        NoCostData = reading.NoCostData;
+        Derived = reading.Derived;
+    }
+
     /// <summary>Adds a response with its cost (null = unknown price).</summary>
     public void Add(ParsedResponse response, long? cost)
     {
@@ -91,6 +114,11 @@ internal sealed class DayAggregate
         }
 
         Cost = Cost?.Add(cost, requests: response.Requests);
+        if (cost is null)
+        {
+            UnpricedFacts.Add(Unpriced, UnpricedFact.Of(response.Model, response.Provider, response.FastForPricing), response.Requests);
+        }
+
         var tokens = response.Tokens;
         Requests += response.Requests;
         Input += tokens.Input;
@@ -121,7 +149,7 @@ internal sealed class DayAggregate
         long modeMs = 0;
         if (response.Final && SpeedMath.TryGetSpeedInterval(response, out var modeInterval)) modeMs = modeInterval.DurationMs;
         var measured = modeMs > 0;
-        foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+        foreach (var kind in ExecutionModes.BreakdownKinds)
         {
             var key = ExecutionModeKey.Of(model, response.Modes.Attribute(kind));
             var value = new ExecutionModeTotals(response.Requests, tokens.Output, measured ? tokens.Output : 0, modeMs);
@@ -142,6 +170,13 @@ internal sealed class DayAggregate
         MeasuredMs += other.MeasuredMs;
         Unfinalized += other.Unfinalized;
         Agents += other.Agents;
+        NoCostData += other.NoCostData;
+        Derived += other.Derived;
+        foreach (var (fact, requests) in other.Unpriced)
+        {
+            UnpricedFacts.Add(Unpriced, fact, requests);
+        }
+
         foreach (var (key, value) in other.Modes) Modes[key] = Modes.GetValueOrDefault(key) + value;
         foreach (var (model, usage) in other.Models)
         {
@@ -168,6 +203,7 @@ internal sealed class DayAggregate
             })])
     {
         Cost = Cost,
+        Unpriced = new UnpricedReading(NoCostData, Derived, UnpricedFacts.Sorted(Unpriced)),
         Modes = ModeRows(key.Source),
         PriceVersion = Cost is null ? null : priceVersion,
     };
@@ -183,7 +219,7 @@ internal sealed class DayAggregate
             expected[string.Empty] = expected.GetValueOrDefault(string.Empty) + rest;
         rows.RemoveAll(row => !expected.ContainsKey(row.Model));
         foreach (var (model, totals) in expected)
-        foreach (var kind in Enum.GetValues<ExecutionModeKind>())
+        foreach (var kind in ExecutionModes.BreakdownKinds)
         {
             var known = rows.Where(r => r.Model == model && r.Kind == kind).ToArray();
             var missing = new ExecutionModeTotals(totals.Requests - known.Sum(r => r.Requests), totals.Output - known.Sum(r => r.Output),
@@ -239,6 +275,12 @@ internal sealed class DayLabeler(TimeZoneInfo zone)
     private string _label = string.Empty;
 
     public TimeZoneInfo Zone { get; } = zone;
+
+    /// <summary>Whether <paramref name="unixMs"/> has a date in every time zone (METRICS 8).</summary>
+    public static bool HasDate(long unixMs) => unixMs is >= MinMs and <= MaxMs;
+
+    /// <summary>A task record's <c>day</c> (METRICS 6.11): the local date of <paramref name="unixMs"/>, empty when it has none (8).</summary>
+    public string DayOf(long unixMs) => Label(unixMs) ?? string.Empty;
 
     public string? Label(long unixMs)
     {

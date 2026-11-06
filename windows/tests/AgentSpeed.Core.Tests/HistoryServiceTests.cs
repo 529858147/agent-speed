@@ -138,7 +138,10 @@ public sealed class HistoryServiceTests : IDisposable
         ZCodeRoot: _temp.Combine("zcode"),
         KimiRoot: _temp.Combine("kimi", "sessions"),
         GrokBuildRoot: _temp.Combine("grok", "sessions"),
-        PiRoot: _temp.Combine("pi", "sessions"));
+        PiRoot: _temp.Combine("pi", "sessions"),
+        OpenClawRoot: _temp.Combine("openclaw"),
+        HermesRoot: _temp.Combine("hermes"),
+        DroidRoot: _temp.Combine(".factory"));
 
     private string WriteClaude(string relative, long ms, string id, long output) =>
         _temp.WriteFile("claude/projects/" + relative,

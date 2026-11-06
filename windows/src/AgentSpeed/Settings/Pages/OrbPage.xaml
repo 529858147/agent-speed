@@ -6,6 +6,7 @@
              xmlns:controls="clr-namespace:AgentSpeed.Controls"
              xmlns:pane="clr-namespace:AgentSpeed.Settings.OrbsPane"
              xmlns:tt="clr-namespace:AgentSpeed.Settings.TitleThemes"
+             xmlns:boards="clr-namespace:AgentSpeed.Settings.BoardsPane"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
@@ -292,6 +293,24 @@
                 </DockPanel>
             </Border>
 
+            <!-- Two-line readout (DESIGN 10): network speed, live intelligence or nothing, under the unit control -->
+            <Border Style="{StaticResource GroupBorder}" Margin="0,8,0,0" Padding="16,4,16,12">
+                <StackPanel>
+                    <DockPanel MinHeight="48">
+                        <TextBlock Text="{loc:Loc orbs.traffic}" VerticalAlignment="Center" FontSize="13" />
+                        <ComboBox MinWidth="200" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  SelectedIndex="{Binding TrafficIndex, Mode=TwoWay}" AutomationProperties.Name="{loc:Loc orbs.traffic}"
+                                  AutomationProperties.HelpText="{Binding TrafficHint}">
+                            <ComboBoxItem Content="{loc:Loc orbs.traffic.sources}" />
+                            <ComboBoxItem Content="{loc:Loc orbs.traffic.machine}" />
+                            <ComboBoxItem Content="{loc:Loc orbs.traffic.intelligence}" />
+                            <ComboBoxItem Content="{loc:Loc orbs.traffic.off}" />
+                        </ComboBox>
+                    </DockPanel>
+                    <TextBlock Text="{Binding TrafficHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <!-- Size and opacity -->
             <Border Style="{StaticResource GroupBorder}" Margin="0,16,0,0" Padding="16,4,16,4">
                 <StackPanel>
@@ -433,5 +452,8 @@
                 </StackPanel>
             </Border>
         </StackPanel>
+
+        <!-- Leaderboard boards (DESIGN 2c): their list and editor under the orbs -->
+        <boards:BoardsSection DataContext="{Binding DataContext.Boards, RelativeSource={RelativeSource AncestorType=UserControl}}" />
     </StackPanel>
 </UserControl>

@@ -139,6 +139,16 @@ public sealed class TaskbarReadoutTests
     }
 
     [Fact]
+    public void CompactAndIntelligenceSettingsRoundTripTogether()
+    {
+        var settings = Settings with { BarCompact = true, BarIntelligence = true, TaskbarOffset = 42 };
+        var restored = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(settings));
+        Assert.True(restored.BarCompact);
+        Assert.True(restored.BarIntelligence);
+        Assert.Equal(42, restored.TaskbarOffset);
+    }
+
+    [Fact]
     public void HoverHoldsExpiredShrinkUntilLeaveWhileStillAllowingGrowthAndDpiChanges()
     {
         var width = new WidthHold(6000);

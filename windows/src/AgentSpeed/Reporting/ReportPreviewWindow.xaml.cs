@@ -8,8 +8,9 @@ namespace AgentSpeed.Reporting;
 
 /// <summary>
 /// <c>report.preview</c> (DESIGN 11, Preview window): the request line and headers — the signature as <c>…</c>, the API key as
-/// <c>Bearer ••••</c> — then the body, the seconds until the next report and Copy. Before the service's document is known it
-/// shows the body only, built with the default switches and the protocol's defaults, and says so.
+/// <c>Bearer ••••</c> — then the body, the seconds until the next report and Copy. Over WebSocket the request is the
+/// connection's upgrade, the body carries <c>realtime</c> and <c>report.preview.onChange</c> replaces the countdown. Before the
+/// service's document is known it shows the body only, built with the default switches and the protocol's defaults, and says so.
 /// </summary>
 internal sealed partial class ReportPreviewWindow : Window
 {
@@ -55,15 +56,13 @@ internal sealed partial class ReportPreviewWindow : Window
             : [(string.Empty, preview.RequestLine), .. preview.Headers.Select(h => (h.Key, h.Value))];
         ReportPreviewText.Update(_preview, preview.Body.ToPrettyTokens(), header);
         HintText.Text = loc[preview.Assumed ? "report.preview.assumed" : "report.preview.hint"];
-        if (preview.NextIn is { } seconds)
-        {
-            NextText.Text = loc.Format("report.preview.next", seconds);
-            NextPill.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            NextPill.Visibility = Visibility.Collapsed;
-        }
+        var next = preview.NextIn is { } seconds ? loc.Format("report.preview.next", seconds)
+            : preview.OnChange ? loc["report.preview.onChange"]
+            : null;
+        NextText.Text = next ?? string.Empty;
+        NextGlyph.Visibility = preview.OnChange ? Visibility.Visible : Visibility.Collapsed;
+        NextPill.Visibility = next is null ? Visibility.Collapsed : Visibility.Visible;
+        System.Windows.Automation.AutomationProperties.SetName(NextPill, next ?? string.Empty);
     }
 
     private void OnCopy(object sender, RoutedEventArgs e)

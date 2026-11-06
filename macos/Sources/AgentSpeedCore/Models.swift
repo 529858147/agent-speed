@@ -18,6 +18,14 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case zcode
     case kimi
     case grokBuild
+    /// Pi (Pi Coding Agent), the upstream of omp.
+    case pi
+    /// OpenClaw, an agent gateway whose runtime grew out of Pi.
+    case openclaw
+    /// Hermes Agent (Nous Research), read from its `agent.log`.
+    case hermes
+    /// Factory Droid (CLI `droid` and Factory Desktop): session transcripts with their settings files.
+    case droid
 
     public var id: String { rawValue }
 }
@@ -97,7 +105,12 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     public var source: SourceKind
     public var project: String
     public var model: String?
+    /// The agent's own facts (EXECUTION-MODES, Native rules).
     public var modes: ExecutionModes
+    /// A session-current fact, held apart from the agent's own facts.
+    public var sessionModes: ExecutionModes = .empty
+    /// Values only a config file holds.
+    public var configuredModes: ExecutionModes = .empty
     public var phase: AgentPhase
     public var isSubagent: Bool
     public var live: Rate
@@ -106,10 +119,15 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
     public var lastActivity: Date
     /// The parent agent's id when the parent is also in the list (METRICS 6.7).
     public var parentId: String?
-    /// The agent's live cost rate (METRICS 9.5).
-    public var liveCost: LiveCost
     /// The full working directory the transcript names (METRICS 10.6); nil when it names none.
     public var cwdPath: String?
+    /// Its own thinking sums and performance score value (METRICS 6.9 *Values*, *Live thinking*): `intelligence.score`
+    /// is the agent's value, live or resting by its phase.
+    public var intelligence: IntelligenceSums
+    /// Its performance score with the facts of the score card (METRICS 6.9 *Facts*); nil when not evaluated.
+    public var perf: PerfEvaluation?
+    /// What its recent tool calls say (METRICS 6.10).
+    public var signals: WorkSignals
 
     public init(
         id: String,
@@ -122,9 +140,11 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         recentSpeed: Double?,
         lastActivity: Date,
         parentId: String? = nil,
-        liveCost: LiveCost = .zero,
         cwdPath: String? = nil,
-        modes: ExecutionModes = .empty
+        modes: ExecutionModes = .empty,
+        intelligence: IntelligenceSums = .zero,
+        perf: PerfEvaluation? = nil,
+        signals: WorkSignals = .none
     ) {
         self.id = id
         self.source = source
@@ -137,9 +157,19 @@ public struct AgentStatus: Identifiable, Equatable, Sendable {
         self.recentSpeed = recentSpeed
         self.lastActivity = lastActivity
         self.parentId = parentId
-        self.liveCost = liveCost
         self.cwdPath = cwdPath
+        self.intelligence = intelligence
+        self.perf = perf
+        self.signals = signals
     }
+
+    /// The current reasoning effort and speed (EXECUTION-MODES, Current values).
+    public var current: EffortAndSpeed {
+        EffortAndSpeed(facts: modes, session: sessionModes, configured: configuredModes)
+    }
+
+    /// Live, resting or none (METRICS 6.9 *Values*).
+    public var intelligenceForm: AgentIntelligence { AgentIntelligence(intelligence.score) }
 }
 
 public struct SourceStatus: Identifiable, Equatable, Sendable {
@@ -162,6 +192,10 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
     public var todayCost: CostTally
     /// Models of today's responses without a known price, most unpriced requests first.
     public var unpricedModels: [String]
+    /// Today's unpriced facts (METRICS 9.6, 9.10 *Live*), in the fact order.
+    public var unpricedFacts: [UnpricedFact]
+    /// The thinking sums and the highest performance score of the source's listed agents (METRICS 6.9).
+    public var intelligence: IntelligenceSums
 
     public init(
         kind: SourceKind,
@@ -176,7 +210,9 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         liveCost: LiveCost = .zero,
         todayCost: CostTally = .zero,
         unpricedModels: [String] = [],
-        configuredModes: ExecutionModes = .empty
+        configuredModes: ExecutionModes = .empty,
+        intelligence: IntelligenceSums = .zero,
+        unpricedFacts: [UnpricedFact] = []
     ) {
         self.kind = kind
         self.enabled = enabled
@@ -190,7 +226,9 @@ public struct SourceStatus: Identifiable, Equatable, Sendable {
         self.liveCost = liveCost
         self.todayCost = todayCost
         self.unpricedModels = unpricedModels
+        self.unpricedFacts = unpricedFacts
         self.configuredModes = configuredModes
+        self.intelligence = intelligence
     }
 
     /// Listed on the dashboard (DESIGN 4.3): the source produced output tokens today or is generating right now (its
@@ -275,8 +313,13 @@ public struct SpeedSnapshot: Equatable, Sendable {
     public var liveCost: LiveCost
     /// Today's cost of every source (METRICS 9.6).
     public var todayCost: CostTally
+    /// The thinking sums and the highest performance score of every listed agent (METRICS 6.9).
+    public var intelligence: IntelligenceSums
     /// Live reporting's agent counts and cumulative ledger (METRICS 11.2, 11.4).
     public var report: ReportLiveFacts
+    /// Monotonic ms (`CLOCK_MONOTONIC`) at which the earliest read that changed the engine since the previous snapshot
+    /// began; nil when no read changed anything (METRICS 11.9, Observations).
+    public var observedAtMs: Int64?
 
     public init(
         timestamp: Date,
@@ -298,7 +341,9 @@ public struct SpeedSnapshot: Equatable, Sendable {
         dayStart: Date = .distantPast,
         liveCost: LiveCost = .zero,
         todayCost: CostTally = .zero,
-        report: ReportLiveFacts = .empty
+        intelligence: IntelligenceSums = .zero,
+        report: ReportLiveFacts = .empty,
+        observedAtMs: Int64? = nil
     ) {
         self.timestamp = timestamp
         self.state = state
@@ -319,7 +364,9 @@ public struct SpeedSnapshot: Equatable, Sendable {
         self.dayStart = dayStart
         self.liveCost = liveCost
         self.todayCost = todayCost
+        self.intelligence = intelligence
         self.report = report
+        self.observedAtMs = observedAtMs
     }
 
     public static let empty = SpeedSnapshot(
@@ -371,9 +418,25 @@ public struct MonitorConfiguration: Equatable, Sendable {
     public var zcodeRoot: URL?
     public var kimiRoot: URL?
     public var grokBuildRoot: URL?
+    /// One Pi sessions folder; nil reads `<agent dir>/sessions` and Pi's custom session folder (METRICS 2, 4.13).
+    public var piRoot: URL?
+    /// One OpenClaw state folder, agent folder or `openclaw-agent.sqlite`; nil reads every state folder (METRICS 2, 4.14).
+    public var openclawRoot: URL?
+    /// A Hermes Agent home or one of its `logs` folders; nil reads the automatic home (METRICS 2, 4.15).
+    public var hermesRoot: URL?
+    /// The `.factory` folder or its `sessions` folder; nil reads `~/.factory/sessions` (METRICS 2, 4.16).
+    public var droidRoot: URL?
     /// Tests: replaces the automatic roots of a family that are otherwise derived from the environment and the home
     /// folder (omp `sessions` roots, Antigravity store folders, WorkBuddy data folders).
     var automaticRoots: [TranscriptFamily: [URL]] = [:]
+    /// Tests: the environment and home folder Pi's automatic roots are derived from, instead of the process's own.
+    var piHome: PiHome?
+    /// Tests: the environment and home folder OpenClaw's state folders are derived from, instead of the process's own.
+    var openclawHome: OpenClawHome?
+    /// Tests: the environment and home folder the Hermes home is derived from, instead of the process's own.
+    var hermesHome: HermesHome?
+    /// Tests: the zone Hermes's wall-clock times are read in, instead of this computer's (METRICS 4.15).
+    var hermesTimeZone: TimeZone?
 
     public init(
         enabledSources: Set<SourceKind> = Set(SourceKind.allCases),
@@ -388,7 +451,11 @@ public struct MonitorConfiguration: Equatable, Sendable {
         workbuddyAiRoot: URL? = nil,
         zcodeRoot: URL? = nil,
         kimiRoot: URL? = nil,
-        grokBuildRoot: URL? = nil
+        grokBuildRoot: URL? = nil,
+        piRoot: URL? = nil,
+        openclawRoot: URL? = nil,
+        hermesRoot: URL? = nil,
+        droidRoot: URL? = nil
     ) {
         self.enabledSources = enabledSources
         self.codexRoot = codexRoot
@@ -403,5 +470,9 @@ public struct MonitorConfiguration: Equatable, Sendable {
         self.zcodeRoot = zcodeRoot
         self.kimiRoot = kimiRoot
         self.grokBuildRoot = grokBuildRoot
+        self.piRoot = piRoot
+        self.openclawRoot = openclawRoot
+        self.hermesRoot = hermesRoot
+        self.droidRoot = droidRoot
     }
 }

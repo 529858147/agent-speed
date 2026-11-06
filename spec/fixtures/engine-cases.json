@@ -1312,6 +1312,115 @@
           ]
         }
       ]
+    },
+    {
+      "name": "the live cost adds an in-flight estimate at its reference's rate and leaves unpriced tokens unknown",
+      "agents": [
+        {
+          "id": "g1",
+          "source": "codex",
+          "model": "m1",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": null
+        },
+        {
+          "id": "g2",
+          "source": "codex",
+          "model": "m2",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": "g1"
+        },
+        {
+          "id": "g3",
+          "source": "codex",
+          "model": "m1",
+          "phase": "generating",
+          "inFlightStartMs": 1000000001500,
+          "lastLineMs": 1000000001500,
+          "parentId": "g2"
+        },
+        {
+          "id": "h1",
+          "source": "claudeCode",
+          "model": "m3",
+          "phase": "idle",
+          "inFlightStartMs": null,
+          "lastLineMs": 1000000003000,
+          "parentId": null
+        }
+      ],
+      "responses": [
+        {
+          "key": "rg1",
+          "agentId": "g1",
+          "source": "codex",
+          "model": "m1",
+          "startMs": 1000000000000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 300,
+          "final": true,
+          "costMicroUsd": 900
+        },
+        {
+          "key": "rg2",
+          "agentId": "g2",
+          "source": "codex",
+          "model": "m2",
+          "startMs": 1000000001000,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 100,
+          "final": true,
+          "costMicroUsd": null
+        },
+        {
+          "key": "rg3",
+          "agentId": "g3",
+          "source": "codex",
+          "model": "m1",
+          "startMs": 999999997000,
+          "endMs": 999999999000,
+          "input": 0,
+          "output": 200,
+          "final": true,
+          "costMicroUsd": 400
+        },
+        {
+          "key": "rh1",
+          "agentId": "h1",
+          "source": "claudeCode",
+          "model": "m3",
+          "startMs": 1000000001500,
+          "endMs": 1000000003000,
+          "input": 0,
+          "output": 150,
+          "final": true,
+          "costMicroUsd": 600
+        }
+      ],
+      "queries": [
+        {
+          "nowMs": 1000000003000,
+          "liveOutput": 233.33333333333334,
+          "liveTotal": 233.33333333333334,
+          "estimatedShare": 0.21428571428571427,
+          "liveCost": 600.0,
+          "liveCostKnownShare": 0.8571428571428571
+        },
+        {
+          "nowMs": 1000000010000,
+          "liveOutput": 100.0,
+          "liveTotal": 100.0,
+          "estimatedShare": 1.0,
+          "liveCost": 200.0,
+          "liveCostKnownShare": 1.0
+        }
+      ]
     }
   ]
 }

@@ -27,6 +27,7 @@ struct DashboardFooter: View {
                 }
             }
             .buttonStyle(DashboardPillButtonStyle(isOn: orbVisible))
+            .contextMenu { BoardsFooterMenu(model: model) }
             .help(orbAction)
             .accessibilityLabel(orbAction)
             .accessibilityAddTraits(orbVisible ? .isSelected : [])

@@ -107,6 +107,8 @@ struct ReportInviteTests {
         #expect(assumed.api == Self.service)
         #expect(assumed.sections == Set(ReportSection.allCases))
         #expect(assumed.limits == .standard && assumed.usernameRules == .standard && assumed.apiKeyMode == .none)
+        #expect(assumed.extensions == ReportExtensions(perfScore: true))
+        #expect(ReportPerfScoreRule.isActive(assumed, switches: Set(ReportSection.allCases)))
         let loopback = try ReportServiceURL.parse("http://127.0.0.1:8787").get()
         #expect(ReportDiscovery.assumed(for: loopback, name: "Local")?.api == loopback)
     }
@@ -118,9 +120,8 @@ struct ReportInviteTests {
 struct ReportDiscoveryFailureTests {
     static let service = try! ReportServiceURL.parse("https://codexradar.com").get()
 
-    static func outcome(_ status: Int, _ body: String = "", etag: String? = nil) -> ReportAPI.DiscoveryOutcome {
-        ReportAPI.discoveryOutcome(status: status, body: Data(body.utf8), etag: etag, responseETag: nil,
-                                   service: service)
+    static func outcome(_ status: Int, _ body: String = "") -> ReportAPI.DiscoveryOutcome {
+        ReportAPI.discoveryOutcome(status: status, body: Data(body.utf8), service: service)
     }
 
     @Test func statusesMapToPlainOutcomes() {
@@ -132,8 +133,7 @@ struct ReportDiscoveryFailureTests {
         #expect(Self.outcome(500) == .failed(.unavailable))
         #expect(Self.outcome(503) == .failed(.unavailable))
         #expect(Self.outcome(302) == .failed(.unavailable))
-        #expect(Self.outcome(304) == .failed(.unavailable), "304 without an ETag of ours")
-        #expect(Self.outcome(304, etag: "\"v1\"") == .notModified)
+        #expect(Self.outcome(304) == .failed(.unavailable), "no If-None-Match is ever sent (NETWORK 6)")
     }
 
     @Test func aWebPageOrOtherJSONIsNotSupportedAndABrokenDocumentIsInvalid() {
@@ -171,6 +171,40 @@ struct ReportDiscoveryFailureTests {
         DiscoveryStub.set(url, status: 502, body: Data("Bad gateway".utf8), headers: [:])
         #expect(await api.discover(Self.service) == .failed(.unavailable))
     }
+
+    /// The case that hid WebSocket (NETWORK 6): the service added the capability but kept its `ETag`. Every fetch is
+    /// a full one without `If-None-Match`, so the second fetch sees the new document.
+    @Test func discoveryIsAlwaysFetchedInFullWithoutIfNoneMatch() async throws {
+        let service = try ReportServiceURL.parse("https://etag.codexradar.com").get()
+        func document(websocket: Bool) -> Data {
+            let stream = websocket
+                ? #","extensions":{"reportWebSocket":1},"websocket":{"path":"/v1/reports/ws","subprotocol":"agent-speed-report.v1"}"#
+                : ""
+            return Data(("""
+                {"protocol":"agent-speed-report","versions":[1],"service":{"name":"Codex Radar",\
+                "terms":"https://etag.codexradar.com/terms","privacy":"https://etag.codexradar.com/privacy"},\
+                "api":"https://etag.codexradar.com"
+                """ + stream + "}").utf8)
+        }
+        let headers = ["Content-Type": "application/json", "ETag": "\"v1\""]
+        let api = ReportAPI(transport: URLSessionReportTransport(protocolClasses: [DiscoveryStub.self]),
+                            userAgent: "AgentSpeed/1.4.1 (macOS)")
+        DiscoveryStub.set(service.discoveryURL, status: 200, body: document(websocket: false), headers: headers)
+        guard case .document(let first) = await api.discover(service) else {
+            Issue.record("the first fetch returns the document")
+            return
+        }
+        #expect(first.websocket == nil)
+        DiscoveryStub.set(service.discoveryURL, status: 200, body: document(websocket: true), headers: headers)
+        guard case .document(let second) = await api.discover(service) else {
+            Issue.record("the second fetch returns the document in full")
+            return
+        }
+        #expect(second.websocket != nil, "the new capability is seen although the ETag did not change")
+        let requests = DiscoveryStub.requests(to: service.discoveryURL)
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { fields in !fields.keys.contains { $0.lowercased() == "if-none-match" } })
+    }
 }
 
 /// Serves one scripted discovery response inside the URL loading system; nothing leaves the process.
@@ -182,15 +216,25 @@ private final class DiscoveryStub: URLProtocol, @unchecked Sendable {
     }
 
     private static let stubs = OSAllocatedUnfairLock<[String: Stub]>(initialState: [:])
+    private static let seen = OSAllocatedUnfairLock<[String: [[String: String]]]>(initialState: [:])
 
     static func set(_ url: URL, status: Int, body: Data, headers: [String: String]) {
         stubs.withLock { $0[url.absoluteString] = Stub(status: status, body: body, headers: headers) }
+    }
+
+    /// The header fields of every request made to `url`, in order.
+    static func requests(to url: URL) -> [[String: String]] {
+        seen.withLock { $0[url.absoluteString] ?? [] }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        if let url = request.url {
+            let fields = request.allHTTPHeaderFields ?? [:]
+            Self.seen.withLock { $0[url.absoluteString, default: []].append(fields) }
+        }
         guard let url = request.url, let stub = Self.stubs.withLock({ $0[url.absoluteString] }) else {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
             return

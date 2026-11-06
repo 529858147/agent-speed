@@ -22,6 +22,7 @@ internal readonly record struct ReadJob(string Path, RootFamily Family, string R
 /// </summary>
 internal sealed class OrderedFileReader : IDisposable
 {
+
     private readonly IReadOnlyList<ReadJob> _jobs;
     private readonly IDeduper _deduper;
     private readonly PreparedFile?[] _done;
@@ -113,6 +114,7 @@ internal sealed class OrderedFileReader : IDisposable
 
     private void Work()
     {
+
         while (true)
         {
             int index;
@@ -156,6 +158,7 @@ internal sealed class OrderedFileReader : IDisposable
         try
         {
             parser = Families.CreateParser(family, path, _deduper, root);
+            parser.ReadWholeFile();
             tailer = Families.CreateTailer(family, path);
             tailer.StartAt(0);
             var batch = parser.NewBatch();

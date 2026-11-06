@@ -65,6 +65,102 @@ public sealed class CodexParserTests
         Assert.Equal(AgentA, response.AgentId);
     }
 
+    /// <summary>A paginated sub-agent whose first <c>session_meta</c> names its start ordinal: <paramref name="start"/> is the raw JSON value.</summary>
+    private static string[] PagedSubagent(string start, params string[] prefixOrdinals)
+    {
+        string[] ordinals = prefixOrdinals.Length == 0 ? ["1", "2", "3", "4", "5"] : prefixOrdinals;
+        var lines = new[]
+        {
+            """{"timestamp":"2026-10-20T10:00:00Z","ordinal":0,"type":"session_meta","payload":{"id":"child","cwd":"/w/child","thread_source":"subagent","agent_path":"/root/scout","history_mode":"paginated","subagent_history_start_ordinal":@S}}""",
+            """{"timestamp":"2026-10-20T10:00:00.010Z","ordinal":@O0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50,"output_tokens":7,"total_tokens":57},"last_token_usage":{"input_tokens":50,"output_tokens":7,"total_tokens":57}}}}""",
+            """{"timestamp":"2026-10-20T10:00:00.020Z","ordinal":@O1,"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}""",
+            """{"timestamp":"2026-10-20T10:00:00.030Z","ordinal":@O2,"type":"turn_context","payload":{"cwd":"/w/parent","model":"parent-model","effort":"xhigh"}}""",
+            """{"timestamp":"2026-10-20T10:00:00.040Z","ordinal":@O3,"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"ls","call_id":"copied"}}""",
+            """{"timestamp":"2026-10-20T10:00:00.050Z","ordinal":@O4,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":90,"output_tokens":9,"total_tokens":99},"last_token_usage":{"input_tokens":40,"output_tokens":2,"total_tokens":42}}}}""",
+            """{"timestamp":"2026-10-20T10:00:01Z","ordinal":6,"type":"event_msg","payload":{"type":"task_started"}}""",
+            """{"timestamp":"2026-10-20T10:00:01.100Z","ordinal":7,"type":"turn_context","payload":{"model":"child-model","effort":"low"}}""",
+            """{"timestamp":"2026-10-20T10:00:03Z","ordinal":8,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24},"last_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}}""",
+        };
+        for (var i = 0; i < ordinals.Length; i++)
+        {
+            lines[i + 1] = lines[i + 1].Replace($"@O{i}", ordinals[i], StringComparison.Ordinal);
+        }
+
+        lines[0] = lines[0].Replace("@S", start, StringComparison.Ordinal);
+        return lines;
+    }
+
+    [Fact]
+    public void PaginatedSubagentSkipsItsCopiedPrefix()
+    {
+        var parser = new CodexParser(AgentB, new Deduper());
+        var sink = new RecordingSink();
+
+        Feed.Lines(parser, sink, PagedSubagent("6"));
+
+        var response = Assert.Single(sink.Latest);
+        Assert.Equal("codex-legacy:child:24", response.Key);
+        Assert.Equal("child-model", response.Model);
+        Assert.Equal(Ts.Ms("2026-10-20T10:00:01Z"), response.StartMs);
+        Assert.Equal(4, response.Tokens.Output);
+        Assert.Equal("unknown", response.Modes.Attribute(ExecutionModeKind.Speed).Mode);
+        Assert.Equal("low", response.Modes.Attribute(ExecutionModeKind.Effort).Mode);
+        Assert.Equal("child", parser.Project);
+        Assert.Empty(parser.WorkActions);
+        Assert.Equal(Ts.Ms("2026-10-20T10:00:03Z"), parser.LastLineMs);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("-1")]
+    [InlineData("6.0")]
+    [InlineData("6e0")]
+    [InlineData("\"6\"")]
+    [InlineData("true")]
+    [InlineData("9223372036854775808")]
+    public void PaginatedSubagentWithoutAValidStartOrdinalKeepsEveryLine(string start)
+    {
+        var parser = new CodexParser(AgentB, new Deduper());
+        var sink = new RecordingSink();
+
+        Feed.Lines(parser, sink, PagedSubagent(start));
+
+        Assert.Equal(["codex-legacy:child:57", "codex-legacy:child:99", "codex-legacy:child:24"], sink.Latest.Select(r => r.Key));
+        Assert.Null(sink.Latest[0].Model);
+    }
+
+    [Fact]
+    public void PaginatedSubagentWithoutTheFieldKeepsEveryLine()
+    {
+        var parser = new CodexParser(AgentB, new Deduper());
+        var sink = new RecordingSink();
+
+        Feed.Lines(parser, sink, PagedSubagent("6").Select(l => l.Replace(",\"subagent_history_start_ordinal\":6", "", StringComparison.Ordinal)).ToArray());
+
+        Assert.Equal(3, sink.Latest.Count);
+    }
+
+    [Fact]
+    public void StartOrdinalUsesEachLinesOwnOrdinal()
+    {
+        var parser = new CodexParser(AgentB, new Deduper());
+        var sink = new RecordingSink();
+        // An invalid line ordinal is no copy; a malformed line in the prefix does not shift the boundary.
+        var lines = PagedSubagent("6", "1", "2", "3", "4", "-5").ToList();
+        lines.Insert(5, """{"timestamp":"2026-10-20T10:00:00.045Z","ordinal":4,"type":"resp""");
+
+        Feed.Lines(parser, sink, [.. lines]);
+
+        Assert.Equal(["codex-legacy:child:99", "codex-legacy:child:24"], sink.Latest.Select(r => r.Key));
+        Assert.Null(sink.Latest[0].Model);
+        Assert.Equal(1, parser.MalformedLines);
+
+        var widest = new CodexParser(AgentA, new Deduper());
+        var empty = new RecordingSink();
+        Feed.Lines(widest, empty, PagedSubagent("9223372036854775807"));
+        Assert.Empty(empty.Emissions);
+    }
+
     [Fact]
     public void LegacyDuplicateTokenCountIsIgnoredWithoutStateChange()
     {

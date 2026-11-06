@@ -1,6 +1,8 @@
 using System.Globalization;
 using AgentSpeed.Core;
 using AgentSpeed.Core.Pricing;
+using AgentSpeed.Core.Unpriced;
+using AgentSpeed.Presentation.History;
 using AgentSpeed.Presentation.Localization;
 
 namespace AgentSpeed.Presentation.Cost;
@@ -175,31 +177,32 @@ public static class CostPaneText
         };
     }
 
-    /// <summary>Today's models without a price over every source, each once, in source order.</summary>
-    public static IReadOnlyList<string> UnpricedModels(IEnumerable<SourceStatus> sources)
+    /// <summary>
+    /// <c>prices.unknownToday</c> from the live view (METRICS 9.10 <i>Live</i>): one <c>prices.unknownToday.item</c> per
+    /// distinct model and reason, by requests (most first) then the model's UTF-8 order; empty when every request of today
+    /// has a price. The tooltip adds each reason's hint once.
+    /// </summary>
+    public static (string Text, string Tooltip) UnknownToday(UnpricedView live, Localizer loc)
     {
-        ArgumentNullException.ThrowIfNull(sources);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var models = new List<string>();
-        foreach (var source in sources)
+        ArgumentNullException.ThrowIfNull(live);
+        ArgumentNullException.ThrowIfNull(loc);
+        var items = live.Groups
+            .SelectMany(g => g.Rows)
+            .GroupBy(r => (r.Fact.Model, r.Reason))
+            .Select(g => (g.Key.Model, g.Key.Reason, Requests: g.Sum(r => r.Requests)))
+            .OrderByDescending(i => i.Requests)
+            .ThenBy(i => i.Model, Utf8Order.Instance)
+            .ThenBy(i => i.Reason)
+            .ToList();
+        if (items.Count == 0)
         {
-            foreach (var model in source.UnpricedModels)
-            {
-                if (seen.Add(model))
-                {
-                    models.Add(model);
-                }
-            }
+            return (string.Empty, string.Empty);
         }
 
-        return models;
-    }
-
-    /// <summary><c>prices.unknownToday</c> listing every model; empty when every model of today has a price.</summary>
-    public static string UnknownToday(IReadOnlyList<string> models, Localizer loc)
-    {
-        ArgumentNullException.ThrowIfNull(models);
-        ArgumentNullException.ThrowIfNull(loc);
-        return models.Count == 0 ? string.Empty : loc.Format("prices.unknownToday", string.Join(loc["list.separator"], models));
+        var text = loc.Format("prices.unknownToday", string.Join(loc["list.separator"], items.Select(i =>
+            loc.Format("prices.unknownToday.item", i.Model.Length == 0 ? loc["cost.noModelName"] : i.Model, UnpricedPopover.ReasonLabel(i.Reason, loc)))));
+        var hints = items.Select(i => i.Reason).Distinct()
+            .Select(r => HistoryText.Labelled(UnpricedPopover.ReasonLabel(r, loc), UnpricedPopover.ReasonHint(r, loc), loc));
+        return (text, string.Join(Environment.NewLine + Environment.NewLine, hints.Prepend(text)));
     }
 }

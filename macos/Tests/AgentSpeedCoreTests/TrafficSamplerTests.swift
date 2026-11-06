@@ -47,6 +47,31 @@ struct TrafficSamplerTests {
         #expect(parser.finish() == nil)
     }
 
+    @Test func nettopSelectsEverySocketButLoopback() {
+        let arguments = NettopChild.arguments(interval: 5)
+        #expect(arguments == ["nettop", "-P", "-L", "0", "-s", "5", "-x", "-n", "-t", "external", "-t", "undefined",
+                              "-J", "bytes_in,bytes_out"])
+        #expect(!arguments.contains("loopback"))
+    }
+
+    /// Recorded on macOS 27.0.1 with `-t external -t undefined` (issue #35): identityservicesd and the Python sender
+    /// have traffic only on tunnel interfaces (`undefined`), the curl behind a local proxy only on loopback (0 here),
+    /// the proxy only its outgoing socket.
+    @Test func processesListedOnlyThroughUndefinedParseLikeAnyOther() {
+        var parser = NettopParser()
+        let text = """
+            ,bytes_in,bytes_out,\r
+            identityservice.782,2250,2248,\r
+            Python.48674,0,284050,\r
+            curl.47385,0,0,\r
+            Python.47371,7015288,543,\r
+
+            """
+        _ = Self.feed(&parser, text, chunk: 5)
+        #expect(parser.finish() == .rows([.init(pid: 782, rx: 2250, tx: 2248), .init(pid: 48674, rx: 0, tx: 284_050),
+                                          .init(pid: 47385, rx: 0, tx: 0), .init(pid: 47371, rx: 7_015_288, tx: 543)]))
+    }
+
     @Test func badLinesAreSkippedAndColumnsFollowTheHeader() {
         var parser = NettopParser()
         let text = """
@@ -136,5 +161,92 @@ struct TrafficSamplerTests {
         #expect(Int32(bitPattern: info.e_tdev) != -1, "the pseudo-terminal is its controlling terminal")
         queue.sync { sampler.stop() }
         #expect(kill(pid, 0) == -1 && errno == ESRCH, "killed and reaped")
+    }
+
+    /// Moves 16 MB over loopback (both ends, kept open), sends UDP through a tunnel interface when one is up and one
+    /// datagram towards a documentation address (RFC 5737) when a route exists; prints its pid and byte counts.
+    static let socketHelper = """
+        import os, socket, struct, threading, time
+        N = 8_000_000
+        held = []
+        srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+        def serve():
+            c, _ = srv.accept(); held.append(c); got = 0
+            while got < N:
+                d = c.recv(65536)
+                if not d: break
+                got += len(d)
+        t = threading.Thread(target=serve); t.start()
+        cli = socket.create_connection(srv.getsockname()); held.append(cli)
+        cli.sendall(bytes(N)); t.join()
+        label = lambda s: bytes([len(s)]) + s
+        query = struct.pack(">6H", 0, 0, 1, 0, 0, 0) + label(b"agent-speed") + label(b"local") + bytes(1) + struct.pack(">HH", 255, 1)
+        tunnel = 0
+        for name in sorted(n for _, n in socket.if_nameindex() if n.startswith("utun")):
+            try:
+                index = socket.if_nametoindex(name)
+                s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM); held.append(s)
+                s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, index)
+                s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 1)
+                s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 0)
+                for _ in range(100):
+                    tunnel += s.sendto(query, ("ff02::fb", 5353, 0, index))
+                break
+            except OSError:
+                tunnel = 0
+        outgoing = 0
+        try:
+            u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); held.append(u)
+            u.connect(("192.0.2.1", 9))
+            outgoing = u.send(bytes(1200))
+        except OSError:
+            outgoing = 0
+        print(os.getpid(), 2 * N, tunnel, outgoing, flush=True)
+        time.sleep(50)
+        """
+
+    @Test(.enabled(if: NettopChild.isAvailable && FileManager.default.isExecutableFile(atPath: "/usr/bin/python3")),
+          .timeLimit(.minutes(1)))
+    func nettopCountsTunnelAndOutgoingBytesButNotLoopback() async throws {
+        let queue = DispatchQueue(label: "test.nettop.types")
+        let sampler = NettopSampler(queue: queue, clock: TrafficCore.monotonicMs)
+        queue.sync { sampler.run(interval: 1) }
+        defer { queue.sync { sampler.stop() } }
+        for _ in 0..<50 where queue.sync(execute: { sampler.takeSample() }) == nil {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        helper.arguments = ["-I", "-c", Self.socketHelper]
+        let output = Pipe()
+        helper.standardOutput = output
+        try helper.run()
+        defer {
+            helper.terminate()
+            helper.waitUntilExit()
+        }
+        let report = String(decoding: output.fileHandleForReading.availableData, as: UTF8.self)
+            .split(whereSeparator: \.isWhitespace).compactMap { Int64($0) }
+        try #require(report.count == 4, "helper report: \(report)")
+        let pid = Int32(report[0])
+        defer { kill(pid, SIGKILL) }
+        let counted = report[2] + report[3]
+
+        var row: NettopParser.Row?
+        var samples = 0
+        for _ in 0..<60 {
+            try await Task.sleep(nanoseconds: 200_000_000)
+            guard let rows = queue.sync(execute: { sampler.takeSample() }) else { continue }
+            samples += 1
+            row = rows.first { $0.pid == pid }
+            if samples >= 2, counted == 0 || (row?.tx ?? 0) >= counted { break }
+        }
+        if counted > 0 {
+            #expect(row != nil, "the helper is listed through its tunnel or outgoing socket")
+            #expect((row?.tx ?? 0) >= counted, "tunnel \(report[2]) B and outgoing \(report[3]) B are counted")
+        }
+        let listed = (row?.rx ?? 0) + (row?.tx ?? 0)
+        #expect(listed < counted + 1_000_000, "the \(report[1]) B over loopback are not counted (listed \(listed) B)")
     }
 }

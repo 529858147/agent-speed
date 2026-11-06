@@ -1,11 +1,10 @@
 using System.Diagnostics;
 using AgentSpeed.Core;
-using AgentSpeed.Core.History;
 using AgentSpeed.Core.Pricing;
 
 namespace AgentSpeed.Probe;
 
-/// <summary><c>--dump-history</c>: analyses every log completely and prints one line per day and source (METRICS 8).</summary>
+/// <summary><c>--dump-history</c>: analyses every log completely and prints one line per day and source (METRICS 8, 9.10).</summary>
 internal static class DumpHistory
 {
     public static int Run(ProbeOptions options, ProbeOutput output)
@@ -17,47 +16,8 @@ internal static class DumpHistory
         }
 
         var zone = options.Utc ? TimeZoneInfo.Utc : TimeZoneInfo.Local;
-        var temporary = options.StorePath is null
-            ? Path.Combine(Path.GetTempPath(), "agentspeed-probe-" + Guid.NewGuid().ToString("N"))
-            : null;
-        var storePath = Path.GetFullPath(options.StorePath ?? Path.Combine(temporary!, "history.sqlite"));
         var process = Process.GetCurrentProcess();
-        HistoryReport report;
-        List<DailyUsage> days;
-        long storeBytes;
-        try
-        {
-            using (var store = HistoryStore.Open(storePath))
-            {
-                var tuning = new HistoryOptions();
-                if (Environment.GetEnvironmentVariable("AGENTSPEED_HISTORY_WORKERS") is { } workers && int.TryParse(workers, out var w))
-                {
-                    tuning = tuning with { Workers = w };
-                }
-
-                if (Environment.GetEnvironmentVariable("AGENTSPEED_HISTORY_BUFFER_MB") is { } buffer && long.TryParse(buffer, out var mb))
-                {
-                    tuning = tuning with { MaxBufferedBytes = mb * 1024 * 1024 };
-                }
-
-                var analyzer = new HistoryAnalyzer(store, tuning, new PriceBook([table]));
-                report = analyzer.Run(
-                    options.Locations, new HashSet<SourceKind>(Enum.GetValues<SourceKind>()), zone, CancellationToken.None);
-                days = analyzer.Days();
-            }
-
-            storeBytes = new[] { "", "-wal", "-shm" }
-                .Select(suffix => new FileInfo(storePath + suffix))
-                .Where(f => f.Exists)
-                .Sum(f => f.Length);
-        }
-        finally
-        {
-            if (temporary is not null && Directory.Exists(temporary))
-            {
-                Directory.Delete(temporary, recursive: true);
-            }
-        }
+        var (report, days, perf, storeBytes) = HistoryRun.Analyze(options, table, zone);
 
         foreach (var day in days)
         {
@@ -91,7 +51,13 @@ internal static class DumpHistory
                 .Add("priceVersion", day.PriceVersion)
                 .Add("agents", day.Agents)
                 .Raw("models", models.Text)
+                .Raw("unpriced", Unpriced(day))
                 .Text);
+        }
+
+        foreach (var record in perf)
+        {
+            output.Line(JsonLine.Of("perf", w => PerfDumpJson.WriteRecord(w, record)));
         }
 
         output.Flush();
@@ -100,7 +66,15 @@ internal static class DumpHistory
             $"history: discovered {report.FilesDiscovered}, analysed {report.FilesAnalyzed} files ({report.BytesAnalyzed} bytes) " +
             $"and {report.SessionsAnalyzed} OpenCode sessions in {report.ElapsedMs} ms; unreadable {report.FilesUnreadable}; " +
             $"store {storeBytes} bytes; working set {process.WorkingSet64 / 1048576.0:F1} MB; " +
-            $"allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB; {days.Count} rows");
+            $"allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB; {days.Count} rows, {perf.Count} performance records");
         return 0;
     }
+
+    /// <summary>The day's unpriced facts (METRICS 9.10), in the fact order.</summary>
+    private static string Unpriced(DailyUsage day) => JsonLine.Array(day.Unpriced.Facts.Select(f => new JsonLine()
+        .Add("model", f.Fact.Model)
+        .Add("provider", f.Fact.Provider)
+        .Add("fast", f.Fact.Fast)
+        .Add("requests", f.Requests)
+        .Text));
 }

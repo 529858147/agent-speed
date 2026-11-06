@@ -112,6 +112,19 @@ internal static unsafe class WindowEffects
         return Dwmapi.DwmGetWindowAttribute(hwnd, DWMWA.CLOAKED, &cloaked, sizeof(int)) == 0 && cloaked != 0;
     }
 
+    /// <summary>The window's visible frame in screen pixels, without the invisible resize borders; else its window rectangle.</summary>
+    public static bool VisibleFrame(nint hwnd, out RECT frame)
+    {
+        RECT bounds;
+        if (hwnd != 0 && Dwmapi.DwmGetWindowAttribute(hwnd, DWMWA.EXTENDED_FRAME_BOUNDS, &bounds, sizeof(RECT)) == 0 && !bounds.IsEmpty)
+        {
+            frame = bounds;
+            return true;
+        }
+
+        return User32.GetWindowRect(hwnd, out frame);
+    }
+
     public static void AddExtendedStyle(nint hwnd, int add, int remove = 0, bool frameChanged = true)
     {
         if (hwnd == 0)

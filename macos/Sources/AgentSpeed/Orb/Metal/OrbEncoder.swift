@@ -48,10 +48,18 @@ final class OrbEncoder {
     /// `size` drawable) and clipped to `clip`; a nil clip draws the scene over the whole drawable as `render` does.
     func render(count: Int, size: CGSize, scale: CGFloat, pass: MTLRenderPassDescriptor, present drawable: MTLDrawable?,
                 waitUntilCompleted: Bool = false, scene: (Int) -> (scene: OrbScene, frame: CGRect, clip: CGRect?)) {
+        guard let commandBuffer = beginFrame() else { return }
+        encode(count: count, size: size, scale: scale, pass: pass, present: drawable, into: commandBuffer, scene: scene)
+        commandBuffer.commit()
+        if waitUntilCompleted { commandBuffer.waitUntilCompleted() }
+    }
+
+    /// A command buffer for this encoder's next frame (waits for a free instance buffer; records its GPU time).
+    func beginFrame() -> MTLCommandBuffer? {
         semaphore.wait()
         guard let commandBuffer = gpu.queue.makeCommandBuffer() else {
             semaphore.signal()
-            return
+            return nil
         }
         let semaphore = semaphore
         let timer = gpuTime
@@ -59,7 +67,24 @@ final class OrbEncoder {
             semaphore.signal()
             timer.record(buffer.gpuEndTime - buffer.gpuStartTime)
         }
+        return commandBuffer
+    }
 
+    /// Draws `scene` into `pass` inside another encoder's frame (`commandBuffer`, committed by its owner), so two
+    /// surfaces drawn on the same tick cost one submission. The GPU time is the owner's.
+    func render(_ scene: OrbScene, size: CGSize, scale: CGFloat, pass: MTLRenderPassDescriptor, present drawable: MTLDrawable?,
+                joining commandBuffer: MTLCommandBuffer) {
+        semaphore.wait()
+        let semaphore = semaphore
+        commandBuffer.addCompletedHandler { _ in semaphore.signal() }
+        encode(count: 1, size: size, scale: scale, pass: pass, present: drawable, into: commandBuffer) { _ in
+            (scene, CGRect(origin: .zero, size: size), nil)
+        }
+    }
+
+    /// Encodes the scenes into `pass` and presents `drawable` within `commandBuffer`.
+    func encode(count: Int, size: CGSize, scale: CGFloat, pass: MTLRenderPassDescriptor, present drawable: MTLDrawable?,
+                into commandBuffer: MTLCommandBuffer, scene: (Int) -> (scene: OrbScene, frame: CGRect, clip: CGRect?)) {
         let stride = MemoryLayout<OrbInstance>.stride
         let pointStride = MemoryLayout<SIMD2<Float>>.stride
         var total = 0
@@ -126,8 +151,6 @@ final class OrbEncoder {
             encoder.endEncoding()
         }
         if let drawable { commandBuffer.present(drawable) }
-        commandBuffer.commit()
-        if waitUntilCompleted { commandBuffer.waitUntilCompleted() }
     }
 
     /// Encodes one scene whose instances start at `first` in `buffer` and whose polyline points start at byte `points`.

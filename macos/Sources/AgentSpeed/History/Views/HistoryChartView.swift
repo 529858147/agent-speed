@@ -220,6 +220,12 @@ struct HistoryChartView: View {
                 .animation(reduceMotion ? nil : motion, value: chart)
         }
         .animation(reduceMotion ? HistoryMotion.fade : nil, value: identity)
+        .background {
+            // Outside both animations: the measured width never follows the axes while they spring.
+            ChartPlotWidthReader(chart: chart) { width in
+                if abs(width - plotWidth) > 0.5 { plotWidth = width }
+            }
+        }
         .padding(.top, Self.monthLabelSpace)
         .focusable()
         .focused($focused)
@@ -270,8 +276,6 @@ struct HistoryChartView: View {
 
     private func plot(geometry: ChartDayGeometry, dark: Bool, increasedContrast: Bool) -> some View {
         let calendar = HistoryDates.calendar
-        let domainStart = chart.range.start.date(in: calendar)
-        let domainEnd = chart.range.end.adding(days: 1).date(in: calendar)
         let ink = HistoryPalette.ink(dark: dark, increasedContrast: increasedContrast)
         let grid = HistoryPalette.grid(dark: dark, increasedContrast: increasedContrast)
         let showsDots = geometry.slot >= 7
@@ -311,40 +315,7 @@ struct HistoryChartView: View {
             ChartLineContent(points: line, color: ink)
             ChartDotsContent(points: dots, color: ink)
         }
-        .chartXScale(domain: domainStart...domainEnd)
-        .chartYScale(domain: chart.yDomain)
-        .chartLegend(.hidden)
-        .chartXAxis {
-            // The day labels are drawn by the backdrop, centred under their bars (label anchors behave differently
-            // across SDKs); this only keeps their row free.
-            AxisMarks(values: [domainStart]) { _ in
-                AxisValueLabel { Text(verbatim: "0").font(HistoryFont.axis).hidden() }
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: chart.axisValues) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
-                    .foregroundStyle(grid)
-                AxisValueLabel {
-                    if let output = value.as(Double.self) {
-                        Text(axisLabel(output))
-                            .font(HistoryFont.axis)
-                            .foregroundStyle(.historySecondary)
-                    }
-                }
-            }
-            // The cost metric has no speed line, so no right axis (DESIGN 9).
-            AxisMarks(position: .trailing, values: chart.metric == .output ? chart.outputTicks.values : []) { value in
-                AxisValueLabel {
-                    if let output = value.as(Double.self) {
-                        let speed = chart.outputTicks.max > 0 ? output / chart.outputTicks.max * chart.speedTicks.max : 0
-                        Text(HistoryText.axisNumber(speed))
-                            .font(HistoryFont.axis)
-                            .foregroundStyle(.historySecondary)
-                    }
-                }
-            }
-        }
+        .modifier(HistoryChartAxes(chart: chart, grid: grid))
         .chartBackground { proxy in
             GeometryReader { reader in
                 ChartBackdrop(chart: chart, interaction: interaction, proxy: proxy, frame: reader[proxy.plotFrame!],
@@ -358,24 +329,8 @@ struct HistoryChartView: View {
                     chart: chart, interaction: interaction, proxy: proxy, frame: frame, geometry: geometry, l10n: l10n,
                     dark: dark, increasedContrast: increasedContrast, reduceMotion: reduceMotion
                 )
-                .onGeometryChange(for: CGFloat.self) { _ in frame.width } action: { width in
-                    if abs(width - plotWidth) > 0.5 { plotWidth = width }
-                }
             }
         }
-    }
-
-    private func axisLabel(_ value: Double) -> String {
-        if chart.metric == .traffic {
-            // The outermost labels name their side: download above the axis, upload below.
-            guard value != 0 else { return "0" }
-            let text = HistoryText.axisBytes(value)
-            if value == chart.outputTicks.max { return "↓ " + text }
-            if value == -(chart.lowerTicks?.max ?? 0) { return "↑ " + text }
-            return text
-        }
-        guard chart.metric == .cost, let money = chart.money else { return HistoryText.axisNumber(value) }
-        return money.axisLabel(value, step: chart.outputTicks.step)
     }
 
     private func barStyle(_ source: SourceKind, dark: Bool) -> AnyShapeStyle {
@@ -400,6 +355,76 @@ struct HistoryChartView: View {
         guard let day = interaction.keyboardDay, chart.days[day] != nil else { return .ignored }
         interaction.revealInTable(day)
         return .handled
+    }
+}
+
+/// The plot's scales and axes, shared by the plot and the copy its width is measured on.
+private struct HistoryChartAxes: ViewModifier {
+    let chart: HistoryChartModel
+    let grid: Color
+
+    func body(content: Content) -> some View {
+        let calendar = HistoryDates.calendar
+        let domainStart = chart.range.start.date(in: calendar)
+        let domainEnd = chart.range.end.adding(days: 1).date(in: calendar)
+        content
+            .chartXScale(domain: domainStart...domainEnd)
+            .chartYScale(domain: chart.yDomain)
+            .chartLegend(.hidden)
+            .chartXAxis {
+                // The day labels are drawn by the backdrop, centred under their bars (label anchors behave differently
+                // across SDKs); this only keeps their row free.
+                AxisMarks(values: [domainStart]) { _ in
+                    AxisValueLabel { Text(verbatim: "0").font(HistoryFont.axis).hidden() }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: chart.axisValues) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                        .foregroundStyle(grid)
+                    AxisValueLabel {
+                        if let output = value.as(Double.self) {
+                            Text(chart.leadingAxisLabel(output))
+                                .font(HistoryFont.axis)
+                                .foregroundStyle(.historySecondary)
+                        }
+                    }
+                }
+                // The cost metric has no speed line, so no right axis (DESIGN 9).
+                AxisMarks(position: .trailing, values: chart.metric == .output ? chart.outputTicks.values : []) { value in
+                    AxisValueLabel {
+                        if let output = value.as(Double.self) {
+                            Text(chart.trailingAxisLabel(output))
+                                .font(HistoryFont.axis)
+                                .foregroundStyle(.historySecondary)
+                        }
+                    }
+                }
+            }
+    }
+}
+
+/// The width the marks are sized for, measured on a copy of the plot with the same size, scales and axes but no marks
+/// and no animation (macOS issue #28). The plot's width follows only those; measured on the plot itself, it would also
+/// follow every frame of the axes' spring and could answer the marks it sizes, writing state on every layout pass.
+private struct ChartPlotWidthReader: View {
+    let chart: HistoryChartModel
+    let onChange: (CGFloat) -> Void
+
+    var body: some View {
+        Chart { ChartBarsContent(bars: [], width: 0, radius: 0) }
+            .modifier(HistoryChartAxes(chart: chart, grid: .clear))
+            .chartOverlay { proxy in
+                GeometryReader { reader in
+                    let width = reader[proxy.plotFrame!].width
+                    Color.clear
+                        .onGeometryChange(for: CGFloat.self) { _ in width } action: { onChange($0) }
+                }
+            }
+            .transaction { $0.animation = nil }
+            .hidden()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

@@ -1,9 +1,13 @@
 import Foundation
 
-/// What an orb's traffic readout shows (DESIGN 2b `traffic`, 10): the traffic of its own sources, the whole computer,
-/// or nothing. Absent (orbs saved by older builds) decodes as `sources` in `OrbConfig`; an unknown value as `off`.
+/// What an orb's two-line readout shows (DESIGN 2b `traffic`, 10): the traffic of its own sources, the whole computer,
+/// the live intelligence of its sources, or nothing. Absent (orbs saved by older builds) decodes as `sources` in
+/// `OrbConfig`; an unknown value as `off`.
 public enum OrbTraffic: String, CaseIterable, Codable, Sendable, Identifiable {
-    case sources, machine, off
+    case sources, machine, intelligence, off
+
+    /// Network speed, which needs traffic measuring.
+    public var isNetwork: Bool { self == .sources || self == .machine }
 
     public var id: String { rawValue }
 

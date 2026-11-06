@@ -1,3 +1,4 @@
+using AgentSpeed.Core.Perf;
 using AgentSpeed.Core.Traffic;
 
 namespace AgentSpeed.Core.Reporting;
@@ -79,7 +80,32 @@ public sealed record ReportOptions(
     int PriceVersion = 1)
 {
     public ReportExtensions Extensions { get; init; } = new();
+
+    /// <summary>A WebSocket body (METRICS 11.9): it ends with <c>realtime</c> and its message must fit too; null for HTTP.</summary>
+    public ReportStreamBody? Stream { get; init; }
+
+    /// <summary>The size rule dropped <c>models</c> from this report (METRICS 11.10, Size): the top-level score object stays.</summary>
+    public bool ModelsDroppedForSize { get; init; }
+
+    /// <summary>The report carries <c>models</c> by consent: the service lists it, <c>maxModels</c> ≥ 1 and the user's switch is on.</summary>
+    private bool ModelsShared => MaxModels >= 1 && (ModelsDroppedForSize || Sections.Contains(ReportSection.Models));
+
+    /// <summary>
+    /// The score extension the report carries (METRICS 11.10, Active and Legacy): <c>perfScore</c> when the service
+    /// advertises it, else the retired <c>taskScore</c> with the thinking speed only, and only with <c>models</c> by consent.
+    /// </summary>
+    public ReportScoreExtension ScoreExtension => !ModelsShared ? ReportScoreExtension.None
+        : Extensions.PerfScore ? ReportScoreExtension.Perf
+        : Extensions.TaskScore ? ReportScoreExtension.LegacyTask
+        : ReportScoreExtension.None;
+
+    /// <summary>The performance score extension is active (METRICS 11.10, Active).</summary>
+    public bool PerfScoreActive => ScoreExtension == ReportScoreExtension.Perf;
 }
+
+/// <param name="ObservationAgeMs">The window's observation age at build, or null when the window had no new data.</param>
+/// <param name="MaxMessageBytes">The connection's <c>maxMessageBytes</c>, which the whole <c>report</c> message stays within.</param>
+public sealed record ReportStreamBody(long? ObservationAgeMs, int MaxMessageBytes);
 
 /// <summary>The report body of REPORTING 6 from a window, the tick's values and the options (METRICS 11.2, 11.7).</summary>
 public static class ReportBody
@@ -99,7 +125,7 @@ public static class ReportBody
     {
         var document = Json(envelope, content, sample, options);
         var data = document.ToCompactBytes();
-        if (data.Length > options.BodyLimit && (options.Extensions.ExecutionModes || options.Extensions.ModelHarnessRequests))
+        if (!Fits(data, options) && (options.Extensions.ExecutionModes || options.Extensions.ModelHarnessRequests))
         {
             options = options with { Extensions = options.Extensions with { ExecutionModes = false, ModelHarnessRequests = false } };
             document = Json(envelope, content, sample, options);
@@ -107,18 +133,26 @@ public static class ReportBody
         }
         foreach (var section in new[] { ReportSection.Models, ReportSection.Sources })
         {
-            if (data.Length <= options.BodyLimit)
+            if (Fits(data, options))
             {
                 break;
             }
 
-            options = options with { Sections = options.Sections.Where(s => s != section).ToHashSet() };
+            options = options with
+            {
+                Sections = options.Sections.Where(s => s != section).ToHashSet(),
+                ModelsDroppedForSize = options.ModelsDroppedForSize || (section == ReportSection.Models && options.Sections.Contains(section)),
+            };
             document = Json(envelope, content, sample, options);
             data = document.ToCompactBytes();
         }
 
         return (document, data);
     }
+
+    /// <summary>Within the body limit and, for a WebSocket body, its message within <c>maxMessageBytes</c>.</summary>
+    public static bool Fits(byte[] data, ReportOptions options) =>
+        data.Length <= options.BodyLimit && (options.Stream is not { } stream || ReportWebSocketProtocol.MessageBytes(data) <= stream.MaxMessageBytes);
 
     public static ReportJson Json(ReportEnvelope envelope, ReportWindowContent content, ReportSample sample, ReportOptions options)
     {
@@ -179,9 +213,26 @@ public static class ReportBody
             members.Add(("sources", ReportJson.Array(SourceEntries(content, sample, sections))));
         }
 
+        var scores = options.ScoreExtension;
         if (sections.Contains(ReportSection.Models) && options.MaxModels > 0)
         {
-            members.Add(("models", ReportJson.Array(ModelEntries(content, sample, options.MaxModels, sections.Contains(ReportSection.Cost), options.Extensions))));
+            members.Add(("models", ReportJson.Array(ModelEntries(content, sample, options.MaxModels, sections.Contains(ReportSection.Cost),
+                options.Extensions, scores))));
+        }
+
+        if (scores == ReportScoreExtension.Perf)
+        {
+            members.Add(("perfScore", sample.Facts.Perf.Top.Json));
+        }
+        else if (scores == ReportScoreExtension.LegacyTask)
+        {
+            members.Add(("taskScore", ReportPerfValue.Legacy(sample.Facts.Perf.Thinking).Json));
+        }
+
+        if (options.Stream is { } stream)
+        {
+            var mixed = sections.Contains(ReportSection.Traffic) && sample.Traffic.Status == ReportTrafficStatus.Ok;
+            members.Add(("realtime", ReportWebSocketProtocol.Realtime(mixed, envelope.SentAtMs, stream.ObservationAgeMs)));
         }
 
         return ReportJson.Object(members);
@@ -210,6 +261,9 @@ public static class ReportBody
         SourceKind.Kimi => "kimi",
         SourceKind.GrokBuild => "grokBuild",
         SourceKind.Pi => "pi",
+        SourceKind.OpenClaw => "openclaw",
+        SourceKind.Hermes => "hermes",
+        SourceKind.Droid => "droid",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -313,10 +367,14 @@ public static class ReportBody
 
     /// <summary>
     /// One entry per model with any increment in the window (a late price included) or a generating agent, by output then
-    /// id, <c>other</c> last (REPORTING 6.6.4, METRICS 11.3, 11.7).
+    /// id, <c>other</c> last (REPORTING 6.6.4, METRICS 11.3, 11.7). With the performance score extension also the models an
+    /// agent is live with and the models with statistics rows, each entry with its <c>perfScore</c> and <c>perfStats</c>; with
+    /// the retired task score only the thinking speed of each entry, as <c>taskScore</c> with empty <c>taskStats</c> (11.10).
     /// </summary>
-    private static List<ReportJson> ModelEntries(ReportWindowContent content, ReportSample sample, int maxModels, bool withCost, ReportExtensions extensions)
+    private static List<ReportJson> ModelEntries(ReportWindowContent content, ReportSample sample, int maxModels, bool withCost, ReportExtensions extensions,
+        ReportScoreExtension scores)
     {
+        var perfScore = scores == ReportScoreExtension.Perf;
         var byId = new Dictionary<string, ModelEntry>(StringComparer.Ordinal);
         ModelEntry Entry(string id) => byId.TryGetValue(id, out var entry) ? entry : byId[id] = new ModelEntry(id);
         foreach (var (key, value) in content.Usage.ByModel)
@@ -339,6 +397,46 @@ public static class ReportBody
             }
         }
 
+        var perf = sample.Facts.Perf;
+        if (perfScore)
+        {
+            foreach (var model in byId.Values)
+            {
+                model.Usual = true;
+            }
+
+            foreach (var agent in perf.Agents)
+            {
+                if (agent.Form == PerfForm.Live)
+                {
+                    Entry(agent.ModelId).Sources.Add(agent.Source);
+                }
+            }
+
+            foreach (var (key, row) in content.Perf)
+            {
+                var entry = Entry(key.ModelId);
+                entry.Sources.Add(key.Source);
+                entry.AddPerfRow(key.Source, row);
+            }
+
+            foreach (var agent in perf.Agents)
+            {
+                if (byId.TryGetValue(agent.ModelId, out var entry))
+                {
+                    entry.PerfAgents.Add(agent);
+                }
+            }
+        }
+
+        if (scores != ReportScoreExtension.None)
+        {
+            foreach (var entry in byId.Values)
+            {
+                entry.Thinking = perf.ModelThinking.GetValueOrDefault(entry.Id);
+            }
+        }
+
         var entries = byId.Values
             .OrderByDescending(e => e.Usage.Output)
             .ThenBy(e => e.Id, StringComparer.Ordinal)
@@ -354,6 +452,10 @@ public static class ReportBody
                 foreach (var (source, requests) in entry.HarnessRequests)
                     other.HarnessRequests[source] = other.HarnessRequests.GetValueOrDefault(source) + requests;
                 foreach (var (mode, usage) in entry.Modes) other.AddMode(mode, usage);
+                other.Usual |= entry.Usual || !perfScore;
+                other.PerfAgents.AddRange(entry.PerfAgents);
+                other.Thinking += entry.Thinking;
+                foreach (var (source, row) in entry.PerfRows) other.AddPerfRow(source, row);
             }
 
             entries = [.. entries.Take(maxModels - 1), other];
@@ -376,11 +478,24 @@ public static class ReportBody
                 members.Add(("deltaMicroUsd", ReportJson.Of(entry.Usage.CostMicroUsd)));
             }
 
-            if (extensions.ModelHarnessRequests && entry.HarnessRequests.Count <= 8
+            // An entry that exists only for the performance score has zero usage and no breakdowns (METRICS 11.10, Other extensions).
+            var usual = !perfScore || entry.Usual;
+            if (usual && extensions.ModelHarnessRequests && entry.HarnessRequests.Count <= 8
                 && entry.HarnessRequests.Values.All(IsSafeCount) && entry.HarnessRequests.Values.Sum() == entry.Usage.Requests)
                 members.Add(("harnessRequests", ReportJson.Array(entry.HarnessRequests.OrderBy(p => p.Key)
                     .Where(p => p.Value > 0).Select(p => ReportJson.Object(("source", ReportJson.Of(SourceId(p.Key))), ("requests", ReportJson.Of(p.Value)))))));
-            if (extensions.ExecutionModes && ModesJson(entry) is { } modes) members.Add(("modeUsage", modes));
+            if (usual && extensions.ExecutionModes && ModesJson(entry, extensions.ModesVersion) is { } modes) members.Add(("modeUsage", modes));
+            if (perfScore)
+            {
+                members.Add(("perfScore", ReportPerfValue.Of(entry.PerfAgents, entry.Thinking).Json));
+                members.Add(("perfStats", ReportJson.Array(SourceOrder.Where(entry.PerfRows.ContainsKey)
+                    .Select(s => ReportPerfRow.Json(s, entry.PerfRows[s])))));
+            }
+            else if (scores == ReportScoreExtension.LegacyTask)
+            {
+                members.Add(("taskScore", ReportPerfValue.Legacy(entry.Thinking).Json));
+                members.Add(("taskStats", ReportJson.Array([])));
+            }
 
             return ReportJson.Object(members);
         }).ToList();
@@ -416,44 +531,67 @@ public static class ReportBody
         public int Generating { get; set; }
         public Dictionary<SourceKind, long> HarnessRequests { get; } = [];
         public Dictionary<ReportModeKey, ReportUsage> Modes { get; } = [];
+
+        /// <summary>The entry is one of METRICS 11.3 (usage or a generating agent), not one only the performance score adds.</summary>
+        public bool Usual { get; set; }
+
+        public List<ReportPerfAgent> PerfAgents { get; } = [];
+
+        /// <summary>Unrounded <c>liveThinking</c> of the model sums of the entry's raw models.</summary>
+        public double Thinking { get; set; }
+
+        /// <summary>The statistics rows per source, added up unrounded.</summary>
+        public Dictionary<SourceKind, PerfSums> PerfRows { get; } = [];
+
         public void AddMode(ReportModeKey key, ReportUsage usage)
         {
             key = key with { ModelId = Id };
             Modes[key] = Modes.GetValueOrDefault(key) + usage;
         }
+
+        public void AddPerfRow(SourceKind source, PerfSums row)
+        {
+            if (!PerfRows.TryGetValue(source, out var held))
+            {
+                PerfRows[source] = held = new PerfSums();
+            }
+
+            held.Add(row);
+        }
     }
 
     private static bool IsSafeCount(long value) => value is >= 0 and <= 9_007_199_254_740_991;
 
-    private static ReportJson? ModesJson(ModelEntry entry)
+    /// <summary>
+    /// The entry's mode rows under the negotiated <paramref name="version"/>: each source's totals are its service-tier
+    /// attributions summed (the counters hold every kind for every response), the known attributions are the groups.
+    /// </summary>
+    private static ReportJson? ModesJson(ModelEntry entry, int version)
     {
-        if (entry.Modes.Count > 64 || !IsSafeCount(entry.Usage.Requests) || !IsSafeCount(entry.Usage.Output)
-            || !IsSafeCount(entry.Usage.MeasuredOutput) || !IsSafeCount(entry.Usage.MeasuredMs)) return null;
-        if (entry.Modes.Count == 0 && (entry.Usage.Requests > 0 || entry.Usage.Output > 0 || entry.Usage.MeasuredOutput > 0 || entry.Usage.MeasuredMs > 0)) return null;
-        foreach (var group in entry.Modes.GroupBy(p => p.Key.Kind))
+        var sources = new Dictionary<SourceKind, ReportUsage>();
+        var groups = new Dictionary<ReportModeRows.Group, ReportUsage>();
+        foreach (var (key, usage) in entry.Modes)
         {
-            var sum = group.Aggregate(ReportUsage.Zero, (total, p) => total + p.Value);
-            if ((sum.Requests, sum.Output, sum.MeasuredOutput, sum.MeasuredMs)
-                != (entry.Usage.Requests, entry.Usage.Output, entry.Usage.MeasuredOutput, entry.Usage.MeasuredMs)) return null;
-        }
-        var rows = new List<ReportJson>();
-        foreach (var (key, usage) in entry.Modes.OrderBy(p => p.Key.Source).ThenBy(p => p.Key.Kind)
-            .ThenBy(p => p.Key.Mode, StringComparer.Ordinal).ThenBy(p => p.Key.Evidence, StringComparer.Ordinal).ThenBy(p => p.Key.Provider, StringComparer.Ordinal))
-        {
-            if (!entry.Sources.Contains(key.Source) || !Enum.IsDefined(key.Kind) || !ExecutionModes.IsIdentifier(key.Mode, 64)
-                || key.Evidence is not ("served" or "recorded" or "selected" or "unknown")
-                || ((key.Mode == "unknown") != (key.Evidence == "unknown"))
-                || (key.Provider is not null && !ExecutionModes.IsIdentifier(key.Provider, 32))
-                || !IsSafeCount(usage.Requests) || !IsSafeCount(usage.Output) || !IsSafeCount(usage.MeasuredOutput) || !IsSafeCount(usage.MeasuredMs)) return null;
-            var members = new List<(string, ReportJson)>
+            if (key.Kind == ExecutionModeKind.ServiceTier)
             {
-                ("source", ReportJson.Of(SourceId(key.Source))), ("kind", ReportJson.Of(ExecutionModes.Name(key.Kind))),
-                ("mode", ReportJson.Of(key.Mode)), ("evidence", ReportJson.Of(key.Evidence)), ("requests", ReportJson.Of(usage.Requests)),
-                ("output", ReportJson.Of(usage.Output)), ("measuredOutput", ReportJson.Of(usage.MeasuredOutput)), ("measuredMs", ReportJson.Of(usage.MeasuredMs)),
-            };
-            if (key.Provider is { } provider) members.Insert(1, ("provider", ReportJson.Of(provider)));
-            rows.Add(ReportJson.Object(members));
+                sources[key.Source] = sources.GetValueOrDefault(key.Source) + usage;
+            }
+
+            if (key.Mode != "unknown")
+            {
+                var group = new ReportModeRows.Group(key.Source, key.Kind, key.Mode, key.Evidence, key.Provider);
+                groups[group] = groups.GetValueOrDefault(group) + usage;
+            }
         }
-        return ReportJson.Array(rows);
+
+        var total = sources.Values.Aggregate(ReportUsage.Zero, (sum, usage) => sum + usage);
+        if (sources.Keys.Any(source => !entry.Sources.Contains(source))
+            || (total.Requests, total.Output, total.MeasuredOutput, total.MeasuredMs)
+            != (entry.Usage.Requests, entry.Usage.Output, entry.Usage.MeasuredOutput, entry.Usage.MeasuredMs))
+        {
+            return null;
+        }
+
+        return ReportModeRows.Build(sources, groups, version) is { } rows ? ReportModeRows.Json(rows) : null;
     }
 }

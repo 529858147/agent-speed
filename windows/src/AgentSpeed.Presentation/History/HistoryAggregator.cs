@@ -165,52 +165,6 @@ public static class HistoryAggregator
         MeasuredMs = total.MeasuredMs + Math.Max(0, part.MeasuredMs),
     };
 
-    /// <summary>
-    /// Models with responses of unknown price in <paramref name="range"/> over the counted sources, most unpriced requests
-    /// first (<c>history.unpricedNotice</c>). Contributions stored before costs existed are not unknown prices and are left
-    /// out; unpriced requests no named model accounts for are listed under an empty name.
-    /// </summary>
-    public static IReadOnlyList<UnpricedModel> UnpricedModels(IEnumerable<DailyUsage> usage, SourceKind? source, DayRange range,
-        SourceSet excluded = default)
-    {
-        ArgumentNullException.ThrowIfNull(usage);
-        var counts = new Dictionary<(string Model, SourceKind Source), long>();
-        foreach (var record in usage)
-        {
-            if (record is null || (source is { } only && record.Source != only) || excluded.Contains(record.Source)
-                || record.Cost is not { } cost || !HistoryRanges.TryParseDay(record.Day, out var day) || !range.Contains(day))
-            {
-                continue;
-            }
-
-            long named = 0;
-            foreach (var model in record.Models ?? [])
-            {
-                if (model.Cost is not { UnpricedRequests: > 0 } modelCost)
-                {
-                    continue;
-                }
-
-                var key = ((model.Model ?? string.Empty).Trim(), record.Source);
-                counts[key] = counts.GetValueOrDefault(key) + modelCost.UnpricedRequests;
-                named += modelCost.UnpricedRequests;
-            }
-
-            if (cost.UnpricedRequests - named is > 0 and var rest)
-            {
-                var key = (string.Empty, record.Source);
-                counts[key] = counts.GetValueOrDefault(key) + rest;
-            }
-        }
-
-        return counts
-            .Select(c => new UnpricedModel(c.Key.Model, c.Key.Source, c.Value))
-            .OrderByDescending(m => m.Requests)
-            .ThenBy(m => m.Model, StringComparer.Ordinal)
-            .ThenBy(m => m.Source)
-            .ToArray();
-    }
-
     /// <summary>The cost of one stored record as counted: nothing (but the mark) for an excluded source.</summary>
     public static HistoryCost CostOf(DailyUsage record, SourceSet excluded = default)
     {

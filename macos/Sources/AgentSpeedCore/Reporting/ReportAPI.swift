@@ -9,8 +9,7 @@ public struct ReportAPI: Sendable {
     public static let apiMaxBytes = 16_384
 
     public enum DiscoveryOutcome: Equatable, Sendable {
-        case document(ReportDiscovery, etag: String?)
-        case notModified
+        case document(ReportDiscovery)
         /// The URL does not offer this API: `404`, another `4xx` except `410` and `429`, or a response that is not an
         /// `agent-speed-report` document — not a JSON object, over 64 KiB (typically a web page), another `protocol`.
         case notSupported
@@ -30,10 +29,12 @@ public struct ReportAPI: Sendable {
         self.userAgent = userAgent
     }
 
-    public func discover(_ service: ReportServiceURL, etag: String? = nil) async -> DiscoveryOutcome {
+    /// Always the full document: no `If-None-Match` is sent and no `ETag` is kept (NETWORK 6), so a service that keeps
+    /// its `ETag` across a content change cannot hide a new capability.
+    public func discover(_ service: ReportServiceURL) async -> DiscoveryOutcome {
         let response: ReportHTTPResponse
         do {
-            response = try await transport.get(service.discoveryURL, etag: etag, userAgent: userAgent,
+            response = try await transport.get(service.discoveryURL, userAgent: userAgent,
                                                maxBytes: ReportDiscovery.maxBytes, timeout: Self.discoveryTimeout)
         } catch {
             ReportLog.network.info("discovery \(service.host, privacy: .public) failed: \(error.reason, privacy: .public)")
@@ -42,23 +43,20 @@ public struct ReportAPI: Sendable {
         }
         ReportLog.network.info(
             "GET \(service.host, privacy: .public) discovery -> \(response.status) \(response.body.count) bytes")
-        return Self.discoveryOutcome(status: response.status, body: response.body, etag: etag,
-                                     responseETag: response.headers["etag"], service: service)
+        return Self.discoveryOutcome(status: response.status, body: response.body, service: service)
     }
 
     /// REPORTING 3.1 and 3.2 for one response; DESIGN 11 shows each outcome as one localized sentence.
-    static func discoveryOutcome(status: Int, body: Data, etag: String?, responseETag: String?,
-                                 service: ReportServiceURL) -> DiscoveryOutcome {
+    static func discoveryOutcome(status: Int, body: Data, service: ReportServiceURL) -> DiscoveryOutcome {
         switch status {
         case 200:
             switch ReportDiscovery.parse(body, service: service) {
             case .success(let document):
-                return .document(document, etag: responseETag)
+                return .document(document)
             case .failure(let problem):
                 ReportLog.network.info("discovery invalid: \(String(describing: problem), privacy: .public)")
                 return problem.isOtherDocument ? .notSupported : .invalid
             }
-        case 304: return etag == nil ? .failed(.unavailable) : .notModified
         case 410: return .gone
         case 429: return .failed(.unavailable)
         case 400..<500: return .notSupported

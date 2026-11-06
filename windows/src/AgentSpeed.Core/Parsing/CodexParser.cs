@@ -11,6 +11,9 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
 
     private readonly bool _pathIsSubagent;
     private long? _fileCreatedMs;
+
+    /// <summary>Lines of a paginated sub-agent below this ordinal copy its parent's records (METRICS 3.5).</summary>
+    private long? _subagentStartOrdinal;
     private string _myAgentPath = RootAgentPath;
     private string? _metaThreadId;
     private string? _parentThreadId;
@@ -19,8 +22,15 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     private string? _provider;
     private long? _pendingStartMs;
     private bool _streaming;
+
+    /// <summary>The output line that started the current response (METRICS 4.2 <c>firstOutputMs</c>).</summary>
+    private long? _firstOutputMs;
     private bool _sawModernUsage;
     private CodexUsage? _previousLegacyTotals;
+
+    /// <summary>Facts that apply from their time on (EXECUTION-MODES, Codex); also the agent's current facts.</summary>
+    private ExecutionModes _context = ExecutionModes.Empty;
+    private bool _verifiedFastSelection;
 
     public CodexParser(string agentId, IDeduper deduper)
         : base(agentId, deduper, SourceKind.Codex)
@@ -44,15 +54,19 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     {
         base.Reset();
         _fileCreatedMs = null;
+        _subagentStartOrdinal = null;
         _myAgentPath = RootAgentPath;
         _metaThreadId = null;
         _parentThreadId = null;
         _provider = null;
         _pendingStartMs = null;
         _streaming = false;
+        _firstOutputMs = null;
         _sawModernUsage = false;
         _previousLegacyTotals = null;
         LatestQuota = null;
+        _context = ExecutionModes.Empty;
+        _verifiedFastSelection = false;
         SetSubagent(_pathIsSubagent);
     }
 
@@ -87,6 +101,11 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
             return;
         }
 
+        if (_subagentStartOrdinal is { } start && line.Ordinal is { } ordinal && ordinal < start)
+        {
+            return;
+        }
+
         if (line.Kind == CodexLineKind.EventMsg && line.PayloadKind == CodexPayloadKind.TokenCount && line.Quota is { } quota
             && (LatestQuota is null || ts > LatestQuota.FetchedAt.ToUnixTimeMilliseconds()))
         {
@@ -95,11 +114,13 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         }
 
         Touch(ts);
+        RecordTools(in line.Tools, ts);
         switch (line.Kind)
         {
             case CodexLineKind.TurnContext:
                 SetModel(line.Model);
                 SetProjectFromCwd(line.Cwd);
+                ApplyTurnFacts(in line);
                 break;
             case CodexLineKind.ResponseItem:
                 ApplyResponseItem(in line, ts);
@@ -124,6 +145,7 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         }
 
         _fileCreatedMs = ts;
+        _subagentStartOrdinal = line.SubagentStartOrdinal;
         Touch(ts);
         SetProjectFromCwd(line.Cwd);
         _myAgentPath = line.AgentPath ?? RootAgentPath;
@@ -140,6 +162,11 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
         {
             case CodexPayloadKind.Reasoning or CodexPayloadKind.CallSuffix:
             case CodexPayloadKind.Message when line.Role == CodexRole.Assistant:
+                if (!_streaming)
+                {
+                    _firstOutputMs = ts;
+                }
+
                 _streaming = true;
                 SetPhase(AgentPhase.Generating, ts, _pendingStartMs ?? ts);
                 break;
@@ -173,13 +200,6 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
     {
         switch (line.PayloadKind)
         {
-            case CodexPayloadKind.ThreadSettingsApplied:
-                if (line.SelectedModes is { } selected)
-                {
-                    Modes = selected;
-                }
-
-                break;
             case CodexPayloadKind.TaskStarted or CodexPayloadKind.UserMessage:
                 OnInput(ts);
                 break;
@@ -194,7 +214,57 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
                 _streaming = false;
                 SetPhase(AgentPhase.Idle, ts, null);
                 break;
+            case CodexPayloadKind.ThreadSettingsApplied:
+                ApplyThreadSettings(in line);
+                break;
         }
+    }
+
+    /// <summary>A turn context starts a turn: turn facts are replaced by its effort and selected tier.</summary>
+    private void ApplyTurnFacts(in CodexLine line)
+    {
+        var context = _context.Without(f => f.Scope == ExecutionModeScope.Turn)
+            .With(ExecutionModeNative.Effort(line.Effort ?? line.CollaborationEffort, ExecutionModeEvidence.Recorded, ExecutionModeScope.Turn));
+        if (line.ServiceTier is { } tier)
+        {
+            context = context.Merge(ExecutionModeNative.OpenAiTier(tier, ExecutionModeEvidence.Selected, ExecutionModeScope.Turn));
+        }
+
+        SetContext(context);
+    }
+
+    /// <summary><c>thread_settings_applied</c>: the thread's selected tier and effort from now on; a non-string clears one.</summary>
+    private void ApplyThreadSettings(in CodexLine line)
+    {
+        var context = _context;
+        if (line.TierSetting.Present)
+        {
+            var selected = line.TierProvider is null or "openai" or "azure"
+                ? ExecutionModeNative.OpenAiTier(line.TierSetting.Value, ExecutionModeEvidence.Selected, ExecutionModeScope.Session)
+                : ExecutionModes.Empty;
+            _verifiedFastSelection = (line.TierProvider is "openai" or "azure")
+                && selected.Attribute(ExecutionModeKind.ServiceTier).Mode == "fast";
+            context = context.Without(f => IsSessionSelection(f, ExecutionModeKind.ServiceTier, "openai"))
+                .Merge(selected);
+        }
+
+        if (line.EffortSetting.Present)
+        {
+            context = context.Without(f => IsSessionSelection(f, ExecutionModeKind.Effort, null))
+                .With(ExecutionModeNative.Effort(line.EffortSetting.Value, ExecutionModeEvidence.Selected, ExecutionModeScope.Session));
+        }
+
+        SetContext(context);
+    }
+
+    private static bool IsSessionSelection(ExecutionModeFact fact, ExecutionModeKind kind, string? provider) =>
+        fact.Kind == kind && fact.Evidence == ExecutionModeEvidence.Selected && fact.Scope == ExecutionModeScope.Session
+        && string.Equals(fact.Provider, provider, StringComparison.Ordinal);
+
+    private void SetContext(ExecutionModes context)
+    {
+        _context = context;
+        Modes = context;
     }
 
     private string ThreadId => _metaThreadId ?? AgentId;
@@ -209,7 +279,11 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
             return;
         }
 
-        Emit(key, line.Usage, ts, sink);
+        // A recorded request tier belongs to this response's snapshot only, never to the context.
+        var modes = line.ServiceTier is { } tier
+            ? _context.Merge(ExecutionModeNative.OpenAiTier(tier, ExecutionModeEvidence.Recorded, ExecutionModeScope.Request))
+            : _context;
+        Emit(key, line.Usage, ts, sink, modes);
     }
 
     private void ApplyLegacyUsage(in CodexLine line, long ts, IResponseSink sink)
@@ -244,13 +318,17 @@ internal sealed class CodexParser : TranscriptParser<CodexLine>
             return;
         }
 
-        Emit(key, tokens, ts, sink);
+        Emit(key, tokens, ts, sink, _context);
     }
 
-    private void Emit(string key, TokenCounts tokens, long ts, IResponseSink sink)
+    private void Emit(string key, TokenCounts tokens, long ts, IResponseSink sink, ExecutionModes modes)
     {
         sink.OnResponse(new ParsedResponse(key, SourceKind.Codex, AgentId, Model, _pendingStartMs, ts, tokens, Provider: _provider)
-            { Modes = Modes }, true);
+        {
+            Modes = modes,
+            CodexFastSelectionVerified = _verifiedFastSelection,
+            FirstMs = _streaming ? _firstOutputMs : null,
+        }, true);
         AfterUsage(ts);
     }
 

@@ -37,12 +37,14 @@ struct TrafficPlatform: Sendable {
         return isWindows ? normalized.lowercased() : normalized
     }
 
-    /// The executable's file name without `.exe`; case is kept.
+    /// The executable's file name: as is on macOS; lower-case without `.exe` on Windows, where an image path has the case the
+    /// process was launched with (METRICS 10.5).
     func name(_ executable: String?) -> String {
         let path = (executable ?? "").replacingOccurrences(of: "\\", with: "/")
-        var base = path.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
-        if isWindows, base.lowercased().hasSuffix(".exe") { base.removeLast(4) }
-        return base
+        let base = path.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+        guard isWindows else { return base }
+        let folded = base.lowercased()
+        return folded.hasSuffix(".exe") ? String(folded.dropLast(4)) : folded
     }
 
     /// `path` lies under (or is) one of `prefixes`.

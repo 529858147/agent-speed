@@ -200,14 +200,19 @@ METRICS 11; Settings, consent and storage of keys are DESIGN 11. Differences fro
   `http` to `127.0.0.1`, `[::1]` and `localhost` for local testing.
 - Methods `GET` (discovery), `POST`, `PATCH`, `PUT`, `DELETE`. API requests never follow redirects; discovery
   follows at most 3, `https` only. Timeouts 15 s (discovery) and 10 s (API).
-- No `ETag`-based caching except for the discovery document; failures are not retried daily but handled by the
-  report scheduler (METRICS 11.5) and shown in the pane's status line, never as dialogs or notifications.
+- No `ETag`-based caching, the discovery document included: it is always fetched in full, without `If-None-Match`,
+  and no `ETag` is stored for it. It is a few KB fetched a few times a day, while a service that keeps its `ETag`
+  across a content change would hide a new capability (such as `reportWebSocket`) from every device that fetched the
+  document before. Failures are not retried daily but handled by the report scheduler (METRICS 11.5) and shown in the
+  pane's status line, never as dialogs or notifications.
 - README and About wording for this feature: DESIGN 11 (prepared, applied when the feature ships).
 
 ### Optional profile and report extensions
 
-`spec/REPORTING-EXTENSIONS.md` defines independently advertised model/Harness counts, execution-mode metadata,
-avatars and approved one-time device pairing. Model breakdowns require the existing models sharing switch.
+`spec/REPORTING-EXTENSIONS.md` defines independently advertised model/Harness counts, execution-mode metadata, the
+performance score with its statistics (METRICS 11.10), avatars and approved one-time device pairing. Model breakdowns
+and the performance score require the existing models sharing switch and add no request: they ride in the periodic
+reports.
 Profile requests use the same confirmed API host, signature, redirect policy and master network switch; they
 are explicit actions available for an already registered device even when periodic reporting is paused.
 Opening the profile surface may fetch the signed profile and current avatar. Pairing polls only while its

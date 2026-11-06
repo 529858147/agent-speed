@@ -2,6 +2,7 @@ using AgentSpeed.Core.Reporting;
 using AgentSpeed.Presentation.Formatting;
 using AgentSpeed.Presentation.Localization;
 using AgentSpeed.Presentation.Menus;
+using AgentSpeed.Presentation.Reporting;
 
 namespace AgentSpeed.Reporting;
 
@@ -11,6 +12,12 @@ public enum ReportStatusKind
     NetworkOff,
     Never,
     Reporting,
+
+    /// <summary>Green <c>report.status.streaming</c>: the last report acknowledged over WebSocket.</summary>
+    Streaming,
+
+    /// <summary>A status only the WebSocket transport has (<see cref="ReportStatus.Stream"/>).</summary>
+    Stream,
     Idle,
     Quiet,
     Paused,
@@ -58,9 +65,12 @@ internal sealed record ReportStatus(ReportStatusKind Kind)
 
     public ReportProblem? Problem { get; init; }
 
+    public ReportStreamStatusKind? Stream { get; init; }
+
     public ReportTone Tone => Kind switch
     {
-        ReportStatusKind.Reporting => ReportTone.Green,
+        ReportStatusKind.Reporting or ReportStatusKind.Streaming => ReportTone.Green,
+        ReportStatusKind.Stream => ReportStreamStatus.NeedsUser(Stream ?? ReportStreamStatusKind.ClientState) ? ReportTone.Red : ReportTone.Amber,
         ReportStatusKind.Off or ReportStatusKind.NetworkOff or ReportStatusKind.Never or ReportStatusKind.Idle or ReportStatusKind.Quiet
             or ReportStatusKind.Paused or ReportStatusKind.PausedIndefinitely => ReportTone.Gray,
         ReportStatusKind.Connecting or ReportStatusKind.Registering or ReportStatusKind.Retrying or ReportStatusKind.RateLimited
@@ -99,6 +109,10 @@ internal sealed record ReportStatus(ReportStatusKind Kind)
         ReportStatusKind.NetworkOff => loc["settings.network.offHint"],
         ReportStatusKind.Never => loc["report.status.never"],
         ReportStatusKind.Reporting => loc.Format("report.status.reporting", Ago(At ?? now, now, loc)),
+        ReportStatusKind.Streaming => loc.Format("report.status.streaming", Ago(At ?? now, now, loc)),
+        ReportStatusKind.Stream when Stream == ReportStreamStatusKind.Reconnecting && At is { } success =>
+            loc.Format("report.status.wsReconnecting", Ago(success, now, loc)),
+        ReportStatusKind.Stream => loc[ReportStreamStatus.Key(Stream ?? ReportStreamStatusKind.ClientState, everDelivered: false)],
         ReportStatusKind.Idle => loc["report.status.idle"],
         ReportStatusKind.Quiet => loc["report.status.quiet"],
         ReportStatusKind.Paused => loc.Format("report.status.paused", Time(At ?? now, loc)),

@@ -22,6 +22,10 @@
       "name": "deepseek",
       "url": "https://example.com/fixture-prices"
     },
+    "xiaomi": {
+      "name": "xiaomi",
+      "url": "https://example.com/fixture-prices"
+    },
     "fixture": {
       "name": "fixture",
       "url": "https://example.com/fixture-prices"
@@ -475,6 +479,20 @@
         "input": 0.4,
         "cachedInput": 0.04,
         "output": 3.2
+      },
+      "source": "https://example.com/fixture-prices",
+      "checked": "2026-10-01"
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "provider": "xiaomi",
+      "name": "mimo-v2.6-pro",
+      "status": "current",
+      "prices": {
+        "input": 0.435,
+        "cachedInput": 0.0036,
+        "cacheWrite": 0,
+        "output": 0.87
       },
       "source": "https://example.com/fixture-prices",
       "checked": "2026-10-01"

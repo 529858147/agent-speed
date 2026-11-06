@@ -475,6 +475,458 @@
         "/Users/dev/Applications/WB Copy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
         "--serve"
        ]
+      },
+      {
+       "pid": 1200,
+       "ppid": 1,
+       "start": 9100,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 1201,
+       "ppid": 1200,
+       "start": 9110,
+       "exe": "/Users/dev/.local/share/pi-node/current/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+       ]
+      },
+      {
+       "pid": 1202,
+       "ppid": 1201,
+       "start": 9120,
+       "exe": "/bin/bash",
+       "args": [
+        "bash",
+        "-c",
+        "bun test"
+       ]
+      },
+      {
+       "pid": 1203,
+       "ppid": 1200,
+       "start": 9130,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js"
+       ]
+      },
+      {
+       "pid": 1204,
+       "ppid": 1200,
+       "start": 9140,
+       "exe": "/Users/dev/.local/bin/pi"
+      },
+      {
+       "pid": 1205,
+       "ppid": 1200,
+       "start": 9150,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/projects/pi-calculator/index.js"
+       ]
+      },
+      {
+       "pid": 1300,
+       "ppid": 1,
+       "start": 9200,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/opt/homebrew/lib/node_modules/openclaw/openclaw.mjs",
+        "gateway",
+        "run"
+       ]
+      },
+      {
+       "pid": 1301,
+       "ppid": 1300,
+       "start": 9210,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "--disable-warning=ExperimentalWarning",
+        "/opt/homebrew/lib/node_modules/openclaw/openclaw.mjs",
+        "gateway",
+        "run"
+       ]
+      },
+      {
+       "pid": 1302,
+       "ppid": 1301,
+       "start": 9220,
+       "exe": "/Users/dev/.local/share/claude/versions/2.1.308",
+       "args": [
+        "claude",
+        "-p",
+        "--output-format",
+        "stream-json"
+       ]
+      },
+      {
+       "pid": 1303,
+       "ppid": 1301,
+       "start": 9230,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex",
+        "app-server"
+       ]
+      },
+      {
+       "pid": 1304,
+       "ppid": 1301,
+       "start": 9240,
+       "exe": "/bin/zsh",
+       "args": [
+        "zsh",
+        "-c",
+        "git status"
+       ]
+      },
+      {
+       "pid": 1305,
+       "ppid": 1,
+       "start": 9250,
+       "exe": "/Users/dev/.openclaw/bin/openclaw"
+      },
+      {
+       "pid": 1306,
+       "ppid": 1,
+       "start": 9260,
+       "exe": "/Users/dev/.openclaw/tools/bun-1.3.0/bun",
+       "args": [
+        "bun",
+        "/Users/dev/.openclaw/lib/node_modules/openclaw/dist/entry.js",
+        "gateway"
+       ]
+      },
+      {
+       "pid": 1307,
+       "ppid": 1,
+       "start": 9270,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/projects/openclaw-skills/index.js"
+       ]
+      },
+      {
+       "pid": 1308,
+       "ppid": 1,
+       "start": 9280,
+       "exe": "/Applications/OpenClaw.app/Contents/MacOS/OpenClaw"
+      },
+      {
+       "pid": 1400,
+       "ppid": 100,
+       "start": 9200,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 1401,
+       "ppid": 1400,
+       "start": 9210,
+       "exe": "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+       "args": [
+        "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+        "-I",
+        "-c",
+        "import os, re, sys\nimport contextlib, hashlib, io, pathlib, shutil, subprocess\nsys.path.insert(0, '/Users/dev/.hermes/hermes-agent')\nsys._hermes_pin_default_home = True\nimport hermes_bootstrap\nfrom hermes_cli.main import main\nsys.exit(main())\n",
+        "chat"
+       ]
+      },
+      {
+       "pid": 1402,
+       "ppid": 1401,
+       "start": 9220,
+       "exe": "/bin/bash",
+       "args": [
+        "/bin/bash",
+        "-c",
+        "pytest -q"
+       ]
+      },
+      {
+       "pid": 1403,
+       "ppid": 1402,
+       "start": 9230,
+       "exe": "/Users/dev/projects/halo/.venv/bin/python3",
+       "args": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q"
+       ]
+      },
+      {
+       "pid": 1404,
+       "ppid": 1401,
+       "start": 9240,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex",
+        "app-server"
+       ]
+      },
+      {
+       "pid": 1405,
+       "ppid": 1,
+       "start": 9300,
+       "exe": "/usr/bin/osascript",
+       "args": [
+        "/usr/bin/osascript",
+        "-l",
+        "JavaScript",
+        "-e",
+        "ObjC.import(\"stdlib\")"
+       ]
+      },
+      {
+       "pid": 1406,
+       "ppid": 1405,
+       "start": 9310,
+       "exe": "/bin/sh",
+       "args": [
+        "/bin/sh",
+        "-c",
+        "exec /usr/bin/env XPC_SERVICE_NAME=0 ..."
+       ]
+      },
+      {
+       "pid": 1407,
+       "ppid": 1406,
+       "start": 9320,
+       "exe": "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+       "args": [
+        "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+        "-I",
+        "-c",
+        "import os, re, sys\nimport contextlib, hashlib, io, pathlib, shutil, subprocess\nsys.path.insert(0, '/Users/dev/.hermes/hermes-agent')\nsys._hermes_pin_default_home = True\nimport hermes_bootstrap\nfrom hermes_cli.main import main\nsys.exit(main())\n",
+        "--profile",
+        "default",
+        "gateway",
+        "run",
+        "--external-supervisor"
+       ]
+      },
+      {
+       "pid": 1408,
+       "ppid": 1400,
+       "start": 9330,
+       "exe": "/opt/homebrew/Cellar/python@3.13/3.13.9/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+       "args": [
+        "/opt/homebrew/opt/python@3.13/bin/python3.13",
+        "/Users/dev/.venvs/hermes/bin/hermes",
+        "chat"
+       ]
+      },
+      {
+       "pid": 1409,
+       "ppid": 1,
+       "start": 9400,
+       "exe": "/Applications/Hermes.app/Contents/MacOS/Hermes"
+      },
+      {
+       "pid": 1410,
+       "ppid": 1409,
+       "start": 9410,
+       "exe": "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+       "args": [
+        "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+        "-m",
+        "hermes_cli.main",
+        "dashboard",
+        "--no-open"
+       ]
+      },
+      {
+       "pid": 1411,
+       "ppid": 1400,
+       "start": 9420,
+       "exe": "/usr/bin/python3",
+       "args": [
+        "/usr/bin/python3",
+        "/Users/dev/projects/hermes-notes/app.py"
+       ]
+      },
+      {
+       "pid": 1412,
+       "ppid": 1400,
+       "start": 9430,
+       "exe": "/Users/dev/Library/Android/sdk/hermes-engine/osx-bin/hermes",
+       "args": [
+        "/Users/dev/Library/Android/sdk/hermes-engine/osx-bin/hermes",
+        "bundle.js"
+       ]
+      },
+      {
+       "pid": 1413,
+       "ppid": 1,
+       "start": 9440,
+       "exe": "/Applications/Zed.app/Contents/MacOS/zed"
+      },
+      {
+       "pid": 1414,
+       "ppid": 1413,
+       "start": 9450,
+       "exe": "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+       "args": [
+        "/Users/dev/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+        "-I",
+        "-c",
+        "import os, re, sys\nimport contextlib, hashlib, io, pathlib, shutil, subprocess\nsys.path.insert(0, '/Users/dev/.hermes/hermes-agent')\nsys._hermes_pin_default_home = True\nimport hermes_bootstrap\nfrom acp_adapter.entry import main\nsys.exit(main())\n"
+       ]
+      },
+      {
+       "pid": 1415,
+       "ppid": 1400,
+       "start": 9460,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/.hermes/hermes-agent/ui-tui/dist/entry.js"
+       ]
+      },
+      {
+       "pid": 1500,
+       "ppid": 100,
+       "start": 9500,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 1501,
+       "ppid": 1500,
+       "start": 9510,
+       "exe": "/Users/dev/.local/bin/droid",
+       "args": [
+        "droid"
+       ]
+      },
+      {
+       "pid": 1502,
+       "ppid": 1501,
+       "start": 9520,
+       "exe": "/Users/dev/.local/bin/droid",
+       "args": [
+        "droid",
+        "exec",
+        "--input-format",
+        "stream-jsonrpc",
+        "--output-format",
+        "stream-jsonrpc"
+       ]
+      },
+      {
+       "pid": 1503,
+       "ppid": 1502,
+       "start": 9530,
+       "exe": "/bin/zsh",
+       "args": [
+        "/bin/zsh",
+        "-c",
+        "npm test"
+       ]
+      },
+      {
+       "pid": 1504,
+       "ppid": 1502,
+       "start": 9540,
+       "exe": "/opt/homebrew/bin/rg",
+       "args": [
+        "rg",
+        "--json",
+        "TODO"
+       ]
+      },
+      {
+       "pid": 1505,
+       "ppid": 1500,
+       "start": 9550,
+       "exe": "/opt/homebrew/Caskroom/droid/0.251.0/droid",
+       "args": [
+        "droid",
+        "exec",
+        "-o",
+        "json",
+        "fix the build"
+       ]
+      },
+      {
+       "pid": 1506,
+       "ppid": 1,
+       "start": 9560,
+       "exe": "/Applications/Factory.app/Contents/MacOS/Factory"
+      },
+      {
+       "pid": 1507,
+       "ppid": 1506,
+       "start": 9570,
+       "exe": "/Applications/Factory.app/Contents/Resources/bin/droid",
+       "args": [
+        "droid",
+        "daemon",
+        "--enable-child-ipc",
+        "--listen",
+        "ipc"
+       ]
+      },
+      {
+       "pid": 1508,
+       "ppid": 1507,
+       "start": 9580,
+       "exe": "/Applications/Factory.app/Contents/Resources/bin/droid",
+       "args": [
+        "droid",
+        "exec",
+        "--input-format",
+        "stream-jsonrpc",
+        "--output-format",
+        "stream-jsonrpc"
+       ]
+      },
+      {
+       "pid": 1509,
+       "ppid": 1508,
+       "start": 9590,
+       "exe": "/usr/bin/git",
+       "args": [
+        "git",
+        "status"
+       ]
+      },
+      {
+       "pid": 1510,
+       "ppid": 1500,
+       "start": 9600,
+       "exe": "/opt/homebrew/bin/node",
+       "args": [
+        "node",
+        "/Users/dev/.npm-global/lib/node_modules/droid-cli-helper/index.js"
+       ]
+      },
+      {
+       "pid": 1511,
+       "ppid": 1500,
+       "start": 9610,
+       "exe": "/Users/dev/Library/Android/sdk/platform-tools/android-droid",
+       "args": [
+        "android-droid"
+       ]
+      },
+      {
+       "pid": 1512,
+       "ppid": 1501,
+       "start": 9620,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex",
+        "exec",
+        "review"
+       ]
       }
      ]
     }
@@ -522,7 +974,51 @@
      "212": "workbuddy/agent",
      "213": "workbuddy/tool",
      "214": "workbuddy/agent",
-     "215": "workbuddyAi/agent"
+     "215": "workbuddyAi/agent",
+     "1200": null,
+     "1201": "pi/agent",
+     "1202": "pi/tool",
+     "1203": "pi/agent",
+     "1204": "pi/agent",
+     "1205": null,
+     "1300": "openclaw/agent",
+     "1301": "openclaw/self",
+     "1302": "claudeCode/agent",
+     "1303": "codex/agent",
+     "1304": "openclaw/tool",
+     "1305": "openclaw/agent",
+     "1306": "openclaw/agent",
+     "1307": null,
+     "1308": null,
+     "1400": null,
+     "1401": "hermes/agent",
+     "1402": "hermes/tool",
+     "1403": "hermes/tool",
+     "1404": "codex/agent",
+     "1405": null,
+     "1406": null,
+     "1407": "hermes/agent",
+     "1408": "hermes/agent",
+     "1409": null,
+     "1410": "hermes/agent",
+     "1411": null,
+     "1412": null,
+     "1413": null,
+     "1414": "hermes/agent",
+     "1415": null,
+     "1500": null,
+     "1501": "droid/agent",
+     "1502": "droid/self",
+     "1503": "droid/tool",
+     "1504": "droid/tool",
+     "1505": "droid/agent",
+     "1506": null,
+     "1507": "droid/agent",
+     "1508": "droid/self",
+     "1509": "droid/tool",
+     "1510": null,
+     "1511": null,
+     "1512": "codex/agent"
     }
    }
   },
@@ -711,6 +1207,205 @@
         "--session-id",
         "5e1d7c3a-2b9f-4a6e-8d0c-1f2e3d4c5b6b"
        ]
+      },
+      {
+       "pid": 7300,
+       "ppid": 1,
+       "start": 5200,
+       "exe": "C:\\Program Files\\nodejs\\node.exe",
+       "args": [
+        "node.exe",
+        "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\openclaw\\openclaw.mjs",
+        "gateway",
+        "run"
+       ]
+      },
+      {
+       "pid": 7301,
+       "ppid": 7300,
+       "start": 5210,
+       "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+       "args": [
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        "git status"
+       ]
+      },
+      {
+       "pid": 7302,
+       "ppid": 1,
+       "start": 5220,
+       "exe": "C:\\Users\\dev\\.openclaw\\tools\\bun-1.3.0\\bun.exe",
+       "args": [
+        "bun.exe",
+        "C:\\Users\\dev\\.openclaw\\lib\\node_modules\\OpenClaw\\dist\\entry.js"
+       ]
+      },
+      {
+       "pid": 7303,
+       "ppid": 1,
+       "start": 5230,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\OpenClaw Companion\\OpenClawCompanion.exe"
+      },
+      {
+       "pid": 950,
+       "ppid": 4,
+       "start": 4500,
+       "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      },
+      {
+       "pid": 951,
+       "ppid": 950,
+       "start": 4510,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\hermes\\hermes-agent\\.hermes\\bin\\hermes.exe",
+       "args": [
+        "C:\\Users\\dev\\AppData\\Local\\hermes\\hermes-agent\\.hermes\\bin\\hermes.exe",
+        "chat"
+       ]
+      },
+      {
+       "pid": 952,
+       "ppid": 951,
+       "start": 4520,
+       "exe": "C:\\Users\\dev\\AppData\\Roaming\\uv\\python\\cpython-3.14.2-windows-x86_64-none\\python.exe",
+       "args": [
+        "C:\\Users\\dev\\AppData\\Roaming\\uv\\python\\cpython-3.14.2-windows-x86_64-none\\python.exe",
+        "-I",
+        "C:\\Users\\dev\\AppData\\Local\\hermes\\hermes-agent\\.hermes\\bin\\hermes.exe",
+        "chat"
+       ]
+      },
+      {
+       "pid": 953,
+       "ppid": 952,
+       "start": 4530,
+       "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+       "args": [
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        "npm test"
+       ]
+      },
+      {
+       "pid": 954,
+       "ppid": 4,
+       "start": 4540,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\Hermes\\Hermes.exe"
+      },
+      {
+       "pid": 955,
+       "ppid": 954,
+       "start": 4550,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\hermes\\runtime\\PYTHONW.EXE",
+       "args": [
+        "PYTHONW.EXE",
+        "-m",
+        "hermes_cli.main",
+        "serve"
+       ]
+      },
+      {
+       "pid": 956,
+       "ppid": 950,
+       "start": 4560,
+       "exe": "C:\\Users\\dev\\venvs\\hermes\\Scripts\\python.exe",
+       "args": [
+        "C:\\Users\\dev\\venvs\\hermes\\Scripts\\python.exe",
+        "C:\\Users\\dev\\venvs\\hermes\\Scripts\\Hermes.EXE",
+        "gateway",
+        "run"
+       ]
+      },
+      {
+       "pid": 957,
+       "ppid": 950,
+       "start": 4570,
+       "exe": "C:\\Python313\\python.exe",
+       "args": [
+        "python.exe",
+        "C:\\tools\\hermes.py"
+       ]
+      },
+      {
+       "pid": 960,
+       "ppid": 950,
+       "start": 4600,
+       "exe": "C:\\Users\\dev\\bin\\droid.exe",
+       "args": [
+        "C:\\Users\\dev\\bin\\droid.exe"
+       ]
+      },
+      {
+       "pid": 961,
+       "ppid": 960,
+       "start": 4610,
+       "exe": "C:\\Users\\dev\\bin\\droid.exe",
+       "args": [
+        "C:\\Users\\dev\\bin\\droid.exe",
+        "exec",
+        "--input-format",
+        "stream-jsonrpc",
+        "--output-format",
+        "stream-jsonrpc"
+       ]
+      },
+      {
+       "pid": 962,
+       "ppid": 961,
+       "start": 4620,
+       "exe": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+       "args": [
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        "dotnet test"
+       ]
+      },
+      {
+       "pid": 963,
+       "ppid": 950,
+       "start": 4630,
+       "exe": "C:\\Program Files\\nodejs\\node.exe",
+       "args": [
+        "node.exe",
+        "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\droid\\bin\\droid"
+       ]
+      },
+      {
+       "pid": 964,
+       "ppid": 963,
+       "start": 4640,
+       "exe": "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\droid\\node_modules\\@factory\\cli-win32-x64\\bin\\DROID.EXE",
+       "args": [
+        "droid.exe"
+       ]
+      },
+      {
+       "pid": 965,
+       "ppid": 4,
+       "start": 4650,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Factory\\Factory.exe"
+      },
+      {
+       "pid": 966,
+       "ppid": 965,
+       "start": 4660,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Factory\\app-0.190.0\\resources\\bin\\droid.exe",
+       "args": [
+        "droid.exe",
+        "daemon",
+        "--enable-child-ipc",
+        "--listen",
+        "ipc"
+       ]
+      },
+      {
+       "pid": 967,
+       "ppid": 950,
+       "start": 4670,
+       "exe": "C:\\tools\\droidcam\\DroidCam.exe"
       }
      ]
     }
@@ -737,7 +1432,190 @@
      "903": "workbuddyAi/agent",
      "904": "workbuddyAi/tool",
      "910": null,
-     "911": "workbuddy/agent"
+     "911": "workbuddy/agent",
+     "7300": "openclaw/agent",
+     "7301": "openclaw/tool",
+     "7302": "openclaw/agent",
+     "7303": null,
+     "950": null,
+     "951": null,
+     "952": "hermes/agent",
+     "953": "hermes/tool",
+     "954": null,
+     "955": "hermes/agent",
+     "956": "hermes/agent",
+     "957": null,
+     "960": "droid/agent",
+     "961": "droid/self",
+     "962": "droid/tool",
+     "963": null,
+     "964": "droid/agent",
+     "965": null,
+     "966": "droid/agent",
+     "967": null
+    }
+   }
+  },
+  {
+   "platform": "windows",
+   "home": "C:\\Users\\dev",
+   "env": {
+    "LOCALAPPDATA": "C:\\Users\\dev\\AppData\\Local",
+    "APPDATA": "C:\\Users\\dev\\AppData\\Roaming"
+   },
+   "name": "classify-windows-observed",
+   "_comment": "Process trees observed on Windows 11 on 2026-10-25: Claude Desktop 3.6556 runs app\\claude.exe in lower case, so Windows names compare case-insensitively and the desktop apps are known by their package's app folder; DeepSeek Harness runs its desktop host and runners on its own executable.",
+   "samples": [
+    {
+     "t": 1792940000000,
+     "processes": [
+      {
+       "pid": 100,
+       "ppid": 1,
+       "start": 500,
+       "exe": "C:\\Windows\\explorer.exe"
+      },
+      {
+       "pid": 200,
+       "ppid": 100,
+       "start": 1000,
+       "exe": "C:\\Program Files\\WindowsApps\\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\\app\\claude.exe"
+      },
+      {
+       "pid": 201,
+       "ppid": 200,
+       "start": 1100,
+       "exe": "C:\\Program Files\\WindowsApps\\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\\app\\claude.exe",
+       "args": [
+        "claude.exe",
+        "--type=renderer"
+       ]
+      },
+      {
+       "pid": 202,
+       "ppid": 200,
+       "start": 1200,
+       "exe": "C:\\Program Files\\WindowsApps\\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\\app\\resources\\cowork-svc.exe"
+      },
+      {
+       "pid": 203,
+       "ppid": 200,
+       "start": 1300,
+       "exe": "C:\\Program Files\\nodejs\\node.exe",
+       "args": [
+        "node.exe",
+        "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\some-mcp\\index.js"
+       ]
+      },
+      {
+       "pid": 210,
+       "ppid": 200,
+       "start": 1400,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Claude-3p\\claude-code\\2.1.308\\c17a819afb40\\claude.exe",
+       "args": [
+        "claude.exe",
+        "--output-format",
+        "stream-json"
+       ]
+      },
+      {
+       "pid": 211,
+       "ppid": 210,
+       "start": 1500,
+       "exe": "C:\\Program Files\\Git\\bin\\bash.exe"
+      },
+      {
+       "pid": 300,
+       "ppid": 100,
+       "start": 1000,
+       "exe": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\Codex.exe"
+      },
+      {
+       "pid": 301,
+       "ppid": 300,
+       "start": 1100,
+       "exe": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe",
+       "args": [
+        "codex.exe",
+        "app-server"
+       ]
+      },
+      {
+       "pid": 302,
+       "ppid": 301,
+       "start": 1200,
+       "exe": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\resources\\rg.exe"
+      },
+      {
+       "pid": 400,
+       "ppid": 100,
+       "start": 2000,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe"
+      },
+      {
+       "pid": 401,
+       "ppid": 400,
+       "start": 2100,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe",
+       "args": [
+        "DeepSeek Harness.exe",
+        "--type=utility",
+        "--utility-sub-type=network.mojom.NetworkService"
+       ]
+      },
+      {
+       "pid": 402,
+       "ppid": 400,
+       "start": 2200,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe",
+       "args": [
+        "DeepSeek Harness.exe",
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\resources\\app.asar\\dsh\\node_modules\\@deepseek-ai\\dsh-desktop-host\\lib\\index.js"
+       ]
+      },
+      {
+       "pid": 403,
+       "ppid": 402,
+       "start": 2300,
+       "exe": "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe",
+       "args": [
+        "DeepSeek Harness.exe",
+        "C:\\Users\\dev\\AppData\\Local\\Programs\\DeepSeek Harness\\resources\\app.asar\\dsh\\node_modules\\@deepseek-ai\\dsh-subprocess-local\\lib\\runner.js"
+       ]
+      },
+      {
+       "pid": 404,
+       "ppid": 403,
+       "start": 2400,
+       "exe": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      },
+      {
+       "pid": 500,
+       "ppid": 100,
+       "start": 3000,
+       "exe": "C:\\Users\\dev\\.local\\bin\\CLAUDE.EXE"
+      }
+     ]
+    }
+   ],
+   "expected": {
+    "classes": {
+     "100": null,
+     "200": null,
+     "201": null,
+     "202": null,
+     "203": null,
+     "210": "claudeDesktop/agent",
+     "211": "claudeDesktop/tool",
+     "300": null,
+     "301": "codex/agent",
+     "302": "codex/tool",
+     "400": "deepseek/agent",
+     "401": "deepseek/self",
+     "402": "deepseek/self",
+     "403": "deepseek/self",
+     "404": "deepseek/tool",
+     "500": "claudeCode/agent"
     }
    }
   },
@@ -2831,6 +3709,335 @@
       "rxTools": 0,
       "txTools": 0,
       "sampledMs": 12000
+     }
+    ]
+   }
+  },
+  {
+   "platform": "macos",
+   "home": "/Users/dev",
+   "name": "tunnel-and-local-proxy",
+   "_comment": "Issue #35. Rows are what `nettop -t external -t undefined` lists (METRICS 10.3). codex runs behind a TUN-mode proxy: its socket on the tunnel interface is `undefined` and counts once, as its own. The proxy core verge-mihomo sends codex's traffic on and serves claude as a local HTTP proxy; it is no agent's process and is never counted. claude reaches that proxy only over loopback, which nettop does not list, so its row does not grow (METRICS 10.12). codex's ssh tool goes straight out over en0.",
+   "samples": [
+    {
+     "t": 1793181600000,
+     "processes": [
+      {
+       "pid": 1,
+       "ppid": 0,
+       "start": 0,
+       "exe": "/sbin/launchd"
+      },
+      {
+       "pid": 100,
+       "ppid": 1,
+       "start": 1793181591000,
+       "exe": "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+      },
+      {
+       "pid": 101,
+       "ppid": 100,
+       "start": 1793181592000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 102,
+       "ppid": 101,
+       "start": 1793181593000,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex"
+       ],
+       "cwd": "/Users/dev/projects/nova"
+      },
+      {
+       "pid": 104,
+       "ppid": 100,
+       "start": 1793181594000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 105,
+       "ppid": 104,
+       "start": 1793181595000,
+       "exe": "/Users/dev/.local/share/claude/versions/2.1.303",
+       "args": [
+        "claude"
+       ],
+       "cwd": "/Users/dev/projects/orbit"
+      },
+      {
+       "pid": 300,
+       "ppid": 1,
+       "start": 1793181540000,
+       "exe": "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo"
+      }
+     ],
+     "interfaces": {
+      "en0": [
+       100000000,
+       20000000
+      ]
+     },
+     "counters": {
+      "stream": "s1",
+      "rows": [
+       {
+        "pid": 102,
+        "start": 1793181593000,
+        "rx": 1000,
+        "tx": 500
+       },
+       {
+        "pid": 105,
+        "start": 1793181595000,
+        "rx": 3000,
+        "tx": 1200
+       },
+       {
+        "pid": 300,
+        "start": 1793181540000,
+        "rx": 5000000,
+        "tx": 1000000
+       }
+      ]
+     }
+    },
+    {
+     "t": 1793181601000,
+     "processes": [
+      {
+       "pid": 1,
+       "ppid": 0,
+       "start": 0,
+       "exe": "/sbin/launchd"
+      },
+      {
+       "pid": 100,
+       "ppid": 1,
+       "start": 1793181591000,
+       "exe": "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+      },
+      {
+       "pid": 101,
+       "ppid": 100,
+       "start": 1793181592000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 102,
+       "ppid": 101,
+       "start": 1793181593000,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex"
+       ],
+       "cwd": "/Users/dev/projects/nova"
+      },
+      {
+       "pid": 104,
+       "ppid": 100,
+       "start": 1793181594000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 105,
+       "ppid": 104,
+       "start": 1793181595000,
+       "exe": "/Users/dev/.local/share/claude/versions/2.1.303",
+       "args": [
+        "claude"
+       ],
+       "cwd": "/Users/dev/projects/orbit"
+      },
+      {
+       "pid": 300,
+       "ppid": 1,
+       "start": 1793181540000,
+       "exe": "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo"
+      },
+      {
+       "pid": 103,
+       "ppid": 102,
+       "start": 1793181600500,
+       "exe": "/usr/bin/ssh"
+      }
+     ],
+     "interfaces": {
+      "en0": [
+       100072000,
+       20085000
+      ]
+     },
+     "counters": {
+      "stream": "s1",
+      "rows": [
+       {
+        "pid": 102,
+        "start": 1793181593000,
+        "rx": 41000,
+        "tx": 8500
+       },
+       {
+        "pid": 103,
+        "start": 1793181600500,
+        "rx": 3000,
+        "tx": 69000
+       },
+       {
+        "pid": 105,
+        "start": 1793181595000,
+        "rx": 3000,
+        "tx": 1200
+       },
+       {
+        "pid": 300,
+        "start": 1793181540000,
+        "rx": 5065900,
+        "tx": 1013300
+       }
+      ]
+     }
+    },
+    {
+     "t": 1793181602000,
+     "processes": [
+      {
+       "pid": 1,
+       "ppid": 0,
+       "start": 0,
+       "exe": "/sbin/launchd"
+      },
+      {
+       "pid": 100,
+       "ppid": 1,
+       "start": 1793181591000,
+       "exe": "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+      },
+      {
+       "pid": 101,
+       "ppid": 100,
+       "start": 1793181592000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 102,
+       "ppid": 101,
+       "start": 1793181593000,
+       "exe": "/opt/homebrew/bin/codex",
+       "args": [
+        "codex"
+       ],
+       "cwd": "/Users/dev/projects/nova"
+      },
+      {
+       "pid": 104,
+       "ppid": 100,
+       "start": 1793181594000,
+       "exe": "/bin/zsh"
+      },
+      {
+       "pid": 105,
+       "ppid": 104,
+       "start": 1793181595000,
+       "exe": "/Users/dev/.local/share/claude/versions/2.1.303",
+       "args": [
+        "claude"
+       ],
+       "cwd": "/Users/dev/projects/orbit"
+      },
+      {
+       "pid": 300,
+       "ppid": 1,
+       "start": 1793181540000,
+       "exe": "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo"
+      },
+      {
+       "pid": 103,
+       "ppid": 102,
+       "start": 1793181600500,
+       "exe": "/usr/bin/ssh"
+      }
+     ],
+     "interfaces": {
+      "en0": [
+       100108000,
+       20145000
+      ]
+     },
+     "counters": {
+      "stream": "s1",
+      "rows": [
+       {
+        "pid": 102,
+        "start": 1793181593000,
+        "rx": 61000,
+        "tx": 12500
+       },
+       {
+        "pid": 103,
+        "start": 1793181600500,
+        "rx": 3500,
+        "tx": 120000
+       },
+       {
+        "pid": 105,
+        "start": 1793181595000,
+        "rx": 3000,
+        "tx": 1200
+       },
+       {
+        "pid": 300,
+        "start": 1793181540000,
+        "rx": 5098800,
+        "tx": 1019900
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "classes": {
+     "102": "codex/agent",
+     "103": "codex/tool",
+     "105": "claudeCode/agent",
+     "300": null
+    },
+    "today": {
+     "machine": {
+      "rx": 108000,
+      "tx": 145000,
+      "sampledMs": 2000
+     },
+     "sources": {
+      "codex": {
+       "rxSelf": 60000,
+       "txSelf": 12000,
+       "rxTools": 3500,
+       "txTools": 120000,
+       "unassignedRx": 63500,
+       "unassignedTx": 132000
+      }
+     }
+    },
+    "history": [
+     {
+      "day": "2026-10-28",
+      "key": "machine",
+      "rx": 108000,
+      "tx": 145000,
+      "rxTools": 0,
+      "txTools": 0,
+      "sampledMs": 2000
+     },
+     {
+      "day": "2026-10-28",
+      "key": "codex",
+      "rx": 60000,
+      "tx": 12000,
+      "rxTools": 3500,
+      "txTools": 120000,
+      "sampledMs": 2000
      }
     ]
    }

@@ -178,7 +178,7 @@ struct ReportConsentSheet: View {
             ReportSectionToggles(model: model, selection: Binding(
                 get: { model.report.consent?.sections ?? [] },
                 set: { model.report.consent?.sections = $0 }
-            ), accepted: draft.discovery.sections)
+            ), discovery: draft.discovery)
             .disabled(draft.isStarting)
         } header: {
             Text(l10n("report.sections"))

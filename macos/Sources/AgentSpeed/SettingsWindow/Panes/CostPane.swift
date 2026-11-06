@@ -153,7 +153,7 @@ private struct PriceTableSection: View {
         let prices = model.prices
         let table = prices.table
         let network = settings.networkEnabled
-        let unknown = unpricedModels
+        let unknown = unpricedToday
         Section {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -198,12 +198,13 @@ private struct PriceTableSection: View {
             if !network {
                 NetworkOffHint(model: model)
             }
-            if !unknown.isEmpty {
-                Text(l10n("prices.unknownToday", unknown.joined(separator: l10n("list.separator"))))
+            if let line = UnpricedDisplay.todayLine(unknown, l10n) {
+                Text(line)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                    .help(UnpricedDisplay.todayHelp(unknown, l10n))
             }
         } header: {
             Text(l10n("prices.title"))
@@ -232,14 +233,11 @@ private struct PriceTableSection: View {
         }
     }
 
-    /// Today's models without a price, over every source (selectable, so they can be reported).
-    private var unpricedModels: [String] {
-        var seen: Set<String> = []
-        var models: [String] = []
-        for source in model.snapshot.sources {
-            for name in source.unpricedModels where seen.insert(name).inserted { models.append(name) }
-        }
-        return models
+    /// Today's models without a price and why, over every enabled source (selectable, so they can be reported).
+    private var unpricedToday: [UnpricedDisplay.TodayItem] {
+        let snapshot = model.snapshot
+        let day = DayKey(snapshot.dayStart, calendar: HistoryDates.calendar).description
+        return UnpricedDisplay.todayItems(UnpricedDisplay.today(snapshot.sources, day: day, table: model.prices.book.current))
     }
 
     private func updatedText(_ day: String) -> String {

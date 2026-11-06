@@ -29,8 +29,12 @@
                        AutomationProperties.HeadingLevel="Level1" />
             <Border Grid.Column="2" Padding="10,3" CornerRadius="11" Background="{DynamicResource SubtleFillColorSecondaryBrush}" VerticalAlignment="Center"
                     x:Name="NextPill" Visibility="Collapsed">
-                <TextBlock x:Name="NextText" FontSize="12" Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           AutomationProperties.LiveSetting="Off" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="NextGlyph" Style="{StaticResource SymbolIcon}" Text="&#xE945;" FontSize="11" Margin="0,1,6,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                    <TextBlock x:Name="NextText" FontSize="12" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Off" />
+                </StackPanel>
             </Border>
         </Grid>
         <Border x:Name="PreviewHost" Grid.Row="1" />

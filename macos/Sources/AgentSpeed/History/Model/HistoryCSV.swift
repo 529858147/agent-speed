@@ -36,6 +36,10 @@ enum HistoryCSV {
         case .zcode: "zcode"
         case .kimi: "kimi"
         case .grokBuild: "grokBuild"
+        case .pi: "pi"
+        case .openclaw: "openclaw"
+        case .hermes: "hermes"
+        case .droid: "droid"
         }
     }
 

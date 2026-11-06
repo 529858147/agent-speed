@@ -65,8 +65,9 @@ public enum ReportFailure: String, Equatable, Hashable, Sendable, Codable {
 
 /// The network seam of live reporting; tests use a scripted transport or the reference server.
 public protocol ReportTransport: Sendable {
-    /// Discovery `GET` (REPORTING 3.1): `Accept`, `User-Agent`, `If-None-Match`; up to three `https` redirects.
-    func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError)
+    /// Discovery `GET` (REPORTING 3.1): `Accept` and `User-Agent`, never `If-None-Match` (NETWORK 6); up to three
+    /// `https` redirects.
+    func get(_ url: URL, userAgent: String, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError)
         -> ReportHTTPResponse
     /// An API request: never redirected (a `3xx` comes back as the response).
     func send(_ request: ReportRequest, maxBytes: Int, timeout: TimeInterval) async throws(ReportTransportError)
@@ -88,12 +89,11 @@ public struct URLSessionReportTransport: ReportTransport {
         self.protocolClasses = protocolClasses
     }
 
-    public func get(_ url: URL, etag: String?, userAgent: String, maxBytes: Int, timeout: TimeInterval)
+    public func get(_ url: URL, userAgent: String, maxBytes: Int, timeout: TimeInterval)
         async throws(ReportTransportError) -> ReportHTTPResponse {
         var request = baseRequest(url: url, method: "GET", timeout: timeout)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         return try await run(request, maxBytes: maxBytes, redirects: Self.maxRedirects, timeout: timeout)
     }
 

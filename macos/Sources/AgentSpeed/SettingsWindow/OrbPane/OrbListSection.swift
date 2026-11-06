@@ -326,7 +326,7 @@ struct OrbListRow: View {
 }
 
 /// A separator line that takes no layout space.
-private struct OrbListHairline: View {
+struct OrbListHairline: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: .separatorColor))
@@ -337,7 +337,7 @@ private struct OrbListHairline: View {
 }
 
 /// The accent tint of the selected row: a rounded band inside the group, as in macOS source lists.
-private struct OrbRowTint: View {
+struct OrbRowTint: View {
     let selected: Bool
     let focused: Bool
     @Environment(\.colorScheme) private var colorScheme

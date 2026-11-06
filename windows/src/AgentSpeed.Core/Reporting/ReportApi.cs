@@ -10,9 +10,7 @@ public abstract record ReportDiscoveryOutcome
     {
     }
 
-    public sealed record Document(ReportDiscovery Discovery, string? ETag) : ReportDiscoveryOutcome;
-
-    public sealed record NotModified : ReportDiscoveryOutcome;
+    public sealed record Document(ReportDiscovery Discovery) : ReportDiscoveryOutcome;
 
     /// <summary>
     /// The URL does not offer this API: <c>404</c>, another <c>4xx</c> except <c>410</c> and <c>429</c>, or a response that is not
@@ -48,12 +46,13 @@ public sealed class ReportApi(IReportTransport transport, string userAgent)
 
     public string UserAgent { get; } = userAgent;
 
-    public async Task<ReportDiscoveryOutcome> DiscoverAsync(ReportServiceUrl service, string? etag = null, CancellationToken cancellationToken = default)
+    /// <summary>Always fetches the whole document: no <c>If-None-Match</c>, and no <c>ETag</c> is kept (NETWORK 6).</summary>
+    public async Task<ReportDiscoveryOutcome> DiscoverAsync(ReportServiceUrl service, CancellationToken cancellationToken = default)
     {
         ReportHttpResponse response;
         try
         {
-            response = await transport.GetAsync(service.DiscoveryUrl, etag, UserAgent, ReportDiscovery.MaxBytes, DiscoveryTimeout, cancellationToken)
+            response = await transport.GetAsync(service.DiscoveryUrl, UserAgent, ReportDiscovery.MaxBytes, DiscoveryTimeout, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ReportTransportException error)
@@ -66,24 +65,22 @@ public sealed class ReportApi(IReportTransport transport, string userAgent)
         }
 
         ReportLog.Write($"GET {service.Host} discovery -> {response.Status} {response.Body.Length} bytes");
-        return DiscoveryOutcome(response.Status, response.Body, etag, response.Headers.GetValueOrDefault("etag"), service);
+        return DiscoveryOutcome(response.Status, response.Body, service);
     }
 
-    /// <summary>REPORTING 3.1 and 3.2 for one response.</summary>
-    public static ReportDiscoveryOutcome DiscoveryOutcome(int status, byte[] body, string? etag, string? responseETag, ReportServiceUrl service)
+    /// <summary>REPORTING 3.1 and 3.2 for one response; a <c>304</c> is never asked for, so it is a failure like any other.</summary>
+    public static ReportDiscoveryOutcome DiscoveryOutcome(int status, byte[] body, ReportServiceUrl service)
     {
         switch (status)
         {
             case 200:
                 if (ReportDiscovery.Parse(body, service, out var problem) is { } document)
                 {
-                    return new ReportDiscoveryOutcome.Document(document, responseETag is { Length: <= 512 } tag ? tag : null);
+                    return new ReportDiscoveryOutcome.Document(document);
                 }
 
                 ReportLog.Write($"discovery invalid: {problem}");
                 return problem!.IsOtherDocument ? new ReportDiscoveryOutcome.NotSupported() : new ReportDiscoveryOutcome.Invalid();
-            case 304:
-                return etag is null ? new ReportDiscoveryOutcome.Failed(ReportFailure.Unavailable) : new ReportDiscoveryOutcome.NotModified();
             case 410:
                 return new ReportDiscoveryOutcome.Gone();
             case 429:

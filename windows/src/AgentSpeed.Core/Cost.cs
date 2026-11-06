@@ -18,8 +18,8 @@ public readonly record struct CostTally(long CostMicroUsd = 0, long UnpricedRequ
 }
 
 /// <summary>
-/// The live cost rate of a source, an agent or everything (METRICS 9.5): micro-USD per second, and the live output
-/// (tok/s) that carries a known cost. Both are additive over sources.
+/// The live cost rate of a source or of everything (METRICS 9.5): micro-USD per second, and the live output (tok/s) that
+/// carries a known cost. Both are additive over sources.
 /// </summary>
 public readonly record struct LiveCost(double MicroUsdPerSecond = 0, double KnownOutput = 0)
 {

@@ -147,6 +147,11 @@ internal sealed class OrbWindow : Window, IOrbWindow
     {
     }
 
+    /// <summary>The WPF fallback draws no two-line readout, so it has nothing to explain.</summary>
+    public void SetDiscHint(string? hint)
+    {
+    }
+
     event EventHandler? IOrbWindow.UnitToggleRequested
     {
         add

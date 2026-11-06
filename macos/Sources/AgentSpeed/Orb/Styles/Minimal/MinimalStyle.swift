@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 final class MinimalStyle: OrbStyleRenderer {
     let kind = OrbStyleKind.minimal
-    let trafficPlacement = OrbTrafficPlacement.minimal
+    let linePlacement = OrbLinePlacement.minimal
     let readoutLayout = OrbReadoutLayout(
         valueSize: 0.30, valueBaseline: 0.07, valueMaxWidth: 0.66, unitSize: nil, unitGap: 0,
         title: .belowValue(0.098), titleSize: 0.068, titleMaxWidth: 0.62, dots: nil, pillCenter: -0.25,

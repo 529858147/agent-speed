@@ -1,5 +1,8 @@
+using System.Buffers;
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using AgentSpeed.Core;
 
 namespace AgentSpeed.Probe;
@@ -10,6 +13,8 @@ namespace AgentSpeed.Probe;
 /// </summary>
 internal sealed class JsonLine
 {
+    private static readonly JsonWriterOptions WriterOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     private readonly List<string> _parts = [];
 
     public string Text => "{" + string.Join(',', _parts) + "}";
@@ -30,6 +35,21 @@ internal sealed class JsonLine
     }
 
     public static string Array(IEnumerable<string> items) => "[" + string.Join(',', items) + "]";
+
+    /// <summary><c>{"key":value}</c> with the value from a <see cref="Utf8JsonWriter"/> (the performance score's dump writers), text kept as is.</summary>
+    public static string Of(string key, Action<Utf8JsonWriter> writeValue)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName(key);
+            writeValue(writer);
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
 
     public static string Number(double value)
     {
@@ -92,6 +112,9 @@ internal sealed class JsonLine
         SourceKind.Kimi => "kimi",
         SourceKind.GrokBuild => "grokBuild",
         SourceKind.Pi => "pi",
+        SourceKind.OpenClaw => "openclaw",
+        SourceKind.Hermes => "hermes",
+        SourceKind.Droid => "droid",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -120,6 +143,15 @@ internal sealed class JsonLine
         if (f.Provider is { } provider) value.Add("provider", provider);
         return value.Text;
     }));
+
+    /// <summary><c>{mode, evidence[, provider]}</c>, or <c>null</c> when unknown (EXECUTION-MODES, Native rules).</summary>
+    public static string Attribution(ExecutionModeAttribution? value)
+    {
+        if (value is not { } known) return "null";
+        var line = new JsonLine().Add("mode", known.Mode).Add("evidence", known.Evidence);
+        if (known.Provider is { } provider) line.Add("provider", provider);
+        return line.Text;
+    }
 }
 
 /// <summary>Buffered UTF-8 stdout writer, one line per call.</summary>
@@ -132,6 +164,9 @@ internal sealed class ProbeOutput : IDisposable
         _writer.Write(text);
         _writer.Write('\n');
     }
+
+    /// <summary>Text as is, its own line ends included.</summary>
+    public void Write(string text) => _writer.Write(text);
 
     public void Flush() => _writer.Flush();
 

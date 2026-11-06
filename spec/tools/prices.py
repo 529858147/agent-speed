@@ -7,8 +7,8 @@
 
 Validation covers spec/assets/prices.json (schema, prices, aliases, normalization lists, its own `tests`),
 spec/assets/currencies.json (codes, digits, symbols, fallback rates, names in spec/strings.json) and the stable
-fixture tables in spec/fixtures/prices/ with spec/fixtures/price-cases.json. Only the Python standard library is
-used; reference.py imports this module.
+fixture tables in spec/fixtures/prices/ with spec/fixtures/price-cases.json (its `bundled` cases price the real
+table). Only the Python standard library is used; reference.py imports this module.
 """
 import argparse
 import json
@@ -46,6 +46,8 @@ BEDROCK_VERSION = re.compile(r"-v\d+(?::\d+)?$")
 VERTEX_DATE = re.compile(r"@(\d{8})$")
 VERTEX_TAG = re.compile(r"@[^@/]*$")
 BRACKETS = re.compile(r"\[[^\]]*\]")
+CUSTOM_PREFIX = "custom:"  # Factory Droid's ids of the user's own models: custom:<name>-<n> (METRICS 4.16)
+CUSTOM_INDEX = re.compile(r"-[0-9]+$")
 LANGUAGES = ("zh-Hant", "zh-Hans", "en", "ja")
 
 
@@ -140,8 +142,9 @@ def round_micro(pico):
 
 
 class Resolution:
-    def __init__(self, kind, entry=None, candidate=None, reason=None, fast=False):
+    def __init__(self, kind, entry=None, candidate=None, reason=None, fast=False, rule=None):
         self.kind, self.entry, self.candidate, self.reason, self.fast = kind, entry, candidate, reason, fast
+        self.rule = rule
 
     @property
     def label(self):
@@ -172,17 +175,26 @@ class Index:
                 return Resolution("unknown", None, key, "no fast-mode price")
             return Resolution("priced", m, key, fast=fast)
         if key in self.unknown_exact:
-            return Resolution("unknown", None, key, self.unknown_exact[key]["reason"])
+            rule = self.unknown_exact[key]
+            return Resolution("unknown", None, key, rule["reason"], rule=rule)
         for u in self.unknown_prefix:
             if key.startswith(u["value"]):
-                return Resolution("unknown", None, key, u["reason"])
+                return Resolution("unknown", None, key, u["reason"], rule=u)
         return None
+
+    @staticmethod
+    def exact_key(model):
+        """The `exact` step key of 9.2: brackets removed, whitespace collapsed, trimmed, lowercased."""
+        return re.sub(r"\s+", " ", BRACKETS.sub(" ", model)).strip().lower()
 
     def candidates(self, model):
         """The normalization steps of METRICS 9.2, in order; each yields (step, key, fast)."""
         n = self.norm
-        k = re.sub(r"\s+", " ", BRACKETS.sub(" ", model)).strip().lower()
+        k = self.exact_key(model)
         yield "exact", k, False
+        if k.startswith(CUSTOM_PREFIX):
+            k = CUSTOM_INDEX.sub("", k[len(CUSTOM_PREFIX):]).strip(" -")
+            yield "custom", k, False
         if "/" in k:
             k = k.rsplit("/", 1)[1]
             yield "route", k, False
@@ -253,6 +265,25 @@ class Index:
             if hit is not None:
                 return hit
         return Resolution("unknown", None, None, "not in table")
+
+    def diagnose(self, model, provider=None, fast=False):
+        """Why a response with these facts has no price under this table (METRICS 9.10), or None when it is priced
+        or free: {reason, canonical, rule}. `reason` is noModel, notInTable, noFastPrice or unpriceable;
+        `canonical` is the key the resolver stopped at (None for noModel); `rule` the table's `unknown` entry."""
+        res = self.resolve(model, provider)
+        if res.kind == "free":
+            return None
+        if res.kind == "priced":
+            if (res.fast or fast is True) and "fast" not in res.entry:
+                return dict(reason="noFastPrice", canonical=res.candidate, rule=None)
+            return None
+        if res.reason == "no model":
+            return dict(reason="noModel", canonical=None, rule=None)
+        if res.reason == "not in table":
+            return dict(reason="notInTable", canonical=self.exact_key(model) or None, rule=None)
+        if res.reason == "no fast-mode price":
+            return dict(reason="noFastPrice", canonical=res.candidate, rule=None)
+        return dict(reason="unpriceable", canonical=res.candidate, rule=res.rule)
 
     def price(self, r):
         """Integer micro-USD of one normalized response, or None when its price is unknown (METRICS 9.3)."""
@@ -753,8 +784,28 @@ def at_ms(case):
     return instant_ms(case["at"]) if "at" in case else None
 
 
+def check_cost_case(label, idx, case):
+    r = dict(case["tokens"], model=case["model"], provider=case.get("provider"), endMs=at_ms(case),
+             fast=case.get("fast", False))
+    res = idx.resolve(r["model"], r["provider"])
+    pricing = pricing_of(res.entry, r, res.fast or r["fast"]) if res.kind == "priced" else None
+    if pricing is not None:
+        pico, tier = cost_pico(pricing, r)
+        got = dict(costPicoUsd=pico, costMicroUsd=round_micro(pico), tier=tier)
+    else:
+        got = dict(costPicoUsd=0 if res.kind == "free" else None, costMicroUsd=idx.price(r), tier=None)
+    errors = []
+    if got["costMicroUsd"] != idx.price(r):
+        errors.append("%s %s: Index.price disagrees" % (label, case["name"]))
+    for k, v in case["expect"].items():
+        if got[k] != v:
+            errors.append("%s %s: %s expected %r got %r" % (label, case["name"], k, v, got[k]))
+    return errors
+
+
 def check_cases(path=None):
-    """Fixture tables and cases (stable, independent of real prices)."""
+    """Fixture tables and cases (stable, independent of real prices), then the `bundled` cases against the real
+    table at fixed instants."""
     path = path or os.path.join(FIXTURES, "price-cases.json")
     cases = load(path)
     errors = []
@@ -771,21 +822,10 @@ def check_cases(path=None):
         if got.label != case["expect"]:
             errors.append("resolve[%d] %r: expected %s got %s" % (i, case["model"], case["expect"], got.label))
     for i, case in enumerate(cases["cost"]):
-        idx = indexes[case["table"]]
-        r = dict(case["tokens"], model=case["model"], provider=case.get("provider"), endMs=at_ms(case),
-                 fast=case.get("fast", False))
-        res = idx.resolve(r["model"], r["provider"])
-        pricing = pricing_of(res.entry, r, res.fast or r["fast"]) if res.kind == "priced" else None
-        if pricing is not None:
-            pico, tier = cost_pico(pricing, r)
-            got = dict(costPicoUsd=pico, costMicroUsd=round_micro(pico), tier=tier)
-        else:
-            got = dict(costPicoUsd=0 if res.kind == "free" else None, costMicroUsd=idx.price(r), tier=None)
-        if got["costMicroUsd"] != idx.price(r):
-            errors.append("cost[%d] %s: Index.price disagrees" % (i, case["name"]))
-        for k, v in case["expect"].items():
-            if got[k] != v:
-                errors.append("cost[%d] %s: %s expected %r got %r" % (i, case["name"], k, v, got[k]))
+        errors += check_cost_case("cost[%d]" % i, indexes[case["table"]], case)
+    bundled = Index(load(TABLE))
+    for i, case in enumerate(cases.get("bundled", {}).get("cost", [])):
+        errors += check_cost_case("bundled.cost[%d]" % i, bundled, case)
     tables = [idx.table for idx in indexes.values()]
     for i, case in enumerate(cases.get("days", [])):
         days = DayPricing(tables, case["bindings"])

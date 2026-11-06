@@ -30,6 +30,113 @@ struct ExecutionModeTests {
         }
     }
 
+    @Test func sharedEffortAndSpeedCases() throws {
+        let root = try Fixtures.json("execution-mode-cases.json")
+        for item in try #require(root["speed"] as? [[String: Any]]) {
+            let bytes = try JSONSerialization.data(withJSONObject: try #require(item["facts"]))
+            let facts = try JSONDecoder().decode([ExecutionModeFact].self, from: bytes)
+            let expected = try #require(item["expected"] as? [String: Any])
+            let result = ExecutionModes(facts).attribution(for: .speed)
+            #expect(result.kind == .speed)
+            #expect(result.mode == expected.string("mode"), "\(item.string("id") ?? "")")
+            #expect(result.evidence == expected.string("evidence"), "\(item.string("id") ?? "")")
+            #expect(result.provider == expected.string("provider"), "\(item.string("id") ?? "")")
+        }
+        for item in try #require(root["effortDisplay"] as? [[String: Any]]) {
+            let value = try #require(item.string("value"))
+            let expected = try #require(item["expected"] as? [String: Any])
+            #expect(ModeDisplay.effortLevel(value) == (expected["level"] as? NSNumber)?.intValue, "\(value)")
+            #expect(ModeDisplay.isTopRung(value) == (expected["top"] as? Bool), "\(value)")
+        }
+        for item in try #require(root["speedBolts"] as? [[String: Any]]) {
+            #expect(ModeDisplay.bolts(try #require(item.string("value"))) == item.int("bolts"))
+        }
+        for item in try #require(root["displayOrder"] as? [[String: Any]]) {
+            let kind = try #require(item.string("kind").flatMap(ExecutionModeKind.init(rawValue:)))
+            let values = try #require(item["values"] as? [String])
+            #expect(ModeDisplay.ordered(values, kind: kind) == item["expected"] as? [String], "\(item.string("id") ?? "")")
+        }
+    }
+
+    /// `{mode, evidence[, provider]}` of the shared cases.
+    private func wanted(_ item: [String: Any], _ key: String = "expected") throws -> ExecutionModeAttribution {
+        let value = try #require(item[key] as? [String: Any])
+        return ExecutionModeAttribution(kind: .effort, mode: try #require(value.string("mode")),
+                                        evidence: try #require(value.string("evidence")), provider: value.string("provider"))
+    }
+
+    private func modes(_ item: [String: Any], _ key: String) throws -> ExecutionModes {
+        let bytes = try JSONSerialization.data(withJSONObject: item[key] ?? [Any]())
+        return ExecutionModes(try JSONDecoder().decode([ExecutionModeFact].self, from: bytes))
+    }
+
+    @Test func sharedCurrentValueCases() throws {
+        let root = try Fixtures.json("execution-mode-cases.json")
+        for item in try #require(root["current"] as? [[String: Any]]) {
+            let view = EffortAndSpeed(facts: try modes(item, "facts"), session: try modes(item, "session"),
+                                      configured: try modes(item, "configured"))
+            let got = item.string("kind") == "speed" ? view.speed : view.effort
+            let expected = try wanted(item)
+            #expect(got?.mode ?? "unknown" == expected.mode, "\(item.string("id") ?? "")")
+            #expect(got?.evidence ?? "unknown" == expected.evidence, "\(item.string("id") ?? "")")
+            #expect(got?.provider == expected.provider, "\(item.string("id") ?? "")")
+        }
+    }
+
+    @Test func sharedLedgerCases() throws {
+        let root = try Fixtures.json("execution-mode-cases.json")
+        for item in try #require(root["ledger"] as? [[String: Any]]) {
+            let got = ReportLedger.frozenEffort(response: try wanted(item, "response"), current: try wanted(item, "current"))
+            #expect(got == (try wanted(item)), "\(item.string("id") ?? "")")
+        }
+    }
+
+    @Test func aConfiguredEffortIsNeverFrozenIntoAReport() throws {
+        func effort(_ value: String, _ evidence: ExecutionModeEvidence) throws -> ExecutionModeAttribution {
+            let fact = try #require(ExecutionModeAdapters.effort(value, evidence: evidence, scope: .session))
+            return try #require(ExecutionModes([fact]).attribution(for: .effort, among: [evidence]) as ExecutionModeAttribution?)
+        }
+        var ledger = ReportLedger()
+        ledger.count(record("selected"), modelId: "m", currentEffort: try effort("high", .selected))
+        ledger.count(record("configured"), modelId: "m", currentEffort: try effort("max", .configured))
+        ledger.count(record("own", modes: ExecutionModes([try #require(ExecutionModeAdapters.effort("low", evidence: .recorded, scope: .request))])),
+                     modelId: "m", currentEffort: try effort("high", .selected))
+        let byMode = ledger.counters.byMode.filter { $0.key.attribution.kind == .effort }
+        #expect(Set(byMode.keys.map(\.attribution.mode)) == ["high", "low"])
+        #expect(byMode.keys.allSatisfy { $0.attribution.evidence != "configured" })
+    }
+
+    @Test func sharedAntigravityEffortCases() throws {
+        let root = try Fixtures.json("execution-mode-cases.json")
+        for item in try #require(root["antigravityEffort"] as? [[String: Any]]) {
+            if let model = item.string("model") {
+                let split = AntigravityEffort.split(model: model)
+                #expect(split.map { [$0.base, $0.effort] } == item["expected"] as? [String], "\(item.string("id") ?? "")")
+            } else {
+                #expect(AntigravityEffort.word(ofLabel: try #require(item.string("label"))) == item["expected"] as? String,
+                        "\(item.string("id") ?? "")")
+            }
+        }
+    }
+
+    @Test func speedIsNeverAFactOrReported() throws {
+        #expect(ExecutionModeFact(kind: .speed, rawValue: "fast", evidence: .served, scope: .response) == nil)
+        let bad = #"{"kind":"speed","value":"fast","rawValue":"fast","evidence":"served","scope":"response"}"#
+        #expect(throws: (any Error).self) { try JSONDecoder().decode(ExecutionModeFact.self, from: Data(bad.utf8)) }
+        var modes = ExecutionModeAdapters.claude("fast")
+        modes.insert(try #require(ExecutionModeAdapters.effort("xhigh", evidence: .recorded, scope: .request)))
+        // The effort is frozen for reports (version 2 sends it); the derived speed never is.
+        #expect(modes.reportedAttributions.map(\.kind) == [.serviceTier, .effort])
+        #expect(ExecutionModeKind.reported(version: 1) == ExecutionModeKind.reported)
+        #expect(ExecutionModeKind.reported(version: 2) == ExecutionModeKind.reported + [.effort])
+        #expect(ExecutionModeKind.reported(version: 3).isEmpty)
+        #expect(Set(modes.breakdownAttributions.map(\.kind)) == [.serviceTier, .effort, .speed])
+        #expect(modes.effortAndSpeed.effort?.mode == "xhigh" && modes.effortAndSpeed.bolts == 1)
+        #expect(ExecutionModes.empty.effortAndSpeed == .unknown && !EffortAndSpeed.unknown.isVisible)
+        let standard = ExecutionModeAdapters.claude("standard").effortAndSpeed
+        #expect(standard.speed?.mode == "standard" && !standard.isVisible)
+    }
+
     @Test func boundedFactsAndAmbiguousProviders() throws {
         let bad = #"{"kind":"serviceTier","value":"fast","rawValue":"fast","evidence":"served","scope":"response","provider":"https://secret.invalid"}"#
         #expect(throws: (any Error).self) { try JSONDecoder().decode(ExecutionModeFact.self, from: Data(bad.utf8)) }
@@ -70,10 +177,8 @@ struct ExecutionModeTests {
     }
 
     @Test func nativeMeaningAndZcodeFallback() throws {
-        #expect(ExecutionModeAdapters.omp("priority", provider: "anthropic", evidence: .recorded, scope: .request)
-            .attribution(for: .serviceTier).mode == "fast")
-        #expect(ExecutionModeAdapters.omp("priority", provider: "anthropic", evidence: .recorded, scope: .request)
-            .attribution(for: .serviceTier).evidence == "recorded")
+        #expect(ExecutionModeAdapters.ompTier("priority", provider: "anthropic", evidence: .recorded, scope: .request)?.value == "fast")
+        #expect(ExecutionModeAdapters.ompTier("priority", provider: "anthropic", evidence: .recorded, scope: .request)?.evidence == .recorded)
         #expect(ExecutionModeAdapters.kimi("grok-code-fast-1").facts.isEmpty)
         #expect(ExecutionModeAdapters.routing("fast-model").attribution(for: .serviceTier).isUnknown)
         let metadata = try JSONParser.parse(Data(#"{"schemaVersion":1,"cardId":"card-1","model":"glm-5","fallbackAt":500}"#.utf8))
@@ -113,6 +218,65 @@ struct ExecutionModeTests {
         let csv = String(decoding: ExecutionModeCSV.build([day], kind: .serviceTier), as: UTF8.self)
         #expect(csv.contains("fast,served,anthropic,1,100,100,1000,100.0\r\n"))
         #expect(csv.contains("unknown,unknown,,1,100,100,1000,100.0\r\n"))
+    }
+
+    @Test func historyBreaksDownEffortAndSpeedLikeKinds() throws {
+        func effort(_ value: String) throws -> ExecutionModeFact {
+            try #require(ExecutionModeAdapters.effort(value, evidence: .recorded, scope: .request))
+        }
+        var fast = ExecutionModeAdapters.claude("fast")
+        fast.insert(try effort("ultracode"))
+        let records = [record("a", modes: fast), record("b", modes: ExecutionModes([try effort("xhigh")])), record("c")]
+        var aggregate = DayAggregate()
+        records.forEach { aggregate.add($0, cost: nil) }
+        let database = try HistoryDatabase.inMemory()
+        let key = UsageKey(day: "2026-10-24", source: .claudeCode)
+        let entry = HistoryDatabase.Entry(family: "claude", size: 1, modified: 1, version: HistoryAnalyzer.analysisVersion,
+                                          days: [key: aggregate])
+        _ = try database.save([(path: "/virtual/effort", entry: entry, keys: [])])
+        let loaded = try #require(try database.loadEntries()["/virtual/effort"]?.days[key])
+        #expect(loaded == aggregate)
+        let day = loaded.usage(day: key.day, source: key.source, peak: nil, priceVersion: nil)
+        func split(_ kind: ExecutionModeKind) -> [String: Int] {
+            day.modeBreakdown.filter { $0.attribution.kind == kind }
+                .reduce(into: [:]) { $0[$1.attribution.mode, default: 0] += $1.requests }
+        }
+        #expect(split(.effort) == ["ultracode": 1, "xhigh": 1, "unknown": 1])
+        #expect(split(.speed) == ["fast": 1, "unknown": 2])
+        #expect(split(.serviceTier) == ["fast": 1, "unknown": 2])
+        let csv = String(decoding: ExecutionModeCSV.build([day]), as: UTF8.self)
+        #expect(csv.contains("2026-10-24,claudeCode,m,effort,ultracode,recorded,,1,100,100,1000,100.0\r\n"))
+        #expect(csv.contains("2026-10-24,claudeCode,m,effort,unknown,unknown,,1,100,100,1000,100.0\r\n"))
+        #expect(csv.contains("2026-10-24,claudeCode,m,speed,fast,served,anthropic,1,100,100,1000,100.0\r\n"))
+        #expect(csv.contains("2026-10-24,claudeCode,m,speed,unknown,unknown,,2,200,200,2000,100.0\r\n"))
+        #expect(HistoryAnalyzer.analysisVersion == 11)
+    }
+
+    @Test func historySectionRowsSumModesInDisplayOrder() throws {
+        func effort(_ value: String) throws -> ExecutionModeFact {
+            try #require(ExecutionModeAdapters.effort(value, evidence: .recorded, scope: .request))
+        }
+        func day(_ records: [ResponseRecord], on date: String) -> DailyUsage {
+            var aggregate = DayAggregate()
+            records.forEach { aggregate.add($0, cost: nil) }
+            return aggregate.usage(day: date, source: .claudeCode, peak: nil, priceVersion: nil)
+        }
+        var fastMax = ExecutionModeAdapters.claude("fast")
+        fastMax.insert(try effort("max"))
+        let days = [
+            day([record("a", modes: ExecutionModes([try effort("xhigh")])), record("b", modes: fastMax)], on: "2026-10-23"),
+            day([record("c", modes: ExecutionModes([try effort("ultracode")])), record("d")], on: "2026-10-24"),
+        ]
+        let effortRows = ModeHistoryBreakdown.rows(days, kind: .effort)
+        #expect(effortRows.map(\.mode) == ["ultracode", "max", "xhigh", "unknown"])
+        #expect(effortRows.map(\.requests).reduce(0, +) == 4)
+        #expect(effortRows.map(\.output).reduce(0, +) == days.map(\.totals.output).reduce(0, +))
+        #expect(effortRows.first?.models == [.init(model: "m", output: 100)])
+        #expect(effortRows.first?.averageSpeed == 100)
+        #expect(ModeHistoryBreakdown.rows(days, kind: .speed).map(\.mode) == ["fast", "unknown"])
+        let unknownOnly = ModeHistoryBreakdown.rows([day([record("e")], on: "2026-10-24")], kind: .effort)
+        #expect(unknownOnly.map(\.mode) == ["unknown"] && unknownOnly.first?.requests == 1)
+        #expect(ModeHistoryBreakdown.rows([], kind: .speed).map(\.mode) == ["unknown"])
     }
 
     @Test func historyUpsertsReplaceClassificationAcrossRestarts() throws {

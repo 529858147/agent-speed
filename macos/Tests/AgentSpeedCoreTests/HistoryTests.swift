@@ -6,25 +6,35 @@ import Testing
 struct HistoryTests {
     static let utc = TimeZone(identifier: "UTC")!
 
-    /// The fixtures folder as every source's data; `omp` plays `~/.omp` and `antigravity` plays `~/.gemini`, so their
-    /// automatic roots (every profile, the three stores) are used; `workbuddy` plays `~` of both WorkBuddy editions.
+    /// The fixtures folder as every source's data; `omp` plays `~/.omp`, `antigravity` plays `~/.gemini`, `pi`
+    /// plays `~/.pi` and `openclaw` plays `~` of OpenClaw, so their automatic roots (every profile, the three stores,
+    /// Pi's custom session folder, OpenClaw's state folders) are used; `workbuddy` plays `~` of both WorkBuddy
+    /// editions. `codex/sessions` is the automatic Codex root, so OpenClaw's agent-scoped Codex homes join it.
+    /// `hermes/home` is the Hermes home (`$HERMES_HOME`), whose wall times are read in the fixture's zone; `droid`
+    /// plays `~` of Factory Droid, whose `.factory` folder is chosen (so its `sessions` folder is read).
     static func configuration(fixtures root: URL) -> MonitorConfiguration {
         var configuration = MonitorConfiguration(
-            enabledSources: Set(SourceKind.allCases.prefix(10)),
-            codexRoot: root.appendingPathComponent("codex/sessions", isDirectory: true),
+            enabledSources: Set(SourceKind.allCases.prefix(10)).union([.pi, .openclaw, .hermes, .droid]),
             claudeRoot: root.appendingPathComponent("claude/projects", isDirectory: true),
             dshRoot: root.appendingPathComponent("dsh/sessions", isDirectory: true),
             opencodeRoot: root.appendingPathComponent("opencode/opencode.db"),
             geminiRoot: root.appendingPathComponent("gemini/tmp", isDirectory: true),
             workbuddyRoot: root.appendingPathComponent("workbuddy/.workbuddy", isDirectory: true),
-            workbuddyAiRoot: root.appendingPathComponent("workbuddy/.workbuddy-ai", isDirectory: true)
+            workbuddyAiRoot: root.appendingPathComponent("workbuddy/.workbuddy-ai", isDirectory: true),
+            droidRoot: root.appendingPathComponent("droid/.factory", isDirectory: true)
         )
         configuration.automaticRoots = [
+            .codex: [root.appendingPathComponent("codex/sessions", isDirectory: true)],
             .omp: TranscriptLocations.ompRoots(environment: ["PI_CONFIG_DIR": "omp"], home: root),
             .antigravity: ["antigravity-cli", "antigravity", "antigravity-ide"].map {
                 root.appendingPathComponent("antigravity", isDirectory: true).appendingPathComponent($0, isDirectory: true)
             },
         ]
+        configuration.piHome = ParserFixtureTests.piHome(fixtures: root)
+        configuration.openclawHome = OpenClawTests.home(fixtures: root)
+        configuration.hermesHome = HermesHome(environment: ["HERMES_HOME": root.appendingPathComponent("hermes/home").path],
+                                              home: root)
+        configuration.hermesTimeZone = HermesTests.losAngeles
         return configuration
     }
 
@@ -60,7 +70,7 @@ struct HistoryTests {
             "output": day.totals.output, "reasoning": day.totals.reasoning, "measuredOutput": day.measuredOutput,
             "measuredMs": day.measuredMs, "unfinalized": day.unfinalized, "costMicroUsd": null(day.cost?.costMicroUsd),
             "unpricedRequests": null(day.cost?.unpricedRequests), "priceVersion": null(day.priceVersion),
-            "agents": day.agents, "models": models,
+            "agents": day.agents, "models": models, "unpriced": day.unpriced.facts.map(UnpricedCaseTests.json),
         ]
     }
 
@@ -87,8 +97,12 @@ struct HistoryTests {
         let parserExpected = try Fixtures.json("parser-expected.json")
         let files = try #require(parserExpected["order"] as? [String]).count
         let databases = try #require((parserExpected["antigravity"] as? [String: Any])?["order"] as? [String]).count
-        #expect(report.filesAnalyzed == files + databases)
-        #expect(report.sessionsAnalyzed == 2)
+        let hermes = try #require((parserExpected["hermes"] as? [String: Any])?["discover"] as? [String]).count
+        #expect(report.filesAnalyzed == files + databases + hermes)
+        let openclaw = try #require(parserExpected["openclaw"] as? [String: Any])
+        let windows = try #require(openclaw["databases"] as? [String: [String: Any]]).values.filter { $0["unsupported"] == nil }
+            .reduce(0) { $0 + $1.count }
+        #expect(report.sessionsAnalyzed == 2 + windows, "OpenCode sessions and OpenClaw windows")
         #expect(report.days.allSatisfy { $0.peak == nil })
         _ = directory
     }

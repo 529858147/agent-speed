@@ -2,6 +2,7 @@ using System.Windows.Input;
 using AgentSpeed.Controls;
 using AgentSpeed.Core.Reporting;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Reporting;
 using AgentSpeed.Settings;
 
 namespace AgentSpeed.Reporting;
@@ -141,7 +142,7 @@ internal sealed class ReportConsentViewModel : ObservableObject
                 var accepted = draft.Discovery.Sections.Contains(row.Section);
                 var trafficOff = row.Section == ReportSection.Traffic && !_trafficMeasured;
                 row.Sync(accepted && draft.Sections.Contains(row.Section), accepted && !trafficOff,
-                    !accepted ? _loc["report.section.notAccepted"] : trafficOff ? _loc["report.section.trafficOff"] : null);
+                    ReportSectionCaption.KeyOf(row.Section, draft.Discovery, _trafficMeasured) is { } caption ? _loc[caption] : null);
             }
         }
 

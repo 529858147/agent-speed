@@ -11,6 +11,8 @@ final class DashboardController: NSObject, NSPopoverDelegate {
 
     private let model: AppModel
     private var popover: NSPopover?
+    /// The agent rows' score cards, alive while the panel is open.
+    private var scoreCards: DashboardScoreCards?
     private var closedAt: TimeInterval = 0
     private var appearanceObservation: NSKeyValueObservation?
     var onVisibilityChange: ((Bool) -> Void)?
@@ -41,9 +43,12 @@ final class DashboardController: NSObject, NSPopoverDelegate {
         popover.delegate = self
         // The content keeps its ideal height, which the popover follows frame by frame through the preferred content
         // size, and stays pinned to the top, so a window a point off never squeezes, shifts or re-centres it.
+        let cards = DashboardScoreCards(model: model)
+        scoreCards = cards
         let root = DashboardView(model: model, maxHeight: Self.maxHeight(below: view))
             .fixedSize(horizontal: false, vertical: true)
             .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+            .environment(\.dashboardScoreCards, cards)
             .appEnvironment(model)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = [.preferredContentSize]
@@ -63,7 +68,13 @@ final class DashboardController: NSObject, NSPopoverDelegate {
         popover?.performClose(nil)
     }
 
+    func popoverWillClose(_ notification: Notification) {
+        scoreCards?.close()
+    }
+
     func popoverDidClose(_ notification: Notification) {
+        scoreCards?.close()
+        scoreCards = nil
         appearanceObservation = nil
         closedAt = Clock.now
         popover?.contentViewController = nil

@@ -92,6 +92,9 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
     public var limits: ReportLimits
     public var sections: Set<ReportSection>
     public var extensions: ReportExtensions?
+    /// The WebSocket transport's settings when the document offers it (METRICS 11.9); nil in identities stored by
+    /// earlier builds.
+    public var websocket: ReportStreamSettings?
 
     /// False when the service shares no protocol version with this client ("needs a newer Agent Speed").
     public var supportsThisClient: Bool { versions.contains(Self.supportedVersion) }
@@ -129,6 +132,7 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
         retentionDays = try service.integer("retentionDays", in: 0...3650)
 
         extensions = ReportExtensions(root.members["extensions"])
+        websocket = extensions?.reportWebSocket == true ? ReportStreamSettings(document: root.members["websocket"]) : nil
         let apiText = try root.required(root.string("api"), "api")
         guard let api = ReportServiceURL.parseAPI(apiText, discoveryIsLoopbackHTTP: loopback) else { throw .invalid("api") }
         self.api = api
@@ -180,14 +184,14 @@ public struct ReportDiscovery: Equatable, Sendable, Codable {
     }
 
     /// What the preview assumes before a service's document is known (DESIGN 11, Preview window): the API at the
-    /// service URL, every section and the protocol's defaults. Never stored or confirmed; the real document can only
-    /// list fewer sections.
+    /// service URL, every section, the `perfScore` extension and the protocol's defaults. Never stored or confirmed;
+    /// the real document can only list fewer sections and advertise fewer extensions.
     public static func assumed(for service: ReportServiceURL, name: String) -> ReportDiscovery? {
         let link = "https://\(service.host)/"
         let document = ReportJSON.object([
             "protocol": .string(protocolName), "versions": .array([.int(supportedVersion)]),
             "service": .object(["name": .string(name), "terms": .string(link), "privacy": .string(link)]),
-            "api": .string(service.string),
+            "api": .string(service.string), "extensions": .object(["perfScore": .int(1)]),
         ])
         return try? parse(document.compactData, service: service).get()
     }

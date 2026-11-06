@@ -76,7 +76,7 @@ public sealed partial class NeedleDraw : IOrbStyleDraw
         AddDial(list, ctx, m, hc);
         if (DialUnit is { } legend && !frame.Thumbnail)
         {
-            var baseline = ctx.CenterY + Traffic.OrbTrafficPlacement.NeedleDialUnitBaseline * ctx.Size;
+            var baseline = ctx.CenterY + Lines.OrbLinesPlacement.NeedleDialUnitBaseline * ctx.Size;
             list.AddInlineText(legend.Glyph, ctx.CenterX - legend.Glyph.Advance / 2, baseline, legend.Color);
         }
 

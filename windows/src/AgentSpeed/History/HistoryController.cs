@@ -1,8 +1,11 @@
 using System.Windows;
 using System.Windows.Threading;
+using AgentSpeed.App;
 using AgentSpeed.Core;
+using AgentSpeed.Modes;
 using AgentSpeed.Presentation.Cost;
 using AgentSpeed.Presentation.Localization;
+using AgentSpeed.Presentation.Settings;
 using AgentSpeed.Services;
 using AgentSpeed.Theme;
 
@@ -44,6 +47,9 @@ internal sealed class HistoryController : IDisposable
     /// <summary>Observed network traffic by day (METRICS 10.9), shown with the traffic metric; set by the app.</summary>
     public Core.Traffic.TrafficHub? Traffic { get; set; }
 
+    /// <summary>The price book shared with the engine and the history: its current table gives unpriced requests their reasons.</summary>
+    public Core.Pricing.PriceBook? Prices { get; set; }
+
     /// <summary>The open window's content, for the developer capture.</summary>
     public FrameworkElement? CaptureContent => _window?.Content as FrameworkElement;
 
@@ -62,9 +68,12 @@ internal sealed class HistoryController : IDisposable
         if (_window is null || _model is null)
         {
             var model = new HistoryViewModel(_hub, _loc, _cost, _dispatcher, SaveIncludeSubscriptions, Traffic,
-                () => _settings.Current.Traffic.IncludeTools, () => _settings.Current.EnabledSourceSet());
+                () => _settings.Current.Traffic.IncludeTools, () => _settings.Current.EnabledSourceSet(),
+                () => Prices?.Current ?? Core.Pricing.PriceBook.Bundled, AppPaths.Version);
             model.SetSource(source);
-            var window = new HistoryWindow(model, _theme.ReduceMotion, _theme.HighContrast)
+            model.RememberModeKind(_settings.Current.HistoryModeKind, kind => _settings.Update(s => s with { HistoryModeKind = kind }));
+            model.RememberPerfSort(_settings.Current.HistoryPerfSort, sort => _settings.Update(s => s with { HistoryPerfSort = sort }));
+            var window = new HistoryWindow(model, Appearance)
             {
                 Language = AppFonts.XmlLanguageFor(_loc.LanguageCode),
             };
@@ -137,7 +146,11 @@ internal sealed class HistoryController : IDisposable
         _preview.Start();
     }
 
-    public void OnThemeChanged() => _window?.ApplyTheme(_theme.ReduceMotion, _theme.HighContrast);
+    public void OnThemeChanged() => _window?.ApplyTheme(Appearance);
+
+    /// <summary>The window's motion and contrast, and how its effort and speed glyphs draw.</summary>
+    private CapsuleAppearance Appearance =>
+        new(_theme.IsDark, _theme.HighContrast, _theme.ReduceMotion, _settings.Current.Effects != EffectsIntensity.Off);
 
     public void OnLanguageChanged()
     {
