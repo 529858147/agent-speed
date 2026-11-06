@@ -231,7 +231,7 @@ public sealed class PriceBook
 
     /// <summary>The cost of a response of local date <paramref name="day"/> (METRICS 9.7): the day's table, else the current one.</summary>
     internal long? Cost(ParsedResponse response, string day) =>
-        Cost(response.Model, response.Provider, response.Tokens, response.EndMs, response.Fast, day);
+        Cost(response.Model, response.Provider, response.Tokens, response.EndMs, response.FastForPricing, day);
 
     internal long? Cost(string? model, string? provider, in TokenCounts tokens, long? endMs, bool fast, string day)
     {

@@ -21,6 +21,10 @@ internal sealed record ParsedResponse(
 {
     public ExecutionModes Modes { get; init; } = ExecutionModes.Empty;
 
+    /// <summary>Codex records the selected tier, which is an estimate rather than proof of the served tier.</summary>
+    public bool FastForPricing => Fast || (Source == SourceKind.Codex
+        && Modes.Attribute(ExecutionModeKind.ServiceTier) is { Mode: "fast", Provider: "openai" });
+
     public long Requests => Math.Clamp(RequestCount, 0, TokenCounts.MaxValue);
 }
 

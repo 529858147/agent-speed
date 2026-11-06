@@ -11,7 +11,7 @@ namespace AgentSpeed.Core.History;
 
 internal sealed record HistoryOptions
 {
-    /// <summary>Bumped whenever a parser change alters results; stored files of other versions are analysed again.</summary>
+    /// <summary>Bumped whenever a parser or pricing change alters results; stored files of other versions are analysed again.</summary>
     public int Version { get; init; } = HistoryAnalyzer.AnalysisVersion;
 
     public int Workers { get; init; } = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
@@ -49,7 +49,7 @@ internal sealed record HistoryReport(
 internal sealed partial class HistoryAnalyzer
 {
     /// <summary>2: measured output and time per model (METRICS 8). 3: cost (METRICS 9.7).</summary>
-    public const int AnalysisVersion = 5;
+    public const int AnalysisVersion = 6;
 
     private const string OpenCodeFamily = "opencode";
     private const string ZoneMeta = "timeZone";

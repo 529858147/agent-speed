@@ -263,7 +263,7 @@ public sealed class PriceTable
     }
 
     internal long? Cost(ParsedResponse response) =>
-        Cost(response.Model, response.Provider, response.Tokens, response.EndMs, response.Fast);
+        Cost(response.Model, response.Provider, response.Tokens, response.EndMs, response.FastForPricing);
 
     /// <summary>
     /// The id a response's model is reported as (METRICS 11.3): a hit on a table entry (priced or free) is that entry's id, a

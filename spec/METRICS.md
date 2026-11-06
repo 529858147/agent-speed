@@ -100,6 +100,8 @@ source: null. Empty strings count as null.
 Every response also carries `fast` (boolean): the request ran in a provider's fast mode, which has its own prices
 (9.3). Claude: `message.usage.speed == "fast"` on any of the message's lines (merged with `or`). Every other source:
 false (Codex records only the user's speed setting, not the tier a request was billed at).
+On Windows, a Codex response with an explicit selected OpenAI Fast tier also uses the Fast price for the
+API-equivalent estimate, without treating that selection as proof of the served tier (EXECUTION-MODES).
 
 ### 3.3 Response timing
 - `endMs` = timestamp of the usage record (Claude: the latest line of that message).
@@ -1493,8 +1495,8 @@ Monday) is in `peakWeekdays`, and its UTC time of day lies in one of the `peakUt
 inclusive, end exclusive). Otherwise it uses the `offPeak` prices and tiers.
 
 **Fast mode**: `fast` = `{prices, tiers?}`, used instead of everything above (periods and off-peak included) for a
-response with `fast` (3.2) or an id that selects fast mode (9.2). A fast response of a model without `fast` prices
-has an unknown cost: never the cheaper standard price.
+response with `fast` (3.2), a Windows Codex response with a selected OpenAI Fast tier, or an id that selects fast
+mode (9.2). A fast response of a model without `fast` prices has an unknown cost: never the cheaper standard price.
 
 **Free**: `"free": true` — every response of the model costs 0, a known value.
 
@@ -1546,7 +1548,8 @@ Billed token classes of a response (3.2):
 Each class is clamped to 100 000 000 tokens (no real response comes near; it keeps the sum below 2^63 with prices up
 to 10 000 USD per million tokens).
 
-With the price set of 9.1 — fast prices for a fast response, else the period covering `endMs`, then its off-peak
+With the price set of 9.1 — fast prices for a fast response or, on Windows, a Codex response with a selected OpenAI
+Fast tier, else the period covering `endMs`, then its off-peak
 prices when `endMs` is off-peak, then the tier chosen by `input` — in 64-bit integers:
 
 ```
@@ -1639,9 +1642,10 @@ and no historical rates are needed. The UI states the rate date (DESIGN 9). Roun
   partial output).
 - Only Claude Code separates 1-hour cache writes; every other source prices all cache writes at `cacheWrite`
   (OpenAI's 12-hour writes, 2.5× input, are priced as its 30-minute writes, 1.25×).
-- Fast mode is known only for Claude Code (`usage.speed`) and for ids that name it (`-fast`); OpenAI's fast and
-  ultrafast tiers in Codex are priced at standard rates. US-only inference (`usage.inference_geo == "us"`, 1.1× on
-  newer Claude models) is not applied.
+- Claude Code records the served speed (`usage.speed`), and ids can name fast mode (`-fast`). On Windows, Codex's
+  explicitly selected OpenAI Fast tier uses Fast prices, but a selected tier does not prove the request was served at
+  that tier. On macOS, Codex Fast and Ultrafast use standard prices; Windows also uses standard prices for Ultrafast.
+  US-only inference (`usage.inference_geo == "us"`, 1.1× on newer Claude models) is not applied.
 - DeepSeek's off-peak rule needs the list of Chinese public holidays in `offPeakDates`; weekend make-up workdays are
   treated as off-peak. Qwen's implicit-cache price (20 % of input) is used for every cache read, explicit caching
   (10 %) is not distinguished.
@@ -1990,7 +1994,8 @@ translated. Cases: `spec/fixtures/traffic-cases.json` `format`.
 ## 11. Live reporting
 
 Execution modes are additive metadata specified in [EXECUTION-MODES.md](EXECUTION-MODES.md); they do not change
-any token, request, speed, duration or price formula. Optional per-model Harness/mode breakdowns and separate
+token, request, speed or duration formulas. Windows Codex selected Fast also chooses Fast API prices (9.3).
+Optional per-model Harness/mode breakdowns and separate
 profile APIs are defined in [REPORTING-EXTENSIONS.md](REPORTING-EXTENSIONS.md).
 
 When the user turns on live reporting (DESIGN 11), the app sends the values below to a service of the user's choice

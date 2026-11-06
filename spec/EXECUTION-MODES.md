@@ -1,7 +1,8 @@
 # Execution mode metadata
 
 This contract adds metadata and grouping to the existing measurement engine. Token normalization, request identity,
-timing validation, speed windows, estimates and pricing equations remain unchanged. A missing mode is never Standard.
+timing validation and speed windows remain unchanged. Windows uses an explicitly selected Codex Fast tier for the
+API-equivalent price estimate; the selection remains distinct from served evidence. A missing mode is never Standard.
 
 ## Common facts
 
@@ -41,7 +42,9 @@ Mode changes affect their native scope and time, not earlier responses. Upserts 
   `thread_settings.service_tier`, with `thread_settings.model_provider_id` identifying `openai` or `azure`.
   Record it as selected/session evidence, never served; ignore an explicit `thread_id` belonging to another
   known session. Missing tier leaves the selection unchanged; null or unsupported values clear it. Subsequent
-  responses retain the selection at their emission, without changing earlier responses or pricing.
+  responses retain the selection at their emission, without changing earlier responses. On Windows, an explicit OpenAI
+  Fast selection chooses the Fast API price for that response; missing or configured-only selections do not. If the
+  model has no Fast price, the response stays unpriced. Selection is not proof of the tier actually served.
 - Claude Code/Desktop: retain explicit `message.usage.speed` `fast` and `standard` as served service-tier facts.
   Missing speed is not Standard. Preserve the existing pricing fast flag's compatibility behavior.
 - OpenCode: `session_message.data.native.serviceTier` is served OpenAI tier metadata for supported versions.
