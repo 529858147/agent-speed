@@ -50,7 +50,7 @@ public sealed class HistoryTests : IDisposable
 
         var report = analyzer.Run(locations, All, TimeZoneInfo.Utc, CancellationToken.None);
 
-        var expected = document["days"]!;
+        var expected = HistoryJson.WindowsExpected(document["days"]!);
         var actual = new JsonArray([.. analyzer.Days().Select(HistoryJson.Row)]);
         Assert.True(JsonNode.DeepEquals(expected, actual), $"expected {expected.ToJsonString()}\nactual   {actual.ToJsonString()}");
         Assert.Equal((false, 0), (report.Cancelled, report.FilesUnreadable));
@@ -272,6 +272,29 @@ public sealed class HistoryTests : IDisposable
 /// <summary>The row shape of <c>history-expected.json</c> and the probes' <c>--dump-history</c>.</summary>
 internal static class HistoryJson
 {
+    /// <summary>The shared reference prices Codex at the standard rate; Windows also applies a verified Fast selection.</summary>
+    public static JsonNode WindowsExpected(JsonNode days)
+    {
+        var expected = days.DeepClone();
+        var codex = expected.AsArray().Select(row => row!.AsObject()).Single(row =>
+            row["date"]!.GetValue<string>() == "2026-10-20" && row["source"]!.GetValue<string>() == "codex");
+        // The first gpt-6.1-sol response selected Fast. Fixture table v1 has only a standard price, so this
+        // response is unpriced on Windows instead of contributing the reference's 8,800 micro-USD.
+        codex["costMicroUsd"] = 90_493;
+        codex["unpricedRequests"] = 1;
+        var model = codex["models"]!["gpt-6.1-sol"]!;
+        model["costMicroUsd"] = 36_200;
+        model["unpricedRequests"] = 1;
+        codex["unpriced"] = new JsonArray(new JsonObject
+        {
+            ["model"] = "gpt-6.1-sol",
+            ["provider"] = "openai",
+            ["fast"] = true,
+            ["requests"] = 1,
+        });
+        return expected;
+    }
+
     public static JsonNode Row(DailyUsage day)
     {
         var models = new JsonObject();

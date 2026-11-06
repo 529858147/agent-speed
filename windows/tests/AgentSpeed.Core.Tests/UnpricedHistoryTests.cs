@@ -62,7 +62,7 @@ public sealed class UnpricedHistoryTests : IDisposable
 
         using var reopened = HistoryStore.Open(StorePath);
         var days = new HistoryAnalyzer(reopened, options, new PriceBook(tables, bindings)).Days();
-        var expected = document["days"]!;
+        var expected = HistoryJson.WindowsExpected(document["days"]!);
         var actual = new JsonArray([.. days.Select(HistoryJson.Row)]);
         Assert.True(JsonNode.DeepEquals(expected, actual), actual.ToJsonString());
         Assert.All(days, d => Assert.Equal((0L, 0L), (d.Unpriced.NoCostData, d.Unpriced.Derived)));
